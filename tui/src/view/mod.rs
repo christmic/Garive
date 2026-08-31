@@ -2,23 +2,30 @@ use crate::{
     application::{AppModel, BootState, TerminalSize},
     Theme,
 };
+#[cfg(test)]
+use ratatui::text::Line;
 use ratatui::{
     buffer::Buffer,
-    layout::{Alignment, Constraint, Direction, Layout, Rect},
-    text::{Line, Span},
-    widgets::{Block, Borders, Padding, Paragraph, Widget},
+    layout::Rect,
+    widgets::{Paragraph, Widget},
 };
 
+mod activity_stack;
 mod command_suggestions;
 mod composer;
+mod context_line;
 mod conversation;
+mod decision_sheet;
 mod footer;
+mod inspector;
+mod layout;
 mod linear;
+mod live_answer;
 mod markdown_syntax;
 mod markdown_table;
+mod minimum;
 mod motion;
 mod overlay;
-mod position_rail;
 pub(crate) mod presentation;
 mod primitives;
 mod session;
@@ -28,13 +35,12 @@ mod title;
 use conversation::render_conversation;
 pub(crate) use conversation::RenderCache;
 use footer::render_footer;
+use layout::FrameLayout;
+pub(crate) use linear::composer_status as linear_composer_status;
 pub(crate) use linear::{overlay_text as linear_overlay, safe as linear_safe};
-use motion::status_motion;
 pub(crate) use motion::{status_motion_enabled, MotionFrame};
 use overlay::render_overlay;
-use primitives::{centered_column, status_chip};
-use session::{rail_lines, rail_window};
-use style::{connection_name, connection_style, execution_style, palette};
+use style::palette;
 pub(crate) use title::terminal_title;
 
 pub(crate) fn render_cached(
@@ -66,100 +72,26 @@ pub(crate) fn render_cached_with_motion(
             .render(area, buffer);
         return None;
     }
-    let frame = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([Constraint::Length(2), Constraint::Min(1)])
-        .split(area);
-    render_header(model, theme, motion, frame[0], buffer);
-    let composer = if area.width >= 100 {
-        let rail_width = if area.width >= 160 { 34 } else { 28 };
-        let workspace = Layout::horizontal([Constraint::Length(rail_width), Constraint::Min(1)])
-            .split(frame[1]);
-        render_navigation(model, theme, workspace[0], buffer);
-        let content = if area.width >= 160 {
-            centered_column(workspace[1], 114)
-        } else {
-            workspace[1]
-        };
-        render_content(model, theme, content, buffer, cache)
-    } else {
-        render_content(model, theme, frame[1], buffer, cache)
-    };
+    if area.width < 40 {
+        minimum::render(model, palette(theme), area, buffer);
+        return None;
+    }
+    let frame = FrameLayout::resolve(model, area);
+    context_line::render(model, theme, motion, frame.context, buffer);
+    render_conversation(model, theme, motion, frame.transcript, buffer, cache);
+    if let Some(area) = frame.inspector {
+        inspector::render(model, theme, area, buffer, false);
+    }
+    composer::render(model, palette(theme), frame.composer, buffer);
+    render_footer(model, theme, frame.hint, buffer);
+    command_suggestions::render(model, frame.composer, palette(theme), buffer);
     if let Some(overlay) = model.overlay {
         render_overlay(model, overlay, theme, area, buffer);
         None
     } else {
         (model.focus == crate::application::FocusTarget::Composer)
-            .then(|| composer::cursor(model, composer))
+            .then(|| composer::cursor(model, frame.composer))
             .flatten()
-    }
-}
-
-fn render_content(
-    model: &AppModel,
-    theme: Theme,
-    area: Rect,
-    buffer: &mut Buffer,
-    cache: &mut RenderCache,
-) -> Rect {
-    let rows = content_rows(model, area);
-    render_conversation(model, theme, rows[0], buffer, cache);
-    composer::render(model, palette(theme), rows[1], buffer);
-    render_footer(model, theme, rows[2], buffer);
-    command_suggestions::render(model, rows[1], palette(theme), buffer);
-    rows[1]
-}
-
-pub(crate) fn conversation_rail_hit_test(model: &AppModel, column: u16, row: u16) -> Option<usize> {
-    let full = Rect::new(0, 0, model.terminal_size.width, model.terminal_size.height);
-    let conversation = content_rows(model, main_content_area(full))[0];
-    position_rail::target_at(model, conversation, column, row)
-}
-
-pub(crate) fn conversation_rail_hover_hit_test(
-    model: &AppModel,
-    column: u16,
-    row: u16,
-) -> Option<crate::application::ConversationRailHover> {
-    let index = conversation_rail_hit_test(model, column, row)?;
-    Some(crate::application::ConversationRailHover { index, row })
-}
-
-fn content_rows(model: &AppModel, area: Rect) -> std::rc::Rc<[Rect]> {
-    let composer_height = if area.height < 12 {
-        3
-    } else {
-        composer::desired_height(&model.composer, area.width).clamp(3, 7)
-    };
-    Layout::vertical([
-        Constraint::Min(1),
-        Constraint::Length(composer_height),
-        Constraint::Length(1),
-    ])
-    .split(area)
-}
-
-fn main_content_area(area: Rect) -> Rect {
-    let body = Rect::new(
-        area.x,
-        area.y.saturating_add(2),
-        area.width,
-        area.height.saturating_sub(2),
-    );
-    if area.width < 100 {
-        return body;
-    }
-    let rail_width = if area.width >= 160 { 34 } else { 28 };
-    let workspace = Rect::new(
-        body.x.saturating_add(rail_width),
-        body.y,
-        body.width.saturating_sub(rail_width),
-        body.height,
-    );
-    if area.width >= 160 {
-        centered_column(workspace, 114)
-    } else {
-        workspace
     }
 }
 
@@ -169,8 +101,8 @@ pub(crate) fn command_suggestion_hit_test(
     row: u16,
 ) -> Option<usize> {
     let full = Rect::new(0, 0, model.terminal_size.width, model.terminal_size.height);
-    let composer = content_rows(model, main_content_area(full))[1];
-    command_suggestions::selection_at(model, composer, column, row)
+    let frame = FrameLayout::resolve(model, full);
+    command_suggestions::selection_at(model, frame.composer, column, row)
 }
 
 pub(crate) fn composer_hit_test(
@@ -179,162 +111,121 @@ pub(crate) fn composer_hit_test(
     row: u16,
     clamp: bool,
 ) -> Option<usize> {
+    if model.composer_is_frozen {
+        return None;
+    }
     let full = Rect::new(0, 0, model.terminal_size.width, model.terminal_size.height);
-    let composer = content_rows(model, main_content_area(full))[1];
-    composer::selection_at(model, composer, column, row, clamp)
+    let frame = FrameLayout::resolve(model, full);
+    composer::selection_at(model, frame.composer, column, row, clamp)
+}
+
+pub(crate) fn inspector_hit_test(model: &AppModel, column: u16, row: u16) -> Option<usize> {
+    let area = inspector::wide_area(Rect::new(
+        0,
+        0,
+        model.terminal_size.width,
+        model.terminal_size.height,
+    ))?;
+    inspector::selection_at(model, area, column, row)
+}
+
+pub(crate) fn inspector_contains(model: &AppModel, column: u16, row: u16) -> bool {
+    inspector::wide_area(Rect::new(
+        0,
+        0,
+        model.terminal_size.width,
+        model.terminal_size.height,
+    ))
+    .is_some_and(|area| {
+        column >= area.x && column < area.right() && row >= area.y && row < area.bottom()
+    })
 }
 
 pub(crate) fn composer_vertical_target(model: &AppModel, direction: i8) -> (usize, usize) {
     let full = Rect::new(0, 0, model.terminal_size.width, model.terminal_size.height);
-    let area = content_rows(model, main_content_area(full))[1];
-    composer::vertical_target(&model.composer, area.width.saturating_sub(4), direction)
+    let frame = FrameLayout::resolve(model, full);
+    composer::vertical_target(
+        &model.composer,
+        frame.composer.width.saturating_sub(4),
+        direction,
+    )
 }
 
 pub(crate) fn composer_line_edge_target(model: &AppModel, direction: i8) -> usize {
     let full = Rect::new(0, 0, model.terminal_size.width, model.terminal_size.height);
-    let area = content_rows(model, main_content_area(full))[1];
-    composer::line_edge_target(&model.composer, area.width.saturating_sub(4), direction)
+    let frame = FrameLayout::resolve(model, full);
+    composer::line_edge_target(
+        &model.composer,
+        frame.composer.width.saturating_sub(4),
+        direction,
+    )
 }
 
-fn render_header(
-    model: &AppModel,
+pub(crate) fn conversation_page_cells(model: &AppModel) -> usize {
+    let area = Rect::new(0, 0, model.terminal_size.width, model.terminal_size.height);
+    let frame = FrameLayout::resolve(model, area);
+    usize::from(
+        conversation::viewport_rect(model, frame.transcript)
+            .height
+            .max(1),
+    )
+}
+
+pub(crate) fn scroll_conversation(
+    model: &mut AppModel,
     theme: Theme,
-    motion: MotionFrame,
-    area: Rect,
-    buffer: &mut Buffer,
+    cache: &mut RenderCache,
+    cells: isize,
 ) {
-    let colors = palette(theme);
-    let motion = status_motion(model, motion);
-    Block::default()
-        .style(colors.header_background)
-        .render(area, buffer);
-    let session = model
-        .selected_session
-        .as_deref()
-        .map(|value| format!("Session {}", short_id(value)))
-        .unwrap_or_else(|| "Workspace".into());
-    let definition = model
-        .definitions
-        .first()
-        .map(|item| short_id(&item.definition_id))
-        .unwrap_or("No agent");
-    let compact = area.width < 60;
-    let status_width = if compact { 16 } else { 28 };
-    let row =
-        Layout::horizontal([Constraint::Min(1), Constraint::Length(status_width)]).split(area);
-    let identity = if compact {
-        Line::styled("  GARIVE", colors.brand)
-    } else {
-        Line::from(vec![
-            Span::styled("  GARIVE ", colors.brand),
-            Span::styled(format!(" {definition}  /  {session}"), colors.header_text),
-        ])
-    };
-    identity.render(row[0], buffer);
-    let status = if compact {
-        vec![
-            status_chip(
-                motion.connection_icon,
-                connection_style(model.connection, colors),
-            ),
-            Span::styled(" · ", colors.header_text),
-            status_chip(
-                &motion.execution_label,
-                execution_style(model.execution, colors),
-            ),
-        ]
-    } else {
-        vec![
-            status_chip(
-                &format!(
-                    "{} {}",
-                    motion.connection_icon,
-                    connection_name(model.connection)
-                ),
-                connection_style(model.connection, colors),
-            ),
-            Span::styled(" · ", colors.header_text),
-            status_chip(
-                &motion.execution_label,
-                execution_style(model.execution, colors),
-            ),
-            Span::styled(" ", colors.header_text),
-        ]
-    };
-    Line::from(status)
-        .alignment(Alignment::Right)
-        .style(colors.header_text)
-        .render(row[1], buffer);
+    let area = Rect::new(0, 0, model.terminal_size.width, model.terminal_size.height);
+    let frame = FrameLayout::resolve(model, area);
+    let viewport = conversation::viewport_rect(model, frame.transcript);
+    conversation::scroll_by_visual_cells(
+        model,
+        theme,
+        viewport.width,
+        viewport.height,
+        cells,
+        cache,
+    );
 }
 
-fn render_navigation(model: &AppModel, theme: Theme, area: Rect, buffer: &mut Buffer) {
-    let colors = palette(theme);
-    let block = Block::default()
-        .title(Line::from(vec![
-            Span::styled(" Sessions ", colors.title),
-            Span::styled(format!("{} ", model.session_count), colors.badge),
-        ]))
-        .borders(Borders::RIGHT)
-        .border_style(
-            if model.focus == crate::application::FocusTarget::Navigation {
-                colors.accent
-            } else {
-                colors.border
-            },
-        )
-        .padding(Padding::new(1, 1, 1, 0));
-    let inner = block.inner(area);
-    block.render(area, buffer);
-    let regions = Layout::vertical([Constraint::Min(1), Constraint::Length(2)]).split(inner);
-    let mut lines = Vec::new();
-    if model.sessions.is_empty() {
-        lines.push(Line::styled("No sessions yet", colors.muted));
-        lines.push(Line::default());
-        lines.push(Line::styled("Ctrl+N  Create one", colors.accent));
-    } else {
-        let focus_id = if model.focus == crate::application::FocusTarget::Navigation {
-            model.navigation_selection.as_deref()
-        } else {
-            None
-        };
-        let (start, end) = rail_window(model, regions[0].height);
-        for (offset, session) in model.sessions[start..end].iter().enumerate() {
-            let active = model.selected_session.as_deref() == Some(&session.session_id);
-            let focused = focus_id == Some(session.session_id.as_str());
-            lines.extend(rail_lines(session, active, focused, colors));
-            if start + offset + 1 < end {
-                lines.push(Line::default());
-            }
-        }
-    }
-    Paragraph::new(lines).render(regions[0], buffer);
-    if model.focus == crate::application::FocusTarget::Navigation {
-        if let Some(focused) = model.navigation_selection.as_deref().and_then(|id| {
-            model
-                .sessions
-                .iter()
-                .position(|session| session.session_id == id)
-        }) {
-            let (start, end) = rail_window(model, regions[0].height);
-            if focused >= start && focused < end {
-                let y = regions[0].y + u16::try_from((focused - start) * 3).unwrap_or(u16::MAX);
-                buffer.set_style(
-                    Rect::new(regions[0].x, y, regions[0].width, 2.min(regions[0].height)),
-                    colors.selection_row,
-                );
-            }
-        }
-    }
-    Line::styled(" Ctrl+N new · Ctrl+S list", colors.muted).render(regions[1], buffer);
-}
-
-pub(crate) fn navigation_hit_test(model: &AppModel, column: u16, row: u16) -> Option<usize> {
-    session::rail_hit_test(model, column, row)
+pub(crate) fn reflow_conversation(model: &mut AppModel, theme: Theme, cache: &mut RenderCache) {
+    let area = Rect::new(0, 0, model.terminal_size.width, model.terminal_size.height);
+    let frame = FrameLayout::resolve(model, area);
+    let viewport = conversation::viewport_rect(model, frame.transcript);
+    conversation::reflow_visual_anchor(model, theme, viewport.width, cache);
 }
 
 pub(crate) fn overlay_hit_test(model: &AppModel, column: u16, row: u16) -> Option<usize> {
     let overlay = model.overlay?;
     overlay::geometry::selection_at(
+        model,
+        overlay,
+        Rect::new(0, 0, model.terminal_size.width, model.terminal_size.height),
+        column,
+        row,
+    )
+}
+
+pub(crate) fn decision_action_hit_test(
+    model: &AppModel,
+    column: u16,
+    row: u16,
+) -> Option<crate::application::ActionOverlayIntent> {
+    let overlay = model.overlay?;
+    overlay::geometry::decision_action_at(
+        model,
+        overlay,
+        Rect::new(0, 0, model.terminal_size.width, model.terminal_size.height),
+        column,
+        row,
+    )
+}
+
+pub(crate) fn decision_choice_hit_test(model: &AppModel, column: u16, row: u16) -> Option<usize> {
+    let overlay = model.overlay?;
+    overlay::geometry::decision_choice_at(
         model,
         overlay,
         Rect::new(0, 0, model.terminal_size.width, model.terminal_size.height),
@@ -374,16 +265,6 @@ pub(super) fn safe_text(value: &str) -> String {
 
 fn short_id(value: &str) -> &str {
     value.get(..12).unwrap_or(value)
-}
-fn short_tail(value: &str) -> &str {
-    value.get(value.len().saturating_sub(6)..).unwrap_or(value)
-}
-pub(super) fn turn_label(count: u64) -> &'static str {
-    if count == 1 {
-        "turn"
-    } else {
-        "turns"
-    }
 }
 fn empty_title(value: BootState) -> &'static str {
     match value {
@@ -426,5 +307,21 @@ pub(crate) fn markdown_preview_at_width(
         colors.muted,
         markdown_syntax::SyntaxPalette::from_palette(colors),
         width,
+    )
+}
+
+#[cfg(test)]
+#[allow(dead_code)]
+pub(crate) fn live_answer_preview(
+    answer: &crate::application::LiveAnswer,
+    theme: Theme,
+    reduced_motion: bool,
+) -> Vec<Line<'static>> {
+    live_answer::render(
+        answer,
+        theme,
+        80,
+        reduced_motion,
+        &mut conversation::live_cache::LiveRenderCache::default(),
     )
 }

@@ -8,19 +8,19 @@ use ratatui::{backend::CrosstermBackend, Terminal};
 use serde_json::json;
 use tokio::sync::mpsc;
 
-#[cfg(test)]
-use crate::{
-    application::AppModel,
-    persistence::{PendingCommand, PendingKind},
-};
 use crate::{
     application::{reduce, AppAction, TerminalSize},
     persistence::{DiagnosticEvent, StateError, StateStore},
     view, LaunchConfig, TuiError,
 };
+#[cfg(test)]
+use crate::{
+    application::{AppModel, EffectKind, EffectTracker, PendingMutationDraft, PendingMutationKind},
+    persistence::{PendingCommand, PendingKind},
+};
 
 use super::{
-    controller::handle_terminal, external_editor, host, terminal_events::TerminalEventReader,
+    controller::handle_terminal, external_editor, terminal_events::TerminalEventReader,
     SystemTerminal, TerminalError, TerminalGuard, TerminalOptions,
 };
 
@@ -32,10 +32,10 @@ mod state;
 use messages::handle_host;
 #[cfg(test)]
 use projection::install_timeline;
-#[cfg(test)]
-use state::pending_freezes_composer;
 use state::RestoredState;
 pub(super) use state::RuntimeState;
+#[cfg(test)]
+use state::{pending_command_projection, pending_freezes_composer};
 
 const LIMITS: ClientLimits = ClientLimits {
     max_command_bytes: 4_096,
@@ -44,6 +44,7 @@ const LIMITS: ClientLimits = ClientLimits {
     follow_deadline_ms: 120_000,
 };
 const MOTION_INTERVAL: std::time::Duration = std::time::Duration::from_millis(160);
+const LIVE_FRAME_INTERVAL: std::time::Duration = std::time::Duration::from_millis(16);
 
 /// Runs the resident full-screen terminal client until the user confirms exit.
 pub async fn run(config: LaunchConfig) -> Result<(), TuiError> {
@@ -92,7 +93,7 @@ pub async fn run(config: LaunchConfig) -> Result<(), TuiError> {
         SystemTerminal::default(),
         TerminalOptions {
             screen_reader: config.screen_reader,
-            mouse: config.mouse == crate::MouseMode::On,
+            mouse: crate::args::mouse_capture_enabled(config.mouse, config.screen_reader, true),
         },
     )
     .map_err(map_terminal_error)?;
@@ -109,15 +110,20 @@ pub async fn run(config: LaunchConfig) -> Result<(), TuiError> {
     }
 
     let (sender, mut receiver) = mpsc::channel(256);
-    let mut state = RuntimeState::new(config, client, sender, restored);
-    host::bootstrap(state.client.clone(), state.sender.clone());
+    let (action_sender, mut action_receiver) = mpsc::channel(64);
+    let mut state = RuntimeState::new(config, client, sender, action_sender, restored);
+    state.dispatch(AppAction::BootStarted);
     let mut events = TerminalEventReader::start().map_err(|_| TuiError::TerminalIo)?;
     let mut interrupted = None;
     let mut motion_tick = 0_u64;
     let mut motion_clock = tokio::time::interval(MOTION_INTERVAL);
     motion_clock.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
     motion_clock.tick().await;
+    let mut live_frame_clock = tokio::time::interval(LIVE_FRAME_INTERVAL);
+    live_frame_clock.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+    live_frame_clock.tick().await;
     loop {
+        state.advance_graceful_quit();
         if let Some(request) = state.external_editor_request.take() {
             match external_editor::prepare(request) {
                 Err((message, request)) => {
@@ -137,7 +143,11 @@ pub async fn run(config: LaunchConfig) -> Result<(), TuiError> {
                         SystemTerminal::default(),
                         TerminalOptions {
                             screen_reader: false,
-                            mouse: state.config.mouse == crate::MouseMode::On,
+                            mouse: crate::args::mouse_capture_enabled(
+                                state.config.mouse,
+                                false,
+                                true,
+                            ),
                         },
                     )
                     .map_err(map_terminal_error)?;
@@ -153,6 +163,9 @@ pub async fn run(config: LaunchConfig) -> Result<(), TuiError> {
                     }
                 }
             }
+        }
+        if let Some(request) = state.take_terminal_reconfiguration() {
+            guard.reconfigure(request).map_err(map_terminal_error)?;
         }
         guard
             .set_title(&view::terminal_title(&state.model))
@@ -170,12 +183,19 @@ pub async fn run(config: LaunchConfig) -> Result<(), TuiError> {
                 Some(message) => handle_host(message, &mut state),
                 None => break,
             },
+            action = action_receiver.recv() => match action {
+                Some(action) => state.dispatch(action),
+                None => break,
+            },
             signal = shutdown.recv() => {
                 interrupted = Some(signal);
                 break;
             }
             _ = motion_clock.tick(), if view::status_motion_enabled(&state.model, state.config.reduced_motion) => {
                 motion_tick = motion_tick.wrapping_add(1);
+            }
+            _ = live_frame_clock.tick(), if state.model.live_frame_pending() => {
+                state.model.advance_live_frame();
             }
         }
     }
@@ -358,7 +378,7 @@ mod tests {
     fn snapshot_refresh_preserves_manual_anchor_and_counts_new_cells() {
         let mut model = AppModel::default();
         install_timeline(&mut model, vec![turn("one", 1), turn("two", 4)]);
-        model.scroll_conversation_up(1);
+        model.jump_to_oldest();
         let anchor = model.viewport.anchor_key.clone();
 
         install_timeline(
@@ -427,6 +447,35 @@ mod tests {
         }];
         assert!(pending_freezes_composer(&pending, Some("session-a")));
         assert!(!pending_freezes_composer(&pending, Some("session-b")));
+        let mut effects = EffectTracker::default();
+        effects
+            .issue(
+                EffectKind::PersistPending {
+                    draft: PendingMutationDraft {
+                        command_id: "command-b".into(),
+                        kind: PendingMutationKind::StartTurn,
+                        session_id: Some("session-b".into()),
+                        turn_id: None,
+                        suspension_id: None,
+                        expected_session_version: None,
+                        requested_through_position: None,
+                        request_payload: json!({"text":"private-b"}),
+                        created_at: "2026-08-30T00:00:01Z".into(),
+                    },
+                },
+                Some("session-b".into()),
+                None,
+            )
+            .expect("in-flight persistence");
+
+        assert_eq!(
+            pending_command_projection(&pending, &effects, Some("session-b")),
+            (true, true)
+        );
+        assert_eq!(
+            pending_command_projection(&pending, &effects, Some("session-c")),
+            (true, false)
+        );
     }
 
     fn turn(id: &str, position: u64) -> TurnTimelineItem {

@@ -116,9 +116,9 @@ provider payload, tool identity, prompt/context content, exception text, or
 credentials through H4. A later Spec may admit typed tool activity by mapping
 durable C5/H3-safe values; raw Agent callbacks cannot do so.
 
-If multiple text output items are admitted for one answer, Runtime inserts the
-same deterministic separator used by committed completion projection. Clients
-never guess item boundaries from delta timing.
+The committed completion projection concatenates multiple admitted text output
+items with an empty separator. H4 therefore concatenates their deltas exactly;
+clients never infer or insert item boundaries from delta timing.
 
 ## Hub state and bounds
 
@@ -129,15 +129,27 @@ these product-default bounds:
 | Bound | Default |
 |---|---:|
 | active executions | dispatch queue capacity |
-| accumulated preview per execution | 1 MiB UTF-8 |
-| one encoded event | 32 KiB |
+| accumulated preview per execution | 1 MiB raw UTF-8 |
+| raw text in one `text_delta` | 32 KiB UTF-8 |
+| encoded `text_delta` JSON | 194 KiB |
+| encoded `snapshot` JSON | 6 MiB + 2 KiB |
 | broadcast capacity | 256 events |
 | subscribers per Session | 8 |
 
-Construction fails when any bound is zero or preview/event bounds exceed Host
-read-response bounds. A provider delta larger than the event bound is split at
-UTF-8 scalar boundaries without changing text. Adjacent deltas may be
-coalesced before publication, but their concatenation is exact.
+Construction fails when any configurable bound is zero, when the preview bound
+exceeds 1 MiB, or when the raw delta bound exceeds 32 KiB. A provider delta
+larger than the configured raw delta bound is split at UTF-8 scalar boundaries
+without changing text. Adjacent deltas may be coalesced before publication,
+but their concatenation is exact.
+
+The encoded bounds include the complete `LiveOutputEventV1` JSON object, not
+SSE framing. They use JSON's worst-case six encoded bytes per admitted raw
+UTF-8 byte plus a 2 KiB envelope allowance for bounded identities, the UUID,
+u64 counters, field names, and closed enum values. The 194 KiB delta bound is
+`6 * 32 KiB + 2 KiB`; the snapshot bound is `6 * 1 MiB + 2 KiB`. The H1
+client `max_event_bytes` setting does not constrain H4. A client validates the
+raw decoded text bound after JSON decoding and rejects a record above either
+its encoded or decoded bound.
 
 When accumulated preview would exceed its bound, the hub clears the text,
 publishes `preview_unavailable`, and accepts no more public text for that
@@ -240,8 +252,33 @@ forces follow mode.
 - macOS PTY evidence records first delta, at least two intermediate frames,
   final committed frame, and restored terminal state from the shipping binary.
 
+## Implementation evidence
+
+Runtime hub/publication, no-cursor Live Host SSE, strict Rust client reduction,
+and TUI presentation are implemented. The current executable evidence includes:
+
+- `runtime/replica/tests/live_output.rs`, `live_output_http.rs`, and
+  `local_worker.rs` for admission, redaction, bounds, lag, snapshots, terminal
+  end, and production worker publication;
+- `clients/host-rs/tests/live_output_client.rs` at `3240d960` for malformed envelopes,
+  identity and sequence validation, stream replacement, event/sink overflow,
+  and cancelled-follow transport release;
+- `tui/tests/live_answer_projection.rs` for frame reduction, stable Markdown,
+  unavailable state, terminal fences, and durable takeover;
+- `tui/tests/live_h4_recovery.rs` at `98e17709` and `a973274d` for real loopback
+  disconnect/reconnect, snapshot replacement, two live frames before
+  durability, and final SQLite convergence; and
+- `tui/tests/production_runtime.rs` at `7547d856` for the shipping TUI's
+  integrated live, suspension/continuation, cancellation, background Session,
+  and restart flow.
+
+H4 verification remains part of active A-TUI closeout. A detached viewport
+receiving live and durable updates still needs shipping PTY evidence, the
+screen-reader path still needs explicit no-per-delta and exactly-once durable
+answer evidence, and physical macOS terminal screenshots remain open.
+
 ## Meta
 
 - Owner: Runtime H4 and Client presentation
 - Last reviewed: 2026-08-31
-- Status: accepted; Runtime hub and worker publication implemented, Host/client composition pending
+- Status: accepted and implemented; product-level verification remains active

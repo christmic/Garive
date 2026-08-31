@@ -1,39 +1,35 @@
-use crate::{
-    application::{AppModel, Overlay},
-    input::COMMAND_PALETTE,
-};
+use crate::application::{AppModel, Overlay};
 
-use super::{
-    presentation::{action_overlay_copy, suspension_copy, HELP_NOTES},
-    primitives::selection_window,
-    short_id, short_tail,
-};
+use super::{decision_sheet, presentation::HELP_NOTES, primitives::selection_window, short_id};
 use crate::input::help_hints;
 
 const LIST_CAPACITY: usize = 10;
+
+pub(crate) fn composer_status(model: &AppModel) -> &'static str {
+    if model.composer_is_frozen {
+        "Composer locked. Draft retained. Editing is unavailable until durable command truth."
+    } else {
+        "Composer ready. Editing is available."
+    }
+}
 
 pub(crate) fn overlay_text(model: &AppModel) -> String {
     let Some(overlay) = model.overlay else {
         return String::new();
     };
     let value = match overlay {
-        Overlay::CommandPalette => command_palette(model),
+        Overlay::CommandPalette => super::overlay::command_palette::linear_text(model),
         Overlay::Help => help(),
         Overlay::SessionPicker => session_picker(model),
         Overlay::TurnNavigator => turn_navigator(model),
         Overlay::PromptHistory => prompt_history(model),
-        Overlay::Suspension => {
-            let copy = suspension_copy(model.suspension.as_ref());
-            let message = copy.message.unwrap_or_default();
-            format!(
-                "{}. {} {}\n{}\nPress Enter to respond now.",
-                copy.title, copy.context, message, copy.guidance
-            )
-        }
+        Overlay::Inspector => super::inspector::linear_text(model),
+        Overlay::Suspension => linear_decision_sheet(model, overlay),
         Overlay::UnknownCommand
+        | Overlay::AbandonConfirmation
         | Overlay::ErrorDetails
         | Overlay::EphemeralConfirmation
-        | Overlay::QuitConfirmation => linear_action_overlay(model, overlay),
+        | Overlay::QuitConfirmation => linear_decision_sheet(model, overlay),
     };
     safe(&value)
 }
@@ -54,42 +50,23 @@ pub(crate) fn safe(value: &str) -> String {
         .collect()
 }
 
-fn command_palette(model: &AppModel) -> String {
-    let matches = model.matching_command_indices();
-    let rows = window(matches.len(), model.command_selection)
-        .map(|index| {
-            let command = COMMAND_PALETTE[matches[index]];
-            let unavailable = command
-                .unavailable_reason(model.command_context())
-                .map_or_else(String::new, |reason| format!(". Unavailable: {reason}"));
-            numbered(
-                index,
-                model.command_selection,
-                format!("{}: {}{unavailable}", command.input, command.help),
-            )
-        })
-        .collect::<Vec<_>>();
-    list_prompt(
-        "Command palette",
-        &model.command_filter,
-        rows,
-        "No matching commands.",
-        "Use arrows and Enter, or Escape to close.",
-    )
-}
-
 fn session_picker(model: &AppModel) -> String {
     let matches = model.matching_sessions().collect::<Vec<_>>();
     let rows = window(matches.len(), model.session_selection)
         .map(|index| {
             let session = matches[index];
+            let ordinal = model
+                .sessions
+                .iter()
+                .position(|item| item.session_id == session.session_id)
+                .map(|position| position + 1)
+                .unwrap_or(index + 1);
             numbered(
                 index,
                 model.session_selection,
                 format!(
-                    "{} Session ending {}, {}.",
+                    "Session {ordinal}, {}, {}.",
                     short_id(&session.definition_id),
-                    short_tail(&session.session_id),
                     session.latest_turn_state.as_deref().unwrap_or("new")
                 ),
             )
@@ -154,16 +131,41 @@ fn help() -> String {
         .join(" ")
 }
 
-fn linear_action_overlay(model: &AppModel, overlay: Overlay) -> String {
-    let copy = action_overlay_copy(model, overlay)
-        .expect("action overlay variants always have shared presentation");
-    let guidance = copy
-        .hints
+fn linear_decision_sheet(model: &AppModel, overlay: Overlay) -> String {
+    let spec = decision_sheet::project(model, overlay).expect("decision overlay has a spec");
+    let response = spec
+        .response
+        .map_or_else(String::new, |response| match response {
+            decision_sheet::DecisionResponseSpec::Editor {
+                guidance, draft, ..
+            } => {
+                let value = if draft.is_empty() { "empty" } else { "entered" };
+                format!(" Response ({value}): {guidance}")
+            }
+            decision_sheet::DecisionResponseSpec::ReadOnly { guidance } => {
+                format!(" Read only: {guidance}")
+            }
+            decision_sheet::DecisionResponseSpec::Choices {
+                guidance,
+                choices,
+                selected,
+            } => format!(
+                " Choices: {}. Selected: {}. {guidance}",
+                choices.join(", "),
+                choices.get(selected).map(String::as_str).unwrap_or("none")
+            ),
+        });
+    let guidance = spec
+        .actions
         .iter()
         .map(|hint| format!("Press {} to {}.", hint.spoken_key, hint.action))
         .collect::<Vec<_>>()
         .join(" ");
-    format!("{}. {} {}", copy.title, copy.body, guidance)
+    format!(
+        "{}. {}{response} {guidance}",
+        spec.title,
+        spec.body.join(" ")
+    )
 }
 
 fn window(total: usize, selected: usize) -> std::ops::Range<usize> {

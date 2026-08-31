@@ -213,7 +213,7 @@ pub(crate) enum PendingKind {
     ContinueTurn,
 }
 
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[derive(Clone, Deserialize, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct PendingCommand {
     pub(crate) schema_version: u8,
@@ -227,6 +227,27 @@ pub(crate) struct PendingCommand {
     pub(crate) request_payload: Value,
     pub(crate) request_digest: String,
     pub(crate) created_at: String,
+}
+
+impl std::fmt::Debug for PendingCommand {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("PendingCommand")
+            .field("schema_version", &self.schema_version)
+            .field("command_id", &self.command_id)
+            .field("kind", &self.kind)
+            .field("session_id", &self.session_id)
+            .field("turn_id", &self.turn_id)
+            .field("suspension_id", &self.suspension_id)
+            .field("expected_session_version", &self.expected_session_version)
+            .field(
+                "requested_through_position",
+                &self.requested_through_position,
+            )
+            .field("request_digest", &self.request_digest)
+            .field("created_at", &self.created_at)
+            .finish()
+    }
 }
 
 impl PendingCommand {

@@ -1,0 +1,32 @@
+---
+source: tui/tests/view_snapshots.rs
+expression: "frame(&palette, Theme::Dark, 160, 28)"
+---
+                                Session 1  ·  research-age                                                         Agent running
+
+                                  You      ╭ Command palette ───────────────────────────────────────────────────────╮
+                                    Summa  │  Search  type to search                                                │
+                                    ✓  Ag  │  21 commands · showing 7–21 · ↑ 6 earlier                              │
+                                  ◆ Gariv  │    /retry              unavailable · no unknown command                │
+                                    ## Re  │    /reconnect          Resume event stream                             │
+                                    • Ver  │    /cancel             Cancel running turn                             │
+                                    • Shi  │    /theme system       Follow terminal theme                           │
+                                    cargo  │    /theme dark         Use dark theme                                  │
+                                           │    /theme light        Use light theme                                 │
+                                           │    /theme mono         Use mono theme                                  │
+                                           │    /mouse auto         Use automatic mouse capture now                 │
+                                           │    /mouse on           Enable mouse capture now                        │
+                                           │    /mouse off          Disable mouse capture now                       │
+                                           │    /copy last          Copy last completion                            │
+                                           │    /copy selection     unavailable · no composer text is selected      │
+                                           │    /copy session-id    Copy Session ID                                 │
+                                           │    /help               Keyboard guide                                  │
+                                           │  › /quit               Exit safely                                     │
+                                           │                                                                        │
+                                           │    ↑/↓ select   Home/End edge   Enter run   Esc close                  │
+                                           ╰────────────────────────────────────────────────────────────────────────╯
+
+                                ╭──────────────────────────────────────────────────────────────────────────────────────────────╮
+                                │ Ask a follow-up…                                                                             │
+                                ╰──────────────────────────────────────────────────────────────────────────────────────────────╯
+                                  Esc cancel run

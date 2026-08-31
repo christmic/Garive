@@ -5,7 +5,9 @@ use std::{cell::RefCell, io, rc::Rc};
 #[path = "../src/runtime/terminal.rs"]
 mod terminal;
 
-use terminal::{TerminalError, TerminalGuard, TerminalOps, TerminalOptions};
+use terminal::{
+    TerminalError, TerminalGuard, TerminalOps, TerminalOptions, TerminalReconfiguration,
+};
 
 #[derive(Clone)]
 struct FakeOps {
@@ -242,6 +244,39 @@ fn mouse_capture_is_opt_in_and_restored_before_focus() {
         .position(|value| *value == "disable_focus")
         .unwrap();
     assert!(mouse < focus);
+}
+
+#[test]
+fn live_mouse_reconfiguration_is_transition_only_and_restored() {
+    let (ops, calls) = fake(None);
+    let mut guard = TerminalGuard::acquire(ops, TerminalOptions::default()).unwrap();
+    guard
+        .reconfigure(TerminalReconfiguration::MouseCapture { enabled: true })
+        .unwrap();
+    guard
+        .reconfigure(TerminalReconfiguration::MouseCapture { enabled: true })
+        .unwrap();
+    guard
+        .reconfigure(TerminalReconfiguration::MouseCapture { enabled: false })
+        .unwrap();
+    guard
+        .reconfigure(TerminalReconfiguration::MouseCapture { enabled: true })
+        .unwrap();
+    drop(guard);
+
+    let calls = calls.borrow();
+    assert_eq!(calls.iter().filter(|call| **call == "enter_alt").count(), 1);
+    assert_eq!(
+        calls.iter().filter(|call| **call == "enable_mouse").count(),
+        2
+    );
+    assert_eq!(
+        calls
+            .iter()
+            .filter(|call| **call == "disable_mouse")
+            .count(),
+        2
+    );
 }
 
 #[test]

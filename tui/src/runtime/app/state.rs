@@ -1,51 +1,87 @@
-use std::{collections::BTreeMap, time::Instant};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    time::Instant,
+};
 
-use garive_host_client::{HostClientErrorCode, LiveHostClient};
+use garive_host_client::LiveHostClient;
 use tokio::{sync::mpsc, task::JoinHandle};
 
 use crate::{
     application::{
         reduce, AppAction, AppModel, ConnectionState, EffectKind, ExecutionState, Overlay,
+        SessionPagePurpose, SessionPageRequest,
     },
+    host::LiveHostReadPort,
     input::ComposerClickTracker,
-    persistence::{now, PendingCommand, PendingKind, Preferences, PromptHistoryEntry, StateStore},
+    persistence::{AsyncStateStore, PendingCommand, Preferences, PromptHistoryEntry, StateStore},
     view, LaunchConfig,
 };
 
-use super::{
-    super::{
-        external_editor::EditorRequest,
-        host::{self, HostMessage},
-    },
-    state_error_name,
+use super::super::{
+    effects::EffectRunner,
+    external_editor::EditorRequest,
+    host::{self, HostMessage},
+    host_effects::HostEffectRunner,
+    TerminalReconfiguration,
 };
+
+mod mutations;
+mod pending;
+mod retry;
+mod shutdown;
+#[cfg(test)]
+mod test_support;
+
+#[cfg(test)]
+pub(super) use pending::pending_command_projection;
+pub(super) use pending::pending_freezes_composer;
 
 pub(in crate::runtime) struct RuntimeState {
     pub(in crate::runtime) config: LaunchConfig,
     pub(in crate::runtime) client: LiveHostClient,
     pub(in crate::runtime) sender: mpsc::Sender<HostMessage>,
+    effects: EffectRunner<AsyncStateStore>,
+    host_effects: HostEffectRunner<LiveHostReadPort>,
     pub(in crate::runtime) model: AppModel,
     pub(in crate::runtime) follow: Option<JoinHandle<()>>,
     pub(in crate::runtime) reconnect: Option<JoinHandle<()>>,
     pub(in crate::runtime) reconnect_attempt: u32,
+    pub(in crate::runtime) live_follow: Option<JoinHandle<()>>,
+    pub(in crate::runtime) live_reconnect: Option<JoinHandle<()>>,
+    pub(in crate::runtime) live_reconnect_attempt: u32,
     pub(in crate::runtime) store: StateStore,
     pub(in crate::runtime) preferences: Preferences,
     persisted_preferences: Preferences,
     pub(in crate::runtime) pending: Vec<PendingCommand>,
+    pending_recovery: BTreeSet<String>,
     pub(in crate::runtime) ephemeral_confirmed: bool,
+    pub(in crate::runtime) deferred_ephemeral: Option<PendingCommand>,
+    pub(in crate::runtime) deferred_continuation_schema_digest: Option<String>,
     pub(in crate::runtime) queued_prompt: Option<String>,
-    pub(in crate::runtime) editing_suspension: Option<String>,
+    graceful_quit_armed: bool,
     pub(in crate::runtime) snapshot_request: u64,
     pub(super) background_follows: BTreeMap<String, BackgroundFollow>,
     follow_sequence: u64,
     pub(in crate::runtime) force_redraw: bool,
     pub(in crate::runtime) last_empty_ctrl_c: Option<Instant>,
-    pub(in crate::runtime) retry_after_refresh: Option<String>,
+    exact_retry_owner: Option<ExactRetryOwner>,
     pub(in crate::runtime) render_cache: view::RenderCache,
     pub(in crate::runtime) bell_requested: bool,
     pub(in crate::runtime) composer_mouse_selecting: bool,
     pub(in crate::runtime) composer_clicks: ComposerClickTracker,
     pub(in crate::runtime) external_editor_request: Option<EditorRequest>,
+    terminal_reconfiguration: Option<TerminalReconfiguration>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum ExactRetryPhase {
+    Refreshing,
+    Replayed,
+}
+
+struct ExactRetryOwner {
+    command_id: String,
+    phase: ExactRetryPhase,
 }
 
 pub(super) struct BackgroundFollow {
@@ -70,20 +106,27 @@ impl RuntimeState {
         config: LaunchConfig,
         client: LiveHostClient,
         sender: mpsc::Sender<HostMessage>,
+        action_sender: mpsc::Sender<AppAction>,
         restored: RestoredState,
     ) -> Self {
-        let mut model = AppModel::default();
-        reduce(&mut model, AppAction::BootStarted);
-        model.prompt_history = restored
-            .history
-            .into_iter()
-            .rev()
-            .map(|entry| entry.submitted_text)
-            .collect();
+        let mut model = AppModel {
+            prompt_history: restored
+                .history
+                .into_iter()
+                .rev()
+                .map(|entry| entry.submitted_text)
+                .collect(),
+            ..Default::default()
+        };
         if restored.history_error {
             model.notice = Some("Corrupt prompt history was quarantined.".into());
         }
-        if !restored.pending.is_empty() {
+        let pending_recovery = restored
+            .pending
+            .iter()
+            .map(|pending| pending.command_id.clone())
+            .collect::<BTreeSet<_>>();
+        if !pending_recovery.is_empty() {
             model.notice = Some("A prior command has an unknown durable outcome. Use /retry after reviewing status.".into());
             model.overlay = Some(Overlay::UnknownCommand);
         } else if restored.pending_quarantined != 0 {
@@ -93,36 +136,89 @@ impl RuntimeState {
             ));
         }
         model.has_pending_command = !restored.pending.is_empty();
+        model.pending_recovery.current_session = restored.pending.iter().any(|pending| {
+            pending_recovery.contains(&pending.command_id) && pending.session_id.is_none()
+        });
+        model.pending_recovery.other_session = restored.pending.iter().any(|pending| {
+            pending_recovery.contains(&pending.command_id) && pending.session_id.is_some()
+        });
         model.composer_is_frozen =
             pending_freezes_composer(&restored.pending, model.selected_session.as_deref());
+        model.inspector.open = restored.preferences.activity_inspector;
         let persisted_preferences = restored.preferences.clone();
+        let host_effects =
+            HostEffectRunner::new(LiveHostReadPort::new(client.clone()), action_sender.clone());
+        let effects =
+            EffectRunner::new(AsyncStateStore::new(restored.store.clone()), action_sender);
         Self {
             config,
             client,
             sender,
+            effects,
+            host_effects,
             model,
             follow: None,
             reconnect: None,
             reconnect_attempt: 0,
+            live_follow: None,
+            live_reconnect: None,
+            live_reconnect_attempt: 0,
             store: restored.store,
             preferences: restored.preferences,
             persisted_preferences,
             pending: restored.pending,
+            pending_recovery,
             ephemeral_confirmed: false,
+            deferred_ephemeral: None,
+            deferred_continuation_schema_digest: None,
             queued_prompt: None,
-            editing_suspension: None,
+            graceful_quit_armed: false,
             snapshot_request: 0,
             background_follows: BTreeMap::new(),
             follow_sequence: 0,
             force_redraw: false,
             last_empty_ctrl_c: None,
-            retry_after_refresh: None,
+            exact_retry_owner: None,
             render_cache: view::RenderCache::default(),
             bell_requested: false,
             composer_mouse_selecting: false,
             composer_clicks: ComposerClickTracker::default(),
             external_editor_request: None,
+            terminal_reconfiguration: None,
         }
+    }
+
+    pub(in crate::runtime) fn set_mouse_mode(&mut self, mode: crate::MouseMode) {
+        self.config.mouse = mode;
+        let enabled = crate::args::mouse_capture_enabled(mode, self.config.screen_reader, true);
+        if !self.config.screen_reader {
+            self.terminal_reconfiguration = Some(TerminalReconfiguration::MouseCapture { enabled });
+        }
+        self.model.notice = Some(
+            match (self.config.screen_reader, mode, enabled) {
+                (true, _, _) => "Mouse capture stays disabled in accessible terminal mode.",
+                (false, crate::MouseMode::Auto, true) => {
+                    "Mouse capture is automatic and enabled for this full-screen session."
+                }
+                (false, crate::MouseMode::Auto, false) => {
+                    "Mouse capture is automatic and disabled for this terminal session."
+                }
+                (false, crate::MouseMode::On, _) => {
+                    "Mouse capture is enabled for this terminal session."
+                }
+                (false, crate::MouseMode::Off, _) => {
+                    "Mouse capture is disabled for this terminal session."
+                }
+            }
+            .into(),
+        );
+        self.model.overlay = Some(Overlay::ErrorDetails);
+    }
+
+    pub(in crate::runtime) fn take_terminal_reconfiguration(
+        &mut self,
+    ) -> Option<TerminalReconfiguration> {
+        self.terminal_reconfiguration.take()
     }
 
     pub(in crate::runtime) fn command_id(&mut self, _operation: &str) -> String {
@@ -130,16 +226,111 @@ impl RuntimeState {
     }
 
     pub(in crate::runtime) fn dispatch(&mut self, action: AppAction) {
-        for effect in reduce(&mut self.model, action) {
-            match effect.kind {
-                EffectKind::Exit => debug_assert!(self.model.quit_requested),
+        let boot_revision = self.model.boot_completion_revision;
+        let catalog_revision = self.model.catalog_refresh_revision;
+        let effects = reduce(&mut self.model, action);
+        self.sync_pending_projection();
+        for effect in effects {
+            match effect.kind.tag() {
+                crate::application::EffectTag::Exit => {
+                    debug_assert!(self.model.quit_requested);
+                }
+                crate::application::EffectTag::LoadDefinitions
+                | crate::application::EffectTag::LoadSessionPage
+                | crate::application::EffectTag::LoadSnapshot => {
+                    self.host_effects.submit(effect);
+                }
+                crate::application::EffectTag::PersistPending => self.effects.submit(effect),
+                crate::application::EffectTag::StartTurn => {
+                    let EffectKind::StartTurn { draft, identity } = effect.kind else {
+                        unreachable!("effect tag and payload agree");
+                    };
+                    if let Some((command_id, session_id, text)) =
+                        self.activate_persisted_start(draft, identity)
+                    {
+                        host::start_turn(
+                            self.client.clone(),
+                            command_id,
+                            session_id,
+                            text,
+                            self.sender.clone(),
+                        );
+                    }
+                }
+                crate::application::EffectTag::CreateSession => {
+                    let EffectKind::CreateSession { draft, identity } = effect.kind else {
+                        unreachable!("effect tag and payload agree");
+                    };
+                    if let Some((command_id, definition_id)) =
+                        self.activate_persisted_create(draft, identity)
+                    {
+                        host::create_session(
+                            self.client.clone(),
+                            command_id,
+                            definition_id,
+                            self.sender.clone(),
+                        );
+                    }
+                }
+                crate::application::EffectTag::CancelTurn => {
+                    let EffectKind::CancelTurn { draft, identity } = effect.kind else {
+                        unreachable!("effect tag and payload agree");
+                    };
+                    if let Some((command_id, session_id, turn_id, position)) =
+                        self.activate_persisted_cancel(draft, identity)
+                    {
+                        host::cancel_turn(
+                            self.client.clone(),
+                            command_id,
+                            session_id,
+                            turn_id,
+                            position,
+                            self.sender.clone(),
+                        );
+                    }
+                }
+                crate::application::EffectTag::ContinueTurn => {
+                    let EffectKind::ContinueTurn {
+                        draft,
+                        identity,
+                        host_allowed,
+                        ..
+                    } = effect.kind
+                    else {
+                        unreachable!("effect tag and payload agree");
+                    };
+                    if let Some(request) =
+                        self.activate_persisted_continue(draft, identity, host_allowed)
+                    {
+                        host::continue_turn(self.client.clone(), request, self.sender.clone());
+                    }
+                }
+                crate::application::EffectTag::PersistContinuation => self.effects.submit(effect),
             }
+        }
+        self.sync_pending_projection();
+        if self.model.boot_completion_revision != boot_revision {
+            super::messages::apply_boot_completion(self);
+        }
+        if self.model.catalog_refresh_revision != catalog_revision {
+            super::messages::apply_catalog_refresh_completion(self);
         }
     }
 
     pub(in crate::runtime) fn load(&mut self, session_id: String) {
         self.model.close_turn_navigator();
         let switching_session = self.model.selected_session.as_deref() != Some(&session_id);
+        if let Some(task) = self.live_follow.take() {
+            task.abort();
+        }
+        if let Some(task) = self.live_reconnect.take() {
+            task.abort();
+        }
+        self.live_reconnect_attempt = 0;
+        if switching_session {
+            self.model.live_answer.clear_for_session_change();
+            self.model.active_execution_id = None;
+        }
         if switching_session {
             if matches!(
                 self.model.execution,
@@ -244,6 +435,12 @@ impl RuntimeState {
         if let Some(task) = self.reconnect.take() {
             task.abort();
         }
+        if let Some(task) = self.live_follow.take() {
+            task.abort();
+        }
+        if let Some(task) = self.live_reconnect.take() {
+            task.abort();
+        }
         for background in self.background_follows.values_mut() {
             if let Some(task) = background.follow.take() {
                 task.abort();
@@ -255,213 +452,19 @@ impl RuntimeState {
     }
 
     pub(in crate::runtime) fn load_more_sessions(&mut self) {
-        if self.model.sessions_loading {
-            return;
-        }
         let Some(before) = self.model.sessions_next_before.clone() else {
             return;
         };
-        self.model.sessions_loading = true;
-        host::load_session_page(self.client.clone(), before, self.sender.clone());
+        self.dispatch(AppAction::LoadSessionPageRequested(SessionPageRequest {
+            cursor: Some(before),
+            purpose: SessionPagePurpose::Append,
+        }));
     }
 
-    pub(in crate::runtime) fn persist_presentation(&mut self) {
-        if let Some(session) = self.model.selected_session.as_deref() {
-            self.preferences
-                .set_draft(session, self.model.composer.text());
-            self.preferences.selected_session_id = Some(session.into());
-        }
-        self.preferences.theme = self.config.theme;
-        self.preferences.mouse = self.config.mouse;
-        self.preferences.reduced_motion = self.config.reduced_motion;
-        if let Err(error) = self
-            .store
-            .save_preferences_merged(&mut self.preferences, &mut self.persisted_preferences)
-        {
-            self.model.notice = Some(format!("Local state: {}", state_error_name(error)));
-        }
+    pub(in crate::runtime) fn refresh_session_catalog(&mut self) {
+        self.dispatch(AppAction::LoadSessionPageRequested(SessionPageRequest {
+            cursor: None,
+            purpose: SessionPagePurpose::CatalogRefresh,
+        }));
     }
-
-    pub(in crate::runtime) fn admit_pending(&mut self, pending: PendingCommand) -> bool {
-        if self.store.is_ephemeral() && !self.ephemeral_confirmed {
-            self.model.overlay = Some(Overlay::EphemeralConfirmation);
-            return false;
-        }
-        if self
-            .pending
-            .iter()
-            .any(|value| value.session_id == pending.session_id)
-        {
-            self.model.notice = Some(
-                "This Session already has an unknown command outcome. Use /retry first.".into(),
-            );
-            self.model.overlay = Some(Overlay::UnknownCommand);
-            return false;
-        }
-        let Ok(pending) = pending.seal() else {
-            self.local_state_failure("invalid_pending_command");
-            return false;
-        };
-        if self.store.save_pending(&pending).is_err() {
-            self.local_state_failure("pending_write_failed");
-            return false;
-        }
-        self.pending.push(pending);
-        self.sync_pending_projection();
-        #[cfg(feature = "test-hooks")]
-        self.crash_if(crate::args::TestCrashHook::PendingPersisted);
-        true
-    }
-
-    pub(in crate::runtime) fn pending_for_context(&self) -> Option<&PendingCommand> {
-        let selected = self.model.selected_session.as_deref();
-        self.pending
-            .iter()
-            .find(|value| value.session_id.as_deref() == selected)
-            .or_else(|| self.pending.first())
-    }
-
-    fn sync_pending_projection(&mut self) {
-        self.model.has_pending_command = !self.pending.is_empty();
-        self.model.composer_is_frozen =
-            pending_freezes_composer(&self.pending, self.model.selected_session.as_deref());
-    }
-
-    pub(in crate::runtime) fn composer_is_frozen(&self) -> bool {
-        self.model.composer_is_frozen
-    }
-
-    pub(in crate::runtime) fn explain_frozen_composer(&mut self) {
-        self.model.notice =
-            Some("This draft is frozen until the pending command reaches durable truth.".into());
-    }
-
-    pub(in crate::runtime) fn abandon_pending(&mut self) {
-        let Some(command_id) = self
-            .pending_for_context()
-            .map(|value| value.command_id.clone())
-        else {
-            self.model.overlay = None;
-            return;
-        };
-        let index = self
-            .pending
-            .iter()
-            .position(|value| value.command_id == command_id)
-            .expect("pending command remains present");
-        if self
-            .store
-            .remove_pending(self.pending[index].session_id.as_deref())
-            .is_err()
-        {
-            self.local_state_failure("pending_abandon_failed");
-            return;
-        }
-        self.pending.remove(index);
-        self.sync_pending_projection();
-        self.model.overlay = None;
-        if let Some(session) = self.model.selected_session.clone() {
-            self.load(session);
-        }
-    }
-
-    pub(super) fn finish_pending(&mut self, command_id: &str, submitted_text: &str) {
-        let Some(index) = self
-            .pending
-            .iter()
-            .position(|value| value.command_id == command_id)
-        else {
-            return;
-        };
-        #[cfg(feature = "test-hooks")]
-        self.crash_if(crate::args::TestCrashHook::ResponseAccepted);
-        let pending = self.pending[index].clone();
-        if self
-            .store
-            .remove_pending(pending.session_id.as_deref())
-            .is_err()
-        {
-            self.local_state_failure("pending_remove_failed");
-            return;
-        }
-        #[cfg(feature = "test-hooks")]
-        self.crash_if(crate::args::TestCrashHook::PendingRemoved);
-        if !self.config.no_prompt_history
-            && !submitted_text.is_empty()
-            && matches!(
-                pending.kind,
-                PendingKind::StartTurn | PendingKind::ContinueTurn
-            )
-        {
-            if let Some(session_id) = pending.session_id.clone() {
-                let entry = PromptHistoryEntry {
-                    schema_version: 1,
-                    entry_id: uuid::Uuid::new_v4().to_string(),
-                    session_id,
-                    submitted_text: submitted_text.into(),
-                    submitted_at: now(),
-                };
-                if self.store.append_history(&entry).is_err() {
-                    self.model.notice = Some("Prompt history could not be saved.".into());
-                } else {
-                    self.model
-                        .prompt_history
-                        .retain(|value| value != submitted_text);
-                    self.model.prompt_history.insert(0, submitted_text.into());
-                    self.model.prompt_history.truncate(500);
-                }
-            }
-        }
-        self.pending.remove(index);
-        self.sync_pending_projection();
-    }
-
-    #[cfg(feature = "test-hooks")]
-    fn crash_if(&self, point: crate::args::TestCrashHook) {
-        if self.config.test_crash_hook == Some(point) {
-            let name = match point {
-                crate::args::TestCrashHook::TerminalAcquiredPanic => "terminal-acquired-panic",
-                crate::args::TestCrashHook::PendingPersisted => "pending-persisted",
-                crate::args::TestCrashHook::ResponseAccepted => "response-accepted",
-                crate::args::TestCrashHook::PendingRemoved => "pending-removed",
-            };
-            eprintln!("GARIVE_TEST_CRASH_HOOK={name}");
-            loop {
-                std::thread::park();
-            }
-        }
-    }
-
-    pub(super) fn reject_pending(&mut self, command_id: &str, code: HostClientErrorCode) {
-        let pending_index = self
-            .pending
-            .iter()
-            .position(|value| value.command_id == command_id);
-        if matches!(
-            code,
-            HostClientErrorCode::HostFailure | HostClientErrorCode::InvalidCommand
-        ) {
-            if let Some(index) = pending_index {
-                let pending = self.pending.remove(index);
-                let _ = self.store.remove_pending(pending.session_id.as_deref());
-            }
-            self.sync_pending_projection();
-        } else if pending_index.is_some() {
-            self.model.notice =
-                Some("The command outcome is unknown. Review /status or use exact /retry.".into());
-            self.model.overlay = Some(Overlay::UnknownCommand);
-        }
-    }
-
-    fn local_state_failure(&mut self, code: &str) {
-        self.model.notice = Some(format!("Local recovery state: {code}"));
-        self.model.overlay = Some(Overlay::ErrorDetails);
-    }
-}
-
-pub(super) fn pending_freezes_composer(pending: &[PendingCommand], selected: Option<&str>) -> bool {
-    pending.iter().any(|pending| {
-        pending.session_id.as_deref() == selected
-            || (selected.is_none() && pending.kind == PendingKind::CreateSession)
-    })
 }

@@ -1,0 +1,27 @@
+---
+source: tui/tests/view_snapshots.rs
+expression: "frame(&action, Theme::Light, 100, 24)"
+---
+  Session 1  ·  research-age                                                         Agent running
+
+    You
+      Summarize the release plan.
+      ✓  Agent ac  ╭ Approval required ─────────────────────────────────────────╮
+    ◆ Garive       │                                                            │
+      ## Release   │  !  Review the public request before responding.           │
+      • Verify th  │  Create one bounded local file.                            │
+      • Ship with  │                                                            │
+      cargo test   │  Choose                                                    │
+                   │  › true                                                    │
+                   │    false                                                   │
+                   │  Enter true or false.                                      │
+                   │                                                            │
+                   │    Enter submit response   Ctrl+Q leave safely             │
+                   │                                                            │
+                   ╰────────────────────────────────────────────────────────────╯
+
+
+
+  ╭──────────────────────────────────────────────────────────────────────────────────────────────╮
+  │ Ask a follow-up…                                                                             │
+  ╰──────────────────────────────────────────────────────────────────────────────────────────────╯

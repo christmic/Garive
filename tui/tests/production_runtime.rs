@@ -13,10 +13,10 @@ use std::{
 
 use garive_core::{
     AgentEvent, AgentEventKind, AgentOutcome, EventSink, ExecutionId as CoreExecutionId,
-    ExecutionReport, SessionId as CoreSessionId, StopReason, SuspensionReason,
-    TurnId as CoreTurnId, UsageSummary,
+    ExecutionReport, GovernedSuspensionBinding, SessionId as CoreSessionId, StopReason,
+    SuspensionReason, TurnId as CoreTurnId, UsageSummary,
 };
-use garive_ledger::SessionId;
+use garive_ledger::{CanonicalPayload, FactDraft, FactId, FactKind, SessionId, ToolInvocationId};
 use garive_llm::{ModelItem, ModelOutputKind, ModelStreamEvent, TokenCount};
 use garive_runtime::{
     plan_core_terminal, CommittedTurn, CoreTerminalContext, EffectiveRuntimeLimits, HostClock,
@@ -63,22 +63,30 @@ impl TurnDispatcher for CompletingDispatcher {
             schedule_delayed_completion(self.database.clone(), turn.clone(), usage);
             return Ok(());
         }
-        let outcome = if call == 1 {
-            AgentOutcome::Suspended {
-                reason: SuspensionReason::PartialOutput,
-                partial_items: vec![ModelItem::Text {
-                    text: "partial answer".into(),
-                }],
-                last_durable_position: turn.committed_position,
-                governed_binding: None,
-            }
+        let (outcome, expected_version) = if call == 1 {
+            let (binding, last_durable_position) =
+                commit_interaction_request(&self.database, turn)?;
+            (
+                AgentOutcome::Suspended {
+                    reason: SuspensionReason::ApprovalRequired,
+                    partial_items: vec![ModelItem::Text {
+                        text: "partial answer".into(),
+                    }],
+                    last_durable_position,
+                    governed_binding: Some(binding),
+                },
+                turn.session_version + 1,
+            )
         } else {
-            AgentOutcome::Completed {
-                response_items: vec![ModelItem::Text {
-                    text: "answer after continuation".into(),
-                }],
-                usage,
-            }
+            (
+                AgentOutcome::Completed {
+                    response_items: vec![ModelItem::Text {
+                        text: "answer after continuation".into(),
+                    }],
+                    usage,
+                },
+                turn.session_version,
+            )
         };
         let report = ExecutionReport {
             outcome,
@@ -95,12 +103,90 @@ impl TurnDispatcher for CompletingDispatcher {
         )
         .map_err(|_| TurnDispatchError)?;
         SqliteLedger::open(&self.database)
-            .and_then(|mut ledger| {
-                ledger.commit(turn.session_id.clone(), turn.session_version, facts)
-            })
+            .and_then(|mut ledger| ledger.commit(turn.session_id.clone(), expected_version, facts))
             .map_err(|_| TurnDispatchError)?;
         Ok(())
     }
+}
+
+fn commit_interaction_request(
+    database: &Path,
+    turn: &CommittedTurn,
+) -> Result<(GovernedSuspensionBinding, u64), TurnDispatchError> {
+    const EMPTY_DIGEST: &str = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
+    const BOOLEAN_SCHEMA_DIGEST: &str =
+        "7cb541e84f226754a46c21c79f131fa2898354e1242456e6fd1c162bce319553";
+    const PROMPT: &str =
+        "{\"action_label_key\":\"suspension.approval.submit\",\"message_text\":\"Approve this continuation?\",\"schema_version\":1,\"title_key\":\"suspension.approval.title\"}";
+    const PROMPT_DIGEST: &str = "e7766b2bf1f9f8a45e9049f64d6118cc6dc9513906a641e1812c2973b7d03895";
+    let session_id =
+        SessionId::try_from(turn.session_id.as_str()).map_err(|_| TurnDispatchError)?;
+    let turn_id =
+        garive_ledger::TurnId::try_from(turn.turn_id.as_str()).map_err(|_| TurnDispatchError)?;
+    let execution_id = garive_ledger::ExecutionId::try_from(turn.execution_id.as_str())
+        .map_err(|_| TurnDispatchError)?;
+    let invocation_id = ToolInvocationId::try_from("tool-approval").unwrap();
+    let payload = |value| CanonicalPayload::from_value(&value).map_err(|_| TurnDispatchError);
+    let facts = vec![
+        FactDraft {
+            fact_id: FactId::try_from("effect-prepared-approval").unwrap(),
+            turn_id: Some(turn_id.clone()),
+            execution_id: Some(execution_id.clone()),
+            model_request_id: None,
+            tool_invocation_id: Some(invocation_id.clone()),
+            kind: FactKind::new("effect.prepared").unwrap(),
+            schema_version: 1,
+            payload: payload(serde_json::json!({
+                "prepared_digest": EMPTY_DIGEST,
+                "tool_name": "approval_fixture",
+                "tool_revision": "v1",
+                "replay_class": "never_replay",
+                "model_call_id": "approval-call"
+            }))?,
+            recorded_at: "2026-08-30T00:00:01Z".into(),
+        },
+        FactDraft {
+            fact_id: FactId::try_from("interaction-requested-approval").unwrap(),
+            turn_id: Some(turn_id),
+            execution_id: Some(execution_id),
+            model_request_id: None,
+            tool_invocation_id: Some(invocation_id),
+            kind: FactKind::new("interaction.requested").unwrap(),
+            schema_version: 1,
+            payload: payload(serde_json::json!({
+                "interaction_id": "interaction-approval",
+                "suspension_id": "suspension-approval",
+                "prepared_digest": EMPTY_DIGEST,
+                "kind": "approval",
+                "prompt": {"digest": PROMPT_DIGEST, "inline_utf8": PROMPT},
+                "response_schema": {
+                    "digest": BOOLEAN_SCHEMA_DIGEST,
+                    "inline_utf8": "{\"type\":\"boolean\"}"
+                },
+                "response_schema_digest": BOOLEAN_SCHEMA_DIGEST,
+                "expiry_code": "none"
+            }))?,
+            recorded_at: "2026-08-30T00:00:01Z".into(),
+        },
+    ];
+    let mut ledger = SqliteLedger::open(database).map_err(|_| TurnDispatchError)?;
+    ledger
+        .commit(session_id.clone(), turn.session_version, facts)
+        .map_err(|_| TurnDispatchError)?;
+    let last_durable_position = ledger
+        .session_watermark(&session_id)
+        .map_err(|_| TurnDispatchError)?
+        .ok_or(TurnDispatchError)?
+        .max_position;
+    Ok((
+        GovernedSuspensionBinding::Interaction {
+            suspension_id: "suspension-approval".into(),
+            interaction_id: "interaction-approval".into(),
+            invocation_id: "tool-approval".into(),
+            prepared_digest: EMPTY_DIGEST.into(),
+        },
+        last_durable_position,
+    ))
 }
 
 fn schedule_streaming_completion(
@@ -129,15 +215,15 @@ fn schedule_streaming_completion(
         sink.emit(core_event(AgentEventKind::ModelStream(
             ModelStreamEvent::TextDelta {
                 output_index: 0,
-                delta: "answer from ".into(),
+                delta: "first-live-fragment".into(),
             },
         )))
         .unwrap();
-        thread::sleep(Duration::from_millis(180));
+        thread::sleep(Duration::from_secs(3));
         sink.emit(core_event(AgentEventKind::ModelStream(
             ModelStreamEvent::TextDelta {
                 output_index: 0,
-                delta: "production runtime".into(),
+                delta: " final-fragment".into(),
             },
         )))
         .unwrap();
@@ -147,7 +233,7 @@ fn schedule_streaming_completion(
         let report = ExecutionReport {
             outcome: AgentOutcome::Completed {
                 response_items: vec![ModelItem::Text {
-                    text: "answer from production runtime".into(),
+                    text: "first-live-fragment final-fragment".into(),
                 }],
                 usage,
             },
@@ -209,7 +295,7 @@ fn schedule_delayed_completion(database: PathBuf, turn: CommittedTurn, usage: Us
 
 fn schedule_cancel_terminal(database: PathBuf, turn: CommittedTurn, usage: UsageSummary) {
     thread::spawn(move || {
-        for _ in 0..200 {
+        for _ in 0..1_000 {
             let ledger = SqliteLedger::open(&database).unwrap();
             let Ok(snapshot) = ledger.load_turn(&turn.turn_id) else {
                 thread::sleep(Duration::from_millis(10));
@@ -220,6 +306,7 @@ fn schedule_cancel_terminal(database: PathBuf, turn: CommittedTurn, usage: Usage
                 .iter()
                 .any(|fact| fact.kind.as_str() == "turn.cancel_requested")
             {
+                thread::sleep(Duration::from_millis(500));
                 let version = ledger
                     .session_watermark(&turn.session_id)
                     .unwrap()
@@ -296,23 +383,132 @@ async fn shipping_tui_round_trips_through_production_sqlite_runtime() {
 
         let state = temporary.path().join("state");
         let first_log = temporary.path().join("first.log");
-        assert!(run_expect(address, &state, &first_log, false));
+        let cancel_ready = temporary.path().join("cancel-ready");
+        let cancel_stopped = temporary.path().join("cancel-stopped");
+        let cancel_monitor = thread::spawn({
+            let host = host.clone();
+            let database = database.clone();
+            let state = state.clone();
+            let cancel_ready = cancel_ready.clone();
+            let cancel_stopped = cancel_stopped.clone();
+            move || {
+                // The fixture deliberately holds the first turn open long enough to
+                // prove intermediate live frames, then exercises an approval before
+                // starting the cancellable turn. Bound the whole scenario, not only
+                // the final turn's short cancellation window.
+                for _ in 0..1_200 {
+                    let sessions = SqliteLedger::open(&database)
+                        .unwrap()
+                        .list_sessions()
+                        .unwrap();
+                    let durably_running = sessions.iter().any(|session| {
+                        host.get_timeline(session.as_str(), 0, 10)
+                            .is_ok_and(|timeline| {
+                                timeline.items.iter().any(|item| {
+                                    item.user_text == "cancel this turn" && item.state == "running"
+                                })
+                            })
+                    });
+                    let pending_is_empty = fs::read_dir(state.join("pending"))
+                        .is_ok_and(|mut entries| entries.next().is_none());
+                    if durably_running && pending_is_empty {
+                        fs::write(&cancel_ready, b"ready").unwrap();
+                        break;
+                    }
+                    thread::sleep(Duration::from_millis(25));
+                }
+                assert!(
+                    cancel_ready.exists(),
+                    "cancel turn never became durably running"
+                );
+                for _ in 0..400 {
+                    let sessions = SqliteLedger::open(&database)
+                        .unwrap()
+                        .list_sessions()
+                        .unwrap();
+                    let stopped = sessions.iter().any(|session| {
+                        host.get_timeline(session.as_str(), 0, 10)
+                            .is_ok_and(|timeline| {
+                                timeline.items.iter().any(|item| {
+                                    item.user_text == "cancel this turn" && item.state == "stopped"
+                                })
+                            })
+                    });
+                    if stopped {
+                        fs::write(&cancel_stopped, b"stopped").unwrap();
+                        return;
+                    }
+                    thread::sleep(Duration::from_millis(25));
+                }
+                panic!("cancel turn never became durably stopped");
+            }
+        });
+        assert!(run_expect(
+            address,
+            &state,
+            &first_log,
+            &cancel_stopped,
+            false
+        ));
+        cancel_monitor.join().unwrap();
         let first = fs::read_to_string(&first_log).unwrap();
-        assert!(first.contains("answer"));
-        assert!(first.contains("production"));
-        assert!(first.contains("runtime"));
         assert!(first.as_bytes().contains(&b'\x07'));
         assert!(!first.contains("unavailable"));
         assert!(first.contains("\x1b]0;Garive · Workspace · Connecting · Ready\x07"));
         assert!(first.contains("· Online · Running\x07"));
-        assert!(first.contains("· Online · Action required\x07"));
         assert!(first.contains("\x1b]0;Garive\x07"));
+        assert!(first.contains("retained draftX"));
+        assert!(!first.contains("BLOCKED"));
 
-        let sessions = SqliteLedger::open(&database)
-            .unwrap()
-            .list_sessions()
-            .unwrap();
-        assert_eq!(sessions.len(), 2);
+        let durable_deadline = tokio::time::Instant::now() + Duration::from_secs(8);
+        let sessions = loop {
+            let sessions = SqliteLedger::open(&database)
+                .unwrap()
+                .list_sessions()
+                .unwrap();
+            let prompts = sessions
+                .iter()
+                .map(|session| {
+                    host.get_timeline(session.as_str(), 0, 10)
+                        .unwrap()
+                        .items
+                        .into_iter()
+                        .map(|item| item.user_text)
+                        .collect::<Vec<_>>()
+                })
+                .collect::<Vec<_>>();
+            let foreground_ready = prompts.iter().any(|items| {
+                items
+                    == &[
+                        "hello durable\n耐久 tui".to_owned(),
+                        "second question".to_owned(),
+                        "cancel this turn".to_owned(),
+                    ]
+            });
+            let background_ready = prompts
+                .iter()
+                .any(|items| items == &["background task".to_owned()]);
+            if sessions.len() == 2 && foreground_ready && background_ready {
+                break sessions;
+            }
+            assert!(
+                tokio::time::Instant::now() < durable_deadline,
+                "durable scenario did not settle: {prompts:?}"
+            );
+            tokio::time::sleep(Duration::from_millis(25)).await;
+        };
+        let observed_prompts = sessions
+            .iter()
+            .map(|session| {
+                host.get_timeline(session.as_str(), 0, 10)
+                    .unwrap()
+                    .items
+                    .into_iter()
+                    .map(|item| item.user_text)
+                    .collect::<Vec<_>>()
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(sessions.len(), 2, "observed prompts: {observed_prompts:?}");
         let session = sessions
             .iter()
             .find(|session| {
@@ -328,7 +524,7 @@ async fn shipping_tui_round_trips_through_production_sqlite_runtime() {
         assert_eq!(timeline.items[0].user_text, "hello durable\n耐久 tui");
         assert_eq!(
             timeline.items[0].completion_text.as_deref(),
-            Some("answer from production runtime")
+            Some("first-live-fragment final-fragment")
         );
         assert_eq!(timeline.items[1].user_text, "second question");
         assert_eq!(
@@ -352,10 +548,16 @@ async fn shipping_tui_round_trips_through_production_sqlite_runtime() {
         );
 
         let restart_log = temporary.path().join("restart.log");
-        assert!(run_expect(address, &state, &restart_log, true));
+        assert!(run_expect(
+            address,
+            &state,
+            &restart_log,
+            &cancel_stopped,
+            true
+        ));
         let restarted = fs::read_to_string(restart_log).unwrap();
         assert!(restarted.contains("You: hello durable\n耐久 tui"));
-        assert!(restarted.contains("Garive: answer from production runtime"));
+        assert!(restarted.contains("Garive: first-live-fragment final-fragment"));
         assert!(restarted.contains("· Online · Ready\x07"));
         assert!(restarted.contains("\x1b]0;Garive\x07"));
         assert!(SqliteLedger::open(&database)
@@ -369,7 +571,13 @@ async fn shipping_tui_round_trips_through_production_sqlite_runtime() {
     }
 }
 
-fn run_expect(address: SocketAddr, state: &Path, log: &Path, restart: bool) -> bool {
+fn run_expect(
+    address: SocketAddr,
+    state: &Path,
+    log: &Path,
+    cancel_stopped: &Path,
+    restart: bool,
+) -> bool {
     let script = if restart {
         r#"
             set timeout 8
@@ -379,7 +587,7 @@ fn run_expect(address: SocketAddr, state: &Path, log: &Path, restart: bool) -> b
             fconfigure $spawn_id -encoding utf-8
             expect "You: hello durable"
             expect "耐久 tui"
-            expect "Garive: answer from production runtime"
+            expect "Garive: first-live-fragment final-fragment"
             expect "You: second question"
             expect "Garive: answer after continuation"
             expect "You: cancel this turn"
@@ -403,25 +611,47 @@ fn run_expect(address: SocketAddr, state: &Path, log: &Path, restart: bool) -> b
             after 200
             send "\177"
             send "i\r"
-            send "?"
-            expect { "Keyboard guide" {} timeout { exit 20 } }
-            after 300
-            send "\033"
-            expect { "Generating response" {} timeout { exit 22 } }
-            expect { "answer from" {} timeout { exit 23 } }
-            expect { "answer from production runtime" {} timeout { exit 21 } }
+            set timeout 2
+            expect {
+                -exact "first-live-fragment" {}
+                timeout { exit 23 }
+            }
+            set timeout 0
+            expect {
+                "final-fragment" { exit 24 }
+                timeout {}
+            }
+            set timeout 8
+            expect { "first-live-fragment final-fragment" {} timeout { exit 21 } }
+            after 500
             send "second question\r"
             expect "Action required"
             send "\r"
-            after 300
-            send "continue please\r"
             expect "answer after continuation"
             send "cancel this turn\r"
-            after 300
-            send "\003"
+            expect "Online · Running"
+            send "retained draft"
+            expect "retained draft"
+            send "\033"
+            expect "Draft locked"
+            send "BLOCKED"
+            send -- "\033\[<0;5;22M\033\[<32;8;22M\033\[<0;8;22m"
+            after 100
+            expect "cancel this turn"
+            set attempts 0
+            while {![file exists $env(GARIVE_CANCEL_STOPPED)]} {
+                after 25
+                incr attempts
+                if {$attempts >= 400} { exit 56 }
+            }
+            send "\014"
             expect "stopped"
+            send "X"
+            expect "retained draftX"
             send "\016"
-            after 300
+            after 1500
+            send "\014"
+            expect "0 turns"
             send "background task\r"
             expect "background task"
             send "\023"
@@ -441,6 +671,7 @@ fn run_expect(address: SocketAddr, state: &Path, log: &Path, restart: bool) -> b
         .env("GARIVE_TUI_HOST", format!("http://{address}/"))
         .env("GARIVE_TUI_LOG", log)
         .env("GARIVE_TUI_STATE", state)
+        .env("GARIVE_CANCEL_STOPPED", cancel_stopped)
         .args(["-c", script])
         .status()
         .unwrap()

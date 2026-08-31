@@ -326,6 +326,73 @@ main-content horizontal overflow on all three screens. This audit applies the
 desktop grammar inferred from the supplied Codex workbench references; those
 references do not depict these exact secondary screens.
 
+### P. Goal-first running rail audit
+
+The reference running Composer leads with the goal being pursued and keeps
+operational controls at the edge. Garive's equivalent geometry already matched
+the reference, but its visible copy said only `Working on your task` followed
+by the latest tool label. That made implementation activity more prominent than
+the user's outcome and repeated the same tool fact available in Environment.
+
+The 32 px rail now leads with `Pursuing goal`, projects the latest admitted user
+request as a single ellipsized line, and keeps only the current public Activity
+state plus the details action at the edge. Exact tool labels remain available
+to assistive technology and in the Environment drill-in; no timer is invented
+because the current Host projection does not expose a trusted elapsed-time
+fact. With Environment open at the reference viewport, the rail remains x=353,
+544 px wide and free of internal overflow. At 720 and 480 px the Composer is
+546 and 432 px wide respectively, with zero rail or document overflow.
+
+### Q. Quiet titlebar disclosure audit
+
+Opening Environment previously left a prominent blue focus outline around the
+titlebar toggle in pointer-driven screenshots and also applied a persistent
+selected background. The panel itself already communicates the open state, so
+the duplicate emphasis made one utility action compete with document identity.
+
+The toggle now exposes the real `aria-expanded` and `aria-controls` relationship
+without an `active` class. Pointer release removes incidental button focus; once
+the pointer leaves, the open toggle has a fully transparent background while
+Environment remains visible. Keyboard focus still renders the shared 2 px
+focus-visible outline. At 720 and 480 px the 224 px panel remains present with
+the same expanded semantics and zero document overflow. This follows the
+reference titlebar's quiet utility-action hierarchy without hiding state from
+assistive technology.
+
+### R. Installed Codex user-request geometry audit
+
+The installed ChatGPT/Codex bundle, version `26.825.51511` build `7377`, was
+inspected directly from its signed local `app.asar`; no screenshot inference or
+network copy was used for this measurement. Its conversation-block stylesheet
+sets user chat width to 70%, spacing to 0.25rem, and the temporary bubble radius
+to `5.5 × spacing`—22 px—with a continuously round corner shape. Its shared
+type tokens also confirm 11/12/14/16 px for xs/sm/base/lg.
+
+Garive still allowed user requests to occupy 82% of the 39rem thread and used a
+5 px lower-right tail corner. That produced a conventional messenger bubble
+inside an otherwise document-like work surface. User requests now use the
+resource-backed 70% bound and four continuous 22 px corners while retaining
+Garive's existing 14 px base text and outcome-first alignment. The extracted
+bundle is evidence only and is not redistributed in the repository.
+
+### S. Installed Codex Composer depth audit
+
+The same installed bundle exposes the full Composer surface contract. A
+multiline default Composer uses `radius-3xl`: 20 px fallback and 25 px when the
+Electron engine supports the bundle's `superellipse(1.5)` corner scale. The
+root explicitly forces `border: 0`. Light elevation is a 4% one-pixel ring, a
+4% 2×8 px lift and a 2.4% 4×80 px ambient shadow; dark elevation is only a 20%
+white one-pixel inset.
+
+Garive previously used a 16 px round corner, a 15% dark border and a 28% black
+18×50 px dark shadow. It now uses the resource-backed 20/25 px radius,
+superellipse where supported, zero physical border and independent Composer
+elevation tokens. Computed dark output is exactly a 25 px superellipse with a
+20% white inset; computed light output matches all three source shadow layers.
+New Work remains 64 px high, Running 97 px, and the 480 px governed-approval
+Composer remains fully visible at 272.7 px. All measured states have zero
+internal and document overflow.
+
 ## Gate 1 — Codex fidelity
 
 This gate passes only when both Desktop and Web show:

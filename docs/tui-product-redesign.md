@@ -210,8 +210,32 @@ the composer below two rows or hides an active decision.
 6. Validate real macOS Runtime streaming, resize, scroll detachment, interrupt,
    reconnect, reduced motion, and final replacement in PTY and screenshots.
 
+## Implementation status
+
+The principal conversation-first composition and H4 path are implemented.
+`LiveAnswer` receives the strict Host live stream, applies bounded frame
+presentation, retains a stable Markdown prefix, and converges on durable H1/H2
+truth. Client wire failures and bounds are exercised by
+`clients/host-rs/tests/live_output_client.rs` at `3240d960`; shipping recovery
+and two live frames before durability are exercised by
+`tui/tests/live_h4_recovery.rs` at `98e17709` and `a973274d`; the production
+Runtime interaction flow is restored at `7547d856` in
+`tui/tests/production_runtime.rs`.
+
+`TurnBlock`, `ActivityStack`, `Composer`, `DecisionSheet`, and `Inspector` now
+have separate presentation/state owners. The schema-bound DecisionSheet work is
+carried by revisions `d56ab5c7`, `9df9bcba`, and `16d26a94`; Inspector's shared
+projection, interaction, snapshots, and macOS PTY evidence culminate in
+`821a57e4`.
+
+This is not product closeout. Revision `9929bbb0` introduces a correlated
+asynchronous effect runner and persistence port, but the full application
+reducer/effect migration is incomplete. Detached-live PTY coverage,
+screen-reader no-per-delta/exactly-once-final evidence, and physical Apple
+Terminal plus iTerm2-class screenshot admission also remain open.
+
 ## Meta
 
 - Owner: `@christmic`
 - Last reviewed: 2026-08-31
-- Status: accepted design; implementation pending
+- Status: accepted design; principal implementation present; completion gates active

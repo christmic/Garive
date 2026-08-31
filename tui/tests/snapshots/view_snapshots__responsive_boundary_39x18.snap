@@ -1,0 +1,7 @@
+---
+source: tui/tests/view_snapshots.rs
+expression: rendered
+---
+Garive needs 40 columns
+Resize terminal · draft retained
+Run continues · Esc cancel

@@ -285,6 +285,14 @@ describe("Desktop product experience", () => {
     fireEvent.click(screen.getByRole("button", { name: "Send work" }));
 
     fireEvent.click(await screen.findByRole("button", { name: "Open deliverables" }));
+    const inspectorToggle = screen.getByRole("button", { name: "Toggle inspector" });
+    expect(inspectorToggle.getAttribute("aria-expanded")).toBe("true");
+    expect(inspectorToggle.getAttribute("aria-controls")).toBe("work-inspector");
+    expect(inspectorToggle.classList.contains("active")).toBe(false);
+    expect(view.container.querySelector("#work-inspector")).not.toBeNull();
+    inspectorToggle.focus();
+    fireEvent.pointerUp(inspectorToggle);
+    expect(inspectorToggle).not.toBe(document.activeElement);
     expect(view.container.querySelectorAll(".nav-item.selected, .recent-item.selected")).toHaveLength(1);
     expect(view.container.querySelector(".recent-item.selected")).not.toBeNull();
     expect(await screen.findByRole("heading", { name: "Deliverables" })).toBeTruthy();
@@ -328,7 +336,8 @@ describe("Desktop product experience", () => {
 
   it("renders progressive work from admitted Activity instead of invented stages", () => {
     const open = vi.fn();
-    render(<TurnProgress t={createTranslator("en")} onOpen={open} activities={[{
+    const view = render(<TurnProgress t={createTranslator("en")} onOpen={open}
+      goal="Prepare the launch decision memo" activities={[{
       api_version: "v1", activity_id: "read-1", kind: "tool",
       label_key: "agent.activity.read_file", state: "completed", source_position: 4,
       terminal: true,
@@ -336,9 +345,11 @@ describe("Desktop product experience", () => {
       label_key: "agent.activity.write_file", state: "running", source_position: 7,
       terminal: false,
     }]} />);
+    expect(screen.getByText("Pursuing goal")).toBeTruthy();
+    expect(screen.getByText("Prepare the launch decision memo")).toBeTruthy();
     expect(screen.getByText("Read scoped file")).toBeTruthy();
     expect(screen.getByText("Write scoped file")).toBeTruthy();
-    expect(screen.getByText("Running")).toBeTruthy();
+    expect(view.container.querySelector(".progress-state")?.textContent).toBe("Running");
     fireEvent.click(screen.getByRole("button", { name: "Open activity" }));
     expect(open).toHaveBeenCalledOnce();
   });

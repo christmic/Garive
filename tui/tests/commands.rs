@@ -7,7 +7,8 @@ pub use args::{MouseMode, Theme};
 mod commands;
 
 use commands::{
-    command_matches, parse_command, Command, CommandContext, CommandParse, COMMAND_PALETTE,
+    command_matches, parse_command, Command, CommandContext, CommandParse, InspectorCommand,
+    COMMAND_PALETTE,
 };
 
 #[test]
@@ -30,6 +31,14 @@ fn non_commands_remain_host_text_and_known_commands_are_exact() {
             filter: Some("release blocker".into())
         })
     );
+    assert_eq!(
+        parse_command("/inspect recovery"),
+        CommandParse::Valid(Command::Inspect(Some(InspectorCommand::Recovery)))
+    );
+    assert_eq!(
+        parse_command("/inspect"),
+        CommandParse::Valid(Command::Inspect(None))
+    );
 }
 
 #[test]
@@ -43,6 +52,8 @@ fn malformed_or_ambiguous_commands_never_fall_through_to_host() {
         "/new \"unterminated",
         "/new \"bad\\n\"",
         "/help\nsecond line",
+        "/inspect unknown",
+        "/inspect close extra",
     ] {
         assert_eq!(parse_command(value), CommandParse::Invalid, "{value}");
     }
@@ -77,6 +88,7 @@ fn every_catalog_entry_is_parseable_and_parser_variants_are_discoverable() {
         "/theme dark",
         "/theme light",
         "/theme mono",
+        "/mouse auto",
         "/mouse on",
         "/mouse off",
     ] {
@@ -92,7 +104,7 @@ fn palette_requirements_explain_every_contextual_command() {
     let empty = CommandContext::default();
     let cases = [
         ("/new", "no Agent is installed"),
-        ("/retry", "no pending command"),
+        ("/retry", "no unknown command"),
         ("/cancel", "no Turn is running"),
         ("/copy last", "no completion is visible"),
         ("/copy selection", "no composer text is selected"),
@@ -110,7 +122,7 @@ fn palette_requirements_explain_every_contextual_command() {
 
     let ready = CommandContext {
         has_installed_agent: true,
-        has_pending_command: true,
+        has_recoverable_command: true,
         has_running_turn: true,
         has_visible_completion: true,
         has_selected_session: true,

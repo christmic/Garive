@@ -5,6 +5,10 @@ use crate::input::{
     command_matches, CommandContext, EditorState, PromptHistoryBrowser, COMMAND_PALETTE,
 };
 
+use super::{
+    EffectContext, EffectTracker, InspectorState, LiveAnswerProjection, SessionPageOwner, TurnBlock,
+};
+
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub(crate) struct TerminalSize {
     pub(crate) width: u16,
@@ -24,10 +28,10 @@ impl TerminalSize {
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub(crate) enum FocusTarget {
-    Navigation,
     Conversation,
     #[default]
     Composer,
+    Inspector,
     Overlay,
 }
 
@@ -38,8 +42,10 @@ pub(crate) enum Overlay {
     SessionPicker,
     TurnNavigator,
     PromptHistory,
+    Inspector,
     Suspension,
     UnknownCommand,
+    AbandonConfirmation,
     ErrorDetails,
     EphemeralConfirmation,
     QuitConfirmation,
@@ -48,129 +54,6 @@ pub(crate) enum Overlay {
 impl Overlay {
     pub(crate) fn is_blocking(self) -> bool {
         matches!(self, Self::Suspension | Self::UnknownCommand)
-    }
-
-    pub(crate) fn action_bindings(self) -> Option<&'static [ActionOverlayBinding]> {
-        match self {
-            Self::UnknownCommand => Some(UNKNOWN_RESULT_BINDINGS),
-            Self::ErrorDetails => Some(CLOSE_BINDINGS),
-            Self::EphemeralConfirmation => Some(EPHEMERAL_BINDINGS),
-            Self::QuitConfirmation => Some(QUIT_BINDINGS),
-            _ => None,
-        }
-    }
-
-    pub(crate) fn action_for_key(self, key: ActionOverlayKey) -> Option<ActionOverlayIntent> {
-        self.action_bindings()?
-            .iter()
-            .find(|binding| binding.key == key)
-            .map(|binding| binding.intent)
-    }
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum ActionOverlayKey {
-    Enter,
-    Escape,
-    Character(char),
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum ActionOverlayIntent {
-    Close,
-    ConfirmQuit,
-    AcceptEphemeral,
-    ExactRetry,
-    AbandonPending,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) struct ActionOverlayBinding {
-    pub(crate) key: ActionOverlayKey,
-    pub(crate) visual_key: &'static str,
-    pub(crate) spoken_key: &'static str,
-    pub(crate) action: &'static str,
-    pub(crate) intent: ActionOverlayIntent,
-}
-
-const UNKNOWN_RESULT_BINDINGS: &[ActionOverlayBinding] = &[
-    ActionOverlayBinding {
-        key: ActionOverlayKey::Enter,
-        visual_key: "Enter",
-        spoken_key: "Enter",
-        action: "exact retry",
-        intent: ActionOverlayIntent::ExactRetry,
-    },
-    ActionOverlayBinding {
-        key: ActionOverlayKey::Character('a'),
-        visual_key: "A",
-        spoken_key: "A",
-        action: "abandon local record",
-        intent: ActionOverlayIntent::AbandonPending,
-    },
-];
-const CLOSE_BINDINGS: &[ActionOverlayBinding] = &[ActionOverlayBinding {
-    key: ActionOverlayKey::Escape,
-    visual_key: "Esc",
-    spoken_key: "Escape",
-    action: "close",
-    intent: ActionOverlayIntent::Close,
-}];
-const EPHEMERAL_BINDINGS: &[ActionOverlayBinding] = &[
-    ActionOverlayBinding {
-        key: ActionOverlayKey::Enter,
-        visual_key: "Enter",
-        spoken_key: "Enter",
-        action: "accept for this run",
-        intent: ActionOverlayIntent::AcceptEphemeral,
-    },
-    ActionOverlayBinding {
-        key: ActionOverlayKey::Escape,
-        visual_key: "Esc",
-        spoken_key: "Escape",
-        action: "cancel",
-        intent: ActionOverlayIntent::Close,
-    },
-];
-const QUIT_BINDINGS: &[ActionOverlayBinding] = &[
-    ActionOverlayBinding {
-        key: ActionOverlayKey::Enter,
-        visual_key: "Enter",
-        spoken_key: "Enter",
-        action: "quit",
-        intent: ActionOverlayIntent::ConfirmQuit,
-    },
-    ActionOverlayBinding {
-        key: ActionOverlayKey::Escape,
-        visual_key: "Esc",
-        spoken_key: "Escape",
-        action: "keep working",
-        intent: ActionOverlayIntent::Close,
-    },
-];
-
-#[cfg(test)]
-mod overlay_binding_tests {
-    use super::*;
-
-    #[test]
-    fn every_action_overlay_binding_round_trips_to_its_controller_intent() {
-        for overlay in [
-            Overlay::UnknownCommand,
-            Overlay::ErrorDetails,
-            Overlay::EphemeralConfirmation,
-            Overlay::QuitConfirmation,
-        ] {
-            let bindings = overlay.action_bindings().expect("action bindings");
-            assert!(!bindings.is_empty());
-            for binding in bindings {
-                assert_eq!(overlay.action_for_key(binding.key), Some(binding.intent));
-                assert!(!binding.visual_key.is_empty());
-                assert!(!binding.spoken_key.is_empty());
-                assert!(!binding.action.is_empty());
-            }
-        }
-        assert!(Overlay::Help.action_bindings().is_none());
     }
 }
 
@@ -198,6 +81,17 @@ pub(crate) enum BootState {
     Ready,
     NotConfigured,
     Degraded,
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub(crate) enum BootPartState {
+    #[default]
+    Idle,
+    Loading(EffectContext),
+    Ready,
+    Failed {
+        safe_code: &'static str,
+    },
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -242,10 +136,25 @@ pub(crate) struct ConversationLandmark {
     pub(crate) prompt_preview: String,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) struct ConversationRailHover {
-    pub(crate) index: usize,
-    pub(crate) row: u16,
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub(crate) struct PendingRecoveryProjection {
+    pub(crate) current_session: bool,
+    pub(crate) other_session: bool,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct SuspensionResponseIdentity {
+    pub(crate) session_id: String,
+    pub(crate) turn_id: String,
+    pub(crate) suspension_id: String,
+    pub(crate) schema_digest: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct SuspensionResponseState {
+    pub(crate) identity: SuspensionResponseIdentity,
+    pub(crate) editor: EditorState,
+    pub(crate) choice_selection: usize,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -269,10 +178,15 @@ impl Default for ViewportState {
 
 #[derive(Debug, Default)]
 pub(crate) struct AppModel {
+    pub(crate) effects: EffectTracker,
     pub(crate) boot: BootState,
+    pub(crate) boot_definitions: BootPartState,
+    pub(crate) boot_sessions: BootPartState,
+    pub(crate) boot_completion_revision: u64,
     pub(crate) focus: FocusTarget,
     pub(crate) prior_focus: FocusTarget,
     pub(crate) overlay: Option<Overlay>,
+    pub(crate) return_overlay: Option<Overlay>,
     pub(crate) connection: ConnectionState,
     pub(crate) terminal_size: TerminalSize,
     pub(crate) terminal_focused: bool,
@@ -283,6 +197,9 @@ pub(crate) struct AppModel {
     pub(crate) sessions: Vec<SessionSummary>,
     pub(crate) sessions_next_before: Option<String>,
     pub(crate) sessions_loading: bool,
+    pub(crate) session_page_owner: Option<SessionPageOwner>,
+    pub(crate) catalog_refresh_revision: u64,
+    pub(crate) catalog_refresh_succeeded: bool,
     pub(crate) session_filter: String,
     pub(crate) turn_filter: String,
     pub(crate) turn_selection: usize,
@@ -295,25 +212,83 @@ pub(crate) struct AppModel {
     pub(crate) command_suggestion_selection: usize,
     pub(crate) command_suggestion_dismissed: Option<String>,
     pub(crate) has_pending_command: bool,
+    pub(crate) pending_recovery: PendingRecoveryProjection,
     pub(crate) composer_is_frozen: bool,
     pub(crate) session_selection: usize,
-    pub(crate) navigation_selection: Option<String>,
     pub(crate) selected_session: Option<String>,
     pub(crate) selected_turn: Option<String>,
+    pub(crate) active_execution_id: Option<String>,
     pub(crate) observed_position: u64,
     pub(crate) viewport: ViewportState,
-    pub(crate) conversation_rail_hover: Option<ConversationRailHover>,
     pub(crate) session_viewports: BTreeMap<String, ViewportState>,
     pub(crate) viewport_order: VecDeque<String>,
     pub(crate) suspension: Option<SuspensionView>,
+    pub(crate) suspension_response: Option<SuspensionResponseState>,
     pub(crate) notice: Option<String>,
-    pub(crate) timeline: Vec<TimelineItem>,
+    pub(crate) turn_blocks: Vec<TurnBlock>,
     pub(crate) conversation_landmarks: Vec<ConversationLandmark>,
+    pub(crate) live_answer: LiveAnswerProjection,
+    pub(crate) inspector: InspectorState,
     pub(crate) execution: ExecutionState,
     pub(crate) composer: EditorState,
 }
 
 impl AppModel {
+    pub(crate) fn suspension_is_interactive(&self) -> bool {
+        let Some(suspension) = self.suspension.as_ref() else {
+            return false;
+        };
+        matches!(
+            suspension.kind.as_str(),
+            "approval_required" | "external_input_required"
+        ) && suspension
+            .response_schema_json
+            .as_deref()
+            .is_some_and(crate::input::supports_response_schema)
+            && suspension
+                .response_schema_digest
+                .as_deref()
+                .is_some_and(|digest| digest.len() == 64)
+    }
+
+    pub(crate) fn reconcile_suspension_response(&mut self) {
+        let identity = self.suspension.as_ref().and_then(|suspension| {
+            if !self.suspension_is_interactive() {
+                return None;
+            }
+            Some(SuspensionResponseIdentity {
+                session_id: self.selected_session.clone()?,
+                turn_id: self.selected_turn.clone()?,
+                suspension_id: suspension.suspension_id.clone(),
+                schema_digest: suspension.response_schema_digest.clone()?,
+            })
+        });
+        match (self.suspension_response.as_ref(), identity) {
+            (Some(current), Some(identity)) if current.identity == identity => {}
+            (_, Some(identity)) => {
+                self.suspension_response = Some(SuspensionResponseState {
+                    identity,
+                    editor: EditorState::new(16 * 1_024),
+                    choice_selection: 0,
+                });
+            }
+            (_, None) => self.suspension_response = None,
+        }
+        if self.suspension.is_none() && self.return_overlay == Some(Overlay::Suspension) {
+            self.return_overlay = None;
+        }
+    }
+
+    pub(crate) fn durable_children(&self) -> impl Iterator<Item = &TimelineItem> {
+        self.turn_blocks.iter().flat_map(TurnBlock::children)
+    }
+
+    pub(crate) fn durable_child(&self, stable_key: &str) -> Option<&TimelineItem> {
+        self.turn_blocks
+            .iter()
+            .find_map(|block| block.child(stable_key))
+    }
+
     pub(crate) fn matching_sessions(&self) -> impl Iterator<Item = &SessionSummary> {
         let filter = self.session_filter.to_lowercase();
         self.sessions.iter().filter(move |session| {
@@ -389,12 +364,12 @@ impl AppModel {
     pub(crate) fn command_context(&self) -> CommandContext {
         CommandContext {
             has_installed_agent: !self.definitions.is_empty(),
-            has_pending_command: self.has_pending_command,
+            has_recoverable_command: self.pending_recovery.current_session,
             has_running_turn: self.execution == ExecutionState::Following,
             has_visible_completion: self
-                .timeline
+                .turn_blocks
                 .iter()
-                .any(|item| item.role == TimelineRole::Agent),
+                .any(|block| block.committed_answer.is_some()),
             has_selected_session: self.selected_session.is_some(),
             has_navigable_turns: self.conversation_landmarks.len() >= 2,
             has_composer_selection: self.composer.has_selection(),
@@ -403,7 +378,6 @@ impl AppModel {
     }
 
     pub(crate) fn switch_viewport(&mut self, session_id: &str) {
-        self.conversation_rail_hover = None;
         if self.selected_session.as_deref() == Some(session_id) {
             return;
         }
@@ -432,74 +406,37 @@ impl AppModel {
         self.viewport_order.push_back(session_id);
     }
 
-    pub(crate) fn scroll_conversation_up(&mut self, cells: usize) {
-        if self.timeline.is_empty() || cells == 0 {
-            return;
-        }
-        let current = self
-            .viewport
-            .anchor_key
-            .as_deref()
-            .and_then(|key| self.timeline.iter().position(|item| item.stable_key == key))
-            .unwrap_or(self.timeline.len() - 1);
-        let target = current.saturating_sub(cells);
-        self.viewport.follow_latest = false;
-        self.viewport.anchor_key = Some(self.timeline[target].stable_key.clone());
-        self.viewport.source_line = 0;
-    }
-
-    pub(crate) fn scroll_conversation_down(&mut self, cells: usize) {
-        if self.timeline.is_empty() || cells == 0 {
-            return;
-        }
-        let current = self
-            .viewport
-            .anchor_key
-            .as_deref()
-            .and_then(|key| self.timeline.iter().position(|item| item.stable_key == key))
-            .unwrap_or(self.timeline.len() - 1);
-        let target = current.saturating_add(cells);
-        if target >= self.timeline.len() - 1 {
-            self.follow_latest();
-        } else {
-            self.viewport.anchor_key = Some(self.timeline[target].stable_key.clone());
-            self.viewport.source_line = 0;
-        }
-    }
-
     pub(crate) fn follow_latest(&mut self) {
         self.viewport = ViewportState::default();
+        self.live_answer.mark_seen();
+    }
+
+    pub(crate) fn live_frame_pending(&self) -> bool {
+        self.live_answer.frame_pending()
+    }
+
+    pub(crate) fn advance_live_frame(&mut self) {
+        let effect = self.live_answer.advance_frame(!self.viewport.follow_latest);
+        if effect.unseen_increment {
+            self.viewport.newer_updates = self.viewport.newer_updates.saturating_add(1);
+        }
     }
 
     pub(crate) fn jump_to_oldest(&mut self) {
-        let Some(first) = self.timeline.first() else {
+        let Some(first) = self.turn_blocks.first() else {
             return;
         };
         self.viewport.follow_latest = false;
-        self.viewport.anchor_key = Some(first.stable_key.clone());
+        self.viewport.anchor_key = Some(first.user.stable_key.clone());
         self.viewport.source_line = 0;
         self.viewport.newer_updates = 0;
     }
 
-    pub(crate) fn jump_to_timeline_index(&mut self, index: usize) {
-        if self.timeline.is_empty() {
-            return;
-        }
-        let target = index.min(self.timeline.len() - 1);
-        if target + 1 == self.timeline.len() {
-            self.follow_latest();
-            return;
-        }
-        self.viewport.follow_latest = false;
-        self.viewport.anchor_key = Some(self.timeline[target].stable_key.clone());
-        self.viewport.source_line = 0;
-    }
-
     pub(crate) fn jump_to_turn_position(&mut self, position: u64) -> bool {
-        let Some(index) = self
-            .timeline
+        let Some(block) = self
+            .turn_blocks
             .iter()
-            .position(|item| item.position == position && item.role == TimelineRole::User)
+            .find(|block| block.user.position == position)
         else {
             return false;
         };
@@ -511,7 +448,7 @@ impl AppModel {
             self.follow_latest();
         } else {
             self.viewport.follow_latest = false;
-            self.viewport.anchor_key = Some(self.timeline[index].stable_key.clone());
+            self.viewport.anchor_key = Some(block.user.stable_key.clone());
             self.viewport.source_line = 0;
             self.viewport.newer_updates = 0;
         }

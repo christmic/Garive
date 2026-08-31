@@ -25,6 +25,24 @@ fn event(kind: AgentEventKind) -> AgentEvent {
 }
 
 #[test]
+fn limits_above_h4_wire_contract_are_rejected() {
+    assert!(matches!(
+        LiveOutputHub::new(LiveOutputLimits {
+            max_preview_bytes: 1_024 * 1_024 + 1,
+            ..limits()
+        }),
+        Err(garive_runtime::LiveOutputError::InvalidLimits)
+    ));
+    assert!(matches!(
+        LiveOutputHub::new(LiveOutputLimits {
+            max_event_bytes: 32 * 1_024 + 1,
+            ..limits()
+        }),
+        Err(garive_runtime::LiveOutputError::InvalidLimits)
+    ));
+}
+
+#[test]
 fn publishes_only_safe_public_progress_in_exact_order() {
     let hub = LiveOutputHub::new(limits()).unwrap();
     let mut subscriber = hub.subscribe("session-live").unwrap();
@@ -111,6 +129,34 @@ fn reconnect_starts_with_complete_current_snapshot() {
             ref text,
             through_sequence: 3
         } if text == "hello world"
+    ));
+}
+
+#[test]
+fn reconnect_after_last_subscriber_drops_uses_generation_snapshot() {
+    let hub = LiveOutputHub::new(limits()).unwrap();
+    let subscriber = hub.subscribe("session-live").unwrap();
+    let mut sink = hub.event_sink();
+    sink.emit(event(AgentEventKind::ExecutionStarted)).unwrap();
+    drop(subscriber);
+
+    sink.emit(event(AgentEventKind::ModelStream(
+        ModelStreamEvent::TextDelta {
+            output_index: 0,
+            delta: "after disconnect".into(),
+        },
+    )))
+    .unwrap();
+
+    let mut reconnected = hub.subscribe("session-live").unwrap();
+    let snapshot = reconnected.try_recv().unwrap().unwrap();
+    assert_eq!(snapshot.sequence, 2);
+    assert!(matches!(
+        snapshot.kind,
+        LiveOutputEventKind::Snapshot {
+            ref text,
+            through_sequence: 2
+        } if text == "after disconnect"
     ));
 }
 

@@ -19,7 +19,7 @@ fn scalar_inputs_are_natural_and_strictly_bounded() {
         Ok(json!(true))
     );
     assert_eq!(
-        schema_form::parse_schema_input(r#"{"type":"integer","minimum":2}"#, "1"),
+        schema_form::parse_schema_input(r#"{"type":"integer","minimum":2,"maximum":9}"#, "1"),
         Err("number_bound")
     );
     assert_eq!(
@@ -32,14 +32,38 @@ fn scalar_inputs_are_natural_and_strictly_bounded() {
 fn structured_inputs_require_the_declared_json_shape() {
     assert_eq!(
         schema_form::parse_schema_input(r#"{"type":"object"}"#, r#"{"ok":true}"#),
-        Ok(json!({"ok": true}))
+        Err("unsupported_schema")
     );
     assert_eq!(
         schema_form::parse_schema_input(r#"{"type":"object"}"#, "[]"),
-        Err("expected_json")
+        Err("unsupported_schema")
     );
     assert_eq!(
         schema_form::parse_schema_input(r#"{"type":"null"}"#, "null"),
         Err("unsupported_schema")
     );
+}
+
+#[test]
+fn response_schema_support_is_explicit_and_rejects_missing_or_unknown_types() {
+    for schema in [
+        r#"{"type":"string"}"#,
+        r#"{"type":"boolean"}"#,
+        r#"{"type":"integer","minimum":0,"maximum":10}"#,
+        r#"{"type":"number","minimum":0,"maximum":10}"#,
+    ] {
+        assert!(schema_form::supports_response_schema(schema), "{schema}");
+    }
+    for schema in [
+        r#"{}"#,
+        r#"{"type":"null"}"#,
+        r#"{"type":"object","required":[]}"#,
+        r#"{"type":"array"}"#,
+        r#"{"type":"string","pattern":".*"}"#,
+        r#"{"type":"number","minimum":0,"maximum":10,"multipleOf":2}"#,
+        r#"{"type":"string","enum":["same","same"]}"#,
+        "not-json",
+    ] {
+        assert!(!schema_form::supports_response_schema(schema), "{schema}");
+    }
 }

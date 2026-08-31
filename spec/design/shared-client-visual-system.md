@@ -184,9 +184,18 @@ and exact document width without becoming a separate mobile visual language.
 
 Localization and 200% text zoom may grow rows and must never clip content.
 
+The multiline Composer uses a 20px fallback radius and a 25px
+`superellipse(1.5)` radius where supported. It has no physical border. Light
+depth is `0 0 0 1px / 4%`, `0 2px 8px / 4%` and `0 4px 80px 8px / 2.4%`;
+dark depth is one 20% white inset pixel. Composer depth is a dedicated token and
+must not inherit the stronger card or overlay shadow family.
+
 The unified Desktop/Web window bar is 34px at the supplied 1280px reference
 size. The file tab shares that row, its location toolbar is 30px including its
 separator, and the first rendered heading begins after a 4px document inset.
+Disclosure buttons in the window bar use `aria-expanded` and `aria-controls`;
+the visible panel is the opened-state feedback, so the button does not retain a
+selected fill or pointer focus ring. Keyboard focus remains explicitly visible.
 The document retains a left-aligned 46rem measure rather than recentring inside
 the pane. Opening Environment uses a bounded top-right fade/scale; file contents use a 4px lateral reveal after the
 grid track exists. Both animations are removed by reduced-motion preference.
@@ -221,6 +230,11 @@ Typing or choosing a starter removes the entire starter list and returns focus
 to the Composer without moving it. At every window width the Composer and first
 starter row have at least 12px visual separation; no overlay may satisfy the
 viewport-width gate while occluding interactive content.
+
+Committed user requests are bounded work prompts, not messenger bubbles. On
+the 39rem thread they occupy at most 70%, use four continuous 22px corners and
+never add a speech-tail corner. Their text remains the shared 14px base size;
+long requests wrap within the bound instead of widening the reading measure.
 
 Durable Search is a desktop work finder, not a second landing page. It keeps the
 39rem work axis, a 22px orientation heading, one compact field/filter surface

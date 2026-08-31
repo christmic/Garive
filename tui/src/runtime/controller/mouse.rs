@@ -1,34 +1,38 @@
 use crossterm::event::{MouseButton, MouseEvent, MouseEventKind};
 
 use crate::{
-    application::{AppAction, AppModel, FocusTarget, Overlay},
+    application::{ActionOverlayIntent, AppAction, AppModel, FocusTarget},
     input::ComposerClick,
     view::{
-        command_suggestion_hit_test, composer_hit_test, conversation_rail_hit_test,
-        conversation_rail_hover_hit_test, navigation_hit_test, overlay_contains, overlay_hit_test,
+        command_suggestion_hit_test, composer_hit_test, decision_action_hit_test,
+        decision_choice_hit_test, inspector_contains, inspector_hit_test, overlay_contains,
+        overlay_hit_test,
     },
 };
 
-use super::{
-    accept_command_suggestion,
-    navigation::{select_command, select_history, select_landmark, select_session},
-    RuntimeState,
-};
+use super::{accept_command_suggestion, scroll_conversation, RuntimeState};
+
+mod overlay;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum MouseAction {
     ConversationScroll { backwards: bool },
-    ConversationJump(usize),
-    ConversationHover(Option<crate::application::ConversationRailHover>),
-    SessionActivate(usize),
     OverlayMove { backwards: bool },
     OverlayActivate(usize),
+    DecisionAction(ActionOverlayIntent),
+    DecisionChoice(usize),
+    InspectorMove { backwards: bool },
+    InspectorActivate(usize),
+    Consume,
     SuggestionMove { backwards: bool },
     SuggestionActivate(usize),
     ComposerPlace(usize),
 }
 
 pub(super) fn handle(mouse: MouseEvent, state: &mut RuntimeState) {
+    if state.composer_is_frozen() {
+        state.composer_mouse_selecting = false;
+    }
     if state.composer_mouse_selecting {
         match mouse.kind {
             MouseEventKind::Drag(MouseButton::Left) | MouseEventKind::Up(MouseButton::Left) => {
@@ -59,31 +63,34 @@ pub(super) fn handle(mouse: MouseEvent, state: &mut RuntimeState) {
     match action {
         MouseAction::ConversationScroll { backwards: true } => {
             state.dispatch(AppAction::FocusChanged(FocusTarget::Conversation));
-            state.model.scroll_conversation_up(3);
+            scroll_conversation(state, -3);
         }
         MouseAction::ConversationScroll { backwards: false } => {
             state.dispatch(AppAction::FocusChanged(FocusTarget::Conversation));
-            state.model.scroll_conversation_down(3);
+            scroll_conversation(state, 3);
         }
-        MouseAction::ConversationJump(index) => {
-            state.dispatch(AppAction::FocusChanged(FocusTarget::Conversation));
-            state.model.jump_to_timeline_index(index);
-        }
-        MouseAction::ConversationHover(hover) => {
-            if state.model.conversation_rail_hover != hover {
-                state.model.conversation_rail_hover = hover;
+        MouseAction::OverlayMove { backwards } => overlay::move_selection(state, backwards),
+        MouseAction::OverlayActivate(index) => overlay::activate_selection(state, index),
+        MouseAction::DecisionAction(intent) => {
+            if let Some(overlay) = state.model.overlay {
+                super::overlay::activate_intent(intent, overlay, state);
             }
         }
-        MouseAction::SessionActivate(index) => {
-            state.dispatch(AppAction::FocusChanged(FocusTarget::Navigation));
-            if let Some(session) = state.model.sessions.get(index) {
-                state.model.session_selection = index;
-                state.model.navigation_selection = Some(session.session_id.clone());
-                state.load(session.session_id.clone());
+        MouseAction::DecisionChoice(index) => {
+            if let Some(response) = state.model.suspension_response.as_mut() {
+                response.choice_selection = index;
             }
         }
-        MouseAction::OverlayMove { backwards } => move_overlay_selection(state, backwards),
-        MouseAction::OverlayActivate(index) => activate_overlay_selection(state, index),
+        MouseAction::InspectorMove { backwards } => {
+            state.dispatch(AppAction::FocusChanged(FocusTarget::Inspector));
+            super::inspector::move_selection(state, backwards);
+        }
+        MouseAction::InspectorActivate(index) => {
+            state.dispatch(AppAction::FocusChanged(FocusTarget::Inspector));
+            super::inspector::select_index(state, index);
+            super::inspector::activate(state);
+        }
+        MouseAction::Consume => {}
         MouseAction::SuggestionMove { backwards } => {
             let count = state.model.matching_command_suggestion_indices().len();
             state.model.command_suggestion_selection =
@@ -115,9 +122,7 @@ pub(super) fn handle(mouse: MouseEvent, state: &mut RuntimeState) {
 
 fn route(model: &AppModel, mouse: MouseEvent) -> Option<MouseAction> {
     if matches!(mouse.kind, MouseEventKind::Moved) {
-        return Some(MouseAction::ConversationHover(
-            conversation_rail_hover_hit_test(model, mouse.column, mouse.row),
-        ));
+        return None;
     }
     if model.overlay.is_some() {
         if !overlay_contains(model, mouse.column, mouse.row) {
@@ -127,9 +132,31 @@ fn route(model: &AppModel, mouse: MouseEvent) -> Option<MouseAction> {
             MouseEventKind::ScrollUp => Some(MouseAction::OverlayMove { backwards: true }),
             MouseEventKind::ScrollDown => Some(MouseAction::OverlayMove { backwards: false }),
             MouseEventKind::Down(MouseButton::Left) => {
-                overlay_hit_test(model, mouse.column, mouse.row).map(MouseAction::OverlayActivate)
+                decision_action_hit_test(model, mouse.column, mouse.row)
+                    .map(MouseAction::DecisionAction)
+                    .or_else(|| {
+                        decision_choice_hit_test(model, mouse.column, mouse.row)
+                            .map(MouseAction::DecisionChoice)
+                    })
+                    .or_else(|| {
+                        overlay_hit_test(model, mouse.column, mouse.row)
+                            .map(MouseAction::OverlayActivate)
+                    })
             }
             _ => None,
+        };
+    }
+    if model.inspector.open && inspector_contains(model, mouse.column, mouse.row) {
+        return match mouse.kind {
+            MouseEventKind::ScrollUp => Some(MouseAction::InspectorMove { backwards: true }),
+            MouseEventKind::ScrollDown => Some(MouseAction::InspectorMove { backwards: false }),
+            MouseEventKind::Down(MouseButton::Left) => {
+                inspector_hit_test(model, mouse.column, mouse.row)
+                    .map_or(Some(MouseAction::Consume), |index| {
+                        Some(MouseAction::InspectorActivate(index))
+                    })
+            }
+            _ => Some(MouseAction::Consume),
         };
     }
     let suggestion = command_suggestion_hit_test(model, mouse.column, mouse.row);
@@ -147,20 +174,7 @@ fn route(model: &AppModel, mouse: MouseEvent) -> Option<MouseAction> {
         MouseEventKind::ScrollUp => Some(MouseAction::ConversationScroll { backwards: true }),
         MouseEventKind::ScrollDown => Some(MouseAction::ConversationScroll { backwards: false }),
         MouseEventKind::Down(MouseButton::Left) => {
-            conversation_rail_hit_test(model, mouse.column, mouse.row)
-                .map(MouseAction::ConversationJump)
-                .or_else(|| {
-                    composer_hit_test(model, mouse.column, mouse.row, false)
-                        .map(MouseAction::ComposerPlace)
-                        .or_else(|| {
-                            navigation_hit_test(model, mouse.column, mouse.row)
-                                .map(MouseAction::SessionActivate)
-                        })
-                })
-        }
-        MouseEventKind::Drag(MouseButton::Left) => {
-            conversation_rail_hit_test(model, mouse.column, mouse.row)
-                .map(MouseAction::ConversationJump)
+            composer_hit_test(model, mouse.column, mouse.row, false).map(MouseAction::ComposerPlace)
         }
         _ => None,
     }
@@ -177,75 +191,15 @@ fn moved_selection_wrapped(current: usize, count: usize, backwards: bool) -> usi
     }
 }
 
-fn move_overlay_selection(state: &mut RuntimeState, backwards: bool) {
-    let Some(overlay) = state.model.overlay else {
-        return;
-    };
-    match overlay {
-        Overlay::CommandPalette => {
-            let count = state.model.matching_command_indices().len();
-            state.model.command_selection =
-                moved_selection(state.model.command_selection, count, backwards);
-        }
-        Overlay::PromptHistory => {
-            let count = state.model.matching_history().count();
-            state.model.history_selection =
-                moved_selection(state.model.history_selection, count, backwards);
-        }
-        Overlay::SessionPicker => {
-            let count = state.model.matching_sessions().count();
-            if !backwards && state.model.session_selection >= count.saturating_sub(1) {
-                state.load_more_sessions();
-                return;
-            }
-            state.model.session_selection =
-                moved_selection(state.model.session_selection, count, backwards);
-        }
-        Overlay::TurnNavigator => {
-            let count = state.model.matching_landmark_indices().len();
-            state.model.turn_selection =
-                moved_selection(state.model.turn_selection, count, backwards);
-        }
-        _ => {}
-    }
-}
-
-fn moved_selection(current: usize, count: usize, backwards: bool) -> usize {
-    if backwards {
-        current.saturating_sub(1)
-    } else {
-        current.saturating_add(1).min(count.saturating_sub(1))
-    }
-}
-
-fn activate_overlay_selection(state: &mut RuntimeState, index: usize) {
-    match state.model.overlay {
-        Some(Overlay::CommandPalette) => {
-            state.model.command_selection = index;
-            select_command(state);
-        }
-        Some(Overlay::PromptHistory) => {
-            state.model.history_selection = index;
-            select_history(state);
-        }
-        Some(Overlay::SessionPicker) => {
-            state.model.session_selection = index;
-            select_session(state);
-        }
-        Some(Overlay::TurnNavigator) => {
-            state.model.turn_selection = index;
-            select_landmark(state);
-        }
-        _ => {}
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use crossterm::event::KeyModifiers;
+    use garive_host_client::SuspensionView;
 
     use super::*;
-    use crate::application::{ConversationLandmark, TerminalSize, TimelineItem, TimelineRole};
+    use crate::application::{
+        ConversationLandmark, Overlay, TerminalSize, TimelineItem, TimelineRole,
+    };
 
     fn mouse(kind: MouseEventKind, column: u16, row: u16) -> MouseEvent {
         MouseEvent {
@@ -274,6 +228,54 @@ mod tests {
     }
 
     #[test]
+    fn decision_sheet_mouse_routes_only_visible_choice_and_action_rows() {
+        let mut model = AppModel {
+            overlay: Some(Overlay::Suspension),
+            terminal_size: TerminalSize {
+                width: 52,
+                height: 8,
+            },
+            selected_session: Some("session".into()),
+            selected_turn: Some("turn".into()),
+            suspension: Some(SuspensionView {
+                suspension_id: "s".into(),
+                session_version: 1,
+                kind: "approval_required".into(),
+                prompt_schema: "garive.public-suspension-prompt.v1".into(),
+                prompt_json: format!(
+                    r#"{{"schema_version":1,"title_key":"title","message_text":"{}","action_label_key":"allow"}}"#,
+                    "需要确认的公开说明".repeat(12)
+                ),
+                prompt_digest: "0".repeat(64),
+                response_schema_json: Some(r#"{"type":"boolean"}"#.into()),
+                response_schema_digest: Some("1".repeat(64)),
+            }),
+            ..Default::default()
+        };
+        model.reconcile_suspension_response();
+        model.suspension_response.as_mut().unwrap().choice_selection = 1;
+        let mut routes = Vec::new();
+        for row in 0..8 {
+            for column in 0..52 {
+                if let Some(action) = route(
+                    &model,
+                    mouse(MouseEventKind::Down(MouseButton::Left), column, row),
+                ) {
+                    routes.push(action);
+                }
+            }
+        }
+        assert!(routes.contains(&MouseAction::DecisionChoice(1)));
+        assert!(routes.contains(&MouseAction::DecisionAction(
+            ActionOverlayIntent::SubmitSuspension
+        )));
+        assert!(routes.contains(&MouseAction::DecisionAction(
+            ActionOverlayIntent::LeaveSafely
+        )));
+        assert!(!routes.contains(&MouseAction::ComposerPlace(0)));
+    }
+
+    #[test]
     fn selectable_overlay_routes_visible_rows_and_wheel() {
         let model = AppModel {
             overlay: Some(Overlay::CommandPalette),
@@ -288,13 +290,41 @@ mod tests {
             route(&model, mouse(MouseEventKind::ScrollUp, 50, 6)),
             Some(MouseAction::OverlayMove { backwards: true })
         );
-        assert_eq!(
-            route(
-                &model,
-                mouse(MouseEventKind::Down(MouseButton::Left), 50, 15)
-            ),
-            Some(MouseAction::OverlayActivate(11))
-        );
+        let activated = (0..24)
+            .flat_map(|row| (0..100).map(move |column| (column, row)))
+            .filter_map(|(column, row)| {
+                match route(
+                    &model,
+                    mouse(MouseEventKind::Down(MouseButton::Left), column, row),
+                ) {
+                    Some(MouseAction::OverlayActivate(index)) => Some(index),
+                    _ => None,
+                }
+            })
+            .collect::<std::collections::BTreeSet<_>>();
+        assert_eq!(activated, (0..13).collect());
+
+        let compact = AppModel {
+            terminal_size: TerminalSize {
+                width: 40,
+                height: 8,
+            },
+            command_selection: crate::input::COMMAND_PALETTE.len() - 1,
+            ..model
+        };
+        let activated = (0..8)
+            .flat_map(|row| (0..40).map(move |column| (column, row)))
+            .filter_map(|(column, row)| {
+                match route(
+                    &compact,
+                    mouse(MouseEventKind::Down(MouseButton::Left), column, row),
+                ) {
+                    Some(MouseAction::OverlayActivate(index)) => Some(index),
+                    _ => None,
+                }
+            })
+            .collect::<std::collections::BTreeSet<_>>();
+        assert_eq!(activated, [19, 20].into_iter().collect());
     }
 
     #[test]
@@ -347,14 +377,50 @@ mod tests {
         assert_eq!(
             route(
                 &model,
-                mouse(MouseEventKind::Down(MouseButton::Left), 31, 21)
+                mouse(MouseEventKind::Down(MouseButton::Left), 5, 21)
             ),
             Some(MouseAction::ComposerPlace(1))
         );
     }
 
     #[test]
-    fn conversation_rail_routes_press_and_drag_through_shared_geometry() {
+    fn wide_inspector_entries_activate_but_border_and_padding_are_inert() {
+        let mut model = AppModel {
+            terminal_size: TerminalSize {
+                width: 129,
+                height: 24,
+            },
+            ..Default::default()
+        };
+        model.inspector.open = true;
+
+        assert_eq!(
+            route(
+                &model,
+                mouse(MouseEventKind::Down(MouseButton::Left), 99, 1)
+            ),
+            Some(MouseAction::InspectorActivate(0))
+        );
+        for (column, row) in [(97, 0), (98, 1)] {
+            assert_eq!(
+                route(
+                    &model,
+                    mouse(MouseEventKind::Down(MouseButton::Left), column, row)
+                ),
+                Some(MouseAction::Consume)
+            );
+        }
+        assert_eq!(
+            route(
+                &model,
+                mouse(MouseEventKind::Down(MouseButton::Left), 96, 1)
+            ),
+            None
+        );
+    }
+
+    #[test]
+    fn removed_rails_have_no_pointer_routes() {
         let mut model = AppModel {
             terminal_size: TerminalSize {
                 width: 100,
@@ -363,7 +429,7 @@ mod tests {
             ..Default::default()
         };
         for position in 0..20 {
-            model.timeline.push(TimelineItem {
+            model.push_test_timeline_item(TimelineItem {
                 stable_key: format!("cell-{position}"),
                 position: position + 1,
                 role: TimelineRole::Agent,
@@ -376,15 +442,15 @@ mod tests {
                 &model,
                 mouse(MouseEventKind::Down(MouseButton::Left), 98, 3)
             ),
-            Some(MouseAction::ConversationJump(0))
+            None
         );
-        assert!(matches!(
+        assert_eq!(
             route(
                 &model,
                 mouse(MouseEventKind::Drag(MouseButton::Left), 98, 10)
             ),
-            Some(MouseAction::ConversationJump(8..=12))
-        ));
+            None
+        );
         assert_eq!(
             route(
                 &model,
@@ -397,17 +463,9 @@ mod tests {
                 &model,
                 mouse(MouseEventKind::Down(MouseButton::Left), 98, 18)
             ),
-            Some(MouseAction::ConversationJump(19))
+            None
         );
-        assert_eq!(
-            route(&model, mouse(MouseEventKind::Moved, 98, 11)),
-            Some(MouseAction::ConversationHover(Some(
-                crate::application::ConversationRailHover { index: 11, row: 11 }
-            )))
-        );
-        assert_eq!(
-            route(&model, mouse(MouseEventKind::Moved, 97, 11)),
-            Some(MouseAction::ConversationHover(None))
-        );
+        assert_eq!(route(&model, mouse(MouseEventKind::Moved, 98, 11)), None);
+        assert_eq!(route(&model, mouse(MouseEventKind::Moved, 97, 11)), None);
     }
 }

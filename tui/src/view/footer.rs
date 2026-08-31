@@ -1,115 +1,176 @@
 use ratatui::{
     buffer::Buffer,
-    layout::{Alignment, Constraint, Layout, Rect},
+    layout::Rect,
     text::{Line, Span},
     widgets::Widget,
 };
 
 use crate::{
-    application::{AppModel, ExecutionState, FocusTarget},
+    application::{AppModel, ConnectionState, ExecutionState, FocusTarget},
     Theme,
 };
 
 use super::{palette, primitives::key_hints};
 
 pub(super) fn render_footer(model: &AppModel, theme: Theme, area: Rect, buffer: &mut Buffer) {
+    if area.is_empty() {
+        return;
+    }
     let colors = palette(theme);
-    let cells = Layout::horizontal([Constraint::Min(1), Constraint::Length(14)]).split(area);
-    let hint = if let Some(notice) = model.notice.as_deref() {
-        Line::from(vec![
-            Span::styled(" ● ", colors.notice),
-            Span::styled(notice, colors.normal),
-        ])
-    } else if model.composer.has_selection() {
-        if area.width < 60 {
-            key_hints(&[("Alt+C", "copy")], colors)
-        } else {
-            key_hints(
-                &[("Alt+C", "copy"), ("type", "replace"), ("←/→", "collapse")],
-                colors,
-            )
-        }
-    } else if model.command_suggestions_active() {
-        if area.width < 60 {
-            key_hints(&[("Tab", "complete"), ("Esc", "close")], colors)
-        } else {
-            key_hints(
-                &[("↑/↓", "select"), ("Tab", "complete"), ("Esc", "close")],
-                colors,
-            )
-        }
-    } else {
-        focus_hints(model, area.width, colors)
+    let hint = match project(model) {
+        Some(HintLine::Action { key, verb, .. }) => key_hints(&[(key, verb)], colors),
+        Some(HintLine::Status { text, tone, .. }) => Line::from(vec![
+            Span::styled(" ● ", tone.style(colors)),
+            Span::styled(text, colors.normal),
+        ]),
+        None => Line::default(),
     };
-    hint.render(cells[0], buffer);
-    Line::styled(
-        format!("{} / 4096 B ", model.composer.text().len()),
-        colors.muted,
-    )
-    .alignment(Alignment::Right)
-    .render(cells[1], buffer);
+    hint.render(area, buffer);
 }
 
-fn focus_hints(model: &AppModel, width: u16, colors: super::style::Palette) -> Line<'static> {
-    let running = model.execution == ExecutionState::Following;
-    match (width < 60, model.focus, running) {
-        (true, FocusTarget::Conversation, _) => {
-            key_hints(&[("PgUp/PgDn", "scroll"), ("Tab", "compose")], colors)
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+enum HintPriority {
+    Navigation,
+    Notice,
+    ByteLimit,
+    Suggestion,
+    Selection,
+    Cancellation,
+    Recovery,
+}
+
+enum HintLine {
+    Action {
+        priority: HintPriority,
+        key: &'static str,
+        verb: &'static str,
+    },
+    Status {
+        priority: HintPriority,
+        text: String,
+        tone: HintTone,
+    },
+}
+
+impl HintLine {
+    fn priority(&self) -> HintPriority {
+        match self {
+            Self::Action { priority, .. } | Self::Status { priority, .. } => *priority,
         }
-        (true, _, true) => key_hints(&[("Esc", "cancel"), ("?", "help")], colors),
-        (true, _, false) => key_hints(&[("Enter", "send"), ("?", "help")], colors),
-        (false, FocusTarget::Navigation, true) => key_hints(
-            &[
-                ("Esc", "cancel"),
-                ("↑/↓", "select"),
-                ("Enter", "open"),
-                ("Tab", "next"),
-            ],
-            colors,
-        ),
-        (false, FocusTarget::Navigation, false) => key_hints(
-            &[
-                ("↑/↓", "select"),
-                ("Enter", "open"),
-                ("Tab", "next"),
-                ("?", "help"),
-            ],
-            colors,
-        ),
-        (false, FocusTarget::Conversation, true) => key_hints(
-            &[
-                ("Esc", "cancel"),
-                ("PgUp/PgDn", "scroll"),
-                ("End", "latest"),
-            ],
-            colors,
-        ),
-        (false, FocusTarget::Conversation, false) => key_hints(
-            &[
-                ("PgUp/PgDn", "scroll"),
-                ("End", "latest"),
-                ("Tab", "compose"),
-                ("?", "help"),
-            ],
-            colors,
-        ),
-        (false, _, true) => key_hints(
-            &[
-                ("Esc", "cancel"),
-                ("Ctrl+S", "sessions"),
-                ("Ctrl+P", "commands"),
-                ("?", "help"),
-            ],
-            colors,
-        ),
-        (false, _, false) => key_hints(
-            &[
-                ("Enter", "send"),
-                ("Ctrl+J", "newline"),
-                ("Ctrl+P", "commands"),
-                ("?", "help"),
-            ],
-            colors,
-        ),
     }
+}
+
+#[derive(Clone, Copy)]
+enum HintTone {
+    Notice,
+    Warning,
+    Danger,
+}
+
+impl HintTone {
+    fn style(self, colors: super::style::Palette) -> ratatui::style::Style {
+        match self {
+            Self::Notice => colors.notice,
+            Self::Warning => colors.warning,
+            Self::Danger => colors.danger,
+        }
+    }
+}
+
+fn project(model: &AppModel) -> Option<HintLine> {
+    if model
+        .overlay
+        .is_some_and(crate::application::Overlay::is_blocking)
+    {
+        return None;
+    }
+    let mut candidates = Vec::new();
+    if model.pending_recovery.current_session {
+        candidates.push(HintLine::Action {
+            priority: HintPriority::Recovery,
+            key: "Ctrl+P",
+            verb: "open recovery actions",
+        });
+    } else if model.composer_is_frozen {
+        candidates.push(HintLine::Status {
+            priority: HintPriority::Recovery,
+            text: "Waiting for durable command truth…".into(),
+            tone: HintTone::Warning,
+        });
+    } else {
+        match model.connection {
+            ConnectionState::Disconnected { .. } => candidates.push(HintLine::Action {
+                priority: HintPriority::Recovery,
+                key: "Ctrl+P",
+                verb: "reconnect safely",
+            }),
+            ConnectionState::Reconnecting { attempt } => candidates.push(HintLine::Status {
+                priority: HintPriority::Recovery,
+                text: format!("Reconnecting ({attempt}/5)…"),
+                tone: HintTone::Warning,
+            }),
+            ConnectionState::Unavailable { .. } => candidates.push(HintLine::Action {
+                priority: HintPriority::Recovery,
+                key: "Ctrl+P",
+                verb: "open recovery details",
+            }),
+            ConnectionState::Connecting | ConnectionState::Online => {}
+        }
+    }
+    if model.execution == ExecutionState::Following {
+        candidates.push(HintLine::Action {
+            priority: HintPriority::Cancellation,
+            key: "Esc",
+            verb: "cancel run",
+        });
+    }
+    if model.composer.has_selection() {
+        candidates.push(HintLine::Action {
+            priority: HintPriority::Selection,
+            key: "Alt+C",
+            verb: "copy selection",
+        });
+    }
+    if model.command_suggestions_active() && !model.composer_is_frozen {
+        candidates.push(HintLine::Action {
+            priority: HintPriority::Suggestion,
+            key: "Tab",
+            verb: "complete command",
+        });
+    }
+    let bytes = model.composer.text().len();
+    if bytes > 4_096 {
+        candidates.push(HintLine::Status {
+            priority: HintPriority::ByteLimit,
+            text: format!("Message is {} bytes over the limit", bytes - 4_096),
+            tone: HintTone::Danger,
+        });
+    } else if bytes > 3_584 {
+        candidates.push(HintLine::Status {
+            priority: HintPriority::ByteLimit,
+            text: format!("{bytes} of 4096 bytes"),
+            tone: HintTone::Warning,
+        });
+    }
+    if let Some(notice) = model.notice.as_deref() {
+        candidates.push(HintLine::Status {
+            priority: HintPriority::Notice,
+            text: notice.into(),
+            tone: HintTone::Notice,
+        });
+    }
+    match (model.focus, model.viewport.follow_latest) {
+        (FocusTarget::Conversation, false) => candidates.push(HintLine::Action {
+            priority: HintPriority::Navigation,
+            key: "End",
+            verb: "follow latest",
+        }),
+        (FocusTarget::Conversation, true) => candidates.push(HintLine::Action {
+            priority: HintPriority::Navigation,
+            key: "PgUp",
+            verb: "browse history",
+        }),
+        _ => {}
+    }
+    candidates.into_iter().max_by_key(HintLine::priority)
 }

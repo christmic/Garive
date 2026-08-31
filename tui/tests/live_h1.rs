@@ -60,20 +60,17 @@ fn shipping_tui_boots_and_restores_a_real_pty() {
         assert!(text.contains("Garive"));
         assert!(text.contains("Press Ctrl+C"));
         assert!(text.contains("Garive?"));
-        if reduced_motion {
-            assert!(
-                text.contains("○ connecting"),
-                "stable connecting glyph rendered"
-            );
-            assert!(
-                !text.contains("· connecting"),
-                "motion pulse stayed disabled"
-            );
-        } else {
-            assert!(text.contains("· connecting"), "first motion frame rendered");
-        }
+        assert!(text.contains("connecting"), "connection state rendered");
+        assert!(
+            !text.contains("· connecting")
+                && !text.contains("• connecting")
+                && !text.contains("● connecting"),
+            "connection state stayed stable; motion is reserved for active execution"
+        );
         assert!(text.contains("\x1b[?1049h"), "alternate screen entered");
         assert!(text.contains("\x1b[?1049l"), "alternate screen restored");
+        assert!(text.contains("\x1b[?1000h"), "auto mouse capture entered");
+        assert!(text.contains("\x1b[?1000l"), "auto mouse capture restored");
         assert!(text.contains("\x1b[?2004l"), "bracketed paste restored");
         assert!(
             text.contains("\x1b]0;Garive · Workspace · Connecting · Ready\x07"),
@@ -81,6 +78,68 @@ fn shipping_tui_boots_and_restores_a_real_pty() {
         );
         assert!(text.contains("\x1b]0;Garive\x07"), "title reset on exit");
     }
+}
+
+#[test]
+fn mouse_command_reconfigures_the_current_full_screen_pty_and_persists_auto() {
+    let (address, server) = empty_host();
+    let temporary = tempfile::tempdir().unwrap();
+    let transcript = temporary.path().join("mouse-reconfiguration.log");
+    let state = temporary.path().join("state");
+    let status = Command::new("expect")
+        .env("TERM", "xterm-256color")
+        .env("GARIVE_TUI_BIN", env!("CARGO_BIN_EXE_garive-tui"))
+        .env("GARIVE_TUI_HOST", format!("http://{address}/"))
+        .env("GARIVE_TUI_LOG", &transcript)
+        .env("GARIVE_TUI_STATE", &state)
+        .args(["-c", r#"
+            set timeout 5
+            proc must_expect {pattern code} {
+                expect {
+                    -exact $pattern { return }
+                    timeout { exit $code }
+                    eof { exit $code }
+                }
+            }
+            log_file -noappend $env(GARIVE_TUI_LOG)
+            spawn -noecho /bin/sh -c {stty rows 24 columns 100; exec "$GARIVE_TUI_BIN" --host "$GARIVE_TUI_HOST" --state-dir "$GARIVE_TUI_STATE" --theme mono --mouse off}
+            must_expect "\033\[6n" 10
+            send "\033\[1;1R"
+            must_expect "Garive" 11
+            send "/mouse on\r\r"
+            must_expect "\033\[?1000h" 12
+            must_expect "Mouse capture is enabled for this terminal session." 13
+            send "\033"
+            after 100
+            send "/mouse off\r\r"
+            must_expect "\033\[?1000l" 14
+            must_expect "Mouse capture is disabled for this terminal session." 15
+            send "\033"
+            after 100
+            send "/mouse auto\r\r"
+            must_expect "\033\[?1000h" 16
+            must_expect "Mouse capture is automatic and enabled for this full-screen session." 17
+            send "\033"
+            after 100
+            send "\021"
+            must_expect "Garive?" 18
+            send "\r"
+            expect {
+                eof { exit 0 }
+                timeout { exit 19 }
+            }
+        "#])
+        .status()
+        .unwrap();
+    server.join().unwrap();
+    assert!(status.success());
+
+    let text = fs::read_to_string(transcript).unwrap();
+    assert_eq!(text.matches("\x1b[?1049h").count(), 1);
+    assert_eq!(text.matches("\x1b[?1000h").count(), 2);
+    assert_eq!(text.matches("\x1b[?1000l").count(), 2);
+    let preferences = fs::read_to_string(state.join("preferences.v1.json")).unwrap();
+    assert!(preferences.contains(r#""mouse":"auto""#));
 }
 
 #[test]
@@ -104,8 +163,9 @@ fn mouse_click_activates_the_visible_overlay_row_without_background_routing() {
                 expect "Garive"
                 send "\020"
                 expect "/help"
-                send "\033\[<0;21;7M"
-                expect "Status details"
+                send "\033\[<0;21;8M"
+                expect "Inspector"
+                expect "Connection"
                 send "\033"
                 after 100
                 send "\021"
@@ -119,9 +179,75 @@ fn mouse_click_activates_the_visible_overlay_row_without_background_routing() {
         assert!(status.success());
         let text = fs::read_to_string(transcript).unwrap();
         assert!(text.contains("\x1b[?1000h"), "mouse capture entered");
-        assert!(text.contains("Host: online") && text.contains("Cursor: 0"));
+        assert!(text.contains("Inspector") && text.contains("Details"));
+        assert!(text.contains("Connection") && text.contains("Execution"));
         assert!(text.contains("\x1b[?1000l"), "mouse capture restored");
     }
+}
+
+#[test]
+fn inspector_survives_live_width_breakpoints_and_escape_restores_the_composer() {
+    let (address, server) = empty_host();
+    let temporary = tempfile::tempdir().unwrap();
+    let transcript = temporary.path().join("inspector-resize.log");
+    let status = Command::new("expect")
+        .env("TERM", "xterm-256color")
+        .env("GARIVE_TUI_BIN", env!("CARGO_BIN_EXE_garive-tui"))
+        .env("GARIVE_TUI_HOST", format!("http://{address}/"))
+        .env("GARIVE_TUI_LOG", &transcript)
+        .env("GARIVE_TUI_STATE", temporary.path().join("state"))
+        .args(["-c", r#"
+            set timeout 6
+            proc must_expect {pattern code} {
+                expect {
+                    -exact $pattern { return }
+                    timeout { exit $code }
+                    eof { exit $code }
+                }
+            }
+            log_file -noappend $env(GARIVE_TUI_LOG)
+            spawn -noecho /bin/sh -c {stty rows 24 columns 120; exec "$GARIVE_TUI_BIN" --host "$GARIVE_TUI_HOST" --state-dir "$GARIVE_TUI_STATE" --theme mono}
+            must_expect "\033\[6n" 80
+            send "\033\[1;1R"
+            must_expect "Garive" 81
+            send "/status \r"
+            must_expect "None selected" 82
+            must_expect "Following latest" 83
+            send "\033\[F"
+            exec stty rows 24 columns 39 < $spawn_out(slave,name)
+            must_expect "Garive needs 40 columns" 84
+            exec stty rows 24 columns 119 < $spawn_out(slave,name)
+            must_expect "Following latest" 85
+            send "\033"
+            after 100
+            send "\033\[200~closed\033\[201~"
+            must_expect "closed" 86
+            send "\021"
+            must_expect "Garive?" 87
+            send "\r"
+            expect {
+                eof { exit 0 }
+                timeout { exit 88 }
+            }
+        "#])
+        .status()
+        .unwrap();
+    server.join().unwrap();
+    assert!(
+        status.success(),
+        "Inspector PTY walkthrough exited with {status}"
+    );
+    let text = fs::read_to_string(transcript).unwrap();
+    for safe_field in ["Connection", "Session", "Execution", "Transcript"] {
+        assert!(
+            text.contains(safe_field),
+            "missing safe Details field {safe_field}"
+        );
+    }
+    assert!(text.contains("Loaded") && text.contains("Turns"));
+    assert!(text.contains("Garive needs 40 columns"));
+    assert!(text.matches("Inspector").count() >= 2);
+    assert!(text.contains("closed"));
 }
 
 #[test]
@@ -297,15 +423,15 @@ fn up_moves_across_a_soft_wrapped_visual_row_in_a_real_pty() {
         .args(["-c", r#"
             set timeout 5
             log_file -noappend $env(GARIVE_TUI_LOG)
-            spawn -noecho /bin/sh -c {stty rows 16 columns 20; exec "$GARIVE_TUI_BIN" --host "$GARIVE_TUI_HOST" --state-dir "$GARIVE_TUI_STATE" --theme mono --mouse off}
+            spawn -noecho /bin/sh -c {stty rows 16 columns 40; exec "$GARIVE_TUI_BIN" --host "$GARIVE_TUI_HOST" --state-dir "$GARIVE_TUI_STATE" --theme mono --mouse off}
             expect -exact "\033\[6n"
             send "\033\[1;1R"
             expect "Garive"
-            send "hello wonderful world"
+            send "hello wonderful world crosses the boundary"
             after 100
             send "\033\[A"
             send "X"
-            expect "helloX"
+            expect "hello woX"
             send "\021"
             expect "Garive?"
             send "\r"
@@ -316,7 +442,7 @@ fn up_moves_across_a_soft_wrapped_visual_row_in_a_real_pty() {
     server.join().unwrap();
     assert!(status.success());
     let text = fs::read_to_string(transcript).unwrap();
-    assert!(text.contains("hello wonderful"));
+    assert!(text.contains("hello woX"));
     assert!(text.contains('X'));
     assert!(text.contains("\x1b[?1049l"));
 }
@@ -335,16 +461,16 @@ fn end_stays_on_the_current_soft_wrapped_row_in_a_real_pty() {
         .args(["-c", r#"
             set timeout 5
             log_file -noappend $env(GARIVE_TUI_LOG)
-            spawn -noecho /bin/sh -c {stty rows 16 columns 20; exec "$GARIVE_TUI_BIN" --host "$GARIVE_TUI_HOST" --state-dir "$GARIVE_TUI_STATE" --theme mono --mouse off}
+            spawn -noecho /bin/sh -c {stty rows 16 columns 40; exec "$GARIVE_TUI_BIN" --host "$GARIVE_TUI_HOST" --state-dir "$GARIVE_TUI_STATE" --theme mono --mouse off}
             expect -exact "\033\[6n"
             send "\033\[1;1R"
             expect "Garive"
-            send "hello wonderful world"
+            send "hello wonderful world crosses the boundary"
             after 100
             send "\033\[A"
             send "\033\[F"
             send "X"
-            expect "wonderfulX"
+            expect "theX boundary"
             send "\021"
             expect "Garive?"
             send "\r"
@@ -355,8 +481,8 @@ fn end_stays_on_the_current_soft_wrapped_row_in_a_real_pty() {
     server.join().unwrap();
     assert!(status.success());
     let text = fs::read_to_string(transcript).unwrap();
-    assert!(text.contains("hello wonderful"));
-    assert!(text.contains("wonderfulX"));
+    assert!(text.contains("theX"));
+    assert!(text.contains("boundary"));
     assert!(text.contains("\x1b[?1049l"));
 }
 
@@ -460,9 +586,9 @@ fn mouse_drag_selects_composer_graphemes_in_a_real_mono_pty() {
             expect "Garive"
             send "a界b"
             after 100
-            send "\033\[<0;32;22M"
-            send "\033\[<32;35;22M"
-            send "\033\[<0;35;22m"
+            send "\033\[<0;6;22M"
+            send "\033\[<32;8;22M"
+            send "\033\[<0;8;22m"
             after 100
             send "X"
             expect "aX"
@@ -502,15 +628,15 @@ fn double_and_triple_click_replace_a_word_then_the_line_in_a_real_pty() {
             expect "Garive"
             send "alpha beta"
             after 100
-            send "\033\[<0;38;22M\033\[<0;38;22m"
-            send "\033\[<0;38;22M\033\[<0;38;22m"
+            send "\033\[<0;11;22M\033\[<0;11;22m"
+            send "\033\[<0;11;22M\033\[<0;11;22m"
             after 100
             send "X"
             expect "alpha X"
             after 600
-            send "\033\[<0;32;22M\033\[<0;32;22m"
-            send "\033\[<0;32;22M\033\[<0;32;22m"
-            send "\033\[<0;32;22M\033\[<0;32;22m"
+            send "\033\[<0;6;22M\033\[<0;6;22m"
+            send "\033\[<0;6;22M\033\[<0;6;22m"
+            send "\033\[<0;6;22M\033\[<0;6;22m"
             after 100
             send "Y"
             expect "Y"
@@ -616,16 +742,17 @@ fn typed_editor_aliases_drive_the_shipping_composer() {
 
 #[test]
 fn screen_reader_mode_is_linear_and_has_no_cursor_addressing() {
-    for _ in 0..2 {
+    for (term, reader_arg) in [("xterm-256color", "--screen-reader"), ("dumb", "")] {
         let (address, server) = empty_host();
         let temporary = tempfile::tempdir().unwrap();
         let transcript = temporary.path().join("linear.log");
         let status = Command::new("expect")
-        .env("TERM", "xterm-256color")
+        .env("TERM", term)
         .env("GARIVE_TUI_BIN", env!("CARGO_BIN_EXE_garive-tui"))
         .env("GARIVE_TUI_HOST", format!("http://{address}/"))
         .env("GARIVE_TUI_LOG", &transcript)
         .env("GARIVE_TUI_STATE", temporary.path().join("state"))
+        .env("GARIVE_TUI_READER_ARG", reader_arg)
         .args(["-c", r#"
             set timeout 5
             proc must_expect {pattern code} {
@@ -636,9 +763,13 @@ fn screen_reader_mode_is_linear_and_has_no_cursor_addressing() {
                 }
             }
             log_file -noappend $env(GARIVE_TUI_LOG)
-            spawn -noecho /bin/sh -c {stty rows 24 columns 100; exec "$GARIVE_TUI_BIN" --host "$GARIVE_TUI_HOST" --state-dir "$GARIVE_TUI_STATE" --screen-reader}
+            spawn -noecho /bin/sh -c {stty rows 24 columns 100; exec "$GARIVE_TUI_BIN" --host "$GARIVE_TUI_HOST" --state-dir "$GARIVE_TUI_STATE" $GARIVE_TUI_READER_ARG}
             must_expect "Garive. Connecting" 20
             must_expect "Connection online" 22
+            send "/mouse on\r"
+            must_expect "Mouse capture stays disabled in accessible terminal mode." 23
+            send "\033"
+            after 100
             send "/not-a-command\r"
             must_expect "The slash command is invalid; nothing was sent." 24
             send "\033"
@@ -646,11 +777,11 @@ fn screen_reader_mode_is_linear_and_has_no_cursor_addressing() {
             send "\020"
             must_expect "Command palette." 26
             send "retry"
-            must_expect "> 1. /retry: Retry unknown command. Unavailable: no pending command" 27
+            must_expect "Selected 1 of 1: /retry. Retry unknown command. Unavailable: no unknown command." 27
             send "\177\177\177\177\177"
             send "keyboard"
-            must_expect "Filter: keyboard." 28
-            must_expect "> 1. /help: Keyboard guide" 29
+            must_expect "Search: keyboard." 28
+            must_expect "Selected 1 of 1: /help. Keyboard guide." 29
             send "\r"
             must_expect "No function keys are required." 30
             send "\033"
@@ -668,12 +799,15 @@ fn screen_reader_mode_is_linear_and_has_no_cursor_addressing() {
         let text = String::from_utf8_lossy(&output);
         assert!(text.contains("Connection online"));
         assert!(text.contains("Command palette."));
-        assert!(text.contains("Unavailable: no pending command"));
-        assert!(text.contains("Filter: keyboard."));
+        assert!(text.contains("Unavailable: no unknown command"));
+        assert!(text.contains("Search: keyboard."));
         assert!(text.contains("No function keys are required."));
         assert!(!text.contains("\x1b[6n"));
         assert!(!text.contains("\x1b[2J"));
         assert!(!text.contains("\x1b[?1049h"));
+        assert!(!text.contains("\x1b[?1000h"));
+        assert!(!text.contains("\x1b[?1002h"));
+        assert!(!text.contains("\x1b[?1003h"));
         assert!(text.contains("\x1b[?2004l"));
         assert!(text.contains("\x1b]0;Garive · Workspace · Connecting · Ready\x07"));
         assert!(text.contains("\x1b]0;Garive\x07"));
@@ -778,65 +912,8 @@ exit 7
 }
 
 #[test]
-fn conversation_position_rail_press_and_drag_share_the_shipping_geometry() {
-    let (address, stop, server) = timeline_host();
-    let temporary = tempfile::tempdir().unwrap();
-    let transcript = temporary.path().join("conversation-rail.log");
-    let status = Command::new("expect")
-        .env("TERM", "xterm-256color")
-        .env("GARIVE_TUI_BIN", env!("CARGO_BIN_EXE_garive-tui"))
-        .env("GARIVE_TUI_HOST", format!("http://{address}/"))
-        .env("GARIVE_TUI_LOG", &transcript)
-        .env("GARIVE_TUI_STATE", temporary.path().join("state"))
-        .args(["-c", r#"
-            set timeout 8
-            proc must_expect {pattern code} {
-                expect {
-                    -exact $pattern { return }
-                    timeout { exit $code }
-                    eof { exit $code }
-                }
-            }
-            log_file -noappend $env(GARIVE_TUI_LOG)
-            spawn -noecho /bin/sh -c {stty rows 24 columns 100; exec "$GARIVE_TUI_BIN" --host "$GARIVE_TUI_HOST" --session session-rail --state-dir "$GARIVE_TUI_STATE" --theme mono --mouse on}
-            must_expect "\033\[6n" 60
-            send "\033\[1;1R"
-            must_expect {#40} 61
-            send "\033\[<35;99;12M"
-            must_expect {Cell 22} 62
-            after 100
-            send "\033\[<35;98;12M"
-            after 100
-            send "\033\[<0;99;4M"
-            must_expect {#1} 63
-            send "\033\[<32;99;12M"
-            must_expect {#22} 64
-            send "\033\[<0;99;12m"
-            send "\033\[<0;99;19M"
-            must_expect {#40} 65
-            send "\021"
-            must_expect "Garive?" 66
-            send "\r"
-            expect {
-                eof { exit 0 }
-                timeout { exit 67 }
-            }
-        "#])
-        .status()
-        .unwrap();
-    stop.store(true, Ordering::Relaxed);
-    server.join().unwrap();
-    assert!(status.success());
-    let text = fs::read_to_string(transcript).unwrap();
-    assert!(text.contains('█'));
-    assert!(text.matches("\x1b[12;99H").count() >= 3);
-    assert!(text.contains("\x1b[?1006h") && text.contains("\x1b[?1006l"));
-    assert!(text.contains("\x1b[?1049h") && text.contains("\x1b[?1049l"));
-}
-
-#[test]
 fn turn_navigator_filters_commits_only_on_activation_and_shares_mouse_geometry() {
-    let (address, stop, server) = timeline_host();
+    let (address, stop, h4_seen, server) = timeline_host();
     let temporary = tempfile::tempdir().unwrap();
     let transcript = temporary.path().join("turn-navigator.log");
     let status = Command::new("expect")
@@ -859,22 +936,22 @@ fn turn_navigator_filters_commits_only_on_activation_and_shares_mouse_geometry()
             spawn -noecho /bin/sh -c {stty rows 24 columns 100; exec "$GARIVE_TUI_BIN" --host "$GARIVE_TUI_HOST" --session session-rail --state-dir "$GARIVE_TUI_STATE" --theme mono --mouse on}
             must_expect "\033\[6n" 70
             send "\033\[1;1R"
-            must_expect {#40} 71
+            must_expect "question-19" 71
             send "/jump \r"
             must_expect "Jump to a Turn" 72
             send "\033\[H"
             send "\033"
-            must_expect {#40} 73
-            send "/jump question 11\r"
-            must_expect "12  question 11" 74
+            must_expect "answer-19" 73
+            send "/jump question-11\r"
+            must_expect "12  question-11" 74
             send "\r"
-            must_expect {#23} 75
+            must_expect "answer-11" 75
             send "/jump \r"
             must_expect "Jump to a Turn" 76
             send "\033\[H"
             after 100
-            send "\033\[<0;50;6M"
-            must_expect {#1} 77
+            send "\033\[<0;50;5M"
+            must_expect "answer-0" 77
             send "\021"
             must_expect "Garive?" 78
             send "\r"
@@ -890,6 +967,10 @@ fn turn_navigator_filters_commits_only_on_activation_and_shares_mouse_geometry()
     assert!(
         status.success(),
         "turn navigator walkthrough exited with {status}"
+    );
+    assert!(
+        h4_seen.load(Ordering::Relaxed),
+        "the fixture served the session H4 subscription"
     );
 }
 
@@ -1104,12 +1185,19 @@ fn empty_host() -> (SocketAddr, thread::JoinHandle<()>) {
     (address, server)
 }
 
-fn timeline_host() -> (SocketAddr, Arc<AtomicBool>, thread::JoinHandle<()>) {
+fn timeline_host() -> (
+    SocketAddr,
+    Arc<AtomicBool>,
+    Arc<AtomicBool>,
+    thread::JoinHandle<()>,
+) {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     listener.set_nonblocking(true).unwrap();
     let address = listener.local_addr().unwrap();
     let stop = Arc::new(AtomicBool::new(false));
     let server_stop = Arc::clone(&stop);
+    let h4_seen = Arc::new(AtomicBool::new(false));
+    let server_h4_seen = Arc::clone(&h4_seen);
     let items = (0..20)
         .map(|index| {
             json!({
@@ -1117,8 +1205,8 @@ fn timeline_host() -> (SocketAddr, Arc<AtomicBool>, thread::JoinHandle<()>) {
                 "started_position": index * 2 + 1,
                 "latest_position": index * 2 + 2,
                 "state": "completed",
-                "user_text": format!("question {index}"),
-                "completion_text": format!("answer {index}"),
+                "user_text": format!("question-{index}"),
+                "completion_text": format!("answer-{index}"),
                 "suspension": null,
                 "content_truncated": false,
                 "activities": []
@@ -1157,6 +1245,31 @@ fn timeline_host() -> (SocketAddr, Arc<AtomicBool>, thread::JoinHandle<()>) {
                     .unwrap();
                 continue;
             }
+            if request.contains("GET /v1/sessions/session-rail/live ") {
+                let event = json!({
+                    "api_version": "v1",
+                    "session_id": "session-rail",
+                    "turn_id": "turn-19",
+                    "execution_id": "execution-19",
+                    "stream_id": "12345678-1234-4234-8234-123456789abc",
+                    "sequence": 1,
+                    "kind": "snapshot",
+                    "text": "answer-19",
+                    "through_sequence": 1
+                });
+                let body = format!("event: live\ndata: {event}\n\n");
+                socket
+                    .write_all(
+                        format!(
+                            "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                            body.len()
+                        )
+                        .as_bytes(),
+                    )
+                    .unwrap();
+                server_h4_seen.store(true, Ordering::Relaxed);
+                continue;
+            }
             let body = if request.contains("GET /v1/agent-definitions ") {
                 json!({"api_version":"v1","definitions":[{"api_version":"v1","definition_id":"definition-1","definition_revision":"revision-1","capabilities":[]}]}).to_string()
             } else if request.contains("GET /v1/sessions?") {
@@ -1173,7 +1286,7 @@ fn timeline_host() -> (SocketAddr, Arc<AtomicBool>, thread::JoinHandle<()>) {
             socket.write_all(json_response(&body).as_bytes()).unwrap();
         }
     });
-    (address, stop, server)
+    (address, stop, h4_seen, server)
 }
 
 fn json_response(body: &str) -> String {

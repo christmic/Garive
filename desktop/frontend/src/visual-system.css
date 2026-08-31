@@ -23,7 +23,7 @@
   --radius-control: 8px;
   --radius-card: 12px;
   --radius-panel: 14px;
-  --radius-composer: 16px;
+  --radius-composer: 20px;
   --radius-pill: 999px;
   --motion-fast: 120ms;
   --motion-base: 180ms;
@@ -51,6 +51,7 @@
   --state-danger: #b23b32;
   --state-danger-surface: #fff0ed;
   --shadow-raised: 0 8px 26px rgba(0, 0, 0, .08), 0 1px 3px rgba(0, 0, 0, .08);
+  --shadow-composer: 0 0 0 1px rgba(0, 0, 0, .04), 0 2px 8px rgba(0, 0, 0, .04), 0 4px 80px 8px rgba(0, 0, 0, .024);
   --shadow-overlay: 0 22px 70px rgba(0, 0, 0, .2), 0 3px 14px rgba(0, 0, 0, .1);
 
   /* Compatibility aliases while legacy surfaces migrate to semantic names. */
@@ -96,6 +97,7 @@
   --state-danger: #ef9a88;
   --state-danger-surface: #422721;
   --shadow-raised: 0 18px 50px rgba(0, 0, 0, .28);
+  --shadow-composer: inset 0 0 1px rgba(255, 255, 255, .2);
   --shadow-overlay: 0 28px 80px rgba(0, 0, 0, .42);
   --paper: var(--surface-canvas);
   --paper-strong: var(--surface-raised);
@@ -112,6 +114,10 @@
   --amber: var(--state-attention);
   --red: var(--state-danger);
   --shadow: var(--shadow-raised);
+}
+
+@supports (corner-shape: superellipse(1.5)) {
+  :root { --radius-composer: 25px; }
 }
 
 @media (prefers-reduced-motion: reduce) {

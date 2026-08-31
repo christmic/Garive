@@ -37,6 +37,10 @@ describe("Desktop visual accessibility contract", () => {
       "--surface-canvas: #171717", "--surface-sidebar: #211f20"]) {
       expect(TOKENS).toContain(token);
     }
+    expect(TOKENS).toContain("--radius-composer: 20px");
+    expect(TOKENS).toContain("--shadow-composer: 0 0 0 1px rgba(0, 0, 0, .04)");
+    expect(TOKENS).toContain("--shadow-composer: inset 0 0 1px rgba(255, 255, 255, .2)");
+    expect(TOKENS).toContain("@supports (corner-shape: superellipse(1.5))");
     expect(CSS).toContain("--sidebar-width: clamp(206px, 16.1vw, 240px)");
     expect(CSS).toContain("--conversation-split: 352px");
     expect(CSS).toContain(".app-shell:has(.workspace-panel)");
@@ -76,6 +80,12 @@ describe("Desktop visual accessibility contract", () => {
     expect(CSS).toContain(".theme-dark .search-results { background: transparent; }");
     expect(CSS).toContain(".agents-heading { display: flex; align-items: end; justify-content: space-between; gap: 24px; padding: 40px 0 18px;");
     expect(CSS).toContain(".settings-heading { padding: 40px 0 18px; }");
+    expect(CSS).toContain("grid-template-columns: 18px minmax(0, 1fr) auto auto");
+    expect(CSS).toContain(".progress-state { color: var(--text-tertiary); font-size: var(--text-2xs); white-space: nowrap; }");
+    expect(CSS).toContain(".topbar-actions .icon-button[aria-expanded=\"true\"] { color: var(--text-primary); background: transparent; }");
+    expect(CSS).toContain(".user-message > div { max-width: 70%; padding: 10px 14px; border: 0; border-radius: 22px; corner-shape: round;");
+    expect(CSS).toContain(".composer { width: min(39rem, 100%); border: 0; border-radius: var(--radius-composer);");
+    expect(CSS).toContain("box-shadow: var(--shadow-composer)");
   });
 });
 

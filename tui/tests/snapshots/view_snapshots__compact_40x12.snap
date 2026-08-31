@@ -2,15 +2,15 @@
 source: tui/tests/view_snapshots.rs
 expression: "frame(&model, Theme::Mono, 40, 12)"
 ---
-  GARIVE                  ●  ·  running
+Session 1                  Agent running
 
- Conversation · ↑ earlier
-     • Verify the Runtime             ·
-     • Ship with evidence             ·
-     cargo test passes.               █
-                                      █
-────────────────────────────────────────
-╔ Compose ═════════════════════════════╗
-║ Ask a follow-up…                     ║
-╚══════════════════════════════════════╝
-  Esc cancel   ? help       18 / 4096 B
+  ◆ Garive
+    ## Release plan
+    • Verify the Runtime
+    • Ship with evidence
+    cargo test passes.
+
+╭──────────────────────────────────────╮
+│ Ask a follow-up…                     │
+╰──────────────────────────────────────╯
+  Esc cancel run

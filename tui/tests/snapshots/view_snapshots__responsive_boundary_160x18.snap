@@ -1,0 +1,22 @@
+---
+source: tui/tests/view_snapshots.rs
+expression: rendered
+---
+                                Session 1  ·  research-age                                                         Agent running
+
+                                  You
+                                    Summarize the release plan.
+                                    ✓  Agent action · completed
+                                  ◆ Garive
+                                    ## Release plan
+                                    • Verify the Runtime
+                                    • Ship with evidence
+                                    cargo test passes.
+
+
+
+
+                                ╭──────────────────────────────────────────────────────────────────────────────────────────────╮
+                                │ Ask a follow-up…                                                                             │
+                                ╰──────────────────────────────────────────────────────────────────────────────────────────────╯
+                                  Esc cancel run

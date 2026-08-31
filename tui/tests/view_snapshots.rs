@@ -11,11 +11,16 @@ mod input;
 mod view;
 
 use application::{
-    AppModel, BootState, ConnectionState, ConversationLandmark, ExecutionState, Overlay,
-    TimelineItem, TimelineRole, TimelineTone,
+    AppModel, BootState, ConnectionState, ConversationLandmark, ExecutionState, InspectorVariant,
+    LiveAnswerExpectation, LiveAnswerProjection, Overlay, TerminalSize, TimelineItem, TimelineRole,
+    TimelineTone,
 };
-use garive_host_client::{AgentDefinitionSummary, SessionSummary, SuspensionView};
+use garive_host_client::{
+    AgentDefinitionSummary, LiveOutputEndReason, LiveOutputEvent, LiveOutputEventKind,
+    SessionSummary, SuspensionView,
+};
 use ratatui::{buffer::Buffer, layout::Rect};
+use unicode_width::UnicodeWidthStr;
 
 #[test]
 fn responsive_product_frames_match_reviewed_snapshots() {
@@ -31,25 +36,22 @@ fn responsive_product_frames_match_reviewed_snapshots() {
         frame(&wrapped, Theme::Mono, 40, 16)
     );
     insta::assert_snapshot!("standard_100x24", frame(&model, Theme::Dark, 100, 24));
-    let rail = position_rail_model();
+    let activities = activity_stack_model();
     insta::assert_snapshot!(
-        "conversation_rail_dark_100x24",
-        frame(&rail, Theme::Dark, 100, 24)
+        "activity_stack_dark_100x24",
+        frame(&activities, Theme::Dark, 100, 24)
     );
     insta::assert_snapshot!(
-        "conversation_rail_light_100x24",
-        frame(&rail, Theme::Light, 100, 24)
+        "activity_stack_light_100x24",
+        frame(&activities, Theme::Light, 100, 24)
     );
     insta::assert_snapshot!(
-        "conversation_rail_mono_100x24",
-        frame(&rail, Theme::Mono, 100, 24)
+        "activity_stack_mono_100x24",
+        frame(&activities, Theme::Mono, 100, 24)
     );
-    let mut hovered_rail = rail;
-    hovered_rail.conversation_rail_hover =
-        Some(application::ConversationRailHover { index: 11, row: 11 });
     insta::assert_snapshot!(
-        "conversation_rail_hover_dark_100x24",
-        frame(&hovered_rail, Theme::Dark, 100, 24)
+        "activity_stack_compact_mono_40x18",
+        frame(&activities, Theme::Mono, 40, 18)
     );
     insta::assert_snapshot!(
         "motion_running_dark_100x24",
@@ -107,9 +109,33 @@ fn responsive_product_frames_match_reviewed_snapshots() {
         markdown_table_narrow_preview(Theme::Mono)
     );
 
-    let mut wide = model;
-    wide.overlay = Some(Overlay::CommandPalette);
-    insta::assert_snapshot!("wide_palette_160x28", frame(&wide, Theme::Light, 160, 28));
+    let mut palette = model;
+    palette.overlay = Some(Overlay::CommandPalette);
+    palette.command_selection = input::COMMAND_PALETTE.len() - 1;
+    insta::assert_snapshot!(
+        "command_palette_quit_dark_160x28",
+        frame(&palette, Theme::Dark, 160, 28)
+    );
+    insta::assert_snapshot!(
+        "wide_palette_160x28",
+        frame(&palette, Theme::Light, 160, 28)
+    );
+    insta::assert_snapshot!(
+        "command_palette_quit_mono_160x28",
+        frame(&palette, Theme::Mono, 160, 28)
+    );
+    insta::assert_snapshot!(
+        "command_palette_quit_dark_40x8",
+        frame(&palette, Theme::Dark, 40, 8)
+    );
+    insta::assert_snapshot!(
+        "command_palette_quit_light_40x8",
+        frame(&palette, Theme::Light, 40, 8)
+    );
+    insta::assert_snapshot!(
+        "command_palette_quit_mono_40x8",
+        frame(&palette, Theme::Mono, 40, 8)
+    );
 
     let mut help = product_model();
     help.overlay = Some(Overlay::Help);
@@ -156,6 +182,12 @@ fn responsive_product_frames_match_reviewed_snapshots() {
         response_schema_digest: Some("1".repeat(64)),
     });
     insta::assert_snapshot!("action_100x24", frame(&action, Theme::Dark, 100, 24));
+    insta::assert_snapshot!("action_light_100x24", frame(&action, Theme::Light, 100, 24));
+    insta::assert_snapshot!("action_mono_100x24", frame(&action, Theme::Mono, 100, 24));
+    insta::assert_snapshot!(
+        "action_compact_mono_40x8",
+        frame(&action, Theme::Mono, 40, 8)
+    );
 
     let mut sessions = product_model();
     sessions.overlay = Some(Overlay::SessionPicker);
@@ -169,29 +201,112 @@ fn responsive_product_frames_match_reviewed_snapshots() {
         "session_picker_scrolled_100x24",
         frame(&sessions, Theme::Mono, 100, 24)
     );
+}
 
-    let mut rail = sessions;
-    rail.overlay = None;
-    rail.focus = application::FocusTarget::Navigation;
-    rail.selected_session = Some("session-000000".into());
-    rail.navigation_selection = Some("session-000011".into());
+#[test]
+fn frozen_composer_theme_and_width_matrix_matches_reviewed_snapshot() {
     insta::assert_snapshot!(
-        "session_rail_focus_dark_100x24",
-        frame(&rail, Theme::Dark, 100, 24)
+        "frozen_composer_theme_width_matrix",
+        frozen_composer_matrix()
     );
-    insta::assert_snapshot!(
-        "session_rail_focus_light_100x24",
-        frame(&rail, Theme::Light, 100, 24)
-    );
-    insta::assert_snapshot!(
-        "session_rail_focus_mono_100x24",
-        frame(&rail, Theme::Mono, 100, 24)
-    );
+}
 
-    rail.focus = application::FocusTarget::Conversation;
+#[test]
+fn live_answer_states_match_reviewed_theme_snapshots() {
     insta::assert_snapshot!(
-        "conversation_focus_dark_100x24",
-        frame(&rail, Theme::Dark, 100, 24)
+        "live_answer_states_dark",
+        live_answer_states_preview(Theme::Dark)
+    );
+    insta::assert_snapshot!(
+        "live_answer_states_light",
+        live_answer_states_preview(Theme::Light)
+    );
+    insta::assert_snapshot!(
+        "live_answer_states_mono",
+        live_answer_states_preview(Theme::Mono)
+    );
+}
+
+#[test]
+fn responsive_column_boundaries_match_reviewed_snapshots() {
+    let model = product_model();
+    for width in [39, 40, 51, 52, 79, 80, 119, 120, 160] {
+        let rendered = frame(&model, Theme::Mono, width, 18);
+        assert_responsive_frame(&rendered, width, 18);
+        insta::assert_snapshot!(format!("responsive_boundary_{width}x18"), rendered);
+    }
+}
+
+#[test]
+fn inspector_geometry_and_themes_match_reviewed_snapshots() {
+    for (theme, name) in [
+        (Theme::Dark, "inspector_wide_dark_120x18"),
+        (Theme::Light, "inspector_wide_light_120x18"),
+        (Theme::Mono, "inspector_wide_mono_120x18"),
+    ] {
+        insta::assert_snapshot!(name, inspector_frame(theme, 120));
+    }
+    for (width, title_column) in [(119, 32), (120, 93), (128, 101), (129, 102)] {
+        let rendered = inspector_frame(Theme::Mono, width);
+        let actual = rendered.lines().find_map(|line| line.find("Inspector"));
+        assert_eq!(actual, Some(title_column), "width {width}");
+    }
+}
+
+fn inspector_frame(theme: Theme, width: u16) -> String {
+    let mut model = product_model();
+    model.terminal_size = TerminalSize { width, height: 18 };
+    model.open_inspector(InspectorVariant::Activity);
+    frame(&model, theme, width, 18)
+}
+
+fn assert_responsive_frame(rendered: &str, width: u16, height: u16) {
+    let lines = rendered.split('\n').collect::<Vec<_>>();
+    assert_eq!(lines.len(), usize::from(height));
+    assert!(lines
+        .iter()
+        .all(|line| UnicodeWidthStr::width(*line) <= usize::from(width)));
+
+    for forbidden in ["Sessions", "session-alpha", "#42", "Position"] {
+        assert!(
+            !rendered.contains(forbidden),
+            "legacy rail detail {forbidden:?} leaked at {width} columns"
+        );
+    }
+    if width < 40 {
+        assert!(rendered.contains("Garive needs 40 columns"));
+        assert!(rendered.contains("draft retained"));
+        assert!(rendered.contains("Run continues · Esc cancel"));
+        assert!(!rendered.contains("Summarize the release plan."));
+        assert!(!rendered.contains('╭'));
+        return;
+    }
+    for required in [
+        "Session 1",
+        "Summarize the release plan.",
+        "Agent action · completed",
+        "cargo test passes.",
+        "Ask a follow-up…",
+    ] {
+        assert!(
+            rendered.contains(required),
+            "content {required:?} was clipped at {width} columns"
+        );
+    }
+
+    let composer = lines
+        .iter()
+        .find(|line| line.contains('╭'))
+        .expect("composer top border");
+    let content_width = if width >= 80 { width.min(96) } else { width };
+    let expected_x = width.saturating_sub(content_width) / 2;
+    assert_eq!(
+        composer.chars().take_while(|ch| *ch == ' ').count(),
+        usize::from(expected_x)
+    );
+    assert_eq!(
+        UnicodeWidthStr::width(*composer),
+        usize::from(expected_x + content_width)
     );
 }
 
@@ -248,7 +363,7 @@ fn product_model() -> AppModel {
         "Agent action · completed",
     );
     activity.tone = TimelineTone::Success;
-    model.timeline = vec![
+    for item in [
         item("user", 2, TimelineRole::User, "Summarize the release plan."),
         activity,
         item(
@@ -257,31 +372,67 @@ fn product_model() -> AppModel {
             TimelineRole::Agent,
             "## Release plan\n\n- Verify the Runtime\n- Ship with **evidence**\n\n`cargo test` passes.",
         ),
-    ];
+    ] {
+        model.push_test_timeline_item(item);
+    }
     model.composer.replace("Ask a follow-up…").unwrap();
     model
 }
 
-fn position_rail_model() -> AppModel {
+fn frozen_composer_matrix() -> String {
     let mut model = product_model();
-    model.timeline.clear();
-    for position in 0..20 {
-        model.timeline.push(item(
-            &format!("rail-{position}"),
-            position + 1,
-            if position % 2 == 0 {
-                TimelineRole::User
-            } else {
-                TimelineRole::Agent
-            },
-            &format!("Position rail evidence cell {position}."),
-        ));
+    model.execution = ExecutionState::Idle;
+    model.composer_is_frozen = true;
+    model.composer.replace("Retained pending draft").unwrap();
+    let mut sections = Vec::new();
+    for theme in [Theme::Dark, Theme::Light, Theme::Mono] {
+        for width in [40, 100] {
+            let area = Rect::new(0, 0, width, 12);
+            let mut buffer = Buffer::empty(area);
+            let cursor = view::render_cached(
+                &model,
+                theme,
+                area,
+                &mut buffer,
+                &mut view::RenderCache::default(),
+            );
+            let border = (0..area.height)
+                .flat_map(|y| (0..area.width).map(move |x| (x, y)))
+                .find(|&(x, y)| buffer[(x, y)].symbol() == "╭")
+                .expect("frozen composer border");
+            sections.push(format!(
+                "theme={theme:?} width={width} border={:?} cursor={cursor:?}\n{}",
+                buffer[border].style(),
+                frame(&model, theme, width, 12)
+            ));
+        }
     }
-    model.focus = application::FocusTarget::Conversation;
-    model.viewport.follow_latest = false;
-    model.viewport.anchor_key = Some("rail-6".into());
-    model.viewport.newer_updates = 3;
+    sections.join("\n\n")
+}
+
+fn activity_stack_model() -> AppModel {
+    let mut model = product_model();
+    model.turn_blocks.clear();
+    for item in [
+        item(
+            "user",
+            2,
+            TimelineRole::User,
+            "Verify the release candidate.",
+        ),
+        activity("read", 3, TimelineTone::Success, "Read project rules"),
+        activity("tests", 4, TimelineTone::Success, "Checked focused tests"),
+        activity("run", 5, TimelineTone::Active, "Running strict validation"),
+    ] {
+        model.push_test_timeline_item(item);
+    }
     model
+}
+
+fn activity(key: &str, position: u64, tone: TimelineTone, text: &str) -> TimelineItem {
+    let mut item = item(key, position, TimelineRole::Status, text);
+    item.tone = tone;
+    item
 }
 
 fn turn_navigator_model() -> AppModel {
@@ -466,6 +617,162 @@ fn markdown_runs(lines: Vec<ratatui::text::Line<'static>>) -> String {
                 })
                 .collect::<Vec<_>>()
                 .join(" | ")
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+fn live_answer_states_preview(theme: Theme) -> String {
+    let mut streaming = LiveAnswerProjection::default();
+    streaming.apply(
+        live_event(
+            1,
+            LiveOutputEventKind::PhaseChanged {
+                phase: "preparing".into(),
+                label_key: "agent.live.preparing".into(),
+            },
+        ),
+        live_expectation(),
+    );
+    streaming.apply(
+        live_event(
+            2,
+            LiveOutputEventKind::TextDelta {
+                text: "A **progressive** answer.".into(),
+            },
+        ),
+        live_expectation(),
+    );
+    streaming.advance_frame(false);
+    let preparing = live_runs(view::live_answer_preview(
+        streaming.current().unwrap(),
+        theme,
+        false,
+    ));
+    streaming.apply(
+        live_event(
+            3,
+            LiveOutputEventKind::PhaseChanged {
+                phase: "generating".into(),
+                label_key: "agent.live.generating".into(),
+            },
+        ),
+        live_expectation(),
+    );
+    let animated = live_runs(view::live_answer_preview(
+        streaming.current().unwrap(),
+        theme,
+        false,
+    ));
+    let reduced = live_runs(view::live_answer_preview(
+        streaming.current().unwrap(),
+        theme,
+        true,
+    ));
+
+    streaming.apply(
+        live_event(
+            4,
+            LiveOutputEventKind::PhaseChanged {
+                phase: "finalizing".into(),
+                label_key: "agent.live.finalizing".into(),
+            },
+        ),
+        live_expectation(),
+    );
+    let finalizing = live_runs(view::live_answer_preview(
+        streaming.current().unwrap(),
+        theme,
+        false,
+    ));
+    streaming.apply(
+        live_event(5, LiveOutputEventKind::PreviewUnavailable),
+        live_expectation(),
+    );
+    let unavailable = live_runs(view::live_answer_preview(
+        streaming.current().unwrap(),
+        theme,
+        false,
+    ));
+
+    let mut ended = LiveAnswerProjection::default();
+    ended.apply(
+        live_event(
+            1,
+            LiveOutputEventKind::Snapshot {
+                text: "Saved answer pending durable projection.".into(),
+                through_sequence: 1,
+            },
+        ),
+        live_expectation(),
+    );
+    ended.apply(
+        live_event(
+            2,
+            LiveOutputEventKind::Ended {
+                reason: LiveOutputEndReason::TerminalCommitted,
+            },
+        ),
+        live_expectation(),
+    );
+    let ended_preview = live_runs(view::live_answer_preview(
+        ended.current().unwrap(),
+        theme,
+        false,
+    ));
+    ended.durable_takeover("session-a", "turn-a", Some("execution-a"));
+
+    format!(
+        "-- preparing --\n{preparing}\n-- generating --\n{animated}\n-- reduced motion --\n{reduced}\n-- finalizing --\n{finalizing}\n-- unavailable --\n{unavailable}\n-- ended preview --\n{ended_preview}\n-- durable takeover --\nlive preview present: {}",
+        ended.current().is_some()
+    )
+}
+
+fn live_event(sequence: u64, kind: LiveOutputEventKind) -> LiveOutputEvent {
+    LiveOutputEvent {
+        api_version: "v1".into(),
+        session_id: "session-a".into(),
+        turn_id: "turn-a".into(),
+        execution_id: "execution-a".into(),
+        stream_id: "00000000-0000-4000-8000-000000000001".into(),
+        sequence,
+        kind,
+    }
+}
+
+fn live_expectation() -> LiveAnswerExpectation<'static> {
+    LiveAnswerExpectation {
+        selected_session: "session-a",
+        active_turn: Some("turn-a"),
+        active_execution: Some("execution-a"),
+        detached: false,
+    }
+}
+
+fn live_runs(lines: Vec<ratatui::text::Line<'static>>) -> String {
+    lines
+        .into_iter()
+        .map(|line| {
+            let style = line.style;
+            let spans = line
+                .spans
+                .into_iter()
+                .map(|span| {
+                    format!(
+                        "{:?} <fg={:?} bg={:?} +{:?} -{:?}>",
+                        span.content,
+                        span.style.fg,
+                        span.style.bg,
+                        span.style.add_modifier,
+                        span.style.sub_modifier
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join(" | ");
+            format!(
+                "line <fg={:?} bg={:?} +{:?} -{:?}> :: {spans}",
+                style.fg, style.bg, style.add_modifier, style.sub_modifier
+            )
         })
         .collect::<Vec<_>>()
         .join("\n")

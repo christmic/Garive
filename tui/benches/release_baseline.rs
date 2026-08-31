@@ -12,7 +12,7 @@ mod view;
 
 use std::{hint::black_box, process::Command, time::Instant};
 
-use application::{AppModel, BootState, TimelineItem, TimelineRole};
+use application::{AppModel, BootState, TimelineItem, TimelineRole, TurnBlock, TurnBlockKey};
 use garive_host_client::{reduce_host_events, HostActivity, HostEvent, HostView};
 use ratatui::{buffer::Buffer, layout::Rect};
 use serde::Serialize;
@@ -287,7 +287,20 @@ fn percentile(samples: &[u64], percentile: usize) -> u64 {
 fn model(items: &[TimelineItem]) -> AppModel {
     AppModel {
         boot: BootState::Ready,
-        timeline: items.to_vec(),
+        turn_blocks: items
+            .chunks(3)
+            .enumerate()
+            .map(|(index, children)| TurnBlock {
+                key: TurnBlockKey {
+                    session_id: "session-benchmark".into(),
+                    turn_id: format!("turn-{index}"),
+                },
+                user: children[0].clone(),
+                activities: children.get(1).cloned().into_iter().collect(),
+                committed_answer: children.get(2).cloned(),
+                outcome: None,
+            })
+            .collect(),
         ..Default::default()
     }
 }

@@ -3,7 +3,7 @@ use ratatui::{
     layout::Rect,
     style::Style,
     text::{Line, Span, Text},
-    widgets::{Block, Borders, Padding, Paragraph, Widget, Wrap},
+    widgets::{Paragraph, Widget, Wrap},
 };
 use sha2::{Digest, Sha256};
 use std::collections::VecDeque;
@@ -13,58 +13,37 @@ use crate::{
     Theme,
 };
 
-use super::{empty_detail, empty_title, markdown::render_markdown, palette, safe_text, turn_label};
+use super::{
+    empty_detail, empty_title, markdown::render_markdown, palette, safe_text, MotionFrame,
+};
+
+mod block;
+pub(super) mod live_cache;
+mod scroll;
+use block::*;
+pub(crate) use scroll::{reflow_visual_anchor, scroll_by_visual_cells};
 
 pub(super) fn render_conversation(
     model: &AppModel,
     theme: Theme,
+    motion: MotionFrame,
     area: Rect,
     buffer: &mut Buffer,
     cache: &mut RenderCache,
 ) {
     let colors = palette(theme);
-    let block = Block::default()
-        .borders(Borders::BOTTOM)
-        .border_style(
-            if model.focus == crate::application::FocusTarget::Conversation {
-                colors.accent
-            } else {
-                colors.border
-            },
-        )
-        .padding(Padding::new(2, 2, 1, 0));
-    let inner = block.inner(area);
-    let window = (!model.timeline.is_empty())
-        .then(|| conversation_window(model, theme, inner.width, inner.height, cache));
-    let title = if model.viewport.newer_updates > 0 {
-        format!(
-            " Conversation · {} newer updates ",
-            model.viewport.newer_updates
-        )
-    } else if window.as_ref().is_some_and(|value| value.has_earlier) {
-        " Conversation · ↑ earlier ".to_owned()
-    } else if model.execution == crate::application::ExecutionState::Following {
-        " Conversation · ● live ".to_owned()
-    } else if let Some(turn_count) = model
-        .selected_session
-        .as_deref()
-        .and_then(|selected| {
-            model
-                .sessions
-                .iter()
-                .find(|session| session.session_id == selected)
-        })
-        .map(|session| session.turn_count)
-    {
-        format!(" Conversation · {turn_count} {} ", turn_label(turn_count))
-    } else {
-        " Conversation ".to_owned()
-    };
-    let block = block.title(Line::styled(title, colors.title));
-    block.render(area, buffer);
+    let context = context_copy(model);
+    let inner = viewport_rect(model, area);
+    if let Some(context) = context {
+        Line::styled(context, colors.muted)
+            .alignment(ratatui::layout::Alignment::Center)
+            .render(Rect::new(area.x, area.y, area.width, 1), buffer);
+    }
+    let window = (!model.turn_blocks.is_empty() || model.live_answer.current().is_some())
+        .then(|| conversation_window(model, theme, motion, inner.width, inner.height, cache));
     let mut lines = Vec::new();
     let mut scroll = 0;
-    if model.timeline.is_empty() {
+    if model.turn_blocks.is_empty() && model.live_answer.current().is_none() {
         lines.push(Line::default());
         lines.push(Line::styled(empty_title(model.boot), colors.empty_title));
         lines.push(Line::styled(empty_detail(model.boot), colors.muted));
@@ -76,13 +55,34 @@ pub(super) fn render_conversation(
         .wrap(Wrap { trim: false })
         .scroll((scroll.min(u16::MAX as usize) as u16, 0))
         .render(inner, buffer);
-    super::position_rail::render(model, theme, area, buffer);
+}
+
+fn context_copy(model: &AppModel) -> Option<String> {
+    if model.viewport.newer_updates > 0 {
+        Some(format!(
+            "↓ {} newer updates · End to follow",
+            model.viewport.newer_updates
+        ))
+    } else if !model.viewport.follow_latest {
+        Some("↑ Browsing history · End to follow".into())
+    } else {
+        None
+    }
+}
+
+pub(crate) fn viewport_rect(model: &AppModel, area: Rect) -> Rect {
+    let context_height = u16::from(context_copy(model).is_some());
+    Rect::new(
+        area.x.saturating_add(2),
+        area.y.saturating_add(1).saturating_add(context_height),
+        area.width.saturating_sub(4),
+        area.height.saturating_sub(1).saturating_sub(context_height),
+    )
 }
 
 struct ConversationWindow {
     lines: Vec<Line<'static>>,
     scroll: usize,
-    has_earlier: bool,
     #[cfg_attr(not(test), allow(dead_code))]
     laid_out: usize,
 }
@@ -90,56 +90,87 @@ struct ConversationWindow {
 fn conversation_window(
     model: &AppModel,
     theme: Theme,
+    motion: MotionFrame,
     width: u16,
     height: u16,
     cache: &mut RenderCache,
 ) -> ConversationWindow {
+    cache.live.retain_for(model.live_answer.current());
     let target_height = usize::from(height).saturating_add(4);
     let mut cells = VecDeque::new();
     let mut laid_out = 0;
     let mut measured_height: usize = 0;
     if model.viewport.follow_latest {
-        for item in model.timeline.iter().rev() {
-            let cell = cache.render(item, width, theme);
+        if let Some(answer) = model.live_answer.current() {
+            let cell = super::live_answer::render(
+                answer,
+                theme,
+                width,
+                motion.is_reduced(),
+                &mut cache.live,
+            );
+            measured_height = measured_height.saturating_add(wrapped_height(&cell, width));
+            cells.push_front(cell);
+        }
+        let mut cursor = last_cell(model);
+        while let Some(current) = cursor {
+            let mut cell = render_block_cell(model, current, width, theme, cache);
+            append_block_gap(
+                &mut cell,
+                model,
+                current,
+                model.live_answer.current().is_some(),
+            );
             measured_height = measured_height.saturating_add(wrapped_height(&cell, width));
             cells.push_front(cell);
             laid_out += 1;
             if measured_height >= target_height {
                 break;
             }
+            cursor = previous_cell(model, current);
         }
     } else {
-        let start = model
+        let start = anchor_cell(model).or_else(|| first_cell(model));
+        let first_height = start
+            .map(|cursor| rendered_cell_height(model, cursor, width, theme, cache))
+            .unwrap_or(1);
+        let source_line = model
             .viewport
-            .anchor_key
-            .as_deref()
-            .and_then(|key| {
-                model
-                    .timeline
-                    .iter()
-                    .position(|item| item.stable_key == key)
-            })
-            .unwrap_or(0);
-        for item in model.timeline.iter().skip(start) {
-            let cell = cache.render(item, width, theme);
+            .source_line
+            .min(first_height.saturating_sub(1));
+        let mut cursor = start;
+        while let Some(current) = cursor {
+            let mut cell = render_block_cell(model, current, width, theme, cache);
+            append_block_gap(
+                &mut cell,
+                model,
+                current,
+                model.live_answer.current().is_some(),
+            );
             measured_height = measured_height.saturating_add(wrapped_height(&cell, width));
             cells.push_back(cell);
             laid_out += 1;
-            if measured_height >= target_height.saturating_add(model.viewport.source_line) {
+            if measured_height >= target_height.saturating_add(source_line) {
                 break;
             }
+            cursor = next_cell(model, current);
         }
     }
     let lines = cells.into_iter().flatten().collect::<Vec<_>>();
     let scroll = if model.viewport.follow_latest {
         wrapped_height(&lines, width).saturating_sub(usize::from(height))
     } else {
-        model.viewport.source_line
+        model.viewport.source_line.min(
+            anchor_cell(model)
+                .or_else(|| first_cell(model))
+                .map(|cursor| rendered_cell_height(model, cursor, width, theme, cache))
+                .unwrap_or(1)
+                .saturating_sub(1),
+        )
     };
     ConversationWindow {
         lines,
         scroll,
-        has_earlier: laid_out < model.timeline.len() || scroll > 0,
         laid_out,
     }
 }
@@ -165,6 +196,7 @@ struct CachedCell {
 pub(crate) struct RenderCache {
     cells: VecDeque<CachedCell>,
     bytes: usize,
+    live: live_cache::LiveRenderCache,
     #[cfg(test)]
     hits: usize,
 }
@@ -252,21 +284,14 @@ fn render_timeline_item(
     let mut lines = Vec::new();
     match item.role {
         TimelineRole::User => {
-            lines.push(Line::from(vec![
-                Span::styled("╭─ YOU ", colors.user),
-                Span::styled(format!("#{}", item.position), colors.muted),
-            ]));
-            push_content(&mut lines, &item.text, "│  ", colors.normal);
-            lines.push(Line::styled("╰─", colors.user));
+            lines.push(Line::styled("You", colors.user));
+            push_content(&mut lines, &item.text, "  ", colors.normal);
         }
         TimelineRole::Agent => {
-            lines.push(Line::from(vec![
-                Span::styled("◆  GARIVE ", colors.agent),
-                Span::styled(format!("#{}", item.position), colors.muted),
-            ]));
+            lines.push(Line::styled("◆ Garive", colors.agent));
             lines.extend(render_markdown(
                 &item.text,
-                "   ",
+                "  ",
                 colors.normal,
                 colors.agent,
                 colors.muted,
@@ -289,7 +314,6 @@ fn render_timeline_item(
             ]));
         }
     }
-    lines.push(Line::default());
     lines
 }
 
@@ -318,7 +342,7 @@ mod tests {
     fn latest_window_layout_is_independent_of_history_length() {
         let mut model = AppModel::default();
         for position in 1..=10_000 {
-            model.timeline.push(TimelineItem {
+            model.push_test_timeline_item(TimelineItem {
                 stable_key: format!("item-{position}"),
                 position,
                 role: TimelineRole::Agent,
@@ -327,7 +351,14 @@ mod tests {
             });
         }
 
-        let window = conversation_window(&model, Theme::Dark, 90, 30, &mut RenderCache::default());
+        let window = conversation_window(
+            &model,
+            Theme::Dark,
+            MotionFrame::reduced(),
+            90,
+            30,
+            &mut RenderCache::default(),
+        );
 
         assert!(window.laid_out < 30);
     }

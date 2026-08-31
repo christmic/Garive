@@ -520,7 +520,11 @@ successful/failing terminal handoff. The 44 library, 6 command, 51 view, 33
 snapshot/boundary, architecture, formatting, diff, and strict Clippy gates also
 pass.
 
-## Conversation position rail and preview
+## Superseded conversation position rail and preview
+
+This section records historical evidence only. The accepted conversation-first
+contract in `spec/design/tui-visual-system.md` removes the permanent rail and
+hover preview; none of the evidence below admits the current TUI v2 design.
 
 The source-backed contract is frozen by `cd17b5f4` and the componentized
 implementation is merged locally at `1b93b115`. `view/position_rail.rs` owns
