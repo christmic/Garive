@@ -11,7 +11,8 @@ mod input;
 mod view;
 
 use application::{
-    AppModel, BootState, ConversationLandmark, FocusTarget, Overlay, TimelineItem, TimelineRole,
+    AppModel, BootState, ConversationLandmark, FocusTarget, InspectorVariant, Overlay,
+    TimelineItem, TimelineRole,
 };
 use garive_host_client::{SessionSummary, SuspensionView};
 use ratatui::{buffer::Buffer, layout::Rect, style::Modifier};
@@ -78,6 +79,32 @@ fn overlay_is_rendered_above_without_mutating_model() {
     let rendered = frame(&model, 80, 16);
     assert!(rendered.contains("Quit Garive?"));
     assert_eq!(format!("{model:?}"), before);
+}
+
+#[test]
+fn linear_inspector_uses_the_same_safe_projection_and_activation_guidance() {
+    let mut model = AppModel::default();
+    model.push_test_timeline_item(TimelineItem {
+        stable_key: "turn".into(),
+        position: 6,
+        role: TimelineRole::User,
+        tone: Default::default(),
+        text: "Inspect".into(),
+    });
+    model.push_test_timeline_item(TimelineItem {
+        stable_key: "private-id-canary".into(),
+        position: 7,
+        role: TimelineRole::Status,
+        tone: Default::default(),
+        text: "Checked public state".into(),
+    });
+    model.open_inspector(InspectorVariant::Activity);
+    model.overlay = Some(Overlay::Inspector);
+    let linear = view::linear_overlay(&model);
+    assert!(linear.contains("Inspector, Activity"));
+    assert!(linear.contains("Checked public state"));
+    assert!(linear.contains("Enter to jump"));
+    assert!(!linear.contains("private-id-canary"));
 }
 
 #[test]

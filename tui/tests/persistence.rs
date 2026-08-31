@@ -39,6 +39,19 @@ fn preferences_round_trip_atomically_with_private_permissions() {
 }
 
 #[test]
+fn inspector_persists_only_its_open_preference() {
+    let preferences = Preferences {
+        activity_inspector: true,
+        ..Preferences::default()
+    };
+    let encoded = serde_json::to_value(preferences).unwrap();
+    assert_eq!(encoded["activity_inspector"], true);
+    for forbidden in ["inspector_variant", "inspector_selection", "selected_key"] {
+        assert!(encoded.get(forbidden).is_none());
+    }
+}
+
+#[test]
 fn startup_removes_only_grammatically_owned_abandoned_temps() {
     let temporary = tempfile::tempdir().unwrap();
     let root = temporary.path().join("state");

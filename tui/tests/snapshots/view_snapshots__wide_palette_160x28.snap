@@ -9,9 +9,10 @@ expression: "frame(&wide, Theme::Light, 160, 28)"
                                     ✓  Ag  │  › /new              Create session                                    │
                                   ◆ Gariv  │    /sessions         Switch session                                    │
                                     ## Re  │    /jump             unavailable · fewer than two Turns are loaded     │
-                                    • Ver  │    /status           Connection details                                │
-                                    • Shi  │    /edit-prompt      Edit draft externally                             │
-                                    cargo  │    /retry            unavailable · no pending command                  │
+                                    • Ver  │    /inspect          Open Inspector                                    │
+                                    • Shi  │    /status           Connection details                                │
+                                    cargo  │    /edit-prompt      Edit draft externally                             │
+                                           │    /retry            unavailable · no pending command                  │
                                            │    /reconnect        Resume event stream                               │
                                            │    /cancel           Cancel running turn                               │
                                            │    /theme system     Follow terminal theme                             │
@@ -21,7 +22,6 @@ expression: "frame(&wide, Theme::Light, 160, 28)"
                                            │    /mouse on         Enable mouse capture next launch                  │
                                            │    /mouse off        Disable mouse capture next launch                 │
                                            │    /copy last        Copy last completion                              │
-                                           │    /copy selection   unavailable · no composer text is selected        │
                                            │    ↑/↓ select   Enter run   Esc close                                  │
                                            │                                                                        │
                                            ╰────────────────────────────────────────────────────────────────────────╯

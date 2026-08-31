@@ -11,8 +11,9 @@ mod input;
 mod view;
 
 use application::{
-    AppModel, BootState, ConnectionState, ConversationLandmark, ExecutionState,
-    LiveAnswerExpectation, LiveAnswerProjection, Overlay, TimelineItem, TimelineRole, TimelineTone,
+    AppModel, BootState, ConnectionState, ConversationLandmark, ExecutionState, InspectorVariant,
+    LiveAnswerExpectation, LiveAnswerProjection, Overlay, TerminalSize, TimelineItem, TimelineRole,
+    TimelineTone,
 };
 use garive_host_client::{
     AgentDefinitionSummary, LiveOutputEndReason, LiveOutputEvent, LiveOutputEventKind,
@@ -196,6 +197,29 @@ fn responsive_column_boundaries_match_reviewed_snapshots() {
         assert_responsive_frame(&rendered, width, 18);
         insta::assert_snapshot!(format!("responsive_boundary_{width}x18"), rendered);
     }
+}
+
+#[test]
+fn inspector_geometry_and_themes_match_reviewed_snapshots() {
+    for (theme, name) in [
+        (Theme::Dark, "inspector_wide_dark_120x18"),
+        (Theme::Light, "inspector_wide_light_120x18"),
+        (Theme::Mono, "inspector_wide_mono_120x18"),
+    ] {
+        insta::assert_snapshot!(name, inspector_frame(theme, 120));
+    }
+    for (width, title_column) in [(119, 32), (120, 93), (128, 101), (129, 102)] {
+        let rendered = inspector_frame(Theme::Mono, width);
+        let actual = rendered.lines().find_map(|line| line.find("Inspector"));
+        assert_eq!(actual, Some(title_column), "width {width}");
+    }
+}
+
+fn inspector_frame(theme: Theme, width: u16) -> String {
+    let mut model = product_model();
+    model.terminal_size = TerminalSize { width, height: 18 };
+    model.open_inspector(InspectorVariant::Activity);
+    frame(&model, theme, width, 18)
 }
 
 fn assert_responsive_frame(rendered: &str, width: u16, height: u16) {
