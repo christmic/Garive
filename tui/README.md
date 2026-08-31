@@ -38,6 +38,10 @@ Useful launch options:
 ## Interaction
 
 - `Enter` sends; `Ctrl+J` inserts a newline.
+- `Ctrl+A`/`Ctrl+E` move to logical-line edges; `Ctrl+B`/`Ctrl+F` move by
+  grapheme; `Alt+B`/`Alt+F` move by word. `Home`/`End` remain visual-row
+  boundaries for wrapped text.
+- `Ctrl+H`/`Ctrl+D` delete a grapheme; `Ctrl+W`/`Alt+D` delete a word.
 - `Ctrl+U`/`Ctrl+K` kill to a logical line edge and `Ctrl+Y` yanks from one
   private in-memory entry; `Ctrl+Z`/`Alt+Z` undo/redo. Session changes clear
   the private entry, and it never touches OSC 52 or persistence.
@@ -49,6 +53,10 @@ Useful launch options:
 - `/help` lists commands. `/retry` repeats the exact persisted command identity;
   `/copy last`, `/copy selection`, and `/copy session-id` use a bounded OSC 52
   request. `Alt+C` is the direct explicit composer-selection gesture.
+
+These immutable defaults and the visual/screen-reader Help labels are owned by
+the typed `input/keymap.rs` catalog. Contextual `Enter` and `Esc` ownership is
+kept in the overlay/composer controller and covered by shipping PTYs.
 
 The Host/SQLite ledger is the only durable conversation authority. Local files
 contain preferences, bounded drafts, prompt history, and exact pending-command

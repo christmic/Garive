@@ -457,3 +457,27 @@ clipping.
 This automated PTY and semantic snapshot evidence does not replace physical
 Terminal/iTerm PNGs. That native gallery remains open while the macOS login UI
 is locked.
+
+## Typed terminal-key catalog candidate
+
+The catalog is frozen by `fc936859` and implemented by `ca522fc9`.
+`input/keymap.rs` owns typed chords, intents, and shared visual/spoken Help
+metadata; `input/logical_line.rs` independently owns newline-delimited edge
+calculation. The main editor remains 480 physical lines and the controller 440
+physical lines; the architecture gate passes without a relaxed bound.
+
+On macOS arm64, isolated targets pass 38 library, 15 editor, 6 command, 51
+view, and 33 snapshot/boundary tests. Strict TUI all-target/all-feature Clippy,
+formatting, diff, and architecture checks pass. A new `100x24` shipping PTY
+drives the real composer through logical-line, grapheme, word, and delete
+aliases and observes each intermediate screen state. The first parallel
+17-case PTY run exposed two harness timing failures: the mouse case passed
+alone, and the screen-reader driver had sent `Esc` immediately before
+`Ctrl+Q`, which the terminal correctly combined as `Alt+Ctrl+Q` under exact
+modifier matching. Revision `a4a9f525` gives those distinct user actions an
+explicit parsing boundary and waits for the quit confirmation. The definitive
+full rerun passes all 17 shipping-binary PTYs, with 0 failures or ignored cases,
+in 41.65 seconds.
+
+As above, this is executable macOS PTY evidence rather than an admitted
+physical-window screenshot. The locked-login gallery gate remains open.

@@ -132,13 +132,14 @@ Garive does not invent or persist provider/model choices in the TUI.
 |---|---|
 | `Enter` | Submit the prompt or selected slash command. |
 | `Ctrl+J` or `Shift+Enter` | Insert a newline. |
-| Arrow keys | Move by grapheme or visual line. |
-| `Alt+Left` / `Alt+Right` | Move by word. |
+| Arrow keys or `Ctrl+B` / `Ctrl+F` | Move by grapheme or visual line. |
+| `Alt+Left` / `Alt+Right` or `Alt+B` / `Alt+F` | Move by word. |
 | `Home` / `End` | Move to the visual line boundary. |
+| `Ctrl+A` / `Ctrl+E` | Move to the newline-delimited logical line boundary. |
 | `Ctrl+Home` / `Ctrl+End` | Move to the document boundary. |
 | `Shift` plus a movement key | Extend the selection. |
-| `Backspace` / `Delete` | Delete the selection or one grapheme. |
-| `Alt+Backspace` / `Alt+Delete` | Delete one word. |
+| `Backspace` / `Delete` or `Ctrl+H` / `Ctrl+D` | Delete the selection or one grapheme. |
+| `Alt+Backspace` / `Alt+Delete` or `Ctrl+W` / `Alt+D` | Delete one word. |
 | `Ctrl+Z` / `Alt+Z` | Undo or portable redo. |
 | `Ctrl+U` / `Ctrl+K` | Kill the selection, or text to the logical line start/end, into a private one-entry buffer. |
 | `Ctrl+Y` | Yank the private killed text at the cursor or over the selection. |
@@ -156,6 +157,13 @@ and is cleared before another Session's draft is loaded. At a logical line
 boundary, a kill may include the adjacent newline to join lines. `Alt+Z` is the
 portable redo binding because many terminals cannot distinguish
 `Ctrl+Shift+Z` from `Ctrl+Z`.
+
+Wrapped text deliberately has two kinds of line edge. `Home` and `End` follow
+the row visible on screen, while `Ctrl+A` and `Ctrl+E` follow explicit newline
+boundaries. Garive's immutable terminal aliases live in one typed key catalog;
+the same catalog supplies visual and spoken Help labels. Context-sensitive
+`Enter` and `Esc` remain owned by the active composer or overlay, so a modal
+surface cannot leak a keystroke into the workspace below it.
 
 Typing `/` at the first column of a focused, single-line composer opens a
 compact command menu above it. Continue typing to narrow by command prefix.

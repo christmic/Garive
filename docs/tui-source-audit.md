@@ -449,6 +449,26 @@ Authenticated Users ACE, does not repair a hostile existing ACL, and does not
 follow junctions for convenience. Administrator ownership privileges remain an
 operating-system authority and are not represented as ordinary Garive access.
 
+## Typed terminal-key catalog
+
+This increment is also source-bound. Codex defines typed runtime/editor
+keymaps and the default line, word, delete, kill, and yank chords in
+`codex-rs/tui/src/keymap.rs:1150-1189`. Grok converts terminal events into
+typed `EditCommand` values—including `Ctrl+B/F`, `Alt+B/F`, `Ctrl+U/K`, and
+`Ctrl+H/D`—in
+`crates/codegen/xai-ratatui-textarea/src/editor_keys.rs:100-165`. Pi owns its
+default bindings and descriptions together in
+`packages/tui/src/keybindings.ts:70-116`, including `Ctrl+A/E`, delete aliases,
+and kill/yank.
+
+Garive adopts a smaller immutable typed catalog, not user-configurable keys,
+Vim mode, or a multi-entry kill ring. `Home`/`End` retain Garive's authored
+visual-row semantics; `Ctrl+A`/`Ctrl+E` add newline-delimited logical-line
+semantics. Visual and screen-reader Help consume the same catalog metadata,
+while contextual `Enter`/`Esc` ownership stays in the active overlay/composer
+controller. Exact modifier matching prevents an AltGr chord from becoming a
+destructive command.
+
 ## Cross-source decisions
 
 | Concern | Accepted decision | Evidence strength |

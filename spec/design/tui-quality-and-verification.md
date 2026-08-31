@@ -488,6 +488,17 @@ just architecture
 Commands are not reported as passing unless their executable harness performs
 the named work and the output has been read.
 
+Revisions `fc936859` and `ca522fc9` freeze and implement the typed keyboard
+catalog plus the separate logical-line boundary component. On native macOS
+arm64, the isolated candidate passes 38 library, 15 editor, 6 command, 51 view,
+and 33 snapshot/boundary tests, plus architecture, strict TUI
+all-target/all-feature Clippy, formatting, and diff checks. The added shipping
+PTY types and observes `Ctrl+A/E`, `Ctrl+B/F`, `Alt+B/F`, `Ctrl+H/D`,
+`Ctrl+W`, and `Alt+D` against the real composer. Revision `a4a9f525` gives
+sequential terminal gestures explicit parsing boundaries; all 17 shipping PTYs
+then pass. Physical Terminal/iTerm-class image admission remains a separate
+open gate.
+
 ## Completion rule
 
 The TUI is complete only when:
