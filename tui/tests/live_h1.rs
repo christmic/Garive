@@ -100,7 +100,8 @@ fn mouse_click_activates_the_visible_overlay_row_without_background_routing() {
                 send "\020"
                 expect "/help"
                 send "\033\[<0;21;7M"
-                expect "Status details"
+                expect "Inspector"
+                expect "Connection"
                 send "\033"
                 after 100
                 send "\021"
@@ -114,9 +115,75 @@ fn mouse_click_activates_the_visible_overlay_row_without_background_routing() {
         assert!(status.success());
         let text = fs::read_to_string(transcript).unwrap();
         assert!(text.contains("\x1b[?1000h"), "mouse capture entered");
-        assert!(text.contains("Host: online") && text.contains("Cursor: 0"));
+        assert!(text.contains("Inspector") && text.contains("Details"));
+        assert!(text.contains("Connection") && text.contains("Execution"));
         assert!(text.contains("\x1b[?1000l"), "mouse capture restored");
     }
+}
+
+#[test]
+fn inspector_survives_live_width_breakpoints_and_escape_restores_the_composer() {
+    let (address, server) = empty_host();
+    let temporary = tempfile::tempdir().unwrap();
+    let transcript = temporary.path().join("inspector-resize.log");
+    let status = Command::new("expect")
+        .env("TERM", "xterm-256color")
+        .env("GARIVE_TUI_BIN", env!("CARGO_BIN_EXE_garive-tui"))
+        .env("GARIVE_TUI_HOST", format!("http://{address}/"))
+        .env("GARIVE_TUI_LOG", &transcript)
+        .env("GARIVE_TUI_STATE", temporary.path().join("state"))
+        .args(["-c", r#"
+            set timeout 6
+            proc must_expect {pattern code} {
+                expect {
+                    -exact $pattern { return }
+                    timeout { exit $code }
+                    eof { exit $code }
+                }
+            }
+            log_file -noappend $env(GARIVE_TUI_LOG)
+            spawn -noecho /bin/sh -c {stty rows 24 columns 120; exec "$GARIVE_TUI_BIN" --host "$GARIVE_TUI_HOST" --state-dir "$GARIVE_TUI_STATE" --theme mono}
+            must_expect "\033\[6n" 80
+            send "\033\[1;1R"
+            must_expect "Garive" 81
+            send "/status \r"
+            must_expect "None selected" 82
+            must_expect "Following latest" 83
+            send "\033\[F"
+            exec stty rows 24 columns 39 < $spawn_out(slave,name)
+            must_expect "Garive needs 40 columns" 84
+            exec stty rows 24 columns 119 < $spawn_out(slave,name)
+            must_expect "Following latest" 85
+            send "\033"
+            after 100
+            send "\033\[200~closed\033\[201~"
+            must_expect "closed" 86
+            send "\021"
+            must_expect "Garive?" 87
+            send "\r"
+            expect {
+                eof { exit 0 }
+                timeout { exit 88 }
+            }
+        "#])
+        .status()
+        .unwrap();
+    server.join().unwrap();
+    assert!(
+        status.success(),
+        "Inspector PTY walkthrough exited with {status}"
+    );
+    let text = fs::read_to_string(transcript).unwrap();
+    for safe_field in ["Connection", "Session", "Execution", "Transcript"] {
+        assert!(
+            text.contains(safe_field),
+            "missing safe Details field {safe_field}"
+        );
+    }
+    assert!(text.contains("Loaded") && text.contains("Turns"));
+    assert!(text.contains("Garive needs 40 columns"));
+    assert!(text.matches("Inspector").count() >= 2);
+    assert!(text.contains("closed"));
 }
 
 #[test]
