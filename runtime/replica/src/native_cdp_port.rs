@@ -3,18 +3,18 @@
 use std::time::Duration;
 
 use garive_browser_cdp::{
-    CdpClient, CdpHistoryEntry, CdpNavigationResult, CdpPortableKey, CdpSelectOutcome,
-    CdpTransportError, CdpWaitUntil, CDP_ADAPTER_REVISION,
+    CdpAxTree, CdpClient, CdpFrameTree, CdpHistoryEntry, CdpNavigationResult, CdpPortableKey,
+    CdpSelectOutcome, CdpTransportError, CdpWaitUntil, CDP_ADAPTER_REVISION,
 };
 use garive_tools::canonical_http_origin;
 use serde_json::json;
 use sha2::{Digest, Sha256};
 
 use crate::{
-    map_cdp_ax_tree_with_binding, CdpElementTarget, CdpObservationContext, CdpSnapshotBindingV1,
-    NativeActionCommandV1, NativeActionFuture, NativeActionReceiptV1, NativeAdapterBindingV1,
-    NativeAdapterPort, NativeNodeRef, NativeObservationBounds, NativeObservationFuture,
-    NativeProtocolError, NativeSnapshotId, NativeTarget,
+    map_cdp_ax_tree_with_frame_scope, CdpElementTarget, CdpFrameScope, CdpObservationContext,
+    CdpSnapshotBindingV1, NativeActionCommandV1, NativeActionFuture, NativeActionReceiptV1,
+    NativeAdapterBindingV1, NativeAdapterPort, NativeNodeRef, NativeObservationBounds,
+    NativeObservationFuture, NativeProtocolError, NativeSnapshotId, NativeTarget,
 };
 
 const ADAPTER_ID: &str = "garive.browser.cdp";
@@ -31,6 +31,7 @@ pub struct CdpNativeAdapterPort {
     last_snapshot_id: Option<NativeSnapshotId>,
     last_bounds: Option<NativeObservationBounds>,
     last_history_entry: Option<CdpHistoryEntry>,
+    last_frame_tree: Option<CdpFrameTree>,
     current_binding: Option<CdpSnapshotBindingV1>,
     client: CdpClient,
 }
@@ -68,6 +69,7 @@ impl CdpNativeAdapterPort {
             last_snapshot_id: None,
             last_bounds: None,
             last_history_entry: None,
+            last_frame_tree: None,
             current_binding: None,
             client,
         })
@@ -313,6 +315,7 @@ impl CdpNativeAdapterPort {
     async fn revalidate_history_snapshot(
         &mut self,
     ) -> Result<CdpHistoryEntry, NativeProtocolError> {
+        self.revalidate_frame_snapshot().await?;
         let current = self
             .client
             .current_history_entry(&self.cdp_session_id)
@@ -323,6 +326,33 @@ impl CdpNativeAdapterPort {
             return Err(NativeProtocolError::SnapshotStale);
         }
         Ok(current)
+    }
+
+    async fn revalidate_frame_snapshot(&mut self) -> Result<(), NativeProtocolError> {
+        let current = self
+            .client
+            .frame_tree(&self.cdp_session_id)
+            .await
+            .map_err(observation_error)?;
+        if self.last_frame_tree.as_ref() != Some(&current) {
+            self.current_binding = None;
+            return Err(NativeProtocolError::SnapshotStale);
+        }
+        Ok(())
+    }
+
+    async fn capture_resulting_frame_tree(&mut self) -> Result<bool, NativeProtocolError> {
+        let current = self
+            .client
+            .frame_tree(&self.cdp_session_id)
+            .await
+            .map_err(|_| NativeProtocolError::ActionUncertain)?;
+        let changed = self.last_frame_tree.as_ref() != Some(&current);
+        if changed {
+            self.target_revision = frame_revision(&self.target_revision, &current)?;
+        }
+        self.last_frame_tree = Some(current);
+        Ok(changed)
     }
 
     fn resolve_navigation(
@@ -433,7 +463,12 @@ impl NativeAdapterPort for CdpNativeAdapterPort {
                     .map_err(observation_error)?;
                 self.accessibility_enabled = true;
             }
-            let tree = self
+            let frame_tree_before = self
+                .client
+                .frame_tree(&self.cdp_session_id)
+                .await
+                .map_err(observation_error)?;
+            let mut tree = self
                 .client
                 .full_ax_tree(
                     &self.cdp_session_id,
@@ -449,6 +484,47 @@ impl NativeAdapterPort for CdpNativeAdapterPort {
                 .current_history_entry(&self.cdp_session_id)
                 .await
                 .map_err(observation_error)?;
+            let main_origin = canonical_http_origin(&history_entry.url)
+                .ok_or(NativeProtocolError::BrowserOriginDenied)?;
+            let mut frame_scope = CdpFrameScope::same_origin(&frame_tree_before, &main_origin)?;
+            for frame in frame_tree_before.frames.iter().skip(1) {
+                let owner = self
+                    .client
+                    .frame_owner_backend_node(&self.cdp_session_id, &frame.id)
+                    .await
+                    .map_err(observation_error)?;
+                frame_scope.bind_frame_owner(&frame.id, owner)?;
+                if frame_scope.admits(&frame.id) {
+                    let remaining_nodes = (bounds.max_nodes as usize)
+                        .checked_sub(tree.nodes.len())
+                        .filter(|remaining| *remaining > 0)
+                        .ok_or(NativeProtocolError::InvalidBinding)?;
+                    let child = self
+                        .client
+                        .full_ax_tree(
+                            &self.cdp_session_id,
+                            Some(&frame.id),
+                            self.tree_depth,
+                            remaining_nodes,
+                            bounds.max_text_bytes as usize,
+                        )
+                        .await
+                        .map_err(observation_error)?;
+                    tree.nodes.extend(child.nodes);
+                }
+            }
+            let frame_tree_after = self
+                .client
+                .frame_tree(&self.cdp_session_id)
+                .await
+                .map_err(observation_error)?;
+            if frame_tree_before != frame_tree_after {
+                self.current_binding = None;
+                return Err(NativeProtocolError::SnapshotStale);
+            }
+            if ax_tree_text_bytes(&tree) > bounds.max_text_bytes as usize {
+                return Err(NativeProtocolError::InvalidBinding);
+            }
             if self
                 .last_history_entry
                 .as_ref()
@@ -470,7 +546,7 @@ impl NativeAdapterPort for CdpNativeAdapterPort {
                 .next_snapshot_sequence
                 .checked_add(1)
                 .ok_or(NativeProtocolError::InvalidBinding)?;
-            let mapped = map_cdp_ax_tree_with_binding(
+            let mapped = map_cdp_ax_tree_with_frame_scope(
                 CdpObservationContext {
                     target: self.target.clone(),
                     snapshot_id: snapshot_id.clone(),
@@ -478,10 +554,12 @@ impl NativeAdapterPort for CdpNativeAdapterPort {
                     bounds,
                 },
                 &tree,
+                &frame_scope,
             )?;
             self.last_snapshot_id = Some(snapshot_id);
             self.last_bounds = Some(bounds);
             self.last_history_entry = Some(history_entry);
+            self.last_frame_tree = Some(frame_tree_after);
             self.current_binding = Some(mapped.binding);
             Ok(mapped.observation)
         })
@@ -551,6 +629,7 @@ impl NativeAdapterPort for CdpNativeAdapterPort {
                 }
                 self.last_history_entry = Some(history_entry.clone());
                 self.target_revision = navigation_revision(&self.target_revision, &result);
+                let frame_changed = self.capture_resulting_frame_tree().await?;
                 let final_origin = canonical_http_origin(&result.final_url);
                 let failure_code =
                     if final_origin.as_deref() != Some(navigation.destination_origin.as_str()) {
@@ -572,6 +651,7 @@ impl NativeAdapterPort for CdpNativeAdapterPort {
                     "failure_code": failure_code,
                     "final_origin": final_origin,
                     "history_entry_id": history_entry.id,
+                    "frame_changed": frame_changed,
                     "target_revision": self.target_revision,
                 }))
                 .map_err(|_| NativeProtocolError::ActionUncertain)?;
@@ -595,6 +675,7 @@ impl NativeAdapterPort for CdpNativeAdapterPort {
                 if &self.history_action_binding_for(command, &action)? != binding {
                     return Err(NativeProtocolError::InvalidBinding);
                 }
+                self.revalidate_frame_snapshot().await?;
                 let history = self
                     .client
                     .navigation_history(&self.cdp_session_id)
@@ -655,6 +736,7 @@ impl NativeAdapterPort for CdpNativeAdapterPort {
                 .map_err(|_| NativeProtocolError::ActionUncertain)?;
                 self.target_revision = history_revision(&self.target_revision, &final_entry);
                 self.last_history_entry = Some(final_entry.clone());
+                let frame_changed = self.capture_resulting_frame_tree().await?;
                 let final_origin = canonical_http_origin(&final_entry.url);
                 let allowed = final_origin.as_ref().is_some_and(|origin| {
                     action
@@ -671,6 +753,7 @@ impl NativeAdapterPort for CdpNativeAdapterPort {
                     "history_action": action.kind.name(),
                     "history_entry_id": final_entry.id,
                     "final_origin": final_origin,
+                    "frame_changed": frame_changed,
                     "terminal_classification": terminal_classification,
                     "failure_code": failure_code,
                     "target_revision": self.target_revision,
@@ -740,6 +823,7 @@ impl NativeAdapterPort for CdpNativeAdapterPort {
                     &allowed_origins,
                 );
                 self.last_history_entry = Some(after_history.clone());
+                let frame_changed = self.capture_resulting_frame_tree().await?;
                 let receipt_evidence_digest = canonical_digest(&json!({
                     "action_id": command.action_id.as_str(),
                     "preflight_evidence_digest": binding.preflight_evidence_digest,
@@ -747,6 +831,7 @@ impl NativeAdapterPort for CdpNativeAdapterPort {
                     "failure_code": outcome.failure_code,
                     "history_entry_id": after_history.id,
                     "final_origin": outcome.final_origin,
+                    "frame_changed": frame_changed,
                     "target_revision": self.target_revision,
                 }))?;
                 return Ok(NativeActionReceiptV1 {
@@ -837,6 +922,7 @@ impl NativeAdapterPort for CdpNativeAdapterPort {
                 }
             }
             self.last_history_entry = Some(after_history.clone());
+            let frame_changed = self.capture_resulting_frame_tree().await?;
             let receipt_evidence_digest = canonical_digest(&json!({
                 "action_id": command.action_id.as_str(),
                 "preflight_evidence_digest": binding.preflight_evidence_digest,
@@ -846,6 +932,7 @@ impl NativeAdapterPort for CdpNativeAdapterPort {
                 "selection_changed": selection_changed,
                 "history_entry_id": after_history.id,
                 "final_origin": outcome.final_origin,
+                "frame_changed": frame_changed,
                 "target_revision": self.target_revision,
             }))?;
             Ok(NativeActionReceiptV1 {
@@ -1094,6 +1181,48 @@ fn history_revision(previous: &str, entry: &CdpHistoryEntry) -> String {
         "revision-{:x}",
         Sha256::digest(format!("{previous}\0{}\0{}", entry.id, entry.url).as_bytes())
     )
+}
+
+fn frame_revision(previous: &str, tree: &CdpFrameTree) -> Result<String, NativeProtocolError> {
+    let frames = tree
+        .frames
+        .iter()
+        .map(|frame| {
+            json!({
+                "id": frame.id,
+                "parent_id": frame.parent_id,
+                "loader_id": frame.loader_id,
+                "url": frame.url,
+                "security_origin": frame.security_origin,
+            })
+        })
+        .collect::<Vec<_>>();
+    Ok(format!(
+        "revision-{}",
+        canonical_digest(&json!({
+            "previous": previous,
+            "main_frame_id": tree.main_frame_id,
+            "frames": frames,
+        }))?
+    ))
+}
+
+fn ax_tree_text_bytes(tree: &CdpAxTree) -> usize {
+    tree.nodes.iter().fold(0_usize, |total, node| {
+        let direct = node.node_id.len()
+            + node.role.as_ref().map_or(0, String::len)
+            + node.name.as_ref().map_or(0, String::len)
+            + node.value_summary.as_ref().map_or(0, String::len)
+            + node.parent_id.as_ref().map_or(0, String::len)
+            + node.frame_id.as_ref().map_or(0, String::len)
+            + node.child_ids.iter().map(String::len).sum::<usize>();
+        let properties = node
+            .properties
+            .iter()
+            .map(|property| property.name.len() + property.value.to_string().len())
+            .sum::<usize>();
+        total.saturating_add(direct).saturating_add(properties)
+    })
 }
 
 fn canonical_digest(value: &serde_json::Value) -> Result<String, NativeProtocolError> {

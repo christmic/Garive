@@ -13,7 +13,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use garive_browser_cdp::{CdpAdapterConfig, CdpClient, CdpLimits, CdpTransport};
+use garive_browser_cdp::{CdpAdapterConfig, CdpClient, CdpLimits, CdpTransport, CdpWaitUntil};
 use garive_runtime::{
     BrowserPageId, BrowserSessionId, CdpNativeAdapterPort, NativeActionCommandV1, NativeActionId,
     NativeAdapterPort, NativeObservationBounds, NativeTarget,
@@ -38,7 +38,7 @@ struct LocalPageServer {
 }
 
 impl LocalPageServer {
-    fn start() -> Self {
+    fn start(cross_origin: Option<SocketAddr>) -> Self {
         let listener = TcpListener::bind("127.0.0.1:0").expect("fixture listener");
         listener.set_nonblocking(true).expect("nonblocking fixture");
         let address = listener.local_addr().expect("fixture address");
@@ -49,7 +49,7 @@ impl LocalPageServer {
                 match listener.accept() {
                     Ok((mut stream, _)) => {
                         let _ = stream.set_nonblocking(false);
-                        serve(&mut stream, address);
+                        serve(&mut stream, address, cross_origin);
                     }
                     Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
                         thread::sleep(Duration::from_millis(5));
@@ -69,6 +69,10 @@ impl LocalPageServer {
         format!("http://{}/start", self.address)
     }
 
+    fn seed_url(&self) -> String {
+        format!("http://{}/seed", self.address)
+    }
+
     fn origin(&self) -> String {
         format!("http://{}", self.address)
     }
@@ -84,7 +88,7 @@ impl Drop for LocalPageServer {
     }
 }
 
-fn serve(stream: &mut TcpStream, address: SocketAddr) {
+fn serve(stream: &mut TcpStream, address: SocketAddr, cross_origin: Option<SocketAddr>) {
     let _ = stream.set_read_timeout(Some(Duration::from_secs(2)));
     let _ = stream.set_write_timeout(Some(Duration::from_secs(2)));
     let mut request = [0_u8; 8_192];
@@ -95,14 +99,32 @@ fn serve(stream: &mut TcpStream, address: SocketAddr) {
         "/start" => (
             "302 Found",
             format!("Location: http://{address}/form\r\n"),
-            "",
+            String::new(),
         ),
         "/form" => (
             "200 OK",
             "Content-Type: text/html; charset=utf-8\r\n".into(),
-            r#"<!doctype html><title>Runtime port fixture</title><body style="height:4000px" onscroll="document.querySelector('main').setAttribute('aria-label','Scrolled')"><main><label>Account <input aria-label="Account name"></label><label>Mode <select aria-label="Execution mode" onchange="this.setAttribute('aria-label','Execution mode '+this.value)"><option value="safe">Safe</option><option value="stable">Stable</option></select></label><button data-count="0" onclick="this.dataset.count=String(Number(this.dataset.count)+1);this.setAttribute('aria-label','Submitted '+this.dataset.count)">Submit form</button></main></body>"#,
+            format!(
+                r#"<!doctype html><title>Runtime port fixture</title><body style="height:4000px" onscroll="document.querySelector('main').setAttribute('aria-label','Scrolled')"><main><label>Account <input aria-label="Account name"></label><label>Mode <select aria-label="Execution mode" onchange="this.setAttribute('aria-label','Execution mode '+this.value)"><option value="safe">Safe</option><option value="stable">Stable</option></select></label><button data-count="0" onclick="this.dataset.count=String(Number(this.dataset.count)+1);this.setAttribute('aria-label','Submitted '+this.dataset.count)">Submit form</button><iframe src="/same-frame"></iframe><iframe src="http://{}/cross-frame"></iframe></main></body>"#,
+                cross_origin.expect("cross-origin fixture")
+            ),
         ),
-        _ => ("204 No Content", String::new(), ""),
+        "/same-frame" => (
+            "200 OK",
+            "Content-Type: text/html; charset=utf-8\r\n".into(),
+            "<button aria-label=\"Same frame action\">Same</button>".into(),
+        ),
+        "/seed" => (
+            "200 OK",
+            "Content-Type: text/html; charset=utf-8\r\n".into(),
+            "<!doctype html><title>Managed seed</title>".into(),
+        ),
+        "/cross-frame" => (
+            "200 OK",
+            "Content-Type: text/html; charset=utf-8\r\n".into(),
+            "<button aria-label=\"Cross origin secret\">Secret</button>".into(),
+        ),
+        _ => ("204 No Content", String::new(), String::new()),
     };
     let response = format!(
         "HTTP/1.1 {status}\r\n{headers}Content-Length: {}\r\nConnection: close\r\n\r\n{body}",
@@ -164,7 +186,8 @@ async fn managed_chrome_runs_through_the_governed_runtime_port() {
         "Chrome is not installed"
     );
     let profile = tempfile::tempdir().expect("temporary managed profile");
-    let page_server = LocalPageServer::start();
+    let cross_origin_server = LocalPageServer::start(None);
+    let page_server = LocalPageServer::start(Some(cross_origin_server.address));
     let _browser = launch_chrome(profile.path());
     let config = CdpAdapterConfig::new(
         endpoint(profile.path()),
@@ -174,6 +197,10 @@ async fn managed_chrome_runs_through_the_governed_runtime_port() {
     let mut client = CdpClient::new(CdpTransport::connect(&config).await.expect("connect"));
     let page_id = client.create_blank_target().await.expect("target");
     let cdp_session_id = client.attach_target(&page_id).await.expect("attach");
+    client
+        .navigate(&cdp_session_id, &page_server.seed_url(), CdpWaitUntil::Load)
+        .await
+        .expect("managed HTTP seed");
     let target = target(&page_id);
     let mut port = CdpNativeAdapterPort::new(
         target.clone(),
@@ -227,6 +254,39 @@ async fn managed_chrome_runs_through_the_governed_runtime_port() {
         .nodes
         .iter()
         .any(|node| node.name.as_deref() == Some("Account name")));
+    assert!(
+        after
+            .nodes
+            .iter()
+            .any(|node| node.name.as_deref() == Some("Same frame action")),
+        "{:#?}",
+        after.nodes
+    );
+    assert!(!after
+        .nodes
+        .iter()
+        .any(|node| node.name.as_deref() == Some("Cross origin secret")));
+    let opaque_frame = after
+        .nodes
+        .iter()
+        .find(|node| node.role == "opaque_frame")
+        .expect("cross-origin opaque frame");
+    assert!(opaque_frame.name.is_none());
+    let opaque_click = NativeActionCommandV1 {
+        action_id: NativeActionId::new("managed-opaque-frame").expect("action"),
+        target: target.clone(),
+        expected_snapshot_id: after.snapshot_id.clone(),
+        target_revision: after.target_revision.clone(),
+        prepared_input: json!({
+            "action":"click",
+            "node_ref":opaque_frame.node_ref.as_str(),
+            "allowed_navigation_origins":[]
+        }),
+    };
+    assert_eq!(
+        port.preflight_action(&opaque_click),
+        Err(garive_runtime::NativeProtocolError::BrowserFrameOpaque)
+    );
 
     let mode = after
         .nodes

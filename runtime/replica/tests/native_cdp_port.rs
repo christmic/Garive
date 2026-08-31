@@ -38,11 +38,94 @@ fn history(id: i64, url: &str) -> Value {
     json!({"currentIndex":0,"entries":[{"id":id,"url":url}]})
 }
 
+async fn frames(
+    socket: &mut tokio_tungstenite::WebSocketStream<tokio::net::TcpStream>,
+    origin: &str,
+) {
+    let command = reply(
+        socket,
+        json!({"frameTree":{"frame":{
+            "id":"frame-main",
+            "loaderId":"loader-main",
+            "url":format!("{origin}/page"),
+            "securityOrigin":origin,
+            "mimeType":"text/html"
+        }}}),
+    )
+    .await;
+    assert_eq!(command["method"], "Page.getFrameTree");
+}
+
+fn frame_tree(origin: &str, loader_id: &str) -> Value {
+    json!({"frameTree":{"frame":{
+        "id":"frame-main",
+        "loaderId":loader_id,
+        "url":format!("{origin}/page"),
+        "securityOrigin":origin,
+        "mimeType":"text/html"
+    }}})
+}
+
 fn histories(current_index: usize) -> Value {
     json!({"currentIndex":current_index,"entries":[
         {"id":1,"url":"https://one.test:443/page"},
         {"id":2,"url":"https://two.test:443/page"}
     ]})
+}
+
+#[tokio::test]
+async fn frame_navigation_during_semantic_observation_rejects_the_mixed_snapshot() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.expect("listener");
+    let address = listener.local_addr().expect("address");
+    let server = tokio::spawn(async move {
+        let (stream, _) = listener.accept().await.expect("accept");
+        let mut socket = accept_async(stream).await.expect("websocket");
+        reply(&mut socket, json!({})).await;
+        reply(
+            &mut socket,
+            frame_tree("https://fixture.test:443", "loader-before"),
+        )
+        .await;
+        reply(
+            &mut socket,
+            json!({"nodes":[{"nodeId":"root","ignored":false,"role":{"value":"RootWebArea"}}]}),
+        )
+        .await;
+        reply(&mut socket, history(1, "https://fixture.test:443/page")).await;
+        reply(
+            &mut socket,
+            frame_tree("https://fixture.test:443", "loader-after"),
+        )
+        .await;
+    });
+    let config = CdpAdapterConfig::new(
+        format!("ws://{address}/devtools/browser/capability"),
+        CdpLimits::new(64 * 1_024, 1, 16, 2_000).expect("limits"),
+    )
+    .expect("config");
+    let client = CdpClient::new(CdpTransport::connect(&config).await.expect("transport"));
+    let mut port = CdpNativeAdapterPort::new(
+        target(),
+        "cdp-session",
+        "revision-1",
+        "run-frame-race",
+        64,
+        client,
+    )
+    .expect("port");
+    assert_eq!(
+        port.observe(
+            &target(),
+            None,
+            NativeObservationBounds {
+                max_nodes: 16,
+                max_text_bytes: 4_096,
+            },
+        )
+        .await,
+        Err(garive_runtime::NativeProtocolError::SnapshotStale)
+    );
+    server.await.expect("server");
 }
 
 #[tokio::test]
@@ -56,6 +139,7 @@ async fn concrete_port_dispatches_bound_click_type_and_clear_actions() {
             reply(&mut socket, json!({})).await["method"],
             "Accessibility.enable"
         );
+        frames(&mut socket, "https://fixture.test:443").await;
         let tree = reply(
             &mut socket,
             json!({"nodes":[
@@ -70,6 +154,8 @@ async fn concrete_port_dispatches_bound_click_type_and_clear_actions() {
             reply(&mut socket, history(1, "https://fixture.test:443/form")).await["method"],
             "Page.getNavigationHistory"
         );
+        frames(&mut socket, "https://fixture.test:443").await;
+        frames(&mut socket, "https://fixture.test:443").await;
         reply(&mut socket, history(1, "https://fixture.test:443/form")).await;
         assert_eq!(
             reply(&mut socket, json!({})).await["method"],
@@ -87,6 +173,12 @@ async fn concrete_port_dispatches_bound_click_type_and_clear_actions() {
         reply(&mut socket, history(1, "https://fixture.test:443/form")).await;
         reply(
             &mut socket,
+            frame_tree("https://fixture.test:443", "loader-after-click"),
+        )
+        .await;
+        frames(&mut socket, "https://fixture.test:443").await;
+        reply(
+            &mut socket,
             json!({"nodes":[
                 {"nodeId":"textbox","ignored":false,"role":{"value":"textbox"},"name":{"value":"Account"},"backendDOMNodeId":43,"parentId":"root"},
                 {"nodeId":"root","ignored":false,"role":{"value":"RootWebArea"}}
@@ -94,12 +186,16 @@ async fn concrete_port_dispatches_bound_click_type_and_clear_actions() {
         )
         .await;
         reply(&mut socket, history(1, "https://fixture.test:443/form")).await;
+        frames(&mut socket, "https://fixture.test:443").await;
+        frames(&mut socket, "https://fixture.test:443").await;
         reply(&mut socket, history(1, "https://fixture.test:443/form")).await;
         assert_eq!(reply(&mut socket, json!({})).await["method"], "DOM.focus");
         let insert = reply(&mut socket, json!({})).await;
         assert_eq!(insert["method"], "Input.insertText");
         assert_eq!(insert["params"]["text"], "Garive 🦀");
         reply(&mut socket, history(1, "https://fixture.test:443/form")).await;
+        frames(&mut socket, "https://fixture.test:443").await;
+        frames(&mut socket, "https://fixture.test:443").await;
         reply(
             &mut socket,
             json!({"nodes":[
@@ -109,6 +205,8 @@ async fn concrete_port_dispatches_bound_click_type_and_clear_actions() {
         )
         .await;
         reply(&mut socket, history(1, "https://fixture.test:443/form")).await;
+        frames(&mut socket, "https://fixture.test:443").await;
+        frames(&mut socket, "https://fixture.test:443").await;
         reply(&mut socket, history(1, "https://fixture.test:443/form")).await;
         assert_eq!(reply(&mut socket, json!({})).await["method"], "DOM.focus");
         for _ in 0..3 {
@@ -118,6 +216,7 @@ async fn concrete_port_dispatches_bound_click_type_and_clear_actions() {
             );
         }
         reply(&mut socket, history(1, "https://fixture.test:443/form")).await;
+        frames(&mut socket, "https://fixture.test:443").await;
     });
     let config = CdpAdapterConfig::new(
         format!("ws://{address}/devtools/browser/capability"),
@@ -180,6 +279,10 @@ async fn concrete_port_dispatches_bound_click_type_and_clear_actions() {
         )
         .await
         .expect("text observation");
+    assert_ne!(
+        text_observation.target_revision,
+        observation.target_revision
+    );
     let textbox_ref = text_observation
         .nodes
         .iter()
@@ -247,6 +350,7 @@ async fn concrete_port_selects_one_bound_native_option_with_effect_evidence() {
             reply(&mut socket, json!({})).await["method"],
             "Accessibility.enable"
         );
+        frames(&mut socket, "https://fixture.test:443").await;
         let tree = reply(
             &mut socket,
             json!({"nodes":[
@@ -257,6 +361,8 @@ async fn concrete_port_selects_one_bound_native_option_with_effect_evidence() {
         .await;
         assert_eq!(tree["method"], "Accessibility.getFullAXTree");
         reply(&mut socket, history(1, "https://fixture.test:443/form")).await;
+        frames(&mut socket, "https://fixture.test:443").await;
+        frames(&mut socket, "https://fixture.test:443").await;
         reply(&mut socket, history(1, "https://fixture.test:443/form")).await;
         let resolve = reply(
             &mut socket,
@@ -276,6 +382,7 @@ async fn concrete_port_selects_one_bound_native_option_with_effect_evidence() {
             "Runtime.releaseObject"
         );
         reply(&mut socket, history(1, "https://fixture.test:443/form")).await;
+        frames(&mut socket, "https://fixture.test:443").await;
     });
     let config = CdpAdapterConfig::new(
         format!("ws://{address}/devtools/browser/capability"),
@@ -342,16 +449,19 @@ async fn concrete_port_revalidates_focus_for_keys_and_binds_scroll_to_the_page_s
         let (stream, _) = listener.accept().await.expect("accept");
         let mut socket = accept_async(stream).await.expect("websocket");
         reply(&mut socket, json!({})).await;
+        frames(&mut socket, "https://fixture.test:443").await;
         let focused_tree = json!({"nodes":[
             {"nodeId":"textbox","ignored":false,"role":{"value":"textbox"},"name":{"value":"Account"},"backendDOMNodeId":43,"properties":[{"name":"focused","value":{"type":"booleanOrUndefined","value":true}}],"parentId":"root"},
             {"nodeId":"root","ignored":false,"role":{"value":"RootWebArea"}}
         ]});
         reply(&mut socket, focused_tree.clone()).await;
         reply(&mut socket, history(1, "https://fixture.test:443/form")).await;
+        frames(&mut socket, "https://fixture.test:443").await;
         assert_eq!(
             reply(&mut socket, focused_tree.clone()).await["method"],
             "Accessibility.getFullAXTree"
         );
+        frames(&mut socket, "https://fixture.test:443").await;
         reply(&mut socket, history(1, "https://fixture.test:443/form")).await;
         for expected in ["rawKeyDown", "keyUp"] {
             let key = reply(&mut socket, json!({})).await;
@@ -360,8 +470,12 @@ async fn concrete_port_revalidates_focus_for_keys_and_binds_scroll_to_the_page_s
             assert_eq!(key["params"]["key"], "ArrowDown");
         }
         reply(&mut socket, history(1, "https://fixture.test:443/form")).await;
+        frames(&mut socket, "https://fixture.test:443").await;
+        frames(&mut socket, "https://fixture.test:443").await;
         reply(&mut socket, focused_tree).await;
         reply(&mut socket, history(1, "https://fixture.test:443/form")).await;
+        frames(&mut socket, "https://fixture.test:443").await;
+        frames(&mut socket, "https://fixture.test:443").await;
         reply(&mut socket, history(1, "https://fixture.test:443/form")).await;
         let metrics = reply(
             &mut socket,
@@ -388,6 +502,7 @@ async fn concrete_port_revalidates_focus_for_keys_and_binds_scroll_to_the_page_s
         .await;
         assert_eq!(settled["method"], "Page.getLayoutMetrics");
         reply(&mut socket, history(1, "https://fixture.test:443/form")).await;
+        frames(&mut socket, "https://fixture.test:443").await;
     });
     let config = CdpAdapterConfig::new(
         format!("ws://{address}/devtools/browser/capability"),
@@ -453,6 +568,7 @@ async fn key_dispatch_fails_before_input_when_focus_changed_after_snapshot() {
         let (stream, _) = listener.accept().await.expect("accept");
         let mut socket = accept_async(stream).await.expect("websocket");
         reply(&mut socket, json!({})).await;
+        frames(&mut socket, "https://fixture.test:443").await;
         reply(
             &mut socket,
             json!({"nodes":[
@@ -462,6 +578,7 @@ async fn key_dispatch_fails_before_input_when_focus_changed_after_snapshot() {
         )
         .await;
         reply(&mut socket, history(1, "https://fixture.test:443/form")).await;
+        frames(&mut socket, "https://fixture.test:443").await;
         reply(
             &mut socket,
             json!({"nodes":[
@@ -524,17 +641,21 @@ async fn action_navigation_revalidates_the_committed_history_origin() {
         let (stream, _) = listener.accept().await.expect("accept");
         let mut socket = accept_async(stream).await.expect("websocket");
         reply(&mut socket, json!({})).await;
+        frames(&mut socket, "https://fixture.test:443").await;
         let focused_tree = json!({"nodes":[
             {"nodeId":"textbox","ignored":false,"role":{"value":"textbox"},"backendDOMNodeId":43,"properties":[{"name":"focused","value":{"value":true}}],"parentId":"root"},
             {"nodeId":"root","ignored":false,"role":{"value":"RootWebArea"}}
         ]});
         reply(&mut socket, focused_tree.clone()).await;
         reply(&mut socket, history(1, "https://fixture.test:443/form")).await;
+        frames(&mut socket, "https://fixture.test:443").await;
         reply(&mut socket, focused_tree).await;
+        frames(&mut socket, "https://fixture.test:443").await;
         reply(&mut socket, history(1, "https://fixture.test:443/form")).await;
         reply(&mut socket, json!({})).await;
         reply(&mut socket, json!({})).await;
         reply(&mut socket, history(2, "https://denied.test:443/landing")).await;
+        frames(&mut socket, "https://denied.test:443").await;
     });
     let config = CdpAdapterConfig::new(
         format!("ws://{address}/devtools/browser/capability"),
@@ -599,17 +720,21 @@ async fn history_back_moves_only_to_a_prevalidated_origin() {
         let (stream, _) = listener.accept().await.expect("accept");
         let mut socket = accept_async(stream).await.expect("websocket");
         reply(&mut socket, json!({})).await;
+        frames(&mut socket, "https://two.test:443").await;
         reply(
             &mut socket,
             json!({"nodes":[{"nodeId":"root","ignored":false,"role":{"value":"RootWebArea"}}]}),
         )
         .await;
         reply(&mut socket, histories(1)).await;
+        frames(&mut socket, "https://two.test:443").await;
+        frames(&mut socket, "https://two.test:443").await;
         reply(&mut socket, histories(1)).await;
         let movement = reply(&mut socket, json!({})).await;
         assert_eq!(movement["method"], "Page.navigateToHistoryEntry");
         assert_eq!(movement["params"]["entryId"], 1);
         reply(&mut socket, histories(0)).await;
+        frames(&mut socket, "https://one.test:443").await;
     });
     let config = CdpAdapterConfig::new(
         format!("ws://{address}/devtools/browser/capability"),
@@ -668,12 +793,15 @@ async fn history_forward_denial_returns_a_receipt_without_dispatch() {
         let (stream, _) = listener.accept().await.expect("accept");
         let mut socket = accept_async(stream).await.expect("websocket");
         reply(&mut socket, json!({})).await;
+        frames(&mut socket, "https://one.test:443").await;
         reply(
             &mut socket,
             json!({"nodes":[{"nodeId":"root","ignored":false,"role":{"value":"RootWebArea"}}]}),
         )
         .await;
         reply(&mut socket, histories(0)).await;
+        frames(&mut socket, "https://one.test:443").await;
+        frames(&mut socket, "https://one.test:443").await;
         reply(&mut socket, histories(0)).await;
     });
     let config = CdpAdapterConfig::new(
@@ -731,12 +859,15 @@ async fn reload_waits_for_load_and_rotates_the_snapshot_revision() {
         let (stream, _) = listener.accept().await.expect("accept");
         let mut socket = accept_async(stream).await.expect("websocket");
         reply(&mut socket, json!({})).await;
+        frames(&mut socket, "https://one.test:443").await;
         reply(
             &mut socket,
             json!({"nodes":[{"nodeId":"root","ignored":false,"role":{"value":"RootWebArea"}}]}),
         )
         .await;
         reply(&mut socket, histories(0)).await;
+        frames(&mut socket, "https://one.test:443").await;
+        frames(&mut socket, "https://one.test:443").await;
         reply(&mut socket, histories(0)).await;
         assert_eq!(reply(&mut socket, json!({})).await["method"], "Page.enable");
         assert_eq!(reply(&mut socket, json!({})).await["method"], "Page.reload");
@@ -749,6 +880,7 @@ async fn reload_waits_for_load_and_rotates_the_snapshot_revision() {
             .await
             .expect("load event");
         reply(&mut socket, histories(0)).await;
+        frames(&mut socket, "https://one.test:443").await;
     });
     let config = CdpAdapterConfig::new(
         format!("ws://{address}/devtools/browser/capability"),
@@ -807,6 +939,7 @@ async fn external_history_change_makes_the_observed_snapshot_stale_before_input(
         let (stream, _) = listener.accept().await.expect("accept");
         let mut socket = accept_async(stream).await.expect("websocket");
         reply(&mut socket, json!({})).await;
+        frames(&mut socket, "https://fixture.test:443").await;
         reply(
             &mut socket,
             json!({"nodes":[
@@ -816,6 +949,8 @@ async fn external_history_change_makes_the_observed_snapshot_stale_before_input(
         )
         .await;
         reply(&mut socket, history(1, "https://fixture.test:443/form")).await;
+        frames(&mut socket, "https://fixture.test:443").await;
+        frames(&mut socket, "https://fixture.test:443").await;
         reply(&mut socket, history(2, "https://fixture.test:443/changed")).await;
     });
     let config = CdpAdapterConfig::new(
@@ -876,6 +1011,7 @@ async fn dispatch_loss_is_uncertain_and_invalidates_the_old_snapshot_binding() {
         let (stream, _) = listener.accept().await.expect("accept");
         let mut socket = accept_async(stream).await.expect("websocket");
         reply(&mut socket, json!({})).await;
+        frames(&mut socket, "https://fixture.test:443").await;
         reply(
             &mut socket,
             json!({"nodes":[
@@ -885,6 +1021,8 @@ async fn dispatch_loss_is_uncertain_and_invalidates_the_old_snapshot_binding() {
         )
         .await;
         reply(&mut socket, history(1, "https://fixture.test:443/form")).await;
+        frames(&mut socket, "https://fixture.test:443").await;
+        frames(&mut socket, "https://fixture.test:443").await;
         reply(&mut socket, history(1, "https://fixture.test:443/form")).await;
         let Message::Text(_) = socket.next().await.expect("dispatch").expect("frame") else {
             panic!("text dispatch required")
@@ -948,12 +1086,15 @@ async fn navigation_revalidates_committed_origin_and_rotates_target_revision() {
         let (stream, _) = listener.accept().await.expect("accept");
         let mut socket = accept_async(stream).await.expect("websocket");
         reply(&mut socket, json!({})).await;
+        frames(&mut socket, "https://fixture.test:443").await;
         reply(
             &mut socket,
             json!({"nodes":[{"nodeId":"root","ignored":false,"role":{"value":"RootWebArea"}}]}),
         )
         .await;
         reply(&mut socket, history(1, "https://fixture.test:443/form")).await;
+        frames(&mut socket, "https://fixture.test:443").await;
+        frames(&mut socket, "https://fixture.test:443").await;
         reply(&mut socket, history(1, "https://fixture.test:443/form")).await;
         assert_eq!(reply(&mut socket, json!({})).await["method"], "Page.enable");
         let Message::Text(message) = socket.next().await.expect("navigate").expect("frame") else {
@@ -986,12 +1127,15 @@ async fn navigation_revalidates_committed_origin_and_rotates_target_revision() {
             .await
             .expect("navigate response");
         reply(&mut socket, history(2, "https://example.com:443/final")).await;
+        frames(&mut socket, "https://example.com:443").await;
+        frames(&mut socket, "https://example.com:443").await;
         reply(
             &mut socket,
             json!({"nodes":[{"nodeId":"new-root","ignored":false,"role":{"value":"RootWebArea"},"name":{"value":"Final"}}]}),
         )
         .await;
         reply(&mut socket, history(2, "https://example.com:443/final")).await;
+        frames(&mut socket, "https://example.com:443").await;
     });
     let config = CdpAdapterConfig::new(
         format!("ws://{address}/devtools/browser/capability"),
@@ -1056,12 +1200,15 @@ async fn cross_origin_redirect_returns_a_failed_receipt_and_invalidates_snapshot
         let (stream, _) = listener.accept().await.expect("accept");
         let mut socket = accept_async(stream).await.expect("websocket");
         reply(&mut socket, json!({})).await;
+        frames(&mut socket, "https://fixture.test:443").await;
         reply(
             &mut socket,
             json!({"nodes":[{"nodeId":"root","ignored":false,"role":{"value":"RootWebArea"}}]}),
         )
         .await;
         reply(&mut socket, history(1, "https://fixture.test:443/form")).await;
+        frames(&mut socket, "https://fixture.test:443").await;
+        frames(&mut socket, "https://fixture.test:443").await;
         reply(&mut socket, history(1, "https://fixture.test:443/form")).await;
         reply(&mut socket, json!({})).await;
         let Message::Text(message) = socket.next().await.expect("navigate").expect("frame") else {
@@ -1093,6 +1240,7 @@ async fn cross_origin_redirect_returns_a_failed_receipt_and_invalidates_snapshot
             .await
             .expect("navigate response");
         reply(&mut socket, history(2, "https://denied.test:443/final")).await;
+        frames(&mut socket, "https://denied.test:443").await;
     });
     let config = CdpAdapterConfig::new(
         format!("ws://{address}/devtools/browser/capability"),
