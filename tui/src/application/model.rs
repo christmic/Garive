@@ -5,6 +5,8 @@ use crate::input::{
     command_matches, CommandContext, EditorState, PromptHistoryBrowser, COMMAND_PALETTE,
 };
 
+use super::LiveAnswerProjection;
+
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub(crate) struct TerminalSize {
     pub(crate) width: u16,
@@ -300,6 +302,7 @@ pub(crate) struct AppModel {
     pub(crate) navigation_selection: Option<String>,
     pub(crate) selected_session: Option<String>,
     pub(crate) selected_turn: Option<String>,
+    pub(crate) active_execution_id: Option<String>,
     pub(crate) observed_position: u64,
     pub(crate) viewport: ViewportState,
     pub(crate) conversation_rail_hover: Option<ConversationRailHover>,
@@ -309,6 +312,7 @@ pub(crate) struct AppModel {
     pub(crate) notice: Option<String>,
     pub(crate) timeline: Vec<TimelineItem>,
     pub(crate) conversation_landmarks: Vec<ConversationLandmark>,
+    pub(crate) live_answer: LiveAnswerProjection,
     pub(crate) execution: ExecutionState,
     pub(crate) composer: EditorState,
 }
@@ -469,6 +473,18 @@ impl AppModel {
 
     pub(crate) fn follow_latest(&mut self) {
         self.viewport = ViewportState::default();
+        self.live_answer.mark_seen();
+    }
+
+    pub(crate) fn live_frame_pending(&self) -> bool {
+        self.live_answer.frame_pending()
+    }
+
+    pub(crate) fn advance_live_frame(&mut self) {
+        let effect = self.live_answer.advance_frame(!self.viewport.follow_latest);
+        if effect.unseen_increment {
+            self.viewport.newer_updates = self.viewport.newer_updates.saturating_add(1);
+        }
     }
 
     pub(crate) fn jump_to_oldest(&mut self) {
