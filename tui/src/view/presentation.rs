@@ -39,11 +39,13 @@ pub(crate) fn action_overlay_copy(model: &AppModel, overlay: Overlay) -> Option<
         },
         Overlay::EphemeralConfirmation => ActionOverlayCopy {
             title: "Ephemeral mode",
-            body: "A lost mutation response cannot be recovered after exit.".into(),
+            body: "Normal quit waits for accepted work; a signal or process loss cannot recover an unknown response."
+                .into(),
         },
         Overlay::QuitConfirmation => ActionOverlayCopy {
             title: "Quit Garive?",
-            body: "Your Sessions stay durable in the Host.".into(),
+            body: "Garive waits for accepted work to reach a recoverable boundary before restoring the terminal."
+                .into(),
         },
         _ => return None,
     };

@@ -23,6 +23,7 @@ use super::super::{
 
 mod mutations;
 mod pending;
+mod shutdown;
 
 #[cfg(test)]
 pub(super) use pending::pending_command_projection;
@@ -49,6 +50,7 @@ pub(in crate::runtime) struct RuntimeState {
     pub(in crate::runtime) deferred_ephemeral: Option<PendingCommand>,
     pub(in crate::runtime) deferred_continuation_schema_digest: Option<String>,
     pub(in crate::runtime) queued_prompt: Option<String>,
+    graceful_quit_armed: bool,
     pub(in crate::runtime) snapshot_request: u64,
     pub(super) background_follows: BTreeMap<String, BackgroundFollow>,
     follow_sequence: u64,
@@ -146,6 +148,7 @@ impl RuntimeState {
             deferred_ephemeral: None,
             deferred_continuation_schema_digest: None,
             queued_prompt: None,
+            graceful_quit_armed: false,
             snapshot_request: 0,
             background_follows: BTreeMap::new(),
             follow_sequence: 0,

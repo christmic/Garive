@@ -123,6 +123,7 @@ pub async fn run(config: LaunchConfig) -> Result<(), TuiError> {
     live_frame_clock.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
     live_frame_clock.tick().await;
     loop {
+        state.advance_graceful_quit();
         if let Some(request) = state.external_editor_request.take() {
             match external_editor::prepare(request) {
                 Err((message, request)) => {

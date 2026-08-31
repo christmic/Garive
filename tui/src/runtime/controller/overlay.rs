@@ -206,7 +206,7 @@ pub(super) fn activate_intent(
             }
             state.dispatch(AppAction::OverlayClosed);
         }
-        ActionOverlayIntent::ConfirmQuit => state.dispatch(AppAction::QuitConfirmed),
+        ActionOverlayIntent::ConfirmQuit => state.confirm_graceful_quit(),
         ActionOverlayIntent::AcceptEphemeral => {
             state.ephemeral_confirmed = true;
             state.model.overlay = None;

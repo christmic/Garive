@@ -50,6 +50,7 @@ pub(super) async fn run(
     let mut last_overlay = String::new();
     write_linear("Garive. Connecting to durable workspace.")?;
     loop {
+        state.advance_graceful_quit();
         if let Some(request) = state.external_editor_request.take() {
             match external_editor::prepare(request) {
                 Err((message, request)) => {
