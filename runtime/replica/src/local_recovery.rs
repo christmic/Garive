@@ -6,7 +6,7 @@ use garive_ledger::{DurableFact, TurnSnapshot};
 use garive_llm::TokenCount;
 use garive_tools::{
     EffectReceipt, GovernedToolResult, GrantId, InteractionKind, ReceiptId, SuspensionRequirement,
-    TerminalClassification, ToolInvocationId,
+    TerminalClassification, ToolInvocationId, T1_PROCESS_RUN,
 };
 use serde_json::Value;
 
@@ -14,9 +14,9 @@ use crate::runtime_turn::recovered_completed_iterations;
 use crate::{
     derive_runtime_recovery, plan_core_terminal, plan_recovery_action_facts, plan_recovery_restart,
     recover_f0_prepared_with_port, select_runtime_recovery, CommittedTurn, CoreTerminalContext,
-    EffectiveRuntimeLimits, GovernedEffectConfig, LocalGovernedExecutionFactory,
-    RecoveryRestartCommand, RuntimeCommandId, RuntimeRecoveryAction, SqliteGovernedEffectPort,
-    SqliteLedger,
+    EffectiveRuntimeLimits, ExecutorRecoveryRequest, GovernedEffectConfig,
+    LocalGovernedExecutionFactory, RecoveryRestartCommand, RuntimeCommandId, RuntimeRecoveryAction,
+    SqliteGovernedEffectPort, SqliteLedger,
 };
 
 /// Stable secret-free local restart failure.
@@ -121,8 +121,14 @@ fn recover_local_dispatches_inner(
                         });
                         break;
                     }
+                    RuntimeRecoveryAction::ClassifyEffectUncertain => {
+                        if let Some((factory, _)) = f0 {
+                            reconcile_lost_process(&session_id, &turn_id, &snapshot, factory)?;
+                        }
+                        commit_action(ledger, &session_id, &snapshot, action, recorded_at)?;
+                        break;
+                    }
                     RuntimeRecoveryAction::ClassifyModelUncertain
-                    | RuntimeRecoveryAction::ClassifyEffectUncertain
                     | RuntimeRecoveryAction::FailRecoveryBound => {
                         commit_action(ledger, &session_id, &snapshot, action, recorded_at)?;
                         break;
@@ -160,6 +166,64 @@ fn recover_local_dispatches_inner(
         }
     }
     Ok(output)
+}
+
+fn reconcile_lost_process(
+    session_id: &garive_ledger::SessionId,
+    turn_id: &garive_ledger::TurnId,
+    snapshot: &TurnSnapshot,
+    factory: &dyn LocalGovernedExecutionFactory,
+) -> Result<(), LocalRecoveryError> {
+    let started = latest(snapshot, "effect.started")?;
+    let invocation = started
+        .tool_invocation_id
+        .as_ref()
+        .ok_or(LocalRecoveryError::CorruptRecoveryState)?;
+    let prepared = snapshot
+        .facts
+        .iter()
+        .rfind(|fact| {
+            fact.kind.as_str() == "effect.prepared"
+                && fact.tool_invocation_id.as_ref() == Some(invocation)
+        })
+        .ok_or(LocalRecoveryError::CorruptRecoveryState)?;
+    let prepared_value = payload(prepared)?;
+    if text(&prepared_value, "tool_name")? != T1_PROCESS_RUN {
+        return Ok(());
+    }
+    if text(&prepared_value, "replay_class")? != "never_replay" {
+        return Err(LocalRecoveryError::CorruptRecoveryState);
+    }
+    let value = payload(started)?;
+    let prepared_digest = text(&value, "prepared_digest")?;
+    if text(&prepared_value, "prepared_digest")? != prepared_digest {
+        return Err(LocalRecoveryError::CorruptRecoveryState);
+    }
+    let execution_id = started
+        .execution_id
+        .clone()
+        .ok_or(LocalRecoveryError::CorruptRecoveryState)?;
+    let committed = CommittedTurn {
+        session_id: session_id.clone(),
+        turn_id: turn_id.clone(),
+        execution_id,
+        session_version: snapshot.session_version,
+        committed_position: snapshot.through_position,
+    };
+    let mut governed = factory
+        .create(&committed)
+        .map_err(|_| LocalRecoveryError::F0RecoveryFailed)?;
+    governed
+        .executor
+        .reconcile_started_loss(ExecutorRecoveryRequest {
+            invocation_id: &ToolInvocationId::new(invocation.as_str())
+                .map_err(|_| LocalRecoveryError::CorruptRecoveryState)?,
+            prepared_digest,
+            executor_id: text(&value, "executor_id")?,
+            executor_revision: text(&value, "executor_revision")?,
+            dispatch_attempt_id: text(&value, "dispatch_attempt_id")?,
+        })
+        .map_err(|_| LocalRecoveryError::F0RecoveryFailed)
 }
 
 fn acknowledge_recovered_receipt(

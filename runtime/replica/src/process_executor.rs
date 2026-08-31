@@ -12,8 +12,8 @@ use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 
 use crate::{
-    ExecutorDispatch, ExecutorDispatchError, ExecutorFuture, ExecutorPort, PreparedExecution,
-    ProcessLaneRegistry,
+    ExecutorDispatch, ExecutorDispatchError, ExecutorFuture, ExecutorPort, ExecutorRecoveryRequest,
+    PreparedExecution, ProcessLaneRegistry,
 };
 
 /// Stable executor identity used by matching F0 sandbox bindings.
@@ -31,6 +31,12 @@ pub enum ProcessWorkspaceMode {
 /// Exact bounded command delivered to a concrete isolation backend.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ProcessExecutionRequest {
+    /// Stable Runtime invocation identity used for backend job ownership.
+    pub invocation_id: ToolInvocationId,
+    /// Exact dispatch attempt selected before Started.
+    pub dispatch_attempt_id: String,
+    /// Exact configured lane identity.
+    pub lane: String,
     /// Absolute executable capability resolved without PATH.
     pub executable: PathBuf,
     /// Exact non-empty argv vector, including the configured alias at index zero.
@@ -96,6 +102,13 @@ pub trait ProcessIsolationBackend: Send + Sync {
         &self,
         request: ProcessExecutionRequest,
     ) -> Result<ProcessExecutionResult, ProcessBackendError>;
+
+    /// Idempotently terminates or proves absence of the exact backend job.
+    fn terminate_or_prove_absent(
+        &self,
+        invocation_id: &ToolInvocationId,
+        dispatch_attempt_id: &str,
+    ) -> Result<(), ProcessBackendError>;
 }
 
 /// T1 process adapter binding the frozen catalogue, lanes and native backend.
@@ -181,6 +194,22 @@ impl ExecutorPort for BuiltinProcessExecutor {
             terminal(&command, result)
         })
     }
+
+    fn reconcile_started_loss(
+        &mut self,
+        request: ExecutorRecoveryRequest<'_>,
+    ) -> Result<(), ExecutorDispatchError> {
+        if request.executor_id != T1_PROCESS_EXECUTOR_ID
+            || request.executor_revision != self.revision
+            || request.dispatch_attempt_id != dispatch_id(request.invocation_id)
+            || request.prepared_digest.is_empty()
+        {
+            return Err(ExecutorDispatchError::ReceiptInvalid);
+        }
+        self.backend
+            .terminate_or_prove_absent(request.invocation_id, request.dispatch_attempt_id)
+            .map_err(|_| ExecutorDispatchError::ExecutorStateUnknown)
+    }
 }
 
 fn operation(
@@ -242,6 +271,9 @@ fn operation(
         .sandbox_requirements()
         .ok_or("missing process sandbox requirements")?;
     Ok(ProcessExecutionRequest {
+        invocation_id: invocation_id.clone(),
+        dispatch_attempt_id: dispatch_id(invocation_id),
+        lane: lane_name.into(),
         executable: executable.path().to_path_buf(),
         argv,
         working_directory: working_directory.into(),

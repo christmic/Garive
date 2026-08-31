@@ -102,6 +102,17 @@ The persistent hierarchy is rail → top bar → work canvas → composer/action
 area. Blocking approval appears immediately above the action area. Connection
 and capacity warnings never cover a blocking approval.
 
+When a file is open, the workbench has two quiet chrome rows: the first owns one
+selected file tab and the second owns bounded location plus file actions. It
+must not retain an unrelated Activity tab. Rendered and Source views consume the
+same immutable preview payload, preserve revision evidence, and never imply
+filesystem mutability. Closing the preview returns to deliverables; closing the
+workbench returns to the undisturbed thread.
+
+Completed-result actions sit at the assistant content edge. Their visual form
+is a 30 px icon control; their accessible name and tooltip retain the full verb.
+The terminal state remains text-visible and is not replaced by color or an icon.
+
 Neutral surface changes precede borders. A region may have one structural
 separator; rows inside it use spacing or hover surfaces unless a semantic
 boundary requires a rule. Navigation groups use sentence case. Decorative
@@ -197,6 +208,10 @@ an exact task price from prompt length, selected model, or prior averages.
 - Unit tests cover normal, critical, exhausted and absent capacity plus
   accessible meter text.
 - Visual evidence covers light/dark at 1440 px and a 720 px narrow window.
+- Native macOS uses the real decorated window with an overlay/hidden titlebar,
+  traffic lights at `(16, 16)`, first-mouse acceptance, and a 58 px protected
+  leading zone before sidebar history controls. Web uses the same content and
+  interaction geometry without reserving that native chrome zone.
 - Review evidence records Gate 1 fidelity and Gate 2 advantage; “looks modern”
   is not an acceptance result.
 - Keyboard-only, reduced-motion, increased-contrast and 200% text matrices stay

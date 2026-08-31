@@ -1,4 +1,10 @@
-use std::{path::PathBuf, sync::Arc};
+use std::{
+    path::PathBuf,
+    sync::{
+        atomic::{AtomicUsize, Ordering},
+        Arc,
+    },
+};
 
 use futures::executor::block_on;
 use garive_core::{
@@ -18,10 +24,11 @@ use garive_runtime::{
     reconstruct_suspended_turn, recover_f0_prepared, recover_local_dispatches_with_f0,
     ActivityProjectionLimits, AuthorityDecision, AuthorityFuture, AuthorityPort, AuthorityRequest,
     ContinuationInput, ContinueTurnCommand, CoreTerminalContext, EffectRecoveryPosition,
-    ExecutorDispatch, ExecutorFuture, ExecutorPort, F0EffectAdmissionContext, F0GovernanceContext,
-    F0RecoveryContentPort, F0RecoveryError, F0SafetyDecisionContext, GovernedEffectConfig,
-    HostClock, HostReadLimits, InstalledActivityCatalogue, InstalledActivityDescriptor,
-    InstalledAgent, InteractionInputRepresentation, LiveHost, LiveHostLimits, LocalF0Governance,
+    ExecutorDispatch, ExecutorFuture, ExecutorPort, ExecutorRecoveryRequest,
+    F0EffectAdmissionContext, F0GovernanceContext, F0RecoveryContentPort, F0RecoveryError,
+    F0SafetyDecisionContext, GovernedEffectConfig, HostClock, HostReadLimits,
+    InstalledActivityCatalogue, InstalledActivityDescriptor, InstalledAgent,
+    InteractionInputRepresentation, LiveHost, LiveHostLimits, LocalF0Governance,
     LocalGovernedExecution, LocalGovernedExecutionFactory, LocalRecoveryError, LocalWorkerError,
     ModelLifecycleContext, PreparedExecution, RuntimeCommandError, RuntimeCommandId,
     SafetyDecisionV1, SafetyDisposition, SafetyEvaluation, SafetyFuture, SafetyInteraction,
@@ -29,11 +36,11 @@ use garive_runtime::{
     SqliteGovernedEffectPort, SqliteLedger, TurnDispatchError, TurnDispatcher,
 };
 use garive_tools::{
-    AccessMode, AccessNamespace, AccessPolicyEntry, EffectReceipt, ExecutionCapability,
-    ExecutionFact, ExecutionRequirements, GrantId, InteractionKind, InvocationAccessSet,
-    InvocationGrant, PreparationError, ReceiptId, ReplayClass, ResourceAccess, SandboxControl,
-    SandboxRequirementsV1, TerminalClassification, ToolAccessPolicyV1, ToolAccessResolver,
-    ToolCatalog, ToolDefinition, ToolIntent,
+    AccessMode, AccessNamespace, AccessPolicyEntry, BuiltinT1Catalogue, EffectReceipt,
+    ExecutionCapability, ExecutionFact, ExecutionRequirements, GrantId, InteractionKind,
+    InvocationAccessSet, InvocationGrant, PreparationError, ReceiptId, ReplayClass, ResourceAccess,
+    SandboxControl, SandboxRequirementsV1, TerminalClassification, ToolAccessPolicyV1,
+    ToolAccessResolver, ToolCatalog, ToolDefinition, ToolIntent, T1_PROCESS_RUN,
 };
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
@@ -225,6 +232,79 @@ impl LocalGovernedExecutionFactory for RecoveryFactory {
                 },
             },
         })
+    }
+}
+
+struct LossRecoveryFactory {
+    reconciliations: Arc<AtomicUsize>,
+    fail: bool,
+}
+
+impl LocalGovernedExecutionFactory for LossRecoveryFactory {
+    fn create(
+        &self,
+        _: &garive_runtime::CommittedTurn,
+    ) -> Result<LocalGovernedExecution, LocalWorkerError> {
+        Ok(LocalGovernedExecution {
+            capabilities: AgentToolCapabilities {
+                definitions: vec![v3_definition()],
+            },
+            authority: Box::new(Authority {
+                decision: Decision::Approve,
+            }),
+            executor: Box::new(LossExecutor {
+                reconciliations: Arc::clone(&self.reconciliations),
+                fail: self.fail,
+            }),
+            f0: LocalF0Governance {
+                preparation: Box::new(RecoveryPreparation),
+                recovery_content: Box::new(NoReferencedContent),
+                safety: Box::new(RecoverySafety(Decision::Approve)),
+                sandbox: Box::new(LocalSandbox("1")),
+                context: F0GovernanceContext {
+                    actor_authority_reference: "actor".into(),
+                    goal_reference: None,
+                    plan_reference: None,
+                    effective_policy_revision: "policy-1".into(),
+                },
+            },
+        })
+    }
+}
+
+struct LossExecutor {
+    reconciliations: Arc<AtomicUsize>,
+    fail: bool,
+}
+
+impl ExecutorPort for LossExecutor {
+    fn prepare(
+        &mut self,
+        _: &garive_tools::ToolInvocationId,
+        _: &garive_tools::PreparedToolCall,
+        _: &InvocationGrant,
+    ) -> Result<PreparedExecution, String> {
+        Err("recovery-only executor".into())
+    }
+
+    fn dispatch<'a>(&'a mut self, _: ExecutorDispatch<'a>) -> ExecutorFuture<'a> {
+        Box::pin(async { Err(garive_runtime::ExecutorDispatchError::ExecutorStateUnknown) })
+    }
+
+    fn reconcile_started_loss(
+        &mut self,
+        request: ExecutorRecoveryRequest<'_>,
+    ) -> Result<(), garive_runtime::ExecutorDispatchError> {
+        assert_eq!(request.invocation_id.as_str(), "f0-recovery");
+        assert_eq!(request.executor_id, "garive.builtin.process");
+        assert_eq!(request.executor_revision, "process-v1");
+        assert_eq!(request.dispatch_attempt_id, "process-dispatch-1");
+        self.reconciliations.fetch_add(1, Ordering::SeqCst);
+        if self.fail {
+            Err(garive_runtime::ExecutorDispatchError::ExecutorStateUnknown)
+        } else {
+            Ok(())
+        }
     }
 }
 
@@ -1048,6 +1128,179 @@ fn local_startup_commits_one_bound_interaction_without_replacement_dispatch() {
         .facts
         .iter()
         .any(|fact| fact.kind.as_str() == "effect.started"));
+}
+
+#[test]
+fn process_loss_is_terminated_before_uncertainty_becomes_durable() {
+    let directory = tempdir().unwrap();
+    let mut setup = setup(&directory.path().join("process-loss.sqlite3"));
+    let prepared = BuiltinT1Catalogue::new("policy-1", ["rust-toolchain"])
+        .unwrap()
+        .prepare(&ToolIntent::new(
+            "call",
+            T1_PROCESS_RUN,
+            r#"{"lane":"rust-toolchain","argv":["cargo","test"],"working_directory":".","workspace_mode":"write","max_output_bytes":4096,"timeout_ms":30000}"#,
+        ))
+        .unwrap();
+    setup
+        .ledger
+        .commit(
+            setup.session.clone(),
+            setup.version,
+            process_started_facts(&setup, &prepared),
+        )
+        .unwrap();
+
+    let failed_calls = Arc::new(AtomicUsize::new(0));
+    assert_eq!(
+        recover_local_dispatches_with_f0(
+            &mut setup.ledger,
+            3,
+            timestamp(),
+            &LossRecoveryFactory {
+                reconciliations: Arc::clone(&failed_calls),
+                fail: true,
+            },
+            1_024,
+        ),
+        Err(LocalRecoveryError::F0RecoveryFailed)
+    );
+    assert_eq!(failed_calls.load(Ordering::SeqCst), 1);
+    assert!(!setup
+        .ledger
+        .load_turn(&setup.turn)
+        .unwrap()
+        .facts
+        .iter()
+        .any(|fact| fact.kind.as_str() == "effect.uncertain"));
+
+    let successful_calls = Arc::new(AtomicUsize::new(0));
+    let dispatches = recover_local_dispatches_with_f0(
+        &mut setup.ledger,
+        3,
+        timestamp(),
+        &LossRecoveryFactory {
+            reconciliations: Arc::clone(&successful_calls),
+            fail: false,
+        },
+        1_024,
+    )
+    .unwrap();
+    assert!(dispatches.is_empty());
+    assert_eq!(successful_calls.load(Ordering::SeqCst), 1);
+    let snapshot = setup.ledger.load_turn(&setup.turn).unwrap();
+    assert!(snapshot
+        .facts
+        .iter()
+        .any(|fact| fact.kind.as_str() == "effect.uncertain"));
+    assert_eq!(
+        snapshot.facts.last().unwrap().kind.as_str(),
+        "turn.suspended"
+    );
+}
+
+fn process_started_facts(
+    setup: &Setup,
+    prepared: &garive_tools::PreparedToolCall,
+) -> Vec<FactDraft> {
+    let invocation = garive_tools::ToolInvocationId::new("f0-recovery").unwrap();
+    let request = garive_runtime::SafetyRequestV1::new(
+        child_id(&invocation, "safety-request"),
+        invocation.clone(),
+        prepared,
+        "actor",
+        None,
+        None,
+        "policy-1",
+    )
+    .unwrap();
+    let decision = SafetyDecisionV1::new(
+        "process-safety",
+        SafetyDisposition::Allow,
+        invocation.clone(),
+        prepared.input_digest(),
+        Some("a".repeat(64)),
+        "policy-1",
+        None,
+    )
+    .unwrap();
+    let grant = InvocationGrant::new(
+        GrantId::new("process-grant").unwrap(),
+        invocation.clone(),
+        prepared.input_digest(),
+        prepared.tool_name(),
+        prepared.tool_revision(),
+        prepared.requirements().clone(),
+        "a".repeat(64),
+        "policy-1",
+    )
+    .unwrap();
+    let mut facts = plan_f0_safety_decision(
+        &F0SafetyDecisionContext {
+            turn_id: setup.turn.clone(),
+            execution_id: setup.execution.clone(),
+            recorded_at: timestamp().into(),
+        },
+        &request,
+        prepared,
+        &decision,
+    )
+    .unwrap();
+    let access = ToolAccessPolicyV1::new(
+        "policy-1",
+        [AccessPolicyEntry::new(".", [AccessMode::Read, AccessMode::Write]).unwrap()],
+        [AccessPolicyEntry::new("rust-toolchain", [AccessMode::Exclusive]).unwrap()],
+        [],
+        [],
+        2,
+        2_097_152,
+    )
+    .unwrap();
+    facts.extend(
+        plan_f0_sandbox_admission(
+            &F0EffectAdmissionContext {
+                turn_id: setup.turn.clone(),
+                execution_id: setup.execution.clone(),
+                preflight_id: "process-preflight".into(),
+                effective_limits_digest: "e".repeat(64),
+                recorded_at: timestamp().into(),
+            },
+            &request,
+            prepared,
+            &grant,
+            &decision,
+            &SandboxBindingV1::new(
+                "process-binding",
+                "workspace",
+                "garive.builtin.process",
+                "process-v1",
+                "policy-1",
+                access,
+                prepared.sandbox_requirements().unwrap().clone(),
+            )
+            .unwrap(),
+            "process-dispatch-1",
+        )
+        .unwrap()
+        .facts,
+    );
+    facts.push(FactDraft {
+        fact_id: FactId::try_from("process-started").unwrap(),
+        turn_id: Some(setup.turn.clone()),
+        execution_id: Some(setup.execution.clone()),
+        model_request_id: None,
+        tool_invocation_id: Some(garive_ledger::ToolInvocationId::try_from("f0-recovery").unwrap()),
+        kind: FactKind::new("effect.started").unwrap(),
+        schema_version: 1,
+        payload: CanonicalPayload::from_value(&json!({
+            "prepared_digest":prepared.input_digest(),"grant_id":"process-grant",
+            "executor_id":"garive.builtin.process","executor_revision":"process-v1",
+            "dispatch_attempt_id":"process-dispatch-1"
+        }))
+        .unwrap(),
+        recorded_at: timestamp().into(),
+    });
+    facts
 }
 
 fn f0_recovery_facts(

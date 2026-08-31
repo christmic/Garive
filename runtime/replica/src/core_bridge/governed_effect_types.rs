@@ -175,6 +175,20 @@ pub struct ExecutorDispatch<'a> {
     pub receipt_id: &'a str,
 }
 
+/// Exact Started execution reconstructed for crash cleanup without redispatch.
+pub struct ExecutorRecoveryRequest<'a> {
+    /// Stable invocation whose external execution may still exist.
+    pub invocation_id: &'a ToolInvocationId,
+    /// Prepared digest committed before policy and dispatch.
+    pub prepared_digest: &'a str,
+    /// Executor identity selected by the durable sandbox binding.
+    pub executor_id: &'a str,
+    /// Exact executor implementation revision.
+    pub executor_revision: &'a str,
+    /// Exact dispatch attempt that may own residual execution.
+    pub dispatch_attempt_id: &'a str,
+}
+
 /// Loss after Started without trustworthy terminal evidence.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ExecutorDispatchError {
@@ -210,6 +224,14 @@ pub trait ExecutorPort: Send {
         _receipt: &EffectReceipt,
     ) -> Result<(), ExecutorDispatchError> {
         Ok(())
+    }
+
+    /// Idempotently terminates or proves absence of one exact lost execution.
+    fn reconcile_started_loss(
+        &mut self,
+        _request: ExecutorRecoveryRequest<'_>,
+    ) -> Result<(), ExecutorDispatchError> {
+        Err(ExecutorDispatchError::ExecutorStateUnknown)
     }
 }
 

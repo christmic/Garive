@@ -6,6 +6,7 @@ import { webcrypto } from "node:crypto";
 const commands: string[] = [];
 let storedPending: unknown = null;
 let configured = true;
+let artifactItems: unknown[] = [];
 
 vi.mock("@tauri-apps/api/event", () => ({ listen: vi.fn(async () => () => undefined) }));
 vi.mock("@tauri-apps/api/app", () => ({ getVersion: vi.fn(async () => "0.1.0") }));
@@ -37,8 +38,11 @@ vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn(async (command: string, a
     case "get_session_events": return { events: [{ api_version: "v1", session_id: "session-1",
       position: 6, event: "turn.completed", turn_id: "turn-1", execution_id: "execution-1",
       text: "Durable product answer" }], scanned_through_position: 6, observed_max_position: 6 };
-    case "list_artifacts": return { api_version: "v1", session_id: "session-1", items: [],
-      scanned_through_position: 1, observed_max_position: 1, has_more: false };
+    case "list_artifacts": return { api_version: "v1", session_id: "session-1", items: artifactItems,
+      scanned_through_position: 6, observed_max_position: 6, has_more: false };
+    case "get_artifact_preview": return { schema_version: 1, artifact_id: "artifact-1",
+      revision: 1, kind: "text", content_utf8: "# Verified memo\n\nImmutable source.",
+      truncated: false };
     case "get_session_workspaces": return [];
     default: throw new Error(`unexpected command: ${command}`);
   }
@@ -51,7 +55,7 @@ afterEach(cleanup);
 
 describe("Desktop product experience", () => {
   beforeEach(() => {
-    commands.length = 0; storedPending = null; configured = true;
+    commands.length = 0; storedPending = null; configured = true; artifactItems = [];
     Object.defineProperty(globalThis, "crypto", { configurable: true, value: webcrypto });
     Object.defineProperty(window, "matchMedia", { configurable: true, value: vi.fn(() => ({
       matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn(),
@@ -164,6 +168,60 @@ describe("Desktop product experience", () => {
     await screen.findByText("What should we accomplish?");
     expect(view.container.querySelector(".new-work-surface")).not.toBeNull();
     expect(view.container.querySelector(".brand-mark, .hero-mark, .message-mark")).toBeNull();
+  });
+
+  it("collapses and restores the native navigation without discarding work", async () => {
+    const view = render(<App />);
+    await screen.findByText("What should we accomplish?");
+    fireEvent.click(screen.getByRole("button", { name: "Hide navigation" }));
+    expect(view.container.querySelector(".app-shell")?.classList.contains("navigation-collapsed")).toBe(true);
+    expect(view.container.querySelector("#primary-navigation")?.getAttribute("aria-hidden")).toBe("true");
+    fireEvent.click(screen.getByRole("button", { name: "Open navigation" }));
+    expect(view.container.querySelector(".app-shell")?.classList.contains("navigation-collapsed")).toBe(false);
+  });
+
+  it("protects an older reading position and offers an explicit return to the tail", async () => {
+    const view = render(<App />);
+    await waitFor(() => expect(view.container.querySelector(".suggestion-grid button")).not.toBeNull());
+    fireEvent.click(view.container.querySelector<HTMLButtonElement>(".suggestion-grid button")!);
+    await waitFor(() => expect(screen.getByRole<HTMLButtonElement>("button", { name: "Send work" }).disabled).toBe(false));
+    fireEvent.click(screen.getByRole("button", { name: "Send work" }));
+    await screen.findByText("Durable product answer");
+
+    const conversation = view.container.querySelector<HTMLElement>(".conversation")!;
+    Object.defineProperties(conversation, {
+      scrollHeight: { configurable: true, value: 1_000 },
+      clientHeight: { configurable: true, value: 400 },
+      scrollTop: { configurable: true, writable: true, value: 120 },
+    });
+    fireEvent.scroll(conversation);
+    const jump = await screen.findByRole("button", { name: "Jump to latest" });
+    expect(conversation.scrollTop).toBe(120);
+    fireEvent.click(jump);
+    expect(conversation.scrollTop).toBe(1_000);
+    await waitFor(() => expect(screen.queryByRole("button", { name: "Jump to latest" })).toBeNull());
+  });
+
+  it("opens a Turn deliverable in one tabbed rendered/source workbench", async () => {
+    artifactItems = [{ api_version: "v1", artifact_id: "artifact-1", revision: 1,
+      session_id: "session-1", turn_id: "turn-1", display_name: "memo.md",
+      kind: "document", mime_type: "text/markdown", byte_size: 42,
+      content_digest: "7".repeat(64), committed_position: 6, verification: "not_run",
+      preview: "text", revealable: true, exportable: true }];
+    const view = render(<App />);
+    await waitFor(() => expect(view.container.querySelector(".suggestion-grid button")).not.toBeNull());
+    fireEvent.click(view.container.querySelector<HTMLButtonElement>(".suggestion-grid button")!);
+    await waitFor(() => expect(screen.getByRole<HTMLButtonElement>("button", { name: "Send work" }).disabled).toBe(false));
+    fireEvent.click(screen.getByRole("button", { name: "Send work" }));
+
+    fireEvent.click(await screen.findByRole("button", { name: "Open deliverables" }));
+    expect(await screen.findByRole("heading", { name: "Deliverables" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Preview" }));
+    expect(await screen.findByRole("tab", { name: "memo.md" })).toBeTruthy();
+    fireEvent.click(await screen.findByRole("button", { name: "View source" }));
+    expect(screen.getByLabelText("Artifact source").textContent).toContain("Immutable source.");
+    fireEvent.click(screen.getByRole("button", { name: "Rendered" }));
+    expect(await screen.findByRole("heading", { name: "Verified memo" })).toBeTruthy();
   });
 
   it("renders progressive work from admitted Activity instead of invented stages", () => {

@@ -114,6 +114,24 @@ evidence. Observable product facts are recorded without that content:
 6. Long-running immersion comes from continuous content, anchored turn actions,
    live composer status and adjacent outputs—not a large progress dashboard.
 
+### E. 2026-09-01 workbench gap closure
+
+The supplied 1280 × 800 references and an equal-size Garive Web render were
+placed side by side. The comparison produced concrete component changes rather
+than a general “more polished” direction:
+
+| Surface | Reference evidence | Rejected Garive baseline | Required shared behavior |
+|---|---|---|---|
+| narrow thread title | one line in the split pane | wrapped to three lines | preserve one-line orientation and elide before status/actions |
+| terminal actions | quiet glyphs at the content edge | wide `Export .md` and `Copy` labels | 30 px icon controls with persistent accessible names |
+| Environment | named floating surface | Activity/Artifacts tabs inside a small card | one Environment heading and a dismiss action; evidence rows only |
+| file chrome | selected file tab plus a second location/action row | generic Inspector tabs plus an expanded artifact card | one selected file tab, breadcrumb row, source/render action and independent scroll |
+| source inspection | available beside rendered document | no source presentation | reversible Rendered/Source switch over the same immutable preview bytes |
+
+Garive deliberately keeps verified revision evidence and the explicit close
+action. Those are Gate 2 additions: they do not add ordinary-screen noise and
+they preserve the Runtime truth boundary.
+
 ## Gate 1 — Codex fidelity
 
 This gate passes only when both Desktop and Web show:

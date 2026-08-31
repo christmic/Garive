@@ -29,6 +29,7 @@ import {
 } from "./preferences";
 import { createTranslator, resolveDesktopLocale, type MessageKey } from "./i18n";
 import { shouldSubmitComposer } from "./composer";
+import { isNearConversationTail } from "./conversationTail";
 import { nextDesktopZoom } from "./zoom";
 import { useDesktopProduct } from "./app/useDesktopProduct";
 import type { ProductEffectPort } from "./app/ProductRuntime";
@@ -66,7 +67,7 @@ const visualCapabilities = {
   activity: visualTestMode !== "setup",
   setup: visualTestMode === "setup",
   workspaces: visualTestMode !== "setup",
-  artifacts: visualTestMode === "artifact",
+  artifacts: visualTestMode === "artifact" || visualTestMode === "artifact-preview",
   updater: false,
 } as const;
 const visualArtifactTimeline = {
@@ -112,6 +113,7 @@ export function App({ client = "desktop", webCapabilities, createProductPort,
   const [state, dispatch] = useReducer(reduceWork, initialWorkState);
   const [screen, setScreen] = useState<Screen>("work");
   const [navigationOpen, setNavigationOpen] = useState(false);
+  const [navigationCollapsed, setNavigationCollapsed] = useState(false);
   const [recents, setRecents] = useState<readonly RecentTask[]>([]);
   const [recentTitles, setRecentTitles] = useState<Readonly<Record<string, string>>>({});
   const [commandOpen, setCommandOpen] = useState(false);
@@ -302,7 +304,7 @@ export function App({ client = "desktop", webCapabilities, createProductPort,
           session_id: "visual-session", workspace_id: "workspace-preview",
           display_name: "Launch materials", grant_revision: 2, access: "read_write",
           attached_position: 4 }] });
-      if (visualTestMode === "artifact") {
+      if (visualTestMode === "artifact" || visualTestMode === "artifact-preview") {
         dispatch({ type: "session_loaded", timeline: visualArtifactTimeline });
         dispatch({ type: "artifacts_loaded", page: visualArtifactPage });
         dispatch({ type: "inspector_selected", tab: "artifacts" });
@@ -552,14 +554,32 @@ export function App({ client = "desktop", webCapabilities, createProductPort,
   const effectiveTheme = preferences.theme === "system"
     ? systemDark ? "dark" : "light" : preferences.theme;
   return <div className={`desktop-root theme-${effectiveTheme} density-${preferences.density}`}>
-    <div className="app-shell" inert={Boolean(pickerGrant) || commandOpen}
+    <div className={navigationCollapsed ? "app-shell navigation-collapsed" : "app-shell"}
+      inert={Boolean(pickerGrant) || commandOpen}
       aria-hidden={Boolean(pickerGrant) || commandOpen}>
       <aside id="primary-navigation" className={navigationOpen ? "sidebar navigation-open" : "sidebar"}
-        aria-label={t("shell.primaryNavigation")} inert={smallWindow && !navigationOpen}
-        aria-hidden={smallWindow && !navigationOpen} onClickCapture={(event) => {
+        aria-label={t("shell.primaryNavigation")}
+        inert={(smallWindow && !navigationOpen) || navigationCollapsed}
+        aria-hidden={(smallWindow && !navigationOpen) || navigationCollapsed} onClickCapture={(event) => {
           if ((event.target as HTMLElement).closest("button")) setNavigationOpen(false);
         }}>
         <div className="titlebar-drag" data-tauri-drag-region />
+        <div className="sidebar-window-row" data-tauri-drag-region>
+          <button className="sidebar-collapse icon-button" type="button"
+            aria-label={t("shell.collapseNavigation")} title={t("shell.collapseNavigation")}
+            onClick={() => setNavigationCollapsed(true)}><Icon name="panel" /></button>
+          <button className="history-button history-back" type="button" disabled
+            aria-label={t("shell.historyBack")}><Icon name="chevron" /></button>
+          <button className="history-button" type="button" disabled
+            aria-label={t("shell.historyForward")}><Icon name="chevron" /></button>
+        </div>
+        <div className="sidebar-product-row">
+          <button className="product-switcher" type="button" aria-label={t("shell.productMenu")}
+            disabled><span>Garive</span><Icon name="chevron" /></button>
+          <button className="sidebar-search icon-button" type="button" aria-label={t("nav.search")}
+            disabled={!state.capabilities?.durable_navigation}
+            onClick={() => setScreen("search")}><Icon name="search" /></button>
+        </div>
         <button className="new-work" type="button" aria-label={t("nav.newWork")} onClick={beginNewWork}>
           <Icon name="plus" /><span>{t("nav.newWork")}</span><kbd>⌘N</kbd>
         </button>
@@ -604,9 +624,11 @@ export function App({ client = "desktop", webCapabilities, createProductPort,
       <main className="main-surface" inert={smallWindow && navigationOpen}
         aria-hidden={smallWindow && navigationOpen}>
         <header className="topbar" data-tauri-drag-region>
-          <div className="topbar-title"><button className="navigation-trigger icon-button" type="button"
+          <div className="topbar-title"><button className={navigationCollapsed
+            ? "navigation-trigger sidebar-restore icon-button" : "navigation-trigger icon-button"} type="button"
             aria-label={t("shell.openNavigation")} aria-expanded={navigationOpen}
-            aria-controls="primary-navigation" onClick={() => setNavigationOpen((open) => !open)}><Icon name="panel" /></button>
+            aria-controls="primary-navigation" onClick={() => navigationCollapsed
+              ? setNavigationCollapsed(false) : setNavigationOpen((open) => !open)}><Icon name="panel" /></button>
             <span>{screen === "work" ? title : screen === "search" ? t("nav.search") : screen === "agents" ? t("nav.agents") : t("nav.settings")}</span>
             {screen === "work" && <span className={state.phase === "submitting" ? "local-badge working" : "local-badge"}>
               <span />{t(state.phase === "submitting" ? "status.working" : "shell.local")}</span>}
@@ -676,6 +698,39 @@ function WorkSurface({ state, composer, submit, startSuggestion, dispatch, conte
   approvalAction: React.RefObject<HTMLButtonElement | null>;
   t: (key: MessageKey) => string;
 }) {
+  const conversation = useRef<HTMLDivElement>(null);
+  const [followingTail, setFollowingTail] = useState(true);
+  const [newOutputBelow, setNewOutputBelow] = useState(false);
+  const tailRevision = `${state.messages.length}:${state.messages.at(-1)?.text.length ?? 0}:${state.livePreview?.sequence ?? -1}:${state.phase}`;
+  const previousTailRevision = useRef(tailRevision);
+
+  useEffect(() => {
+    if (previousTailRevision.current === tailRevision) return;
+    previousTailRevision.current = tailRevision;
+    const element = conversation.current;
+    if (!element) return;
+    if (!followingTail) { setNewOutputBelow(true); return; }
+    requestAnimationFrame(() => {
+      element.scrollTop = element.scrollHeight;
+      setNewOutputBelow(false);
+    });
+  }, [followingTail, tailRevision]);
+
+  const readScrollPosition = () => {
+    const element = conversation.current;
+    if (!element) return;
+    const attached = isNearConversationTail(element);
+    setFollowingTail(attached);
+    if (attached) setNewOutputBelow(false);
+  };
+  const jumpToLatest = () => {
+    const element = conversation.current;
+    if (!element) return;
+    element.scrollTo?.({ top: element.scrollHeight, behavior: "smooth" });
+    element.scrollTop = element.scrollHeight;
+    setFollowingTail(true); setNewOutputBelow(false);
+  };
+
   if (state.boot === "loading") return <div className="center-state"><span className="orb loading"><Icon name="sparkle" /></span><h1>{t("work.boot.title")}</h1><p>{t("work.boot.body")}</p></div>;
   if (state.boot === "unavailable") return <StatusCard icon="warning" title={t("work.unavailable.title")} body={t("error.desktopUnavailable")} />;
   if (!state.capabilities?.configured) {
@@ -693,10 +748,16 @@ function WorkSurface({ state, composer, submit, startSuggestion, dispatch, conte
   const disconnected = state.execution === "disconnected";
   const reconnecting = state.execution === "reconnecting";
   return <section className={state.messages.length ? "work-surface" : "work-surface new-work-surface"}>
-    <div className={state.messages.length ? "conversation" : "conversation empty-conversation"}>
+    <div ref={conversation} onScroll={readScrollPosition}
+      className={state.messages.length ? "conversation" : "conversation empty-conversation"}>
       {state.messages.length === 0 ? <Welcome onSelect={startSuggestion} t={t} />
         : <Timeline state={state} dispatch={dispatch} t={t} />}
     </div>
+    {!followingTail && <button className={newOutputBelow
+      ? "conversation-tail-button unread" : "conversation-tail-button"} type="button"
+      aria-label={t(newOutputBelow ? "timeline.newOutput" : "timeline.jumpLatest")}
+      onClick={jumpToLatest}><Icon name="chevron" /><span>{t(newOutputBelow
+        ? "timeline.newOutput" : "timeline.jumpLatest")}</span></button>}
     {(state.error || disconnected || reconnecting) && <div className={disconnected || reconnecting
       ? "error-banner connection-banner" : "error-banner"} role={state.error ? "alert" : "status"}>
       <Icon name={reconnecting ? "activity" : "warning"} /><span>{reconnecting ? t("connection.reconnecting")
@@ -797,7 +858,7 @@ function Timeline({ state, dispatch, t }: { state: WorkState; dispatch: WorkDisp
     ? <article className="message user-message" key={message.id}><div>{message.text}</div></article>
     : <article className="message assistant-message" key={message.id}><div><div className="result-markdown"><Markdown skipHtml remarkPlugins={[remarkGfm]}
       components={{ a: ({ children }) => <span className="safe-link">{children}</span> }}>{message.text || terminalCopy(message.terminal, t)}</Markdown></div>
-      <div className="result-meta"><span><Icon name={message.terminal === "completed" ? "check" : "warning"} />{terminalCopy(message.terminal, t)}</span><div className="result-actions"><button type="button" disabled={!message.text} onClick={() => downloadMarkdown(message.id, message.text)}>{t("timeline.export")}</button><button type="button" onClick={() => void copyResult(message.id, message.text)}>{t(copiedId === message.id ? "timeline.copied" : "timeline.copy")}</button></div></div></div></article>)}
+      <div className="result-meta"><span className="result-terminal"><Icon name={message.terminal === "completed" ? "check" : "warning"} />{terminalCopy(message.terminal, t)}</span><div className="result-actions"><button type="button" disabled={!message.text} aria-label={t("timeline.export")} title={t("timeline.export")} onClick={() => downloadMarkdown(message.id, message.text)}><Icon name="download" /></button><button type="button" aria-label={t(copiedId === message.id ? "timeline.copied" : "timeline.copy")} title={t(copiedId === message.id ? "timeline.copied" : "timeline.copy")} onClick={() => void copyResult(message.id, message.text)}><Icon name={copiedId === message.id ? "check" : "copy"} /></button>{state.artifacts.some((artifact) => artifact.turn_id === message.id) && <button type="button" aria-label={t("timeline.openArtifacts")} title={t("timeline.openArtifacts")} onClick={() => dispatch({ type: "inspector_selected", tab: "artifacts" })}><Icon name="file" /></button>}</div></div></div></article>)}
     {state.livePreview && <article className="message assistant-message live-answer" aria-label={t("timeline.liveAnswer")}>
       {state.livePreview.available && state.livePreview.text
         ? <div className="result-markdown"><Markdown skipHtml remarkPlugins={[remarkGfm]}>{state.livePreview.text}</Markdown></div>
@@ -816,13 +877,15 @@ function livePhaseCopy(key: string | undefined, t: (key: MessageKey) => string):
 export function TurnProgress({ activities, onOpen, t }: { activities: WorkState["activities"];
   onOpen: () => void; t: (key: MessageKey) => string }) {
   const recent = activities.slice(-3);
+  const current = [...recent].reverse().find((activity) => !activity.terminal) ?? recent.at(-1);
   return <article className="turn-progress" aria-label={t("timeline.progressTitle")}>
-    <div className="turn-progress-head"><span className="live-pulse"><span /></span><div>
-      <strong>{t("timeline.progressTitle")}</strong><p>{t("timeline.progressBody")}</p></div>
+    <div className="turn-progress-head"><span className="live-pulse"><span /></span><div className="progress-summary">
+      <strong>{t("timeline.progressTitle")}</strong><p>{current
+        ? `${activityLabel(current.label_key, t)} · ${activityState(current.state, t)}`
+        : t("timeline.progressBody")}</p></div>
       <button type="button" onClick={onOpen}>{t("timeline.openActivity")}<Icon name="chevron" /></button></div>
-    {recent.length > 0 && <div className="turn-progress-steps">{recent.map((activity) =>
+    {recent.length > 0 && <div className="sr-only">{recent.map((activity) =>
       <div className={activity.terminal ? "complete" : "active"} key={`${activity.kind}-${activity.activity_id}`}>
-        <span>{activity.terminal ? <Icon name="check" /> : <span className="spinner" />}</span>
         <strong>{activityLabel(activity.label_key, t)}</strong><small>{activityState(activity.state, t)}</small>
       </div>)}</div>}
   </article>;
@@ -831,7 +894,9 @@ export function TurnProgress({ activities, onOpen, t }: { activities: WorkState[
 function Inspector({ state, dispatch, t }: { state: WorkState; dispatch: WorkDispatch; t: (key: MessageKey) => string }) {
   const mode = state.inspectorTab === "activity" ? "environment-panel" : "workspace-panel";
   const [workspaceTitle, setWorkspaceTitle] = useState<string>();
-  return <aside className={`inspector ${mode}`} aria-label={t("inspector.aria")}><header><div className="inspector-tabs" role="tablist" aria-label={t("inspector.views")}><button type="button" role="tab" aria-selected={state.inspectorTab === "activity"} className={state.inspectorTab === "activity" ? "active" : ""} onClick={() => { setWorkspaceTitle(undefined); dispatch({ type: "inspector_selected", tab: "activity" }); }}>{t("inspector.activity")}</button><button type="button" role="tab" aria-selected={state.inspectorTab === "artifacts"} className={state.inspectorTab === "artifacts" ? "active" : ""} onClick={() => dispatch({ type: "inspector_selected", tab: "artifacts" })}>{workspaceTitle ?? t("inspector.artifacts")}</button></div>
+  return <aside className={`inspector ${mode}`} aria-label={t("inspector.aria")}><header>{state.inspectorTab === "activity"
+    ? <strong className="environment-title">{t("inspector.environment")}</strong>
+    : <div className="workspace-tabs" role="tablist" aria-label={t("inspector.views")}><button type="button" role="tab" aria-selected="true"><Icon name="file" /><span>{workspaceTitle ?? t("inspector.artifacts")}</span></button></div>}
     <button className="icon-button" type="button" aria-label={t("inspector.close")} onClick={() => dispatch({ type: "inspector_toggled" })}><Icon name="close" /></button></header>
     {state.inspectorTab === "activity" ? <div className="inspector-body" role="tabpanel"><CommittedActivity state={state} t={t} /></div>
       : <div className="inspector-body" role="tabpanel"><ResultDeliverables state={state} t={t} onPreviewTitle={setWorkspaceTitle} /></div>}
@@ -840,16 +905,23 @@ function Inspector({ state, dispatch, t }: { state: WorkState; dispatch: WorkDis
 
 function ResultDeliverables({ state, t, onPreviewTitle }: { state: WorkState; t: (key: MessageKey) => string;
   onPreviewTitle: (title?: string) => void }) {
-  const [selected, setSelected] = useState<HostArtifact>();
-  const [preview, setPreview] = useState<ArtifactPreview>();
+  const previewFixture = visualTestMode === "artifact-preview";
+  const [selected, setSelected] = useState<HostArtifact | undefined>(previewFixture
+    ? visualArtifactPage.items[0] : undefined);
+  const [preview, setPreview] = useState<ArtifactPreview | undefined>(previewFixture
+    ? visualArtifactPreview : undefined);
+  const [sourceMode, setSourceMode] = useState(false);
   const [previewState, setPreviewState] = useState<"idle" | "loading" | "unavailable">("idle");
   const [exportStates, setExportStates] = useState<Readonly<Record<string,
     "exporting" | "exported" | "exists" | "unavailable">>>({});
   const [exportReceipts, setExportReceipts] = useState<Readonly<Record<string,
     ArtifactExportReceipt>>>({});
   const results = state.messages.filter((message) => message.role === "assistant" && message.text);
+  useEffect(() => {
+    if (previewFixture && selected) onPreviewTitle(selected.display_name);
+  }, [onPreviewTitle, previewFixture, selected]);
   const openPreview = async (artifact: HostArtifact) => {
-    setSelected(artifact); onPreviewTitle(artifact.display_name); setPreview(undefined); setPreviewState("loading");
+    setSelected(artifact); setSourceMode(false); onPreviewTitle(artifact.display_name); setPreview(undefined); setPreviewState("loading");
     try {
       const content = visualTest ? visualArtifactPreview
         : await getArtifactPreview(state.sessionId ?? "", artifact);
@@ -904,12 +976,13 @@ function ResultDeliverables({ state, t, onPreviewTitle }: { state: WorkState; t:
         {exportState === "unavailable" && <p className="artifact-export-state error" role="alert"><Icon name="warning" />{t("artifact.exportError")}</p>}
       </div>
     </article>; })}
-    {selected && <section className="artifact-preview" aria-label={t("artifact.previewAria")}><header><div><span>{t("artifact.previewVerified")}</span><strong dir="auto">{selected.display_name}</strong></div><button type="button" aria-label={t("artifact.closePreview")}
-      onClick={() => { setSelected(undefined); onPreviewTitle(undefined); setPreview(undefined); setPreviewState("idle"); }}><Icon name="close" /></button></header>
+    {selected && <section className="artifact-preview" aria-label={t("artifact.previewAria")}><div className="artifact-workbench-toolbar"><nav aria-label={t("artifact.breadcrumbs")}><span>{t("inspector.artifacts")}</span><Icon name="chevron" /><strong dir="auto">{selected.display_name}</strong></nav><div><button type="button" disabled={!preview || previewState !== "idle"} onClick={() => setSourceMode((shown) => !shown)}><Icon name="source" />{t(sourceMode ? "artifact.viewRendered" : "artifact.viewSource")}</button><button type="button" aria-label={t("artifact.closePreview")} title={t("artifact.closePreview")}
+      onClick={() => { setSelected(undefined); setSourceMode(false); onPreviewTitle(undefined); setPreview(undefined); setPreviewState("idle"); }}><Icon name="close" /></button></div></div>
       {previewState === "loading" ? <div className="preview-state" role="status"><span className="spinner" />{t("artifact.verifying")}</div>
         : previewState === "unavailable" ? <div className="preview-state error" role="alert"><Icon name="warning" />{t("artifact.changed")}</div>
-          : preview && <div className="artifact-preview-content"><Markdown skipHtml remarkPlugins={[remarkGfm]}
-            components={{ a: ({ children }) => <span className="safe-link">{children}</span> }}>{preview.content_utf8}</Markdown></div>}
+          : preview && (sourceMode ? <pre className="artifact-source" aria-label={t("artifact.sourceAria")}>{preview.content_utf8}</pre>
+            : <div className="artifact-preview-content"><Markdown skipHtml remarkPlugins={[remarkGfm]}
+              components={{ a: ({ children }) => <span className="safe-link">{children}</span> }}>{preview.content_utf8}</Markdown></div>)}
       <footer><Icon name="shield" />{t("artifact.digestPrefix")} {selected.revision}</footer>
     </section>}
     {results.length > 0 && <div className="deliverable-section-label">{t("artifact.snapshots")}</div>}
