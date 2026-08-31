@@ -12,9 +12,6 @@ pub(super) struct Palette {
     pub(super) accent: Style,
     pub(super) title: Style,
     pub(super) badge: Style,
-    pub(super) brand: Style,
-    pub(super) header_text: Style,
-    pub(super) header_background: Style,
     pub(super) border: Style,
     pub(super) composer_border: Style,
     pub(super) overlay_border: Style,
@@ -94,12 +91,6 @@ pub(super) fn palette(theme: Theme) -> Palette {
         accent: bold,
         title: bold,
         badge: Style::default().fg(violet),
-        brand: Style::default()
-            .fg(if mono { text } else { Color::Black })
-            .bg(accent)
-            .add_modifier(Modifier::BOLD),
-        header_text: Style::default().fg(text).bg(surface),
-        header_background: Style::default().bg(surface),
         border: Style::default().fg(muted),
         composer_border: Style::default().fg(accent),
         overlay_border: Style::default().fg(violet),

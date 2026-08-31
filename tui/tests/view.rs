@@ -14,11 +14,7 @@ use application::{
     AppModel, BootState, ConversationLandmark, FocusTarget, Overlay, TimelineItem, TimelineRole,
 };
 use garive_host_client::{SessionSummary, SuspensionView};
-use ratatui::{
-    buffer::Buffer,
-    layout::Rect,
-    style::{Color, Modifier},
-};
+use ratatui::{buffer::Buffer, layout::Rect, style::Modifier};
 
 fn frame(model: &AppModel, width: u16, height: u16) -> String {
     let area = Rect::new(0, 0, width, height);
@@ -45,12 +41,12 @@ fn minimum_and_compact_frames_are_truthful() {
     assert!(frame(&model, 19, 7).contains("20×8"));
     let compact = frame(&model, 60, 12);
     assert!(compact.contains("Connecting to your durable workspace"));
-    assert!(compact.contains("Enter send"));
+    assert!(!compact.contains("Enter send"));
     assert!(!compact.contains("Sessions ("));
 }
 
 #[test]
-fn standard_frame_has_navigation_timeline_and_safe_text() {
+fn standard_frame_has_conversation_context_and_safe_text() {
     let mut model = AppModel {
         boot: BootState::Ready,
         session_count: 3,
@@ -65,73 +61,11 @@ fn standard_frame_has_navigation_timeline_and_safe_text() {
         text: "answer\u{1b}[31m\u{2066}x\u{2069}".into(),
     });
     let standard = frame(&model, 120, 18);
-    assert!(standard.contains("Sessions 3"));
-    assert!(standard.contains("session-1234"));
+    assert!(standard.contains("◆ Garive"));
+    assert!(standard.contains("New conversation"));
+    assert!(!standard.contains("Sessions 3"));
     assert!(standard.contains("answer�[31m⟦LRI⟧x⟦PDI⟧"));
     assert!(!standard.contains('\u{1b}'));
-}
-
-#[test]
-fn conversation_position_rail_shares_exact_geometry_and_modal_ownership() {
-    let mut model = AppModel {
-        terminal_size: application::TerminalSize {
-            width: 100,
-            height: 24,
-        },
-        focus: FocusTarget::Conversation,
-        ..Default::default()
-    };
-    for position in 0..20 {
-        model.timeline.push(TimelineItem {
-            stable_key: format!("cell-{position}"),
-            position: position + 1,
-            role: TimelineRole::Agent,
-            tone: Default::default(),
-            text: format!("bounded answer {position}"),
-        });
-    }
-    let rendered = frame(&model, 100, 24);
-    assert!(rendered.contains('█'));
-    assert_eq!(view::conversation_rail_hit_test(&model, 98, 3), Some(0));
-    assert_eq!(view::conversation_rail_hit_test(&model, 98, 18), Some(19));
-    assert_eq!(view::conversation_rail_hit_test(&model, 97, 10), None);
-
-    model.viewport.follow_latest = false;
-    model.viewport.anchor_key = Some("cell-5".into());
-    model.viewport.newer_updates = 2;
-    let area = Rect::new(0, 0, 100, 24);
-    let mut dark = Buffer::empty(area);
-    let _ = view::render_cached(
-        &model,
-        Theme::Dark,
-        area,
-        &mut dark,
-        &mut view::RenderCache::default(),
-    );
-    let mut light = Buffer::empty(area);
-    let _ = view::render_cached(
-        &model,
-        Theme::Light,
-        area,
-        &mut light,
-        &mut view::RenderCache::default(),
-    );
-    assert_eq!(dark[(98, 8)].symbol(), "┃");
-    assert_eq!(light[(98, 8)].symbol(), "┃");
-    assert_eq!(dark[(98, 8)].fg, Color::Yellow);
-    assert_eq!(light[(98, 8)].fg, Color::Yellow);
-    assert_ne!(dark[(98, 3)].fg, light[(98, 3)].fg);
-
-    model.conversation_rail_hover = Some(application::ConversationRailHover { index: 11, row: 11 });
-    let hovered = frame(&model, 100, 24);
-    assert!(hovered.contains("Cell 12 · Garive"));
-    assert!(hovered.contains("bounded answer 11"));
-    assert_eq!(hovered.lines().nth(11).unwrap().chars().nth(98), Some('▓'));
-    model.conversation_rail_hover = None;
-    assert!(!frame(&model, 100, 24).contains("Cell 12 · Garive"));
-
-    model.overlay = Some(Overlay::Help);
-    assert_eq!(view::conversation_rail_hit_test(&model, 98, 3), None);
 }
 
 #[test]
@@ -376,9 +310,9 @@ fn inline_command_suggestions_render_above_composer_without_a_modal_backdrop() {
     assert!(rendered.contains("Commands"));
     assert!(rendered.contains("/theme dark"));
     assert!(rendered.contains("/theme light"));
-    assert!(rendered.contains("↑/↓ select"));
     assert!(rendered.contains("Tab complete"));
-    assert!(rendered.contains("Esc close"));
+    assert!(!rendered.contains("↑/↓ select"));
+    assert!(!rendered.contains("Esc close"));
     assert!(!rendered.contains("Enter send"));
     assert!(!rendered.contains("Search"));
 
@@ -389,7 +323,7 @@ fn inline_command_suggestions_render_above_composer_without_a_modal_backdrop() {
     model.composer.replace("/theme d").unwrap();
     let compact = frame(&model, 40, 12);
     assert!(compact.contains("Tab complete"));
-    assert!(compact.contains("Esc close"));
+    assert!(!compact.contains("Esc close"));
     assert!(!compact.contains("↑/↓ select"));
 }
 
@@ -494,58 +428,6 @@ fn session_picker_filter_and_selection_share_one_visible_result_set() {
     let scrolled = frame(&model, 80, 24);
     assert!(scrolled.contains("› agent-000011"));
     assert!(!scrolled.contains("agent-000000"));
-}
-
-#[test]
-fn focused_session_rail_keeps_stable_keyboard_selection_visible() {
-    let model = AppModel {
-        focus: FocusTarget::Navigation,
-        sessions: (0..12)
-            .map(|index| session(&format!("session-{index:06}"), &format!("agent-{index:06}")))
-            .collect(),
-        selected_session: Some("session-000000".into()),
-        navigation_selection: Some("session-000011".into()),
-        ..Default::default()
-    };
-    let rendered = frame(&model, 100, 24);
-    assert!(rendered.contains("› agent-000011"));
-    assert!(!rendered.contains("agent-000000"));
-
-    let area = Rect::new(0, 0, 100, 24);
-    let mut buffer = Buffer::empty(area);
-    let _ = view::render_cached(
-        &model,
-        Theme::Mono,
-        area,
-        &mut buffer,
-        &mut view::RenderCache::default(),
-    );
-    let selected = (0..area.height)
-        .flat_map(|y| (0..28).map(move |x| (x, y)))
-        .find(|&(x, y)| buffer[(x, y)].symbol() == "›")
-        .expect("focused Session marker");
-    assert!(buffer[selected].modifier.contains(Modifier::REVERSED));
-}
-
-#[test]
-fn session_rail_mouse_hit_test_uses_the_rendered_window() {
-    let model = AppModel {
-        focus: FocusTarget::Navigation,
-        terminal_size: application::TerminalSize {
-            width: 100,
-            height: 24,
-        },
-        sessions: (0..12)
-            .map(|index| session(&format!("session-{index:06}"), &format!("agent-{index:06}")))
-            .collect(),
-        navigation_selection: Some("session-000011".into()),
-        ..Default::default()
-    };
-
-    assert_eq!(view::navigation_hit_test(&model, 1, 3), Some(6));
-    assert_eq!(view::navigation_hit_test(&model, 10, 18), Some(11));
-    assert_eq!(view::navigation_hit_test(&model, 10, 21), None);
-    assert_eq!(view::navigation_hit_test(&model, 28, 3), None);
 }
 
 #[test]

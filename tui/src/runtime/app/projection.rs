@@ -171,7 +171,6 @@ pub(super) fn install_timeline(model: &mut AppModel, mut turns: Vec<TurnTimeline
     });
     turns.sort_by_key(|turn| turn.started_position);
     model.close_turn_navigator();
-    model.conversation_rail_hover = None;
     model.timeline.clear();
     model.conversation_landmarks.clear();
     model.suspension = None;

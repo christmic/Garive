@@ -15,21 +15,21 @@ pub(super) fn render(
 ) -> Vec<Line<'static>> {
     let colors = palette(theme);
     let mut lines = vec![Line::from(vec![
-        Span::styled("◆  GARIVE", colors.agent),
+        Span::styled("◆ Garive", colors.agent),
         Span::styled(phase_copy(answer.phase), colors.muted),
     ])];
     match answer.availability {
         LiveAnswerAvailability::Unavailable => lines.push(Line::styled(
-            "   Live feedback unavailable · waiting for saved result",
+            "  Live feedback unavailable · waiting for saved result",
             colors.muted,
         )),
         LiveAnswerAvailability::Available => {
             if answer.presented_text.is_empty() {
-                lines.push(Line::styled("   ", colors.normal));
+                lines.push(Line::styled("  ", colors.normal));
             } else {
                 lines.extend(render_markdown(
                     &answer.presented_text,
-                    "   ",
+                    "  ",
                     colors.normal,
                     colors.agent,
                     colors.muted,

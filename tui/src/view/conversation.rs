@@ -3,7 +3,7 @@ use ratatui::{
     layout::Rect,
     style::Style,
     text::{Line, Span, Text},
-    widgets::{Block, Borders, Padding, Paragraph, Widget, Wrap},
+    widgets::{Paragraph, Widget, Wrap},
 };
 use sha2::{Digest, Sha256};
 use std::collections::VecDeque;
@@ -14,8 +14,7 @@ use crate::{
 };
 
 use super::{
-    empty_detail, empty_title, markdown::render_markdown, palette, safe_text, turn_label,
-    MotionFrame,
+    empty_detail, empty_title, markdown::render_markdown, palette, safe_text, MotionFrame,
 };
 
 pub(super) fn render_conversation(
@@ -27,45 +26,31 @@ pub(super) fn render_conversation(
     cache: &mut RenderCache,
 ) {
     let colors = palette(theme);
-    let block = Block::default()
-        .borders(Borders::BOTTOM)
-        .border_style(
-            if model.focus == crate::application::FocusTarget::Conversation {
-                colors.accent
-            } else {
-                colors.border
-            },
-        )
-        .padding(Padding::new(2, 2, 1, 0));
-    let inner = block.inner(area);
+    let mut inner = Rect::new(
+        area.x.saturating_add(2),
+        area.y.saturating_add(1),
+        area.width.saturating_sub(4),
+        area.height.saturating_sub(1),
+    );
+    let context = if model.viewport.newer_updates > 0 {
+        Some(format!(
+            "↓ {} newer updates · End to follow",
+            model.viewport.newer_updates
+        ))
+    } else if !model.viewport.follow_latest {
+        Some("↑ Browsing history · End to follow".into())
+    } else {
+        None
+    };
+    if let Some(context) = context {
+        Line::styled(context, colors.muted)
+            .alignment(ratatui::layout::Alignment::Center)
+            .render(Rect::new(area.x, area.y, area.width, 1), buffer);
+        inner.y = inner.y.saturating_add(1);
+        inner.height = inner.height.saturating_sub(1);
+    }
     let window = (!model.timeline.is_empty() || model.live_answer.current().is_some())
         .then(|| conversation_window(model, theme, motion, inner.width, inner.height, cache));
-    let title = if model.viewport.newer_updates > 0 {
-        format!(
-            " Conversation · {} newer updates ",
-            model.viewport.newer_updates
-        )
-    } else if window.as_ref().is_some_and(|value| value.has_earlier) {
-        " Conversation · ↑ earlier ".to_owned()
-    } else if model.execution == crate::application::ExecutionState::Following {
-        " Conversation · ● live ".to_owned()
-    } else if let Some(turn_count) = model
-        .selected_session
-        .as_deref()
-        .and_then(|selected| {
-            model
-                .sessions
-                .iter()
-                .find(|session| session.session_id == selected)
-        })
-        .map(|session| session.turn_count)
-    {
-        format!(" Conversation · {turn_count} {} ", turn_label(turn_count))
-    } else {
-        " Conversation ".to_owned()
-    };
-    let block = block.title(Line::styled(title, colors.title));
-    block.render(area, buffer);
     let mut lines = Vec::new();
     let mut scroll = 0;
     if model.timeline.is_empty() && model.live_answer.current().is_none() {
@@ -80,13 +65,11 @@ pub(super) fn render_conversation(
         .wrap(Wrap { trim: false })
         .scroll((scroll.min(u16::MAX as usize) as u16, 0))
         .render(inner, buffer);
-    super::position_rail::render(model, theme, area, buffer);
 }
 
 struct ConversationWindow {
     lines: Vec<Line<'static>>,
     scroll: usize,
-    has_earlier: bool,
     #[cfg_attr(not(test), allow(dead_code))]
     laid_out: usize,
 }
@@ -149,7 +132,6 @@ fn conversation_window(
     ConversationWindow {
         lines,
         scroll,
-        has_earlier: laid_out < model.timeline.len() || scroll > 0,
         laid_out,
     }
 }
@@ -262,21 +244,14 @@ fn render_timeline_item(
     let mut lines = Vec::new();
     match item.role {
         TimelineRole::User => {
-            lines.push(Line::from(vec![
-                Span::styled("╭─ YOU ", colors.user),
-                Span::styled(format!("#{}", item.position), colors.muted),
-            ]));
-            push_content(&mut lines, &item.text, "│  ", colors.normal);
-            lines.push(Line::styled("╰─", colors.user));
+            lines.push(Line::styled("You", colors.user));
+            push_content(&mut lines, &item.text, "  ", colors.normal);
         }
         TimelineRole::Agent => {
-            lines.push(Line::from(vec![
-                Span::styled("◆  GARIVE ", colors.agent),
-                Span::styled(format!("#{}", item.position), colors.muted),
-            ]));
+            lines.push(Line::styled("◆ Garive", colors.agent));
             lines.extend(render_markdown(
                 &item.text,
-                "   ",
+                "  ",
                 colors.normal,
                 colors.agent,
                 colors.muted,

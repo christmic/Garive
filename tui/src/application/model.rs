@@ -26,7 +26,6 @@ impl TerminalSize {
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub(crate) enum FocusTarget {
-    Navigation,
     Conversation,
     #[default]
     Composer,
@@ -244,12 +243,6 @@ pub(crate) struct ConversationLandmark {
     pub(crate) prompt_preview: String,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) struct ConversationRailHover {
-    pub(crate) index: usize,
-    pub(crate) row: u16,
-}
-
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct ViewportState {
     pub(crate) follow_latest: bool,
@@ -299,13 +292,11 @@ pub(crate) struct AppModel {
     pub(crate) has_pending_command: bool,
     pub(crate) composer_is_frozen: bool,
     pub(crate) session_selection: usize,
-    pub(crate) navigation_selection: Option<String>,
     pub(crate) selected_session: Option<String>,
     pub(crate) selected_turn: Option<String>,
     pub(crate) active_execution_id: Option<String>,
     pub(crate) observed_position: u64,
     pub(crate) viewport: ViewportState,
-    pub(crate) conversation_rail_hover: Option<ConversationRailHover>,
     pub(crate) session_viewports: BTreeMap<String, ViewportState>,
     pub(crate) viewport_order: VecDeque<String>,
     pub(crate) suspension: Option<SuspensionView>,
@@ -407,7 +398,6 @@ impl AppModel {
     }
 
     pub(crate) fn switch_viewport(&mut self, session_id: &str) {
-        self.conversation_rail_hover = None;
         if self.selected_session.as_deref() == Some(session_id) {
             return;
         }
@@ -495,20 +485,6 @@ impl AppModel {
         self.viewport.anchor_key = Some(first.stable_key.clone());
         self.viewport.source_line = 0;
         self.viewport.newer_updates = 0;
-    }
-
-    pub(crate) fn jump_to_timeline_index(&mut self, index: usize) {
-        if self.timeline.is_empty() {
-            return;
-        }
-        let target = index.min(self.timeline.len() - 1);
-        if target + 1 == self.timeline.len() {
-            self.follow_latest();
-            return;
-        }
-        self.viewport.follow_latest = false;
-        self.viewport.anchor_key = Some(self.timeline[target].stable_key.clone());
-        self.viewport.source_line = 0;
     }
 
     pub(crate) fn jump_to_turn_position(&mut self, position: u64) -> bool {

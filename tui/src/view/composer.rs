@@ -15,30 +15,23 @@ use crate::{
 use super::{safe_text, style::Palette};
 
 pub(super) fn render(model: &AppModel, colors: Palette, area: Rect, buffer: &mut Buffer) {
-    let title = if model.execution == ExecutionState::Suspended {
-        " Action response "
-    } else {
-        " Compose "
-    };
-    let block = Block::default()
-        .title(Line::styled(title, colors.title))
+    let mut block = Block::default()
         .borders(Borders::ALL)
-        .border_type(if model.focus == FocusTarget::Composer {
-            BorderType::Double
-        } else {
-            BorderType::Rounded
-        })
+        .border_type(BorderType::Rounded)
         .border_style(if model.focus == FocusTarget::Composer {
             colors.composer_border
         } else {
             colors.border
         })
         .padding(Padding::horizontal(1));
+    if model.execution == ExecutionState::Suspended {
+        block = block.title(Line::styled(" Action response ", colors.title));
+    }
     let inner = block.inner(area);
     block.render(area, buffer);
     let text = if model.composer.text().is_empty() {
         Text::from(Line::styled(
-            "›  Message Garive — / for commands",
+            "Message Garive  ·  / for commands",
             colors.placeholder,
         ))
     } else {

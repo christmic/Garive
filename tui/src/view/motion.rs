@@ -34,7 +34,6 @@ impl MotionFrame {
 }
 
 pub(crate) struct StatusMotion {
-    pub(crate) connection_icon: &'static str,
     pub(crate) execution_label: String,
 }
 
@@ -50,16 +49,6 @@ pub(crate) fn status_motion_enabled(model: &AppModel, reduced: bool) -> bool {
 }
 
 pub(crate) fn status_motion(model: &AppModel, frame: MotionFrame) -> StatusMotion {
-    let connection_icon = if matches!(
-        model.connection,
-        ConnectionState::Connecting | ConnectionState::Reconnecting { .. }
-    ) {
-        frame.pulse().unwrap_or("○")
-    } else if model.connection == ConnectionState::Online {
-        "●"
-    } else {
-        "○"
-    };
     let execution = match model.execution {
         ExecutionState::Idle => "ready",
         ExecutionState::Following => "running",
@@ -70,10 +59,7 @@ pub(crate) fn status_motion(model: &AppModel, frame: MotionFrame) -> StatusMotio
         (ExecutionState::Following, Some(pulse)) => format!("{pulse} {execution}"),
         _ => execution.into(),
     };
-    StatusMotion {
-        connection_icon,
-        execution_label,
-    }
+    StatusMotion { execution_label }
 }
 
 #[cfg(test)]
@@ -91,15 +77,10 @@ mod tests {
         assert!(status_motion_enabled(&model, false));
         assert!(!status_motion_enabled(&model, true));
         assert_eq!(
-            status_motion(&model, MotionFrame::animated(0)).connection_icon,
-            "·"
-        );
-        assert_eq!(
             status_motion(&model, MotionFrame::animated(4)).execution_label,
             "● running"
         );
         let reduced = status_motion(&model, MotionFrame::reduced());
-        assert_eq!(reduced.connection_icon, "○");
         assert_eq!(reduced.execution_label, "running");
 
         model.connection = ConnectionState::Online;

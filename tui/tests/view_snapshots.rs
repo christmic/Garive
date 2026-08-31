@@ -31,26 +31,6 @@ fn responsive_product_frames_match_reviewed_snapshots() {
         frame(&wrapped, Theme::Mono, 40, 16)
     );
     insta::assert_snapshot!("standard_100x24", frame(&model, Theme::Dark, 100, 24));
-    let rail = position_rail_model();
-    insta::assert_snapshot!(
-        "conversation_rail_dark_100x24",
-        frame(&rail, Theme::Dark, 100, 24)
-    );
-    insta::assert_snapshot!(
-        "conversation_rail_light_100x24",
-        frame(&rail, Theme::Light, 100, 24)
-    );
-    insta::assert_snapshot!(
-        "conversation_rail_mono_100x24",
-        frame(&rail, Theme::Mono, 100, 24)
-    );
-    let mut hovered_rail = rail;
-    hovered_rail.conversation_rail_hover =
-        Some(application::ConversationRailHover { index: 11, row: 11 });
-    insta::assert_snapshot!(
-        "conversation_rail_hover_dark_100x24",
-        frame(&hovered_rail, Theme::Dark, 100, 24)
-    );
     insta::assert_snapshot!(
         "motion_running_dark_100x24",
         motion_frame(&model, Theme::Dark, 4, 100, 24)
@@ -169,30 +149,6 @@ fn responsive_product_frames_match_reviewed_snapshots() {
         "session_picker_scrolled_100x24",
         frame(&sessions, Theme::Mono, 100, 24)
     );
-
-    let mut rail = sessions;
-    rail.overlay = None;
-    rail.focus = application::FocusTarget::Navigation;
-    rail.selected_session = Some("session-000000".into());
-    rail.navigation_selection = Some("session-000011".into());
-    insta::assert_snapshot!(
-        "session_rail_focus_dark_100x24",
-        frame(&rail, Theme::Dark, 100, 24)
-    );
-    insta::assert_snapshot!(
-        "session_rail_focus_light_100x24",
-        frame(&rail, Theme::Light, 100, 24)
-    );
-    insta::assert_snapshot!(
-        "session_rail_focus_mono_100x24",
-        frame(&rail, Theme::Mono, 100, 24)
-    );
-
-    rail.focus = application::FocusTarget::Conversation;
-    insta::assert_snapshot!(
-        "conversation_focus_dark_100x24",
-        frame(&rail, Theme::Dark, 100, 24)
-    );
 }
 
 #[test]
@@ -259,28 +215,6 @@ fn product_model() -> AppModel {
         ),
     ];
     model.composer.replace("Ask a follow-up…").unwrap();
-    model
-}
-
-fn position_rail_model() -> AppModel {
-    let mut model = product_model();
-    model.timeline.clear();
-    for position in 0..20 {
-        model.timeline.push(item(
-            &format!("rail-{position}"),
-            position + 1,
-            if position % 2 == 0 {
-                TimelineRole::User
-            } else {
-                TimelineRole::Agent
-            },
-            &format!("Position rail evidence cell {position}."),
-        ));
-    }
-    model.focus = application::FocusTarget::Conversation;
-    model.viewport.follow_latest = false;
-    model.viewport.anchor_key = Some("rail-6".into());
-    model.viewport.newer_updates = 3;
     model
 }
 

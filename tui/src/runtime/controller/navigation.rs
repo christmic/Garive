@@ -203,15 +203,7 @@ mod tests {
             FocusTarget::Conversation
         );
         assert_eq!(
-            next_focus(120, FocusTarget::Navigation, false),
-            FocusTarget::Conversation
-        );
-        assert_eq!(
             next_focus(120, FocusTarget::Conversation, false),
-            FocusTarget::Composer
-        );
-        assert_eq!(
-            next_focus(120, FocusTarget::Navigation, true),
             FocusTarget::Composer
         );
         assert_eq!(

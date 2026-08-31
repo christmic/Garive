@@ -12,7 +12,7 @@ pub(crate) use live_answer::{
 };
 pub(crate) use model::{
     ActionOverlayBinding, ActionOverlayIntent, ActionOverlayKey, AppModel, BootState,
-    ConnectionState, ConversationLandmark, ConversationRailHover, ExecutionState, FocusTarget,
-    Overlay, TerminalSize, TimelineItem, TimelineRole, TimelineTone,
+    ConnectionState, ConversationLandmark, ExecutionState, FocusTarget, Overlay, TerminalSize,
+    TimelineItem, TimelineRole, TimelineTone,
 };
 pub(crate) use update::reduce;

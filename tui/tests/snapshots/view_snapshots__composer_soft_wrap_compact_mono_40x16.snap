@@ -2,19 +2,19 @@
 source: tui/tests/view_snapshots.rs
 expression: "frame(&wrapped, Theme::Mono, 40, 16)"
 ---
-  GARIVE                  ●  ·  running
+Session 1                        running
 
- Conversation · ↑ earlier
-                                      ·
-  ◆  GARIVE #6                        ·
-     ## Release plan                  █
-     • Verify the Runtime             █
-     • Ship with evidence             █
-     cargo test passes.               █
-                                      █
-────────────────────────────────────────
-╔ Compose ═════════════════════════════╗
-║ Composer grows with soft wrapping    ║
-║ and keeps every visible row.         ║
-╚══════════════════════════════════════╝
-  Esc cancel   ? help       62 / 4096 B
+
+    ✓  Agent action · completed
+
+  ◆ Garive
+    ## Release plan
+    • Verify the Runtime
+    • Ship with evidence
+    cargo test passes.
+
+╭──────────────────────────────────────╮
+│ Composer grows with soft wrapping    │
+│ and keeps every visible row.         │
+╰──────────────────────────────────────╯
+  Esc cancel run

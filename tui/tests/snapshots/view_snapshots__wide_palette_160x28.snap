@@ -2,31 +2,31 @@
 source: tui/tests/view_snapshots.rs
 expression: "frame(&wide, Theme::Light, 160, 28)"
 ---
-  GARIVE  research-age  /  Session session-alph                                                                                           ● online  ·  running
+                                Session 1  ·  research-age                                                               running
 
- Sessions 2                      │         ╭ Command palette ───────────────────────────────────────────────────────╮
-                                 │         │  Search  type to search                                                │
- ▌ research-age · 123456         │         │  › /new              Create session                                    │
-   ✓ completed  ·  3 turns       │         │    /sessions         Switch session                                    │
-                                 │         │    /jump             unavailable · fewer than two Turns are loaded     │
-   research-age · 987654         │         │    /status           Connection details                                │
-   ● running  ·  1 turn          │         │    /edit-prompt      Edit draft externally                             │
-                                 │         │    /retry            unavailable · no pending command                  │
-                                 │         │    /reconnect        Resume event stream                               │
-                                 │         │    /cancel           Cancel running turn                               │
-                                 │         │    /theme system     Follow terminal theme                             │
-                                 │         │    /theme dark       Use dark theme                                    │
-                                 │         │    /theme light      Use light theme                                   │
-                                 │         │    /theme mono       Use mono theme                                    │
-                                 │         │    /mouse on         Enable mouse capture next launch                  │
-                                 │         │    /mouse off        Disable mouse capture next launch                 │
-                                 │         │    /copy last        Copy last completion                              │
-                                 │         │    /copy selection   unavailable · no composer text is selected        │
-                                 │         │    ↑/↓ select   Enter run   Esc close                                  │
-                                 │         │                                                                        │
-                                 │         ╰────────────────────────────────────────────────────────────────────────╯
-                                 │      ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────
-                                 │      ╔ Compose ═══════════════════════════════════════════════════════════════════════════════════════════════════════╗
-                                 │      ║ Ask a follow-up…                                                                                               ║
-  Ctrl+N new · Ctrl+S list       │      ╚════════════════════════════════════════════════════════════════════════════════════════════════════════════════╝
-                                 │        Esc cancel   Ctrl+S sessions   Ctrl+P commands   ? help                                             18 / 4096 B
+                                  You      ╭ Command palette ───────────────────────────────────────────────────────╮
+                                    Summa  │  Search  type to search                                                │
+                                           │  › /new              Create session                                    │
+                                    ✓  Ag  │    /sessions         Switch session                                    │
+                                           │    /jump             unavailable · fewer than two Turns are loaded     │
+                                  ◆ Gariv  │    /status           Connection details                                │
+                                    ## Re  │    /edit-prompt      Edit draft externally                             │
+                                    • Ver  │    /retry            unavailable · no pending command                  │
+                                    • Shi  │    /reconnect        Resume event stream                               │
+                                    cargo  │    /cancel           Cancel running turn                               │
+                                           │    /theme system     Follow terminal theme                             │
+                                           │    /theme dark       Use dark theme                                    │
+                                           │    /theme light      Use light theme                                   │
+                                           │    /theme mono       Use mono theme                                    │
+                                           │    /mouse on         Enable mouse capture next launch                  │
+                                           │    /mouse off        Disable mouse capture next launch                 │
+                                           │    /copy last        Copy last completion                              │
+                                           │    /copy selection   unavailable · no composer text is selected        │
+                                           │    ↑/↓ select   Enter run   Esc close                                  │
+                                           │                                                                        │
+                                           ╰────────────────────────────────────────────────────────────────────────╯
+
+                                ╭──────────────────────────────────────────────────────────────────────────────────────────────╮
+                                │ Ask a follow-up…                                                                             │
+                                ╰──────────────────────────────────────────────────────────────────────────────────────────────╯
+                                  Esc cancel run

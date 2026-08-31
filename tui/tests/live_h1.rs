@@ -778,63 +778,6 @@ exit 7
 }
 
 #[test]
-fn conversation_position_rail_press_and_drag_share_the_shipping_geometry() {
-    let (address, stop, server) = timeline_host();
-    let temporary = tempfile::tempdir().unwrap();
-    let transcript = temporary.path().join("conversation-rail.log");
-    let status = Command::new("expect")
-        .env("TERM", "xterm-256color")
-        .env("GARIVE_TUI_BIN", env!("CARGO_BIN_EXE_garive-tui"))
-        .env("GARIVE_TUI_HOST", format!("http://{address}/"))
-        .env("GARIVE_TUI_LOG", &transcript)
-        .env("GARIVE_TUI_STATE", temporary.path().join("state"))
-        .args(["-c", r#"
-            set timeout 8
-            proc must_expect {pattern code} {
-                expect {
-                    -exact $pattern { return }
-                    timeout { exit $code }
-                    eof { exit $code }
-                }
-            }
-            log_file -noappend $env(GARIVE_TUI_LOG)
-            spawn -noecho /bin/sh -c {stty rows 24 columns 100; exec "$GARIVE_TUI_BIN" --host "$GARIVE_TUI_HOST" --session session-rail --state-dir "$GARIVE_TUI_STATE" --theme mono --mouse on}
-            must_expect "\033\[6n" 60
-            send "\033\[1;1R"
-            must_expect {#40} 61
-            send "\033\[<35;99;12M"
-            must_expect {Cell 22} 62
-            after 100
-            send "\033\[<35;98;12M"
-            after 100
-            send "\033\[<0;99;4M"
-            must_expect {#1} 63
-            send "\033\[<32;99;12M"
-            must_expect {#22} 64
-            send "\033\[<0;99;12m"
-            send "\033\[<0;99;19M"
-            must_expect {#40} 65
-            send "\021"
-            must_expect "Garive?" 66
-            send "\r"
-            expect {
-                eof { exit 0 }
-                timeout { exit 67 }
-            }
-        "#])
-        .status()
-        .unwrap();
-    stop.store(true, Ordering::Relaxed);
-    server.join().unwrap();
-    assert!(status.success());
-    let text = fs::read_to_string(transcript).unwrap();
-    assert!(text.contains('█'));
-    assert!(text.matches("\x1b[12;99H").count() >= 3);
-    assert!(text.contains("\x1b[?1006h") && text.contains("\x1b[?1006l"));
-    assert!(text.contains("\x1b[?1049h") && text.contains("\x1b[?1049l"));
-}
-
-#[test]
 fn turn_navigator_filters_commits_only_on_activation_and_shares_mouse_geometry() {
     let (address, stop, server) = timeline_host();
     let temporary = tempfile::tempdir().unwrap();

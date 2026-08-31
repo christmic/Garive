@@ -1,6 +1,6 @@
 use ratatui::{
     buffer::Buffer,
-    layout::{Alignment, Constraint, Layout, Rect},
+    layout::Rect,
     text::{Line, Span},
     widgets::Widget,
 };
@@ -13,103 +13,55 @@ use crate::{
 use super::{palette, primitives::key_hints};
 
 pub(super) fn render_footer(model: &AppModel, theme: Theme, area: Rect, buffer: &mut Buffer) {
+    if area.is_empty() {
+        return;
+    }
     let colors = palette(theme);
-    let cells = Layout::horizontal([Constraint::Min(1), Constraint::Length(14)]).split(area);
     let hint = if let Some(notice) = model.notice.as_deref() {
         Line::from(vec![
             Span::styled(" ● ", colors.notice),
             Span::styled(notice, colors.normal),
         ])
     } else if model.composer.has_selection() {
-        if area.width < 60 {
-            key_hints(&[("Alt+C", "copy")], colors)
-        } else {
-            key_hints(
-                &[("Alt+C", "copy"), ("type", "replace"), ("←/→", "collapse")],
-                colors,
-            )
-        }
+        key_hints(&[("Alt+C", "copy selection")], colors)
     } else if model.command_suggestions_active() {
-        if area.width < 60 {
-            key_hints(&[("Tab", "complete"), ("Esc", "close")], colors)
-        } else {
-            key_hints(
-                &[("↑/↓", "select"), ("Tab", "complete"), ("Esc", "close")],
-                colors,
-            )
-        }
+        key_hints(&[("Tab", "complete command")], colors)
+    } else if model.composer.text().len() > 4_096 {
+        Line::styled(
+            format!(
+                "  Message is {} bytes over the limit",
+                model.composer.text().len() - 4_096
+            ),
+            colors.danger,
+        )
+    } else if model.composer.text().len() > 3_584 {
+        Line::styled(
+            format!("  {} of 4096 bytes", model.composer.text().len()),
+            colors.warning,
+        )
     } else {
-        focus_hints(model, area.width, colors)
+        focus_hint(model, colors)
     };
-    hint.render(cells[0], buffer);
-    Line::styled(
-        format!("{} / 4096 B ", model.composer.text().len()),
-        colors.muted,
-    )
-    .alignment(Alignment::Right)
-    .render(cells[1], buffer);
+    hint.render(area, buffer);
 }
 
-fn focus_hints(model: &AppModel, width: u16, colors: super::style::Palette) -> Line<'static> {
+pub(super) fn is_visible(model: &AppModel) -> bool {
+    model.notice.is_some()
+        || model.composer.has_selection()
+        || model.command_suggestions_active()
+        || model.composer.text().len() > 3_584
+        || model.execution == ExecutionState::Following
+        || model.focus == FocusTarget::Conversation
+}
+
+fn focus_hint(model: &AppModel, colors: super::style::Palette) -> Line<'static> {
     let running = model.execution == ExecutionState::Following;
-    match (width < 60, model.focus, running) {
-        (true, FocusTarget::Conversation, _) => {
-            key_hints(&[("PgUp/PgDn", "scroll"), ("Tab", "compose")], colors)
+    match (model.focus, running, model.viewport.follow_latest) {
+        (_, true, _) => key_hints(&[("Esc", "cancel run")], colors),
+        (FocusTarget::Conversation, false, false) => key_hints(&[("End", "follow latest")], colors),
+        (FocusTarget::Conversation, false, true) => {
+            key_hints(&[("PgUp", "browse history")], colors)
         }
-        (true, _, true) => key_hints(&[("Esc", "cancel"), ("?", "help")], colors),
-        (true, _, false) => key_hints(&[("Enter", "send"), ("?", "help")], colors),
-        (false, FocusTarget::Navigation, true) => key_hints(
-            &[
-                ("Esc", "cancel"),
-                ("↑/↓", "select"),
-                ("Enter", "open"),
-                ("Tab", "next"),
-            ],
-            colors,
-        ),
-        (false, FocusTarget::Navigation, false) => key_hints(
-            &[
-                ("↑/↓", "select"),
-                ("Enter", "open"),
-                ("Tab", "next"),
-                ("?", "help"),
-            ],
-            colors,
-        ),
-        (false, FocusTarget::Conversation, true) => key_hints(
-            &[
-                ("Esc", "cancel"),
-                ("PgUp/PgDn", "scroll"),
-                ("End", "latest"),
-            ],
-            colors,
-        ),
-        (false, FocusTarget::Conversation, false) => key_hints(
-            &[
-                ("PgUp/PgDn", "scroll"),
-                ("End", "latest"),
-                ("Tab", "compose"),
-                ("?", "help"),
-            ],
-            colors,
-        ),
-        (false, _, true) => key_hints(
-            &[
-                ("Esc", "cancel"),
-                ("Ctrl+S", "sessions"),
-                ("Ctrl+P", "commands"),
-                ("?", "help"),
-            ],
-            colors,
-        ),
-        (false, _, false) => key_hints(
-            &[
-                ("Enter", "send"),
-                ("Ctrl+J", "newline"),
-                ("Ctrl+P", "commands"),
-                ("?", "help"),
-            ],
-            colors,
-        ),
+        _ => Line::default(),
     }
 }

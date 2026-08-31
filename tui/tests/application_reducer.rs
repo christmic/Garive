@@ -9,8 +9,8 @@ mod application;
 mod input;
 
 use application::{
-    reduce, AppAction, AppModel, BootState, ConnectionState, ConversationLandmark,
-    ConversationRailHover, FocusTarget, Overlay, TerminalSize, TimelineItem, TimelineRole,
+    reduce, AppAction, AppModel, BootState, ConnectionState, ConversationLandmark, FocusTarget,
+    Overlay, TerminalSize, TimelineItem, TimelineRole,
 };
 
 #[test]
@@ -123,44 +123,6 @@ fn every_terminal_size_is_representable_without_underflow() {
             size.width >= 20 && size.height >= 8
         );
     }
-}
-
-#[test]
-fn transient_conversation_hover_clears_at_application_lifecycle_boundaries() {
-    let hover = ConversationRailHover { index: 4, row: 9 };
-    let mut model = AppModel {
-        conversation_rail_hover: Some(hover),
-        terminal_size: TerminalSize {
-            width: 80,
-            height: 20,
-        },
-        ..Default::default()
-    };
-    reduce(&mut model, AppAction::TerminalFocusChanged(false));
-    assert_eq!(model.conversation_rail_hover, None);
-
-    model.conversation_rail_hover = Some(hover);
-    reduce(
-        &mut model,
-        AppAction::TerminalResized(TerminalSize {
-            width: 100,
-            height: 24,
-        }),
-    );
-    assert_eq!(model.conversation_rail_hover, None);
-
-    model.conversation_rail_hover = Some(hover);
-    reduce(
-        &mut model,
-        AppAction::TerminalResized(TerminalSize {
-            width: 100,
-            height: 24,
-        }),
-    );
-    assert_eq!(model.conversation_rail_hover, Some(hover));
-
-    reduce(&mut model, AppAction::OverlayOpened(Overlay::Help));
-    assert_eq!(model.conversation_rail_hover, None);
 }
 
 #[test]
