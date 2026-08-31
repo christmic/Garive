@@ -624,6 +624,9 @@ fn states(node: &CdpAxNode) -> Result<Vec<String>, NativeProtocolError> {
 }
 
 fn actions(node: &CdpAxNode) -> Result<Vec<String>, NativeProtocolError> {
+    if protected(node) {
+        return Ok(Vec::new());
+    }
     let role = normalized_token(node.role.as_deref().unwrap_or("generic"))?;
     let values: &[&str] = match role.as_str() {
         "button" | "link" | "menu_item" | "checkbox" | "radio" => &["click"],

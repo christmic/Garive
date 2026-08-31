@@ -105,7 +105,7 @@ fn serve(stream: &mut TcpStream, address: SocketAddr, cross_origin: Option<Socke
             "200 OK",
             "Content-Type: text/html; charset=utf-8\r\n".into(),
             format!(
-                r#"<!doctype html><title>Runtime port fixture</title><body style="height:4000px" onscroll="document.querySelector('main').setAttribute('aria-label','Scrolled')"><main><label>Account <input aria-label="Account name"></label><label>Mode <select aria-label="Execution mode" onchange="this.setAttribute('aria-label','Execution mode '+this.value)"><option value="safe">Safe</option><option value="stable">Stable</option></select></label><button data-count="0" onclick="this.dataset.count=String(Number(this.dataset.count)+1);this.setAttribute('aria-label','Submitted '+this.dataset.count)">Submit form</button><iframe src="/same-frame"></iframe><iframe src="http://{}/cross-frame"></iframe></main></body>"#,
+                r#"<!doctype html><title>Runtime port fixture</title><body style="height:4000px" onscroll="document.querySelector('main').setAttribute('aria-label','Scrolled')"><main><label>Account <input aria-label="Account name"></label><label>Vault <input type="password" aria-label="Vault password" value="GARIVE_PASSWORD_CANARY_DO_NOT_LEAK"></label><label>Mode <select aria-label="Execution mode" onchange="this.setAttribute('aria-label','Execution mode '+this.value)"><option value="safe">Safe</option><option value="stable">Stable</option></select></label><button data-count="0" onclick="this.dataset.count=String(Number(this.dataset.count)+1);this.setAttribute('aria-label','Submitted '+this.dataset.count)">Submit form</button><iframe src="/same-frame"></iframe><iframe src="http://{}/cross-frame"></iframe></main></body>"#,
                 cross_origin.expect("cross-origin fixture")
             ),
         ),
@@ -266,6 +266,21 @@ async fn managed_chrome_runs_through_the_governed_runtime_port() {
         .nodes
         .iter()
         .any(|node| node.name.as_deref() == Some("Cross origin secret")));
+    assert!(!after.nodes.iter().any(|node| {
+        node.name.as_deref() == Some("GARIVE_PASSWORD_CANARY_DO_NOT_LEAK")
+            || node.value_summary.as_deref() == Some("GARIVE_PASSWORD_CANARY_DO_NOT_LEAK")
+    }));
+    let password = after
+        .nodes
+        .iter()
+        .find(|node| {
+            node.role == "textbox"
+                && node.sensitivity == garive_runtime::NativeSensitivity::Redacted
+        })
+        .expect("redacted password field");
+    assert_eq!(password.name.as_deref(), Some("[redacted]"));
+    assert_eq!(password.value_summary.as_deref(), Some("[redacted]"));
+    assert!(password.actions.is_empty());
     let opaque_frame = after
         .nodes
         .iter()

@@ -66,6 +66,32 @@ fn frame_tree(origin: &str, loader_id: &str) -> Value {
     }}})
 }
 
+async fn classify_text_input(
+    socket: &mut tokio_tungstenite::WebSocketStream<tokio::net::TcpStream>,
+    backend_node_id: u64,
+) {
+    let command = reply(
+        socket,
+        json!({"node":{"localName":"input","attributes":["type","text"]}}),
+    )
+    .await;
+    assert_eq!(command["method"], "DOM.describeNode");
+    assert_eq!(command["params"]["backendNodeId"], backend_node_id);
+}
+
+async fn classify_password_input(
+    socket: &mut tokio_tungstenite::WebSocketStream<tokio::net::TcpStream>,
+    backend_node_id: u64,
+) {
+    let command = reply(
+        socket,
+        json!({"node":{"localName":"input","attributes":["type","password"]}}),
+    )
+    .await;
+    assert_eq!(command["method"], "DOM.describeNode");
+    assert_eq!(command["params"]["backendNodeId"], backend_node_id);
+}
+
 fn histories(current_index: usize) -> Value {
     json!({"currentIndex":current_index,"entries":[
         {"id":1,"url":"https://one.test:443/page"},
@@ -154,6 +180,7 @@ async fn concrete_port_dispatches_bound_click_type_and_clear_actions() {
             reply(&mut socket, history(1, "https://fixture.test:443/form")).await["method"],
             "Page.getNavigationHistory"
         );
+        classify_text_input(&mut socket, 43).await;
         frames(&mut socket, "https://fixture.test:443").await;
         frames(&mut socket, "https://fixture.test:443").await;
         reply(&mut socket, history(1, "https://fixture.test:443/form")).await;
@@ -186,7 +213,9 @@ async fn concrete_port_dispatches_bound_click_type_and_clear_actions() {
         )
         .await;
         reply(&mut socket, history(1, "https://fixture.test:443/form")).await;
+        classify_text_input(&mut socket, 43).await;
         frames(&mut socket, "https://fixture.test:443").await;
+        classify_text_input(&mut socket, 43).await;
         frames(&mut socket, "https://fixture.test:443").await;
         reply(&mut socket, history(1, "https://fixture.test:443/form")).await;
         assert_eq!(reply(&mut socket, json!({})).await["method"], "DOM.focus");
@@ -205,7 +234,9 @@ async fn concrete_port_dispatches_bound_click_type_and_clear_actions() {
         )
         .await;
         reply(&mut socket, history(1, "https://fixture.test:443/form")).await;
+        classify_text_input(&mut socket, 43).await;
         frames(&mut socket, "https://fixture.test:443").await;
+        classify_text_input(&mut socket, 43).await;
         frames(&mut socket, "https://fixture.test:443").await;
         reply(&mut socket, history(1, "https://fixture.test:443/form")).await;
         assert_eq!(reply(&mut socket, json!({})).await["method"], "DOM.focus");
@@ -456,6 +487,7 @@ async fn concrete_port_revalidates_focus_for_keys_and_binds_scroll_to_the_page_s
         ]});
         reply(&mut socket, focused_tree.clone()).await;
         reply(&mut socket, history(1, "https://fixture.test:443/form")).await;
+        classify_text_input(&mut socket, 43).await;
         frames(&mut socket, "https://fixture.test:443").await;
         assert_eq!(
             reply(&mut socket, focused_tree.clone()).await["method"],
@@ -474,6 +506,7 @@ async fn concrete_port_revalidates_focus_for_keys_and_binds_scroll_to_the_page_s
         frames(&mut socket, "https://fixture.test:443").await;
         reply(&mut socket, focused_tree).await;
         reply(&mut socket, history(1, "https://fixture.test:443/form")).await;
+        classify_text_input(&mut socket, 43).await;
         frames(&mut socket, "https://fixture.test:443").await;
         frames(&mut socket, "https://fixture.test:443").await;
         reply(&mut socket, history(1, "https://fixture.test:443/form")).await;
@@ -578,6 +611,7 @@ async fn key_dispatch_fails_before_input_when_focus_changed_after_snapshot() {
         )
         .await;
         reply(&mut socket, history(1, "https://fixture.test:443/form")).await;
+        classify_text_input(&mut socket, 43).await;
         frames(&mut socket, "https://fixture.test:443").await;
         reply(
             &mut socket,
@@ -634,6 +668,83 @@ async fn key_dispatch_fails_before_input_when_focus_changed_after_snapshot() {
 }
 
 #[tokio::test]
+async fn text_field_becoming_password_after_snapshot_fails_before_input() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.expect("listener");
+    let address = listener.local_addr().expect("address");
+    let server = tokio::spawn(async move {
+        let (stream, _) = listener.accept().await.expect("accept");
+        let mut socket = accept_async(stream).await.expect("websocket");
+        reply(&mut socket, json!({})).await;
+        frames(&mut socket, "https://fixture.test:443").await;
+        reply(
+            &mut socket,
+            json!({"nodes":[
+                {"nodeId":"textbox","ignored":false,"role":{"value":"textbox"},"backendDOMNodeId":43,"parentId":"root"},
+                {"nodeId":"root","ignored":false,"role":{"value":"RootWebArea"}}
+            ]}),
+        )
+        .await;
+        reply(&mut socket, history(1, "https://fixture.test:443/form")).await;
+        classify_text_input(&mut socket, 43).await;
+        frames(&mut socket, "https://fixture.test:443").await;
+        classify_password_input(&mut socket, 43).await;
+    });
+    let config = CdpAdapterConfig::new(
+        format!("ws://{address}/devtools/browser/capability"),
+        CdpLimits::new(64 * 1_024, 1, 16, 2_000).expect("limits"),
+    )
+    .expect("config");
+    let client = CdpClient::new(CdpTransport::connect(&config).await.expect("transport"));
+    let mut port = CdpNativeAdapterPort::new(
+        target(),
+        "cdp-session",
+        "revision-1",
+        "run-password-race",
+        64,
+        client,
+    )
+    .expect("port");
+    let observation = port
+        .observe(
+            &target(),
+            None,
+            NativeObservationBounds {
+                max_nodes: 16,
+                max_text_bytes: 4_096,
+            },
+        )
+        .await
+        .expect("observation");
+    let textbox = observation
+        .nodes
+        .iter()
+        .find(|node| node.role == "textbox")
+        .expect("textbox");
+    let command = NativeActionCommandV1 {
+        action_id: NativeActionId::new("password-race").expect("action"),
+        target: target(),
+        expected_snapshot_id: observation.snapshot_id,
+        target_revision: observation.target_revision,
+        prepared_input: json!({
+            "action":"type_text",
+            "node_ref":textbox.node_ref.as_str(),
+            "text":"must-not-send",
+            "allowed_navigation_origins":[]
+        }),
+    };
+    let binding = port.preflight_action(&command).expect("preflight");
+    assert_eq!(
+        port.dispatch_action(&command, &binding).await,
+        Err(garive_runtime::NativeProtocolError::SensitiveActionRequired)
+    );
+    assert_eq!(
+        port.preflight_action(&command),
+        Err(garive_runtime::NativeProtocolError::SnapshotStale)
+    );
+    server.await.expect("server");
+}
+
+#[tokio::test]
 async fn action_navigation_revalidates_the_committed_history_origin() {
     let listener = TcpListener::bind("127.0.0.1:0").await.expect("listener");
     let address = listener.local_addr().expect("address");
@@ -648,6 +759,7 @@ async fn action_navigation_revalidates_the_committed_history_origin() {
         ]});
         reply(&mut socket, focused_tree.clone()).await;
         reply(&mut socket, history(1, "https://fixture.test:443/form")).await;
+        classify_text_input(&mut socket, 43).await;
         frames(&mut socket, "https://fixture.test:443").await;
         reply(&mut socket, focused_tree).await;
         frames(&mut socket, "https://fixture.test:443").await;

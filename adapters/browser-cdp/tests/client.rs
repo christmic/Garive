@@ -72,6 +72,15 @@ async fn typed_client_binds_version_target_session_and_bounded_ax_tree() {
         let owner = reply(&mut socket, json!({"backendNodeId":84})).await;
         assert_eq!(owner["method"], "DOM.getFrameOwner");
         assert_eq!(owner["params"]["frameId"], "frame-2");
+        let password = reply(
+            &mut socket,
+            json!({"node":{"localName":"input","attributes":["type","password","value","must-stay-private"]}}),
+        )
+        .await;
+        assert_eq!(password["method"], "DOM.describeNode");
+        assert_eq!(password["params"]["backendNodeId"], 84);
+        assert_eq!(password["params"]["depth"], 0);
+        assert_eq!(password["params"]["pierce"], false);
         let history = reply(
             &mut socket,
             json!({"currentIndex":1,"entries":[
@@ -122,6 +131,10 @@ async fn typed_client_binds_version_target_session_and_bounded_ax_tree() {
             .expect("frame owner"),
         84
     );
+    assert!(client
+        .backend_node_is_password(&session, 84)
+        .await
+        .expect("password classification"));
     let history = client
         .current_history_entry(&session)
         .await

@@ -3,8 +3,8 @@
 use std::time::Duration;
 
 use garive_browser_cdp::{
-    CdpAxTree, CdpClient, CdpFrameTree, CdpHistoryEntry, CdpNavigationResult, CdpPortableKey,
-    CdpSelectOutcome, CdpTransportError, CdpWaitUntil, CDP_ADAPTER_REVISION,
+    CdpAxProperty, CdpAxTree, CdpClient, CdpFrameTree, CdpHistoryEntry, CdpNavigationResult,
+    CdpPortableKey, CdpSelectOutcome, CdpTransportError, CdpWaitUntil, CDP_ADAPTER_REVISION,
 };
 use garive_tools::canonical_http_origin;
 use serde_json::json;
@@ -355,6 +355,36 @@ impl CdpNativeAdapterPort {
         Ok(changed)
     }
 
+    async fn classify_password_nodes(
+        &mut self,
+        tree: &mut CdpAxTree,
+    ) -> Result<(), NativeProtocolError> {
+        for node in &mut tree.nodes {
+            let password_candidate = node.role.as_deref().is_some_and(|role| {
+                matches!(
+                    role.to_ascii_lowercase().as_str(),
+                    "textbox" | "text_field" | "textfield" | "searchbox"
+                )
+            });
+            let Some(backend_dom_node_id) = node.backend_dom_node_id.filter(|_| password_candidate)
+            else {
+                continue;
+            };
+            if self
+                .client
+                .backend_node_is_password(&self.cdp_session_id, backend_dom_node_id)
+                .await
+                .map_err(observation_error)?
+            {
+                node.properties.push(CdpAxProperty {
+                    name: "protected".into(),
+                    value: json!({"type":"boolean","value":true}),
+                });
+            }
+        }
+        Ok(())
+    }
+
     fn resolve_navigation(
         &self,
         command: &NativeActionCommandV1,
@@ -484,6 +514,7 @@ impl NativeAdapterPort for CdpNativeAdapterPort {
                 .current_history_entry(&self.cdp_session_id)
                 .await
                 .map_err(observation_error)?;
+            self.classify_password_nodes(&mut tree).await?;
             let main_origin = canonical_http_origin(&history_entry.url)
                 .ok_or(NativeProtocolError::BrowserOriginDenied)?;
             let mut frame_scope = CdpFrameScope::same_origin(&frame_tree_before, &main_origin)?;
@@ -510,6 +541,8 @@ impl NativeAdapterPort for CdpNativeAdapterPort {
                         )
                         .await
                         .map_err(observation_error)?;
+                    let mut child = child;
+                    self.classify_password_nodes(&mut child).await?;
                     tree.nodes.extend(child.nodes);
                 }
             }
@@ -847,6 +880,19 @@ impl NativeAdapterPort for CdpNativeAdapterPort {
             let resolved = self.resolve_action(command)?;
             if &self.binding_for(command, &resolved)? != binding {
                 return Err(NativeProtocolError::InvalidBinding);
+            }
+            if matches!(resolved.action.as_str(), "type_text" | "clear")
+                && self
+                    .client
+                    .backend_node_is_password(
+                        &self.cdp_session_id,
+                        resolved.target.backend_dom_node_id,
+                    )
+                    .await
+                    .map_err(observation_error)?
+            {
+                self.current_binding = None;
+                return Err(NativeProtocolError::SensitiveActionRequired);
             }
             let before_history = self.revalidate_history_snapshot().await?;
             self.current_binding = None;

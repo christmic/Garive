@@ -450,6 +450,63 @@ impl CdpClient {
             .ok_or_else(protocol)
     }
 
+    /// Classifies whether one exact backend node is a native password input.
+    pub async fn backend_node_is_password(
+        &mut self,
+        session_id: &str,
+        backend_dom_node_id: u64,
+    ) -> Result<bool, CdpTransportError> {
+        validate_id(session_id)?;
+        if backend_dom_node_id == 0 {
+            return Err(protocol());
+        }
+        let result = self
+            .transport
+            .call(
+                "DOM.describeNode",
+                json!({
+                    "backendNodeId":backend_dom_node_id,
+                    "depth":0,
+                    "pierce":false
+                }),
+                Some(session_id.into()),
+            )
+            .await?;
+        let node = result
+            .get("node")
+            .and_then(Value::as_object)
+            .ok_or_else(protocol)?;
+        let local_name = node
+            .get("localName")
+            .and_then(Value::as_str)
+            .filter(|value| !value.is_empty() && value.len() <= 128)
+            .ok_or_else(protocol)?;
+        let attributes = node
+            .get("attributes")
+            .and_then(Value::as_array)
+            .ok_or_else(protocol)?;
+        let (pairs, remainder) = attributes.as_chunks::<2>();
+        if attributes.len() > 512 || !remainder.is_empty() {
+            return Err(protocol());
+        }
+        let mut input_type = None;
+        for pair in pairs {
+            let name = pair[0]
+                .as_str()
+                .filter(|value| value.len() <= 4_096)
+                .ok_or_else(protocol)?;
+            let value = pair[1]
+                .as_str()
+                .filter(|value| value.len() <= 16_384)
+                .ok_or_else(protocol)?;
+            if name.eq_ignore_ascii_case("type") && input_type.replace(value).is_some() {
+                return Err(protocol());
+            }
+        }
+        Ok(local_name.eq_ignore_ascii_case("input")
+            && input_type.is_some_and(|value| value.eq_ignore_ascii_case("password")))
+    }
+
     /// Moves to one exact history entry and proves it became current.
     pub async fn navigate_to_history_entry(
         &mut self,

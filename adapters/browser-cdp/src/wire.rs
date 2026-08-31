@@ -195,6 +195,7 @@ fn admitted_method(method: &str) -> bool {
             | "Input.dispatchMouseEvent"
             | "Input.insertText"
             | "DOM.focus"
+            | "DOM.describeNode"
             | "DOM.getFrameOwner"
             | "DOM.scrollIntoViewIfNeeded"
             | "DOM.getBoxModel"

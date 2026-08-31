@@ -43,7 +43,7 @@ fn mapping_topologizes_folds_ignored_nodes_and_redacts_protected_values() {
         name: "focusable".into(),
         value: json!({"type":"booleanOrUndefined","value":true}),
     });
-    let mut password = node("password-cdp", Some("root-cdp"), "secureTextField", false);
+    let mut password = node("password-cdp", Some("root-cdp"), "textbox", false);
     password.value_summary = Some("secret".into());
     password.properties.push(CdpAxProperty {
         name: "protected".into(),
@@ -77,6 +77,7 @@ fn mapping_topologizes_folds_ignored_nodes_and_redacts_protected_values() {
         observation.nodes[2].value_summary.as_deref(),
         Some("[redacted]")
     );
+    assert!(observation.nodes[2].actions.is_empty());
     assert_eq!(observation.redacted_field_count, 2);
 }
 
