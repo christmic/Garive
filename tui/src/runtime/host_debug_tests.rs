@@ -17,15 +17,18 @@ fn activity() -> HostActivity {
 }
 
 fn live_output(kind: LiveOutputEventKind) -> HostMessage {
-    HostMessage::LiveOutput(LiveOutputEvent {
-        api_version: CANARY.into(),
-        session_id: CANARY.into(),
-        turn_id: CANARY.into(),
-        execution_id: CANARY.into(),
-        stream_id: CANARY.into(),
-        sequence: 46,
-        kind,
-    })
+    HostMessage::LiveOutput {
+        subscription_id: LiveSubscriptionId::new(2),
+        event: LiveOutputEvent {
+            api_version: CANARY.into(),
+            session_id: CANARY.into(),
+            turn_id: CANARY.into(),
+            execution_id: CANARY.into(),
+            stream_id: CANARY.into(),
+            sequence: 46,
+            kind,
+        },
+    }
 }
 
 #[test]
@@ -70,16 +73,19 @@ fn host_message_debug_is_content_safe_for_every_variant() {
         &["committed_position: 51"],
     );
     assert_safe(
-        HostMessage::Event(HostEvent {
-            api_version: CANARY.into(),
-            session_id: CANARY.into(),
-            position: 52,
-            event: CANARY.into(),
-            turn_id: CANARY.into(),
-            execution_id: CANARY.into(),
-            text: CANARY.into(),
-            activity: Some(activity()),
-        }),
+        HostMessage::Event {
+            subscription_id: SubscriptionId::new(1),
+            event: HostEvent {
+                api_version: CANARY.into(),
+                session_id: CANARY.into(),
+                position: 52,
+                event: CANARY.into(),
+                turn_id: CANARY.into(),
+                execution_id: CANARY.into(),
+                text: CANARY.into(),
+                activity: Some(activity()),
+            },
+        },
         "Event",
         &["position: 52"],
     );
@@ -120,6 +126,7 @@ fn host_message_debug_is_content_safe_for_every_variant() {
     );
     assert_safe(
         HostMessage::FollowEnded {
+            subscription_id: SubscriptionId::new(1),
             session_id: CANARY.into(),
             code: HostClientErrorCode::InvalidEvent,
         },
@@ -128,6 +135,7 @@ fn host_message_debug_is_content_safe_for_every_variant() {
     );
     assert_safe(
         HostMessage::LiveFollowEnded {
+            subscription_id: LiveSubscriptionId::new(2),
             session_id: CANARY.into(),
             code: HostClientErrorCode::TransportFailure,
         },
@@ -136,6 +144,7 @@ fn host_message_debug_is_content_safe_for_every_variant() {
     );
     assert_safe(
         HostMessage::ReconnectDue {
+            subscription_id: SubscriptionId::new(1),
             session_id: CANARY.into(),
             attempt: 4,
         },
@@ -144,6 +153,7 @@ fn host_message_debug_is_content_safe_for_every_variant() {
     );
     assert_safe(
         HostMessage::LiveReconnectDue {
+            subscription_id: LiveSubscriptionId::new(2),
             session_id: CANARY.into(),
             attempt: 5,
         },

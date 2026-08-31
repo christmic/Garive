@@ -8,6 +8,24 @@ use tokio::{sync::mpsc, task::JoinHandle};
 #[path = "host_debug.rs"]
 mod host_debug;
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct SubscriptionId(u64);
+
+impl SubscriptionId {
+    pub(crate) const fn new(value: u64) -> Self {
+        Self(value)
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct LiveSubscriptionId(u64);
+
+impl LiveSubscriptionId {
+    pub(crate) const fn new(value: u64) -> Self {
+        Self(value)
+    }
+}
+
 pub(crate) struct ContinuationRequest {
     pub(crate) command_id: String,
     pub(crate) session_id: String,
@@ -33,21 +51,31 @@ pub(crate) enum HostMessage {
         submitted_text: String,
         response: TurnCommandResponse,
     },
-    Event(HostEvent),
-    LiveOutput(LiveOutputEvent),
+    Event {
+        subscription_id: SubscriptionId,
+        event: HostEvent,
+    },
+    LiveOutput {
+        subscription_id: LiveSubscriptionId,
+        event: LiveOutputEvent,
+    },
     FollowEnded {
+        subscription_id: SubscriptionId,
         session_id: String,
         code: HostClientErrorCode,
     },
     LiveFollowEnded {
+        subscription_id: LiveSubscriptionId,
         session_id: String,
         code: HostClientErrorCode,
     },
     ReconnectDue {
+        subscription_id: SubscriptionId,
         session_id: String,
         attempt: u32,
     },
     LiveReconnectDue {
+        subscription_id: LiveSubscriptionId,
         session_id: String,
         attempt: u32,
     },
@@ -203,6 +231,7 @@ pub(crate) fn start_turn(
 
 pub(crate) fn follow(
     client: LiveHostClient,
+    subscription_id: SubscriptionId,
     session_id: String,
     after_position: u64,
     sender: mpsc::Sender<HostMessage>,
@@ -219,7 +248,14 @@ pub(crate) fn follow(
             }
         });
         while let Some(event) = events.recv().await {
-            if sender.send(HostMessage::Event(event)).await.is_err() {
+            if sender
+                .send(HostMessage::Event {
+                    subscription_id,
+                    event,
+                })
+                .await
+                .is_err()
+            {
                 follow.abort();
                 return;
             }
@@ -229,13 +265,18 @@ pub(crate) fn follow(
             Ok(Ok(())) | Err(_) => HostClientErrorCode::TransportFailure,
         };
         let _ = sender
-            .send(HostMessage::FollowEnded { session_id, code })
+            .send(HostMessage::FollowEnded {
+                subscription_id,
+                session_id,
+                code,
+            })
             .await;
     })
 }
 
 pub(crate) fn follow_live(
     client: LiveHostClient,
+    subscription_id: LiveSubscriptionId,
     session_id: String,
     sender: mpsc::Sender<HostMessage>,
 ) -> JoinHandle<()> {
@@ -247,7 +288,14 @@ pub(crate) fn follow_live(
             async move { client.follow_live_output(&session_id, event_sender).await }
         });
         while let Some(event) = events.recv().await {
-            if sender.send(HostMessage::LiveOutput(event)).await.is_err() {
+            if sender
+                .send(HostMessage::LiveOutput {
+                    subscription_id,
+                    event,
+                })
+                .await
+                .is_err()
+            {
                 follow.abort();
                 return;
             }
@@ -257,12 +305,17 @@ pub(crate) fn follow_live(
             Ok(Ok(())) | Err(_) => HostClientErrorCode::TransportFailure,
         };
         let _ = sender
-            .send(HostMessage::LiveFollowEnded { session_id, code })
+            .send(HostMessage::LiveFollowEnded {
+                subscription_id,
+                session_id,
+                code,
+            })
             .await;
     })
 }
 
 pub(crate) fn schedule_reconnect(
+    subscription_id: SubscriptionId,
     session_id: String,
     attempt: u32,
     sender: mpsc::Sender<HostMessage>,
@@ -278,6 +331,7 @@ pub(crate) fn schedule_reconnect(
         tokio::time::sleep(std::time::Duration::from_millis(delay_ms)).await;
         let _ = sender
             .send(HostMessage::ReconnectDue {
+                subscription_id,
                 session_id,
                 attempt,
             })
@@ -286,6 +340,7 @@ pub(crate) fn schedule_reconnect(
 }
 
 pub(crate) fn schedule_live_reconnect(
+    subscription_id: LiveSubscriptionId,
     session_id: String,
     attempt: u32,
     sender: mpsc::Sender<HostMessage>,
@@ -301,6 +356,7 @@ pub(crate) fn schedule_live_reconnect(
         tokio::time::sleep(std::time::Duration::from_millis(delay_ms)).await;
         let _ = sender
             .send(HostMessage::LiveReconnectDue {
+                subscription_id,
                 session_id,
                 attempt,
             })

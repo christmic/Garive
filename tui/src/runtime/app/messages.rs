@@ -77,12 +77,33 @@ pub(super) fn handle_host(message: HostMessage, state: &mut RuntimeState) {
             state.model.execution = ExecutionState::Following;
             state.load(session_id);
         }
-        HostMessage::Event(event) => apply_event(event, state),
-        HostMessage::LiveOutput(event) => apply_live_output(event, state),
-        HostMessage::LiveFollowEnded { session_id, code }
-            if state.model.selected_session.as_deref() == Some(&session_id) =>
+        HostMessage::Event {
+            subscription_id,
+            event,
+        } if state.owns_subscription(&event.session_id, subscription_id) => {
+            apply_event(event, state);
+        }
+        HostMessage::Event { .. } => {}
+        HostMessage::LiveOutput {
+            subscription_id,
+            event,
+        } if state.model.selected_session.as_deref() == Some(&event.session_id)
+            && state.live_follow.is_some()
+            && state.live_follow_owner == Some(subscription_id) =>
+        {
+            apply_live_output(event, state);
+        }
+        HostMessage::LiveOutput { .. } => {}
+        HostMessage::LiveFollowEnded {
+            subscription_id,
+            session_id,
+            code,
+        } if state.model.selected_session.as_deref() == Some(&session_id)
+            && state.live_follow.is_some()
+            && state.live_follow_owner == Some(subscription_id) =>
         {
             state.live_follow = None;
+            state.live_follow_owner = None;
             let detached = !state.model.viewport.follow_latest;
             let effect = state.model.live_answer.preview_unavailable(detached);
             if effect.unseen_increment {
@@ -100,7 +121,9 @@ pub(super) fn handle_host(message: HostMessage, state: &mut RuntimeState) {
                 && state.live_reconnect_attempt < 5
             {
                 state.live_reconnect_attempt += 1;
+                state.live_reconnect_owner = Some(subscription_id);
                 state.live_reconnect = Some(host::schedule_live_reconnect(
+                    subscription_id,
                     session_id,
                     state.live_reconnect_attempt,
                     state.sender.clone(),
@@ -109,24 +132,37 @@ pub(super) fn handle_host(message: HostMessage, state: &mut RuntimeState) {
         }
         HostMessage::LiveFollowEnded { .. } => {}
         HostMessage::LiveReconnectDue {
+            subscription_id,
             session_id,
             attempt,
         } if state.model.selected_session.as_deref() == Some(&session_id)
+            && state.live_reconnect.is_some()
+            && state.live_reconnect_owner == Some(subscription_id)
             && state.live_reconnect_attempt == attempt
             && state.model.execution == ExecutionState::Following =>
         {
             state.live_reconnect = None;
+            state.live_reconnect_owner = None;
+            let subscription_id = state.next_live_subscription_id();
+            state.live_follow_owner = Some(subscription_id);
             state.live_follow = Some(host::follow_live(
                 state.client.clone(),
+                subscription_id,
                 session_id,
                 state.sender.clone(),
             ));
         }
         HostMessage::LiveReconnectDue { .. } => {}
-        HostMessage::FollowEnded { session_id, code }
-            if state.model.selected_session.as_deref() == Some(&session_id) =>
+        HostMessage::FollowEnded {
+            subscription_id,
+            session_id,
+            code,
+        } if state.model.selected_session.as_deref() == Some(&session_id)
+            && state.follow.is_some()
+            && state.follow_owner == Some(subscription_id) =>
         {
             state.follow = None;
+            state.follow_owner = None;
             if matches!(
                 code,
                 HostClientErrorCode::InvalidEvent
@@ -145,7 +181,9 @@ pub(super) fn handle_host(message: HostMessage, state: &mut RuntimeState) {
                 state.model.connection = ConnectionState::Disconnected {
                     attempt: state.reconnect_attempt,
                 };
+                state.reconnect_owner = Some(subscription_id);
                 state.reconnect = Some(host::schedule_reconnect(
+                    subscription_id,
                     session_id,
                     state.reconnect_attempt,
                     state.sender.clone(),
@@ -156,11 +194,19 @@ pub(super) fn handle_host(message: HostMessage, state: &mut RuntimeState) {
                 };
             }
         }
-        HostMessage::FollowEnded { session_id, code } => {
+        HostMessage::FollowEnded {
+            subscription_id,
+            session_id,
+            code,
+        } => {
             let Some(background) = state.background_follows.get_mut(&session_id) else {
                 return;
             };
+            if background.follow.is_none() || background.follow_owner != Some(subscription_id) {
+                return;
+            }
             background.follow = None;
+            background.follow_owner = None;
             if matches!(
                 code,
                 HostClientErrorCode::InvalidEvent
@@ -174,7 +220,9 @@ pub(super) fn handle_host(message: HostMessage, state: &mut RuntimeState) {
                 ));
             } else if background.attempt < 5 {
                 background.attempt += 1;
+                background.reconnect_owner = Some(subscription_id);
                 background.reconnect = Some(host::schedule_reconnect(
+                    subscription_id,
                     session_id,
                     background.attempt,
                     state.sender.clone(),
@@ -182,33 +230,52 @@ pub(super) fn handle_host(message: HostMessage, state: &mut RuntimeState) {
             }
         }
         HostMessage::ReconnectDue {
+            subscription_id,
             session_id,
             attempt,
         } if state.model.selected_session.as_deref() == Some(&session_id)
+            && state.reconnect.is_some()
+            && state.reconnect_owner == Some(subscription_id)
             && state.reconnect_attempt == attempt =>
         {
             state.reconnect = None;
+            state.reconnect_owner = None;
             state.model.connection = ConnectionState::Reconnecting { attempt };
+            let subscription_id = state.next_subscription_id();
+            state.follow_owner = Some(subscription_id);
             state.follow = Some(host::follow(
                 state.client.clone(),
+                subscription_id,
                 session_id,
                 state.model.observed_position,
                 state.sender.clone(),
             ));
         }
         HostMessage::ReconnectDue {
+            subscription_id,
             session_id,
             attempt,
         } => {
-            let Some(background) = state.background_follows.get_mut(&session_id) else {
+            let Some(background) = state.background_follows.get(&session_id) else {
                 return;
             };
-            if background.attempt != attempt {
+            if background.reconnect.is_none()
+                || background.reconnect_owner != Some(subscription_id)
+                || background.attempt != attempt
+            {
                 return;
             }
+            let subscription_id = state.next_subscription_id();
+            let background = state
+                .background_follows
+                .get_mut(&session_id)
+                .expect("background reconnect owner remains present");
             background.reconnect = None;
+            background.reconnect_owner = None;
+            background.follow_owner = Some(subscription_id);
             background.follow = Some(host::follow(
                 state.client.clone(),
+                subscription_id,
                 session_id,
                 background.observed_position,
                 state.sender.clone(),
@@ -262,6 +329,9 @@ fn refresh_after_unmatched_mutation(state: &mut RuntimeState) {
     }
 }
 
+#[cfg(test)]
+#[path = "subscription_tests.rs"]
+mod subscription_tests;
 #[cfg(test)]
 #[path = "messages_tests.rs"]
 mod tests;
@@ -340,14 +410,20 @@ pub(super) fn apply_snapshot_completion(state: &mut RuntimeState) {
     {
         *summary = snapshot.view.session;
     }
+    let subscription_id = state.next_subscription_id();
+    state.follow_owner = Some(subscription_id);
     state.follow = Some(host::follow(
         state.client.clone(),
+        subscription_id,
         session_id.clone(),
         snapshot.follow_position,
         state.sender.clone(),
     ));
+    let live_subscription_id = state.next_live_subscription_id();
+    state.live_follow_owner = Some(live_subscription_id);
     state.live_follow = Some(host::follow_live(
         state.client.clone(),
+        live_subscription_id,
         session_id.clone(),
         state.sender.clone(),
     ));
