@@ -238,6 +238,27 @@ mod tests {
     }
 
     #[test]
+    fn page_up_from_follow_moves_one_viewport_from_the_rendered_tail() {
+        let mut model = AppModel {
+            timeline: vec![visual_item(
+                "answer",
+                TimelineRole::Agent,
+                "one two three four five six seven eight nine ten eleven twelve thirteen fourteen",
+            )],
+            ..Default::default()
+        };
+        let mut cache = RenderCache::default();
+        let (_, tail_top) = current_visual_anchor(&model, Theme::Dark, 10, 3, &mut cache);
+        assert!(tail_top >= 3);
+
+        scroll_by_visual_cells(&mut model, Theme::Dark, 10, 3, -3, &mut cache);
+
+        assert!(!model.viewport.follow_latest);
+        assert_eq!(model.viewport.anchor_key.as_deref(), Some("answer"));
+        assert_eq!(model.viewport.source_line, tail_top - 3);
+    }
+
+    #[test]
     fn reflow_keeps_the_top_item_and_clamps_its_visual_line() {
         let mut model = AppModel {
             timeline: vec![visual_item(
@@ -268,6 +289,11 @@ mod tests {
         model.viewport.source_line = 1;
         model.viewport.newer_updates = 4;
         let before = model.viewport.clone();
+        model.timeline.push(visual_item(
+            "newer",
+            TimelineRole::Agent,
+            "new durable output",
+        ));
 
         let _ = super::super::conversation_window(
             &model,
