@@ -162,7 +162,6 @@ public fun retrieveMemory(
     }
     eligible.sortWith(
         compareByDescending<Pair<MemoryRecord, MemoryScore>> { it.second.relevanceBasisPoints }
-            .thenByDescending { it.first.validFromPosition }
             .thenBy { it.first.recordId }
             .thenBy { it.first.revisionId },
     )

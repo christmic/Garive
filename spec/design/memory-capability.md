@@ -146,8 +146,10 @@ Runtime's authority decision, not authority by itself.
 
 `content_byte_length` is the Runtime-verified exact byte size behind the
 ContentBinding and is charged against `max_total_bytes`; inline content must
-match its UTF-8 length. Portable ordering is descending relevance, then descending
-`valid_from_position`, then lexical record/revision identity. Results are
+match its UTF-8 length. Portable ordering is descending relevance, then lexical
+record/revision identity. `valid_from_position` is not a cross-Session recency
+key and cannot break ties. A Runtime retriever that needs recency must score it
+from a source-aware index under a new exact `retriever_revision`. Results are
 truncated before return to satisfy both limits. Equal Runtime-authorized input
 and fixed durable prefixes under one retriever revision produce equal scores
 and ordering. The

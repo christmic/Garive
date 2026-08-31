@@ -292,7 +292,6 @@ pub fn retrieve_memory(
     eligible.sort_by_key(|(record, score)| {
         (
             Reverse(score.relevance_basis_points),
-            Reverse(record.valid_from_position()),
             record.record_id(),
             record.revision_id(),
         )
