@@ -92,6 +92,36 @@ pub(crate) fn reduce(model: &mut AppModel, action: AppAction) -> Vec<AppEffect> 
                 .collect()
         }
         AppAction::QuitConfirmed => Vec::new(),
+        AppAction::CreateSessionRequested(draft)
+            if draft.kind == PendingMutationKind::CreateSession
+                && draft.session_id.is_none()
+                && draft
+                    .request_payload
+                    .get("agent_definition_id")
+                    .and_then(serde_json::Value::as_str)
+                    .is_some_and(|definition| !definition.is_empty())
+                && !model
+                    .effects
+                    .pending
+                    .values()
+                    .any(|effect| effect.context.session_id.is_none()) =>
+        {
+            let effect = model.effects.issue(
+                EffectKind::PersistPending {
+                    draft: draft.clone(),
+                },
+                None,
+                None,
+            );
+            if effect.is_some() {
+                model.has_pending_command = true;
+                if model.selected_session.is_none() {
+                    model.composer_is_frozen = true;
+                }
+            }
+            effect.into_iter().collect()
+        }
+        AppAction::CreateSessionRequested(_) => Vec::new(),
         AppAction::StartTurnRequested(draft)
             if draft.kind == PendingMutationKind::StartTurn
                 && draft.session_id.is_some()
@@ -129,12 +159,27 @@ pub(crate) fn reduce(model: &mut AppModel, action: AppAction) -> Vec<AppEffect> 
                 (
                     EffectKind::PersistPending { draft },
                     AppEffectOutcome::PendingPersisted(Ok(identity)),
-                ) if draft.command_id == identity.command_id => {
+                ) if draft.command_id == identity.command_id
+                    && draft.kind == PendingMutationKind::StartTurn =>
+                {
                     let mut context = effect.context;
                     context.request_digest = Some(identity.request_digest.clone());
                     vec![AppEffect {
                         context,
                         kind: EffectKind::StartTurn { draft, identity },
+                    }]
+                }
+                (
+                    EffectKind::PersistPending { draft },
+                    AppEffectOutcome::PendingPersisted(Ok(identity)),
+                ) if draft.command_id == identity.command_id
+                    && draft.kind == PendingMutationKind::CreateSession =>
+                {
+                    let mut context = effect.context;
+                    context.request_digest = Some(identity.request_digest.clone());
+                    vec![AppEffect {
+                        context,
+                        kind: EffectKind::CreateSession { draft, identity },
                     }]
                 }
                 (EffectKind::PersistPending { .. }, _) => {

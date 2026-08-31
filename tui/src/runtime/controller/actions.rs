@@ -46,20 +46,9 @@ fn create_session_with(state: &mut RuntimeState, requested: Option<String>) -> b
             state.model.overlay = Some(Overlay::ErrorDetails);
             return false;
         }
-        if !admit(
-            state,
-            id.clone(),
-            PendingKind::CreateSession,
-            None,
-            None,
-            None,
-            None,
-            None,
-            json!({"agent_definition_id": definition}),
-        ) {
+        if !state.request_create_session(id, definition) {
             return false;
         }
-        host::create_session(state.client.clone(), id, definition, state.sender.clone());
         true
     } else {
         state.model.notice = Some("No Agent definition is installed yet.".into());

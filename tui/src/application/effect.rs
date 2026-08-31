@@ -46,6 +46,10 @@ pub(crate) enum EffectKind {
         draft: PendingMutationDraft,
         identity: PersistedPendingIdentity,
     },
+    CreateSession {
+        draft: PendingMutationDraft,
+        identity: PersistedPendingIdentity,
+    },
 }
 
 impl EffectKind {
@@ -54,6 +58,7 @@ impl EffectKind {
             Self::Exit => EffectTag::Exit,
             Self::PersistPending { .. } => EffectTag::PersistPending,
             Self::StartTurn { .. } => EffectTag::StartTurn,
+            Self::CreateSession { .. } => EffectTag::CreateSession,
         }
     }
 }
@@ -110,6 +115,7 @@ pub(crate) enum EffectTag {
     Exit,
     PersistPending,
     StartTurn,
+    CreateSession,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

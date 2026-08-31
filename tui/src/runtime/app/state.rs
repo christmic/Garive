@@ -182,6 +182,21 @@ impl RuntimeState {
                         );
                     }
                 }
+                crate::application::EffectTag::CreateSession => {
+                    let EffectKind::CreateSession { draft, identity } = effect.kind else {
+                        unreachable!("effect tag and payload agree");
+                    };
+                    if let Some((command_id, definition_id)) =
+                        self.activate_persisted_create(draft, identity)
+                    {
+                        host::create_session(
+                            self.client.clone(),
+                            command_id,
+                            definition_id,
+                            self.sender.clone(),
+                        );
+                    }
+                }
             }
         }
     }

@@ -11,6 +11,94 @@ use super::RuntimeState;
 use crate::runtime::app::state_error_name;
 
 impl RuntimeState {
+    pub(in crate::runtime) fn request_create_session(
+        &mut self,
+        command_id: String,
+        definition_id: String,
+    ) -> bool {
+        if self
+            .pending
+            .iter()
+            .any(|pending| pending.session_id.is_none())
+        {
+            self.model.notice =
+                Some("A Session creation already has an unknown outcome. Use /retry first.".into());
+            self.model.overlay = Some(Overlay::UnknownCommand);
+            return false;
+        }
+        if self.store.is_ephemeral() && !self.ephemeral_confirmed {
+            if self.deferred_ephemeral.is_some() {
+                self.model.notice =
+                    Some("An ephemeral operation is already awaiting consent.".into());
+                return false;
+            }
+            self.deferred_ephemeral = Some(PendingCommand {
+                schema_version: 1,
+                command_id,
+                kind: PendingKind::CreateSession,
+                session_id: None,
+                turn_id: None,
+                suspension_id: None,
+                expected_session_version: None,
+                requested_through_position: None,
+                request_payload: serde_json::json!({"agent_definition_id": definition_id}),
+                request_digest: String::new(),
+                created_at: now(),
+            });
+            self.model.overlay = Some(Overlay::EphemeralConfirmation);
+            return true;
+        }
+        self.dispatch(AppAction::CreateSessionRequested(PendingMutationDraft {
+            command_id,
+            kind: PendingMutationKind::CreateSession,
+            session_id: None,
+            turn_id: None,
+            suspension_id: None,
+            expected_session_version: None,
+            requested_through_position: None,
+            request_payload: serde_json::json!({"agent_definition_id": definition_id}),
+            created_at: now(),
+        }));
+        true
+    }
+
+    pub(super) fn activate_persisted_create(
+        &mut self,
+        draft: PendingMutationDraft,
+        identity: PersistedPendingIdentity,
+    ) -> Option<(String, String)> {
+        let definition_id = draft
+            .request_payload
+            .get("agent_definition_id")?
+            .as_str()?
+            .to_owned();
+        let pending = PendingCommand {
+            schema_version: 1,
+            command_id: draft.command_id,
+            kind: PendingKind::CreateSession,
+            session_id: None,
+            turn_id: None,
+            suspension_id: None,
+            expected_session_version: None,
+            requested_through_position: None,
+            request_payload: draft.request_payload,
+            request_digest: identity.request_digest,
+            created_at: draft.created_at,
+        };
+        if pending.command_id != identity.command_id || pending.validate().is_err() {
+            self.model.has_pending_command = false;
+            self.model.composer_is_frozen = false;
+            self.local_state_failure("invalid_persisted_create");
+            return None;
+        }
+        let command_id = pending.command_id.clone();
+        self.pending.push(pending);
+        self.sync_pending_projection();
+        #[cfg(feature = "test-hooks")]
+        self.crash_if(crate::args::TestCrashHook::PendingPersisted);
+        Some((command_id, definition_id))
+    }
+
     pub(in crate::runtime) fn request_start_turn(
         &mut self,
         command_id: String,

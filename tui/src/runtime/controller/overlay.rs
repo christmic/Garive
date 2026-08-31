@@ -220,6 +220,14 @@ pub(super) fn activate_intent(
                     if let Some(session_id) = pending.session_id {
                         state.request_start_turn(pending.command_id, session_id, text);
                     }
+                } else if pending.kind == crate::persistence::PendingKind::CreateSession {
+                    let definition_id = pending
+                        .request_payload
+                        .get("agent_definition_id")
+                        .and_then(serde_json::Value::as_str)
+                        .unwrap_or_default()
+                        .to_owned();
+                    state.request_create_session(pending.command_id, definition_id);
                 } else if state.admit_pending(pending.clone()) {
                     super::replay_pending(state, pending);
                 }

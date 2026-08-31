@@ -256,6 +256,82 @@ fn start_turn_persistence_failure_unfreezes_without_host_effect() {
 }
 
 #[test]
+fn create_session_rejects_malformed_and_waits_for_exact_persistence() {
+    let mut model = AppModel::default();
+    let mut malformed = create_session_draft();
+    malformed.session_id = Some("must-be-absent".into());
+    assert!(reduce(&mut model, AppAction::CreateSessionRequested(malformed)).is_empty());
+    let mut malformed = create_session_draft();
+    malformed.request_payload = json!({});
+    assert!(reduce(&mut model, AppAction::CreateSessionRequested(malformed)).is_empty());
+
+    let draft = create_session_draft();
+    let persist = reduce(&mut model, AppAction::CreateSessionRequested(draft.clone())).remove(0);
+    let mut stale = persisted(&persist, &draft.command_id);
+    stale.context.issued_generation = AppGeneration(stale.context.issued_generation.0 + 1);
+    assert!(reduce(&mut model, AppAction::EffectFinished(stale)).is_empty());
+
+    let follow_up = reduce(
+        &mut model,
+        AppAction::EffectFinished(persisted(&persist, &draft.command_id)),
+    );
+    assert!(matches!(
+        follow_up.as_slice(),
+        [AppEffect {
+            kind: EffectKind::CreateSession { .. },
+            ..
+        }]
+    ));
+}
+
+#[test]
+fn create_session_persistence_failure_recovers_without_host_effect() {
+    let mut model = AppModel::default();
+    let persist = reduce(
+        &mut model,
+        AppAction::CreateSessionRequested(create_session_draft()),
+    )
+    .remove(0);
+    let follow_up = reduce(
+        &mut model,
+        AppAction::EffectFinished(AppEffectResult {
+            context: persist.context,
+            kind: persist.kind.tag(),
+            outcome: AppEffectOutcome::PendingPersisted(Err(PersistenceFailure::Unavailable)),
+        }),
+    );
+    assert!(follow_up.is_empty());
+    assert!(!model.composer_is_frozen);
+    assert!(!model.has_pending_command);
+    assert_eq!(model.overlay, Some(Overlay::ErrorDetails));
+}
+
+fn create_session_draft() -> PendingMutationDraft {
+    PendingMutationDraft {
+        command_id: "command-create".into(),
+        kind: PendingMutationKind::CreateSession,
+        session_id: None,
+        turn_id: None,
+        suspension_id: None,
+        expected_session_version: None,
+        requested_through_position: None,
+        request_payload: json!({"agent_definition_id": "definition-main"}),
+        created_at: "2026-09-01T00:00:00Z".into(),
+    }
+}
+
+fn persisted(effect: &AppEffect, command_id: &str) -> AppEffectResult {
+    AppEffectResult {
+        context: effect.context.clone(),
+        kind: effect.kind.tag(),
+        outcome: AppEffectOutcome::PendingPersisted(Ok(PersistedPendingIdentity {
+            command_id: command_id.into(),
+            request_digest: "b".repeat(64),
+        })),
+    }
+}
+
+#[test]
 fn malformed_start_turn_never_reaches_persistence() {
     let mut model = AppModel::default();
     let mut missing_session = start_turn_draft();

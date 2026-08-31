@@ -17,6 +17,7 @@ pub(crate) enum AppAction {
     OverlayClosed,
     QuitRequested,
     QuitConfirmed,
+    CreateSessionRequested(PendingMutationDraft),
     StartTurnRequested(PendingMutationDraft),
     #[allow(dead_code)]
     EffectFinished(AppEffectResult),
