@@ -328,7 +328,8 @@ describe("Desktop product experience", () => {
 
   it("renders progressive work from admitted Activity instead of invented stages", () => {
     const open = vi.fn();
-    render(<TurnProgress t={createTranslator("en")} onOpen={open} activities={[{
+    const view = render(<TurnProgress t={createTranslator("en")} onOpen={open}
+      goal="Prepare the launch decision memo" activities={[{
       api_version: "v1", activity_id: "read-1", kind: "tool",
       label_key: "agent.activity.read_file", state: "completed", source_position: 4,
       terminal: true,
@@ -336,9 +337,11 @@ describe("Desktop product experience", () => {
       label_key: "agent.activity.write_file", state: "running", source_position: 7,
       terminal: false,
     }]} />);
+    expect(screen.getByText("Pursuing goal")).toBeTruthy();
+    expect(screen.getByText("Prepare the launch decision memo")).toBeTruthy();
     expect(screen.getByText("Read scoped file")).toBeTruthy();
     expect(screen.getByText("Write scoped file")).toBeTruthy();
-    expect(screen.getByText("Running")).toBeTruthy();
+    expect(view.container.querySelector(".progress-state")?.textContent).toBe("Running");
     fireEvent.click(screen.getByRole("button", { name: "Open activity" }));
     expect(open).toHaveBeenCalledOnce();
   });

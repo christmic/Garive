@@ -792,6 +792,7 @@ function WorkSurface({ state, composer, submit, startSuggestion, dispatch, conte
 
   const disconnected = state.execution === "disconnected";
   const reconnecting = state.execution === "reconnecting";
+  const activeGoal = [...state.messages].reverse().find((message) => message.role === "user")?.text;
   return <section className={state.messages.length ? "work-surface" : "work-surface new-work-surface"}>
     <div ref={conversation} onScroll={readScrollPosition}
       className={state.messages.length ? "conversation" : "conversation empty-conversation"}>
@@ -814,7 +815,7 @@ function WorkSurface({ state, composer, submit, startSuggestion, dispatch, conte
         aria-label={t("error.dismiss")}><Icon name="close" /></button>}</div>}
     <div className="composer-wrap">
       <div className={state.phase === "submitting" ? "composer busy" : "composer"}>
-        {state.phase === "submitting" && <TurnProgress activities={state.activities}
+        {state.phase === "submitting" && <TurnProgress goal={activeGoal} activities={state.activities}
           onOpen={() => dispatch({ type: "inspector_selected", tab: "activity" })} t={t} />}
         {needsApproval && <div className="approval-card" role="alert" aria-live="assertive" aria-label={t("approval.aria")}>
           <span className="approval-icon"><Icon name="shield" /></span><div><strong>{approvalEffect
@@ -953,15 +954,15 @@ function livePhaseCopy(key: string | undefined, t: (key: MessageKey) => string):
   return t(labels[key ?? ""] ?? "timeline.working");
 }
 
-export function TurnProgress({ activities, onOpen, t }: { activities: WorkState["activities"];
+export function TurnProgress({ goal, activities, onOpen, t }: { goal?: string;
+  activities: WorkState["activities"];
   onOpen: () => void; t: (key: MessageKey) => string }) {
   const recent = activities.slice(-3);
   const current = [...recent].reverse().find((activity) => !activity.terminal) ?? recent.at(-1);
   return <article className="turn-progress" aria-label={t("timeline.progressTitle")}>
     <div className="turn-progress-head"><span className="live-pulse"><span /></span><div className="progress-summary">
-      <strong>{t("timeline.progressTitle")}</strong><p>{current
-        ? `${activityLabel(current.label_key, t)} · ${activityState(current.state, t)}`
-        : t("timeline.progressBody")}</p></div>
+      <strong>{t("timeline.progressTitle")}</strong><p>{goal || t("timeline.progressBody")}</p></div>
+      {current && <span className="progress-state">{activityState(current.state, t)}</span>}
       <button type="button" onClick={onOpen} aria-label={t("timeline.openActivity")}
         title={t("timeline.openActivity")}><Icon name="activity" /></button></div>
     {recent.length > 0 && <div className="sr-only">{recent.map((activity) =>

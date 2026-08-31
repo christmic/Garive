@@ -76,6 +76,8 @@ describe("Desktop visual accessibility contract", () => {
     expect(CSS).toContain(".theme-dark .search-results { background: transparent; }");
     expect(CSS).toContain(".agents-heading { display: flex; align-items: end; justify-content: space-between; gap: 24px; padding: 40px 0 18px;");
     expect(CSS).toContain(".settings-heading { padding: 40px 0 18px; }");
+    expect(CSS).toContain("grid-template-columns: 18px minmax(0, 1fr) auto auto");
+    expect(CSS).toContain(".progress-state { color: var(--text-tertiary); font-size: var(--text-2xs); white-space: nowrap; }");
   });
 });
 

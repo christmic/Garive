@@ -326,6 +326,23 @@ main-content horizontal overflow on all three screens. This audit applies the
 desktop grammar inferred from the supplied Codex workbench references; those
 references do not depict these exact secondary screens.
 
+### P. Goal-first running rail audit
+
+The reference running Composer leads with the goal being pursued and keeps
+operational controls at the edge. Garive's equivalent geometry already matched
+the reference, but its visible copy said only `Working on your task` followed
+by the latest tool label. That made implementation activity more prominent than
+the user's outcome and repeated the same tool fact available in Environment.
+
+The 32 px rail now leads with `Pursuing goal`, projects the latest admitted user
+request as a single ellipsized line, and keeps only the current public Activity
+state plus the details action at the edge. Exact tool labels remain available
+to assistive technology and in the Environment drill-in; no timer is invented
+because the current Host projection does not expose a trusted elapsed-time
+fact. With Environment open at the reference viewport, the rail remains x=353,
+544 px wide and free of internal overflow. At 720 and 480 px the Composer is
+546 and 432 px wide respectively, with zero rail or document overflow.
+
 ## Gate 1 — Codex fidelity
 
 This gate passes only when both Desktop and Web show:
