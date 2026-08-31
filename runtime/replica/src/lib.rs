@@ -37,6 +37,7 @@ mod plan_carry_forward;
 mod plan_recovery;
 mod plan_runtime;
 mod process_capability;
+mod process_executor;
 mod runtime_turn;
 mod sandbox_facts;
 mod sandbox_recovery;
@@ -183,6 +184,10 @@ pub use plan_runtime::{
     PlanRuntimeTransition, PlanStepExecutionStart, PlannedPlanCommand,
 };
 pub use process_capability::{ProcessExecutable, ProcessLane, ProcessLaneRegistry};
+pub use process_executor::{
+    BuiltinProcessExecutor, ProcessBackendError, ProcessExecutionRequest, ProcessExecutionResult,
+    ProcessExit, ProcessIsolationBackend, T1_PROCESS_EXECUTOR_ID,
+};
 pub use runtime_turn::{
     commit_planned_turn, derive_runtime_recovery, get_turn, plan_cancel_turn, plan_continue_turn,
     plan_reconcile_invocation, plan_recovery_action_facts, plan_recovery_restart, plan_start_turn,
