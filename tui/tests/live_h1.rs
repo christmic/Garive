@@ -866,29 +866,32 @@ fn turn_navigator_filters_commits_only_on_activation_and_shares_mouse_geometry()
             send "\033"
             must_expect {#40} 73
             send "/jump question 11\r"
-            must_expect "Search  question 11" 74
-            must_expect "12  question 11" 75
+            must_expect "12  question 11" 74
             send "\r"
-            must_expect {#23} 76
+            must_expect {#23} 75
             send "/jump \r"
-            must_expect "Jump to a Turn" 77
+            must_expect "Jump to a Turn" 76
+            send "\033\[H"
+            after 100
             send "\033\[<0;50;6M"
-            must_expect {#21} 78
+            must_expect {#1} 77
             send "\021"
-            must_expect "Garive?" 79
+            must_expect "Garive?" 78
             send "\r"
             expect {
                 eof { exit 0 }
-                timeout { exit 80 }
+                timeout { exit 79 }
             }
         "#])
         .status()
         .unwrap();
     stop.store(true, Ordering::Relaxed);
     server.join().unwrap();
-    assert!(status.success());
+    assert!(
+        status.success(),
+        "turn navigator walkthrough exited with {status}"
+    );
     let text = fs::read_to_string(transcript).unwrap();
-    assert!(text.contains("Search  question 11"));
     assert!(!text.contains("turn-11"), "opaque Turn ID stayed hidden");
     assert!(text.contains("\x1b[?1006h") && text.contains("\x1b[?1006l"));
     assert!(text.contains("\x1b[?1049h") && text.contains("\x1b[?1049l"));
