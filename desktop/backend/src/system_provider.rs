@@ -211,10 +211,9 @@ impl<R: DesktopSecretResolver, P: DesktopProfileRegistry> DesktopConfigurationPr
             credential,
         )?;
         let lease_duration_ms = config.execution_lease_duration_ms;
-        let agent_installation = agent_installation(&config)?;
-        let default_agent_definition_id =
-            agent_installation.installed_agent().definition_id.clone();
-        let agent_catalogue = RuntimeAgentCatalogue::new([agent_installation])
+        let agent_installations = agent_installations(&config)?;
+        let default_agent_definition_id = config.default_agent_definition_id.clone();
+        let agent_catalogue = RuntimeAgentCatalogue::new(agent_installations)
             .map_err(|_| DesktopConfigurationError::ConstructionFailure)?;
         let execution_policy = execution_policy(&config);
         Ok(Some(DesktopHostConfig {
@@ -245,26 +244,30 @@ impl<R: DesktopSecretResolver, P: DesktopProfileRegistry> DesktopConfigurationPr
     }
 }
 
-fn agent_installation(
+fn agent_installations(
     config: &DesktopSystemConfiguration,
-) -> Result<RuntimeAgentInstallation, DesktopConfigurationError> {
-    let installation = builtin_desktop_agent_installation(
-        &config.installed_agent.definition_id,
-        &config.installed_agent.agent_instance_namespace,
-    )
-    .map_err(|_| DesktopConfigurationError::ConstructionFailure)?;
-    let installed = installation.installed_agent();
-    if installed.definition_revision != config.installed_agent.definition_revision
-        || installed.snapshot_digest != config.installed_agent.snapshot_digest
-        || installed.runtime_limits.max_iterations != config.installed_agent.max_iterations
-        || installed.runtime_limits.max_input_tokens != config.installed_agent.max_input_tokens
-        || installed.runtime_limits.max_output_tokens != config.installed_agent.max_output_tokens
-        || installed.runtime_limits.deadline_budget_ms != config.installed_agent.deadline_budget_ms
-        || config.installed_agent.public_activity_catalogue.is_some()
-    {
-        return Err(DesktopConfigurationError::ConstructionFailure);
+) -> Result<Vec<RuntimeAgentInstallation>, DesktopConfigurationError> {
+    let mut installations = Vec::with_capacity(config.installed_agents.len());
+    for document in &config.installed_agents {
+        let installation = builtin_desktop_agent_installation(
+            &document.definition_id,
+            &document.agent_instance_namespace,
+        )
+        .map_err(|_| DesktopConfigurationError::ConstructionFailure)?;
+        let installed = installation.installed_agent();
+        if installed.definition_revision != document.definition_revision
+            || installed.snapshot_digest != document.snapshot_digest
+            || installed.runtime_limits.max_iterations != document.max_iterations
+            || installed.runtime_limits.max_input_tokens != document.max_input_tokens
+            || installed.runtime_limits.max_output_tokens != document.max_output_tokens
+            || installed.runtime_limits.deadline_budget_ms != document.deadline_budget_ms
+            || document.public_activity_catalogue.is_some()
+        {
+            return Err(DesktopConfigurationError::ConstructionFailure);
+        }
+        installations.push(installation);
     }
-    Ok(installation)
+    Ok(installations)
 }
 
 fn execution_policy(config: &DesktopSystemConfiguration) -> LocalExecutionPolicy {

@@ -8,6 +8,8 @@ use serde_json::{Map, Number, Value};
 
 /// Maximum accepted UTF-8 configuration document size.
 pub const MAX_DESKTOP_CONFIG_BYTES: usize = 65_536;
+/// Maximum number of immutable Agent installations admitted at one revision.
+pub const MAX_DESKTOP_INSTALLED_AGENTS: usize = 16;
 
 /// Stable secret-free Desktop configuration failure.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -58,7 +60,8 @@ pub struct DesktopSystemConfiguration {
     pub(crate) configuration_revision: Option<u64>,
     pub(crate) setup_id: Option<String>,
     pub(crate) database_path: PathBuf,
-    pub(crate) installed_agent: InstalledAgentDocument,
+    pub(crate) default_agent_definition_id: String,
+    pub(crate) installed_agents: Vec<InstalledAgentDocument>,
     pub(crate) host: HostDocument,
     pub(crate) execution: ExecutionDocument,
     pub(crate) http: HttpDocument,
@@ -71,6 +74,11 @@ impl fmt::Debug for DesktopSystemConfiguration {
         formatter
             .debug_struct("DesktopSystemConfiguration")
             .field("database_path", &self.database_path)
+            .field(
+                "default_agent_definition_id",
+                &self.default_agent_definition_id,
+            )
+            .field("installed_agent_count", &self.installed_agents.len())
             .field("profile_id", &self.execution.profile_id)
             .field("credential_ref", &"<redacted-reference>")
             .field("model_target_id", &self.execution.model_target_id)
@@ -89,16 +97,22 @@ impl DesktopSystemConfiguration {
             return Err(DesktopConfigurationError::TooLarge);
         }
         let value = unique_json(bytes)?;
-        let raw: RawDocument = serde_json::from_value(value)
+        let mut raw: RawDocument = serde_json::from_value(value)
             .map_err(|_| DesktopConfigurationError::InvalidDocument)?;
         match (
             raw.schema_version,
             raw.configuration_revision,
             raw.setup_id.as_deref(),
+            raw.installed_agent.is_some(),
+            raw.default_agent_definition_id.is_some(),
+            raw.installed_agents.is_some(),
         ) {
-            (1, None, None) => {}
-            (2, Some(revision), Some(setup_id)) if revision > 0 && !setup_id.is_empty() => {}
-            (1 | 2, _, _) => return Err(DesktopConfigurationError::InvalidDocument),
+            (1, None, None, true, false, false) => {}
+            (2, Some(revision), Some(setup_id), true, false, false)
+                if revision > 0 && !setup_id.is_empty() => {}
+            (3, Some(revision), Some(setup_id), false, true, true)
+                if revision > 0 && !setup_id.is_empty() => {}
+            (1..=3, _, _, _, _, _) => return Err(DesktopConfigurationError::InvalidDocument),
             _ => return Err(DesktopConfigurationError::UnsupportedVersion),
         }
         let database_file = Path::new(&raw.database_file);
@@ -111,12 +125,29 @@ impl DesktopSystemConfiguration {
             return Err(DesktopConfigurationError::InvalidPath);
         }
         validate(&raw)?;
+        let (default_agent_definition_id, installed_agents) = if raw.schema_version == 3 {
+            (
+                raw.default_agent_definition_id
+                    .take()
+                    .ok_or(DesktopConfigurationError::InvalidDocument)?,
+                raw.installed_agents
+                    .take()
+                    .ok_or(DesktopConfigurationError::InvalidDocument)?,
+            )
+        } else {
+            let installed = raw
+                .installed_agent
+                .take()
+                .ok_or(DesktopConfigurationError::InvalidDocument)?;
+            (installed.definition_id.clone(), vec![installed])
+        };
         Ok(Self {
             schema_version: raw.schema_version,
             configuration_revision: raw.configuration_revision,
             setup_id: raw.setup_id,
             database_path: app_config_directory.join(database_file),
-            installed_agent: raw.installed_agent,
+            default_agent_definition_id,
+            installed_agents,
             host: raw.host,
             execution: raw.execution,
             http: raw.http,
@@ -150,6 +181,16 @@ impl DesktopSystemConfiguration {
         self.setup_id.as_deref()
     }
 
+    /// Returns the exact default Agent identity selected by this revision.
+    pub fn default_agent_definition_id(&self) -> &str {
+        &self.default_agent_definition_id
+    }
+
+    /// Returns the number of immutable Agent installations in this revision.
+    pub fn installed_agent_count(&self) -> usize {
+        self.installed_agents.len()
+    }
+
     pub(crate) fn credential_ref(&self) -> &str {
         &self.execution.credential_ref
     }
@@ -164,7 +205,12 @@ struct RawDocument {
     #[serde(default)]
     setup_id: Option<String>,
     database_file: String,
-    installed_agent: InstalledAgentDocument,
+    #[serde(default)]
+    installed_agent: Option<InstalledAgentDocument>,
+    #[serde(default)]
+    default_agent_definition_id: Option<String>,
+    #[serde(default)]
+    installed_agents: Option<Vec<InstalledAgentDocument>>,
     host: HostDocument,
     execution: ExecutionDocument,
     http: HttpDocument,
@@ -283,9 +329,6 @@ pub(crate) struct HttpDocument {
 
 fn validate(raw: &RawDocument) -> Result<(), DesktopConfigurationError> {
     let texts = [
-        raw.installed_agent.definition_id.as_str(),
-        raw.installed_agent.definition_revision.as_str(),
-        raw.installed_agent.agent_instance_namespace.as_str(),
         raw.execution.profile_id.as_str(),
         raw.execution.credential_ref.as_str(),
         raw.execution.model_target_id.as_str(),
@@ -296,26 +339,15 @@ fn validate(raw: &RawDocument) -> Result<(), DesktopConfigurationError> {
     if texts
         .iter()
         .any(|value| value.is_empty() || value.len() > 256)
-        || raw.installed_agent.snapshot_digest.len() != 64
-        || !raw
-            .installed_agent
-            .snapshot_digest
-            .bytes()
-            .all(|byte| byte.is_ascii_hexdigit())
         || raw
             .execution
             .endpoint
             .as_ref()
             .is_some_and(String::is_empty)
-        || raw.installed_agent.max_iterations == 0
-        || optional_zero(raw.installed_agent.max_input_tokens)
-        || optional_zero(raw.installed_agent.max_output_tokens)
-        || optional_zero(raw.installed_agent.deadline_budget_ms)
         || optional_zero(raw.execution.max_output_tokens)
         || raw.host.max_command_bytes == 0
         || raw.host.event_batch_size == 0
         || raw.host.event_poll_interval_ms == 0
-        || raw.installed_agent.public_activity_catalogue.is_some() != raw.host.activity.is_some()
         || raw.execution.max_context_items == 0
         || raw.execution.max_context_utf8_bytes == 0
         || raw.execution.max_model_attempts == 0
@@ -329,10 +361,72 @@ fn validate(raw: &RawDocument) -> Result<(), DesktopConfigurationError> {
     {
         return Err(DesktopConfigurationError::InvalidValue);
     }
-    if let (Some(catalogue), Some(limits)) = (
-        &raw.installed_agent.public_activity_catalogue,
-        raw.host.activity,
-    ) {
+    let (default_id, agents) = agent_documents(raw)?;
+    if default_id.is_empty()
+        || default_id.len() > 256
+        || agents.is_empty()
+        || agents.len() > MAX_DESKTOP_INSTALLED_AGENTS
+        || agents
+            .windows(2)
+            .any(|pair| pair[0].definition_id >= pair[1].definition_id)
+        || !agents.iter().any(|agent| agent.definition_id == default_id)
+    {
+        return Err(DesktopConfigurationError::InvalidValue);
+    }
+    for agent in agents {
+        validate_agent(agent, raw.host.activity)?;
+    }
+    Ok(())
+}
+
+fn agent_documents(
+    raw: &RawDocument,
+) -> Result<(&str, Vec<&InstalledAgentDocument>), DesktopConfigurationError> {
+    if raw.schema_version == 3 {
+        Ok((
+            raw.default_agent_definition_id
+                .as_deref()
+                .ok_or(DesktopConfigurationError::InvalidDocument)?,
+            raw.installed_agents
+                .as_ref()
+                .ok_or(DesktopConfigurationError::InvalidDocument)?
+                .iter()
+                .collect(),
+        ))
+    } else {
+        let agent = raw
+            .installed_agent
+            .as_ref()
+            .ok_or(DesktopConfigurationError::InvalidDocument)?;
+        Ok((&agent.definition_id, vec![agent]))
+    }
+}
+
+fn validate_agent(
+    agent: &InstalledAgentDocument,
+    activity_limits: Option<ActivityLimitsDocument>,
+) -> Result<(), DesktopConfigurationError> {
+    if [
+        agent.definition_id.as_str(),
+        agent.definition_revision.as_str(),
+        agent.agent_instance_namespace.as_str(),
+    ]
+    .iter()
+    .any(|value| value.is_empty() || value.len() > 256)
+        || agent.snapshot_digest.len() != 64
+        || !agent
+            .snapshot_digest
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || matches!(byte, b'a'..=b'f'))
+        || agent.max_iterations == 0
+        || optional_zero(agent.max_input_tokens)
+        || optional_zero(agent.max_output_tokens)
+        || optional_zero(agent.deadline_budget_ms)
+        || agent.public_activity_catalogue.is_some() != activity_limits.is_some()
+    {
+        return Err(DesktopConfigurationError::InvalidValue);
+    }
+    if let (Some(catalogue), Some(limits)) = (&agent.public_activity_catalogue, activity_limits) {
         let keys = catalogue
             .descriptors
             .iter()

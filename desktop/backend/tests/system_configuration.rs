@@ -102,6 +102,60 @@ fn strict_v2_requires_revision_and_setup_identity() {
 }
 
 #[test]
+fn strict_v3_normalizes_an_ordered_multi_agent_catalogue() {
+    let mut value: serde_json::Value = serde_json::from_slice(FIXTURE).unwrap();
+    let mut primary = value
+        .as_object_mut()
+        .unwrap()
+        .remove("installed_agent")
+        .unwrap();
+    let mut workspace = primary.clone();
+    primary["definition_id"] = "agent-general".into();
+    workspace["definition_id"] = "agent-workspace".into();
+    workspace["agent_instance_namespace"] = "desktop-workspace".into();
+    value["schema_version"] = 3.into();
+    value["configuration_revision"] = 7.into();
+    value["setup_id"] = "setup-v3".into();
+    value["default_agent_definition_id"] = "agent-workspace".into();
+    value["installed_agents"] = serde_json::json!([primary, workspace]);
+
+    let parsed = parse(&serde_json::to_vec(&value).unwrap()).expect("strict v3");
+    assert_eq!(parsed.schema_version(), 3);
+    assert_eq!(parsed.configuration_revision(), Some(7));
+    assert_eq!(parsed.default_agent_definition_id(), "agent-workspace");
+    assert_eq!(parsed.installed_agent_count(), 2);
+}
+
+#[test]
+fn v3_rejects_legacy_mix_unknown_default_and_noncanonical_catalogue() {
+    let mut value: serde_json::Value = serde_json::from_slice(FIXTURE).unwrap();
+    let installed = value["installed_agent"].clone();
+    value["schema_version"] = 3.into();
+    value["configuration_revision"] = 1.into();
+    value["setup_id"] = "setup-v3".into();
+    value["default_agent_definition_id"] = "definition-main".into();
+    value["installed_agents"] = serde_json::json!([installed.clone()]);
+    assert_eq!(
+        parse(&serde_json::to_vec(&value).unwrap()).unwrap_err(),
+        DesktopConfigurationError::InvalidDocument
+    );
+
+    value.as_object_mut().unwrap().remove("installed_agent");
+    value["default_agent_definition_id"] = "missing".into();
+    assert_eq!(
+        parse(&serde_json::to_vec(&value).unwrap()).unwrap_err(),
+        DesktopConfigurationError::InvalidValue
+    );
+
+    value["default_agent_definition_id"] = "definition-main".into();
+    value["installed_agents"] = serde_json::json!([installed.clone(), installed]);
+    assert_eq!(
+        parse(&serde_json::to_vec(&value).unwrap()).unwrap_err(),
+        DesktopConfigurationError::InvalidValue
+    );
+}
+
+#[test]
 fn contradictory_policy_options_fail_closed() {
     let retry_without_bound = String::from_utf8(FIXTURE.to_vec()).unwrap().replace(
         "\"output_limit_action\": \"suspend\"",
