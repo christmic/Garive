@@ -29,7 +29,8 @@ use crate::{
         builtin_desktop_agent_installation, builtin_desktop_workspace_agent_installation,
         desktop_agent_installation_for_revision, desktop_workspace_agent_installation_for_revision,
         DESKTOP_AGENT_REVISION, DESKTOP_WORKSPACE_AGENT_REVISION, LEGACY_DESKTOP_AGENT_REVISION,
-        LEGACY_DESKTOP_WORKSPACE_AGENT_REVISION,
+        LEGACY_DESKTOP_WORKSPACE_AGENT_REVISION, MEMORY_DESKTOP_AGENT_REVISION,
+        MEMORY_DESKTOP_WORKSPACE_AGENT_REVISION,
     },
     system_configuration::{
         MissingUsageDocument, OutputLimitDocument, TerminalActionDocument, MAX_DESKTOP_CONFIG_BYTES,
@@ -329,6 +330,14 @@ fn agent_installations(
                 LEGACY_DESKTOP_AGENT_REVISION,
                 &document.agent_instance_namespace,
                 false,
+                false,
+            ),
+            MEMORY_DESKTOP_AGENT_REVISION => desktop_agent_installation_for_revision(
+                &document.definition_id,
+                MEMORY_DESKTOP_AGENT_REVISION,
+                &document.agent_instance_namespace,
+                true,
+                false,
             ),
             LEGACY_DESKTOP_WORKSPACE_AGENT_REVISION => {
                 let capabilities = t1_host_system_config
@@ -340,6 +349,21 @@ fn agent_installations(
                     LEGACY_DESKTOP_WORKSPACE_AGENT_REVISION,
                     &document.agent_instance_namespace,
                     &capabilities,
+                    false,
+                    false,
+                )
+            }
+            MEMORY_DESKTOP_WORKSPACE_AGENT_REVISION => {
+                let capabilities = t1_host_system_config
+                    .ok_or(DesktopConfigurationError::ConstructionFailure)?
+                    .tool_capabilities()
+                    .map_err(|_| DesktopConfigurationError::ConstructionFailure)?;
+                desktop_workspace_agent_installation_for_revision(
+                    &document.definition_id,
+                    MEMORY_DESKTOP_WORKSPACE_AGENT_REVISION,
+                    &document.agent_instance_namespace,
+                    &capabilities,
+                    true,
                     false,
                 )
             }
