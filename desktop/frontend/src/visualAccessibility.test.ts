@@ -53,6 +53,9 @@ describe("Desktop visual accessibility contract", () => {
     expect(CSS).toContain("@keyframes workspace-content-enter");
     expect(CSS).toContain(".app-shell:has(.environment-panel) .work-surface { margin-right: 236px; }");
     expect(CSS).toContain("width: min(39rem, calc(100% - 48px))");
+    expect(CSS).toContain(".settings-workbench { display: grid; grid-template-columns: 164px minmax(0, 1fr)");
+    expect(CSS).toContain(".settings-panel { min-width: 0; overflow: auto;");
+    expect(CSS).toContain(".settings-navigation { display: flex;");
   });
 });
 

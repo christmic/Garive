@@ -98,6 +98,9 @@ describe("Desktop product experience", () => {
   it("shows exact version and an honest unavailable update channel", async () => {
     render(<App />);
     fireEvent.click(await screen.findByRole("button", { name: "Settings" }));
+    expect(screen.getByRole("heading", { name: "Appearance" })).toBeTruthy();
+    expect(screen.queryByRole("heading", { name: "Updates" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Updates" }));
     expect(await screen.findByRole("heading", { name: "Updates" })).toBeTruthy();
     expect(await screen.findByText("0.1.0")).toBeTruthy();
     expect(screen.getByText("This build has no configured update channel.")).toBeTruthy();
@@ -125,7 +128,11 @@ describe("Desktop product experience", () => {
     expect(await screen.findByRole("heading", { name: "Usage & capacity" })).toBeTruthy();
     expect(screen.getByRole("progressbar", { name: "8% remaining" })).toBeTruthy();
     expect(screen.getByText("Current work may finish if included capacity reaches its limit.")).toBeTruthy();
-    expect(screen.getByText("Local Runtime")).toBeTruthy();
+    expect(screen.queryByRole("heading", { name: "Local Runtime" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Local Runtime" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Local Runtime" }));
+    expect(await screen.findByRole("heading", { name: "Local Runtime" })).toBeTruthy();
+    expect(screen.queryByRole("heading", { name: "Usage & capacity" })).toBeNull();
   });
 
   it("submits on Enter but not Shift+Enter or an active IME composition", async () => {

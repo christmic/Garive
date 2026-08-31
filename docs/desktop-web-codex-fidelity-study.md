@@ -144,6 +144,23 @@ Garive deliberately keeps verified revision evidence and the explicit close
 action. Those are Gate 2 additions: they do not add ordinary-screen noise and
 they preserve the Runtime truth boundary.
 
+### F. Desktop preferences audit
+
+The original Settings surface remained a generic scrolling web page after the
+Work shell had reached the reference geometry. At 1280×800 it exposed every
+appearance, language, usage, update, Runtime, Workspace and privacy card at
+once, repeated Capacity in the title bar and the page body, and forced users to
+scan unrelated backend detail to change one preference.
+
+The shared client now applies the desktop workbench grammar to preferences: a
+164px category rail and one independently scrolling detail surface on wide
+windows, horizontal category navigation below 760px, and direct routing from
+the Capacity trigger to its single truthful view. Settings/Command-comma opens
+General instead. This is a Garive consistency correction based on the observed
+Codex density and progressive-disclosure model; the supplied Codex screenshots
+do not show its Settings screen, so this section does not claim pixel evidence
+for an unseen reference surface.
+
 ## Gate 1 — Codex fidelity
 
 This gate passes only when both Desktop and Web show:

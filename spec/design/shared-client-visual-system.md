@@ -177,6 +177,15 @@ neither may paint beneath the document. In the reference-sized split, Turn and
 Composer share a 10px pane inset; the rendered document aligns to the
 workbench's 24px content edge instead of recentering a second nested measure.
 
+Settings is a desktop preference workbench, not a scrolling dashboard. Wide
+windows use one 164px category rail and one independently scrolling detail
+surface; below 760px the category rail becomes a horizontal, keyboard-reachable
+strip. Only the selected category is mounted. Settings and Command-comma open
+General; a truthful Capacity trigger opens Usage directly and disappears while
+Settings is visible. Appearance and language may share General, while Usage,
+Workspace, Runtime, Updates and Privacy remain separate categories when their
+backing capability exists. Unavailable categories are absent rather than empty.
+
 ## Component grammar
 
 | Component | Required states | Invariants |
