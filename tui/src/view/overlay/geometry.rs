@@ -14,7 +14,6 @@ use super::super::{
     decision_sheet,
     layout::FrameLayout,
     primitives::{centered_popup, selection_window},
-    safe_text,
 };
 
 pub(super) struct OverlayGeometry {
@@ -134,44 +133,10 @@ fn desired_height(model: &AppModel, overlay: Overlay, popup_width: u16) -> u16 {
 fn decision_height(model: &AppModel, overlay: Overlay, popup_width: u16) -> u16 {
     let spec = decision_sheet::project(model, overlay).expect("decision overlay has a spec");
     let content_width = popup_width.saturating_sub(6).max(1);
-    let body_rows = spec
-        .body
-        .iter()
-        .map(|line| wrapped_rows(&safe_text(line), content_width))
-        .sum::<usize>();
-    let fixed =
-        5 + spec.response.as_ref().map_or(0, |response| match response {
-            decision_sheet::DecisionResponseSpec::Editor { .. } => 4,
-            decision_sheet::DecisionResponseSpec::Choices { choices, .. } => 3 + choices.len(),
-            decision_sheet::DecisionResponseSpec::ReadOnly { .. } => 3,
-        }) + usize::from(!spec.actions.is_empty()) * 2;
-    u16::try_from(body_rows.saturating_add(fixed)).unwrap_or(u16::MAX)
-}
-
-fn wrapped_rows(value: &str, width: u16) -> usize {
-    let width = usize::from(width.max(1));
-    value
-        .split('\n')
-        .map(|line| {
-            let width_only = UnicodeWidthStr::width(line).max(1).div_ceil(width);
-            let mut word_rows = 1usize;
-            let mut used = 0usize;
-            for word in line.split_whitespace() {
-                let word_width = UnicodeWidthStr::width(word);
-                if used > 0 {
-                    if used.saturating_add(1).saturating_add(word_width) <= width {
-                        used += 1 + word_width;
-                        continue;
-                    }
-                    word_rows += 1;
-                }
-                word_rows += word_width.saturating_sub(1) / width;
-                used = word_width.saturating_sub(1) % width + usize::from(word_width > 0);
-            }
-            width_only.max(word_rows)
-        })
-        .sum::<usize>()
-        .max(1)
+    let rows = decision_sheet::layout(&spec, content_width, usize::MAX)
+        .rows
+        .len();
+    u16::try_from(rows.saturating_add(4)).unwrap_or(u16::MAX)
 }
 
 pub(in crate::view) fn selection_at(
@@ -217,13 +182,18 @@ pub(in crate::view) fn decision_action_at(
     row: u16,
 ) -> Option<ActionOverlayIntent> {
     let geometry = overlay_geometry(model, overlay, area);
-    let actions = decision_sheet::project(model, overlay)?.actions;
-    let groups = decision_sheet::action_groups(&actions, geometry.inner.width);
-    let first_row = geometry
-        .inner
-        .bottom()
-        .saturating_sub(u16::try_from(groups.len()).ok()?);
-    let group = groups.get(usize::from(row.checked_sub(first_row)?))?;
+    let spec = decision_sheet::project(model, overlay)?;
+    let layout = decision_sheet::layout(
+        &spec,
+        geometry.inner.width,
+        usize::from(geometry.inner.height),
+    );
+    let decision_sheet::DecisionRow::Actions(group) = layout
+        .rows
+        .get(usize::from(row.checked_sub(geometry.inner.y)?))?
+    else {
+        return None;
+    };
     let mut x = geometry.inner.x.saturating_add(1);
     for (index, action) in group.iter().enumerate() {
         x = x.saturating_add(u16::from(index != 0) * 2);
@@ -248,22 +218,18 @@ pub(in crate::view) fn decision_choice_at(
         return None;
     }
     let spec = decision_sheet::project(model, overlay)?;
-    let super::super::decision_sheet::DecisionResponseSpec::Choices {
-        choices, selected, ..
-    } = spec.response?
-    else {
-        return None;
-    };
-    let full_rows = 1 + spec.body.len() + choices.len() + 3 + 1;
-    if full_rows > usize::from(geometry.inner.height) {
-        return (row == geometry.inner.y.saturating_add(1)).then_some(selected);
+    let layout = decision_sheet::layout(
+        &spec,
+        geometry.inner.width,
+        usize::from(geometry.inner.height),
+    );
+    match layout
+        .rows
+        .get(usize::from(row.checked_sub(geometry.inner.y)?))?
+    {
+        decision_sheet::DecisionRow::Choice { index, .. } => Some(*index),
+        _ => None,
     }
-    let first = geometry
-        .inner
-        .y
-        .saturating_add(1 + u16::try_from(spec.body.len()).ok()?);
-    (row >= first && row < first.saturating_add(u16::try_from(choices.len()).ok()?))
-        .then(|| usize::from(row - first))
 }
 
 fn list_count_and_selection(model: &AppModel, overlay: Overlay) -> Option<(usize, usize)> {

@@ -4,7 +4,6 @@ use ratatui::{
     text::{Line, Span, Text},
     widgets::{Block, BorderType, Borders, Clear, Paragraph, Widget, Wrap},
 };
-use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::UnicodeWidthStr;
 
 use crate::{
@@ -364,133 +363,56 @@ fn decision_sheet_spec(
     content_height: u16,
 ) -> OverlaySpec {
     let spec = decision_sheet::project(model, overlay).expect("decision overlay has a spec");
-    let marker = match spec.tone {
-        decision_sheet::DecisionSheetTone::Neutral => None,
-        decision_sheet::DecisionSheetTone::Warning => Some(("!  ", colors.warning)),
-        decision_sheet::DecisionSheetTone::Danger => Some(("×  ", colors.danger)),
-    };
-    let mut lines = marker.map_or_else(Vec::new, |(marker, style)| {
-        vec![Line::styled(marker, style)]
-    });
-    lines.extend(
-        spec.body
-            .iter()
-            .map(|line| Line::styled(safe_text(line), colors.normal)),
-    );
-    let mut primary = None;
-    if let Some(response) = spec.response {
-        let (label, guidance) = match response {
-            decision_sheet::DecisionResponseSpec::Editor {
-                guidance,
-                draft,
-                cursor,
-            } => {
-                let line = Line::styled(
-                    editor_view(&draft, cursor, usize::from(content_width.saturating_sub(2))),
-                    if draft.is_empty() {
+    let lines: Vec<Line<'static>> =
+        decision_sheet::layout(&spec, content_width, usize::from(content_height))
+            .rows
+            .into_iter()
+            .map(|row| match row {
+                decision_sheet::DecisionRow::Body { value, tone } => match tone {
+                    Some(decision_sheet::DecisionSheetTone::Warning) => Line::from(vec![
+                        Span::styled("!  ", colors.warning),
+                        Span::styled(value, colors.normal),
+                    ]),
+                    Some(decision_sheet::DecisionSheetTone::Danger) => Line::from(vec![
+                        Span::styled("×  ", colors.danger),
+                        Span::styled(value, colors.normal),
+                    ]),
+                    _ => Line::styled(value, colors.normal),
+                },
+                decision_sheet::DecisionRow::Editor { value, empty } => Line::styled(
+                    value,
+                    if empty {
                         colors.placeholder
                     } else {
                         colors.normal
                     },
-                );
-                primary = Some(line.clone());
-                lines.push(line);
-                ("Response", guidance)
-            }
-            decision_sheet::DecisionResponseSpec::Choices {
-                guidance,
-                choices,
-                selected,
-            } => {
-                lines.extend(choices.into_iter().enumerate().map(|(index, choice)| {
-                    let line = Line::styled(
-                        format!(
-                            "{} {}",
-                            if index == selected { "›" } else { " " },
-                            truncate_display(
-                                &safe_text(&choice),
-                                usize::from(content_width.saturating_sub(3)),
-                            )
-                        ),
-                        if index == selected {
-                            colors.selected
-                        } else {
-                            colors.normal
-                        },
-                    );
-                    if index == selected {
-                        primary = Some(line.clone());
-                    }
-                    line
-                }));
-                ("Choose", guidance)
-            }
-            decision_sheet::DecisionResponseSpec::ReadOnly { guidance } => ("Read only", guidance),
-        };
-        lines.extend([
-            Line::default(),
-            Line::styled(label, colors.title),
-            Line::styled(guidance, colors.normal),
-        ]);
-    }
-    let action_lines = decision_sheet::action_groups(&spec.actions, content_width)
-        .into_iter()
-        .map(|group| {
-            let actions = group
-                .iter()
-                .map(|action| (action.visual_key, action.action))
-                .collect::<Vec<_>>();
-            key_hints(&actions, colors)
-        })
-        .collect::<Vec<_>>();
-    let capacity = usize::from(content_height);
-    if lines.len().saturating_add(action_lines.len()) > capacity {
-        let mut compact = lines.into_iter().take(1).collect::<Vec<_>>();
-        if let Some(primary) = primary {
-            compact.push(primary);
-        }
-        lines = compact;
-    }
-    if !action_lines.is_empty() {
-        lines.truncate(capacity.saturating_sub(action_lines.len()));
-        while lines.len().saturating_add(action_lines.len()) < capacity {
-            lines.push(Line::default());
-        }
-        lines.extend(action_lines);
-    }
+                ),
+                decision_sheet::DecisionRow::Choice {
+                    value, selected, ..
+                } => Line::styled(
+                    format!("{} {value}", if selected { "›" } else { " " }),
+                    if selected {
+                        colors.selected
+                    } else {
+                        colors.normal
+                    },
+                ),
+                decision_sheet::DecisionRow::Blank => Line::default(),
+                decision_sheet::DecisionRow::Label(value) => Line::styled(value, colors.title),
+                decision_sheet::DecisionRow::Guidance(value) => Line::styled(value, colors.normal),
+                decision_sheet::DecisionRow::Actions(group) => key_hints(
+                    &group
+                        .iter()
+                        .map(|action| (action.visual_key, action.action))
+                        .collect::<Vec<_>>(),
+                    colors,
+                ),
+            })
+            .collect();
     OverlaySpec {
         title: format!(" {} ", spec.title),
         content: Text::from(lines),
     }
-}
-
-fn editor_view(draft: &str, cursor: usize, width: usize) -> String {
-    let graphemes = draft.graphemes(true).collect::<Vec<_>>();
-    let cursor = cursor.min(graphemes.len());
-    let budget = width.saturating_sub(1);
-    let mut start = cursor;
-    let mut before = 0usize;
-    while start > 0 {
-        let candidate = graphemes[start - 1].width();
-        if before.saturating_add(candidate) > budget / 2 {
-            break;
-        }
-        start -= 1;
-        before += candidate;
-    }
-    let mut end = cursor;
-    let mut used = before.saturating_add(1);
-    while end < graphemes.len() {
-        let candidate = graphemes[end].width();
-        if used.saturating_add(candidate) > budget {
-            break;
-        }
-        used += candidate;
-        end += 1;
-    }
-    let mut visible = graphemes[start..end].to_vec();
-    visible.insert(cursor - start, "▏");
-    format!("› {}", safe_text(&visible.concat()))
 }
 
 fn help_text(colors: Palette, content_width: u16) -> Text<'static> {

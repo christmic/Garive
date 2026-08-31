@@ -298,7 +298,7 @@ mod tests {
         let mut model = AppModel {
             overlay: Some(Overlay::Suspension),
             terminal_size: TerminalSize {
-                width: 40,
+                width: 52,
                 height: 8,
             },
             selected_session: Some("session".into()),
@@ -308,7 +308,10 @@ mod tests {
                 session_version: 1,
                 kind: "approval_required".into(),
                 prompt_schema: "garive.public-suspension-prompt.v1".into(),
-                prompt_json: "{}".into(),
+                prompt_json: format!(
+                    r#"{{"schema_version":1,"title_key":"title","message_text":"{}","action_label_key":"allow"}}"#,
+                    "需要确认的公开说明".repeat(12)
+                ),
                 prompt_digest: "0".repeat(64),
                 response_schema_json: Some(r#"{"type":"boolean"}"#.into()),
                 response_schema_digest: Some("1".repeat(64)),
@@ -319,7 +322,7 @@ mod tests {
         model.suspension_response.as_mut().unwrap().choice_selection = 1;
         let mut routes = Vec::new();
         for row in 0..8 {
-            for column in 0..40 {
+            for column in 0..52 {
                 if let Some(action) = route(
                     &model,
                     mouse(MouseEventKind::Down(MouseButton::Left), column, row),

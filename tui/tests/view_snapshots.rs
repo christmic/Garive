@@ -158,6 +158,12 @@ fn responsive_product_frames_match_reviewed_snapshots() {
         response_schema_digest: Some("1".repeat(64)),
     });
     insta::assert_snapshot!("action_100x24", frame(&action, Theme::Dark, 100, 24));
+    insta::assert_snapshot!("action_light_100x24", frame(&action, Theme::Light, 100, 24));
+    insta::assert_snapshot!("action_mono_100x24", frame(&action, Theme::Mono, 100, 24));
+    insta::assert_snapshot!(
+        "action_compact_mono_40x8",
+        frame(&action, Theme::Mono, 40, 8)
+    );
 
     let mut sessions = product_model();
     sessions.overlay = Some(Overlay::SessionPicker);

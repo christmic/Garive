@@ -621,10 +621,23 @@ arguments, raw paths, hidden reasoning, provider values, and internal facts are
 absent.
 
 An admitted H2 suspension overlay renders only the public title/message and
-response schema. String, boolean, enum, bounded number, and bounded object
-fields receive native terminal controls. Unsupported schemas show read-only
-status and no fabricated input. Submission uses the exact H1 text or canonical
-JSON continuation variant and binds the displayed schema digest.
+response schema. The current native controls cover strictly admitted strings,
+booleans, enums, and bounded numbers; any unimplemented keyword, mixed type,
+object, or array degrades to explicit read-only status instead of accepting an
+unvalidated response. The response editor is separate from the Composer and is
+retained only while Session, Turn, suspension identity, and schema digest all
+match. Submission uses the exact H1 text or canonical JSON continuation variant
+and binds the displayed schema digest.
+
+Decision overlays project one typed specification into the visual popup,
+linear screen-reader text, key bindings, and controller intents. A shared
+display-cell row layout owns word/grapheme wrapping, selected choice rows, and
+per-action pointer rectangles. On short terminals it may cover the Composer
+visually while preserving its draft, but it must retain the title, active
+control, primary action, and safe-leave action. Unknown-result abandonment
+requires a second confirmation and never implies that the durable outcome is
+known. `Ctrl+Q` opens a reversible safe-quit confirmation; `Escape` returns to
+the suspension only while that exact suspension still exists.
 
 ## Status and notification language
 

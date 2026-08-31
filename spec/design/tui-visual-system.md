@@ -196,6 +196,16 @@ Bounded lists keep the selected item inside their visible window. The visual
 filter and the activation result set are the same ordered collection. Pointer
 hit boxes come from the rendered component geometry and never penetrate a
 modal backdrop.
+
+`DecisionSheet` uses one display-cell row plan for visual rendering, dynamic
+height, choice hit testing, and action hit testing. Tone glyphs share the first
+consequence row and consume its width budget. Normal height keeps one blank row
+before actions; compact height removes that spacer before it removes the
+selected control or either primary/safe-exit action. Scalar input shows a
+grapheme-safe visible caret, and enum labels are sanitized and clipped without
+changing the submitted value. Linear presentation consumes the same typed
+title, body, response state, and action bindings.
+
 Conversation scrolling uses stable Turn identity. Manual upward scroll detaches
 the viewport; durable updates and visible H4 frame advances increment the
 unseen count without stealing focus or follow mode. `End` resumes latest-follow.

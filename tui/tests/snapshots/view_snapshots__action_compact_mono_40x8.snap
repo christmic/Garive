@@ -1,0 +1,12 @@
+---
+source: tui/tests/view_snapshots.rs
+expression: "frame(&action, Theme::Mono, 40, 8)"
+---
+  ╭ Approval required ───────────────╮
+  │                                  │
+  │  !  Review the public request    │
+  │  › true                          │
+  │    Enter submit response         │
+  │    Ctrl+Q leave safely           │
+  │                                  │
+  ╰──────────────────────────────────╯
