@@ -267,6 +267,25 @@ Connect, Review and Restart states were rendered and inspected; 720 px and
 column. This is a consistency correction based on the observed desktop grammar,
 not a claim that the supplied screenshots showed Codex onboarding.
 
+### M. Approval-at-the-action-boundary audit
+
+The approval fixture exposed a high-value Garive surface that still used the
+old dashboard language. A full amber card occupied 136 px inside the Composer;
+its three authority facts competed with two inline actions, and autofocus drew
+both a button ring and a second blue ring around the entire Composer. The
+permission boundary was truthful but visually louder and harder to scan than
+the task it protected.
+
+The approval is now a two-column permission rail with a 24 px authority glyph,
+neutral raised surface, one 2 px attention edge and a full-width fact region.
+Scope, duration and overwrite behavior stay on one line at the 39 rem measure;
+consequence copy precedes Decline and Approve once. Its 720 px fixture is 96 px
+high instead of 136 px. At 480 px the consequence/actions stack to 159 px,
+retain exact text and keep document width equal to the viewport. Only the safe
+Decline action receives the explicit focus ring; the surrounding Composer uses
+a quiet neutral focus border. This is the Gate 2 authority advantage without
+adding ordinary-screen noise.
+
 ## Gate 1 — Codex fidelity
 
 This gate passes only when both Desktop and Web show:

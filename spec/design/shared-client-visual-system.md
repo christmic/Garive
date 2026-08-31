@@ -103,6 +103,15 @@ The persistent hierarchy is rail → top bar → work canvas → composer/action
 area. Blocking approval appears immediately above the action area. Connection
 and capacity warnings never cover a blocking approval.
 
+A blocking approval is a compact permission rail attached to the Composer, not
+a saturated warning card or a second dialog. It uses a neutral raised surface,
+one 2 px attention edge and a 24 px authority glyph. Exact scope, duration and
+overwrite behavior precede the consequence copy and one-shot actions. At the
+39 rem measure those facts remain on one line and the rail stays under 100 px;
+at narrow widths consequence and actions stack without horizontal overflow.
+The first safe action receives focus, but the Composer must not add a second
+action-colored focus ring around that focused button.
+
 Window chrome follows permanence, not feature ownership. The top bar contains
 only the current document/task identity and admitted global actions. Live
 execution state appears once, attached to the composer/status rail. Durable
