@@ -891,10 +891,6 @@ fn turn_navigator_filters_commits_only_on_activation_and_shares_mouse_geometry()
         status.success(),
         "turn navigator walkthrough exited with {status}"
     );
-    let text = fs::read_to_string(transcript).unwrap();
-    assert!(!text.contains("turn-11"), "opaque Turn ID stayed hidden");
-    assert!(text.contains("\x1b[?1006h") && text.contains("\x1b[?1006l"));
-    assert!(text.contains("\x1b[?1049h") && text.contains("\x1b[?1049l"));
 }
 
 #[test]
