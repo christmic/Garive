@@ -19,6 +19,15 @@ use crate::{
 /// Stable executor identity used by matching F0 sandbox bindings.
 pub const T1_PROCESS_EXECUTOR_ID: &str = "garive.builtin.process";
 
+/// Exact workspace authority enforced for the launched process tree.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ProcessWorkspaceMode {
+    /// The process may read only within the granted working-directory subtree.
+    Read,
+    /// The process may read and write within the granted working-directory subtree.
+    Write,
+}
+
 /// Exact bounded command delivered to a concrete isolation backend.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ProcessExecutionRequest {
@@ -28,6 +37,8 @@ pub struct ProcessExecutionRequest {
     pub argv: Vec<String>,
     /// Exact workspace-relative working-directory resource identity.
     pub working_directory: String,
+    /// Exact workspace authority granted by Safety.
+    pub workspace_mode: ProcessWorkspaceMode,
     /// Complete environment installed after clearing inherited values.
     pub environment: BTreeMap<String, String>,
     /// Aggregate stdout/stderr byte bound.
@@ -203,7 +214,12 @@ fn operation(
         .map_err(|_| "invalid T1 process arguments")?;
     let lane_name = text(&arguments, "lane")?;
     let working_directory = text(&arguments, "working_directory")?;
-    validate_accesses(prepared, lane_name, working_directory)?;
+    let workspace_mode = match text(&arguments, "workspace_mode")? {
+        "read" => ProcessWorkspaceMode::Read,
+        "write" => ProcessWorkspaceMode::Write,
+        _ => return Err("invalid process workspace mode".into()),
+    };
+    validate_accesses(prepared, lane_name, working_directory, workspace_mode)?;
     validate_requirements(prepared, grant)?;
     let argv = arguments
         .get("argv")
@@ -229,6 +245,7 @@ fn operation(
         executable: executable.path().to_path_buf(),
         argv,
         working_directory: working_directory.into(),
+        workspace_mode,
         environment: lane.environment().clone(),
         max_output_bytes: number(&arguments, "max_output_bytes")?
             .min(grant.granted_requirements.max_output_bytes()),
@@ -243,6 +260,7 @@ fn validate_accesses(
     prepared: &PreparedToolCall,
     lane: &str,
     working_directory: &str,
+    workspace_mode: ProcessWorkspaceMode,
 ) -> Result<(), String> {
     let accesses = prepared
         .invocation_accesses()
@@ -250,8 +268,12 @@ fn validate_accesses(
     let process = accesses.values().iter().find(|access| {
         access.namespace() == AccessNamespace::Process && access.mode() == AccessMode::Exclusive
     });
+    let expected_mode = match workspace_mode {
+        ProcessWorkspaceMode::Read => AccessMode::Read,
+        ProcessWorkspaceMode::Write => AccessMode::Write,
+    };
     let filesystem = accesses.values().iter().find(|access| {
-        access.namespace() == AccessNamespace::Filesystem && access.mode() == AccessMode::Read
+        access.namespace() == AccessNamespace::Filesystem && access.mode() == expected_mode
     });
     if accesses.values().len() != 2
         || process.map(|value| value.resource_key()) != Some(lane)
@@ -268,6 +290,7 @@ fn validate_requirements(
 ) -> Result<(), String> {
     let capabilities = [
         ExecutionCapability::FilesystemRead,
+        ExecutionCapability::FilesystemWrite,
         ExecutionCapability::Process,
     ];
     if !prepared.requirements().capabilities().eq(capabilities)

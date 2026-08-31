@@ -60,13 +60,14 @@ class BasicToolsTest {
             ToolIntent(
                 "call",
                 T1_PROCESS_RUN,
-                """{"lane":"rust-toolchain","argv":["cargo","test"],"working_directory":".","max_output_bytes":4096,"timeout_ms":30000}""",
+                """{"lane":"rust-toolchain","argv":["cargo","test"],"working_directory":".","workspace_mode":"write","max_output_bytes":4096,"timeout_ms":30000}""",
             ),
         ).value()
         assertEquals(
             listOf(AccessNamespace.FILESYSTEM, AccessNamespace.PROCESS),
             requireNotNull(process.invocationAccesses).values.map(ResourceAccess::namespace),
         )
+        assertEquals(AccessMode.WRITE, requireNotNull(process.invocationAccesses).values.first().mode)
     }
 
     @Test
@@ -80,7 +81,7 @@ class BasicToolsTest {
             ToolIntent(
                 "call",
                 T1_PROCESS_RUN,
-                """{"lane":"unknown","argv":["cargo"],"working_directory":".","max_output_bytes":1,"timeout_ms":1}""",
+                """{"lane":"unknown","argv":["cargo"],"working_directory":".","workspace_mode":"read","max_output_bytes":1,"timeout_ms":1}""",
             ),
         )
         assertEquals(PreparationErrorCode.EFFECT_ACCESS_INVALID, unknownLane.error())

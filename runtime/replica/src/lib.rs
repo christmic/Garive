@@ -186,7 +186,7 @@ pub use plan_runtime::{
 pub use process_capability::{ProcessExecutable, ProcessLane, ProcessLaneRegistry};
 pub use process_executor::{
     BuiltinProcessExecutor, ProcessBackendError, ProcessExecutionRequest, ProcessExecutionResult,
-    ProcessExit, ProcessIsolationBackend, T1_PROCESS_EXECUTOR_ID,
+    ProcessExit, ProcessIsolationBackend, ProcessWorkspaceMode, T1_PROCESS_EXECUTOR_ID,
 };
 pub use runtime_turn::{
     commit_planned_turn, derive_runtime_recovery, get_turn, plan_cancel_turn, plan_continue_turn,

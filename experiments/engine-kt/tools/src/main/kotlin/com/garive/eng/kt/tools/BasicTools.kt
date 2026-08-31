@@ -78,16 +78,21 @@ private fun oneFile(arguments: JsonElement, mode: AccessMode, rootAllowed: Boole
     ).required()
 }
 
-private fun processAccesses(arguments: JsonElement): InvocationAccessSet = InvocationAccessSet.create(
-    listOf(
+private fun processAccesses(arguments: JsonElement): InvocationAccessSet {
+    val workspaceMode = when (arguments.text("workspace_mode")) {
+        "read" -> AccessMode.READ
+        "write" -> AccessMode.WRITE
+        else -> throw ContractFailure(accessError())
+    }
+    return InvocationAccessSet.create(listOf(
         ResourceAccess.create(AccessNamespace.PROCESS, arguments.text("lane"), AccessMode.EXCLUSIVE).required(),
         ResourceAccess.create(
             AccessNamespace.FILESYSTEM,
             arguments.text("working_directory"),
-            AccessMode.READ,
+            workspaceMode,
         ).required(),
-    ),
-).required()
+    )).required()
+}
 
 private fun patchAccesses(arguments: JsonElement): InvocationAccessSet {
     val targets = patchTargets(arguments.text("patch"))
@@ -196,18 +201,22 @@ private fun fileDefinition(
 }
 
 private fun processDefinition(policy: String, lanes: List<String>): ToolDefinition {
-    val capabilities = listOf(ExecutionCapability.FILESYSTEM_READ, ExecutionCapability.PROCESS)
+    val capabilities = listOf(
+        ExecutionCapability.FILESYSTEM_READ,
+        ExecutionCapability.FILESYSTEM_WRITE,
+        ExecutionCapability.PROCESS,
+    )
     val requirements = ExecutionRequirements.create(capabilities, MAX_PROCESS_DURATION_MS, MAX_RESULT_BYTES).required()
     return ToolDefinition.createV3(
         T1_PROCESS_RUN,
         T1_TOOL_REVISION,
         "Run one configured executable lane without shell parsing.",
-        schema("""{"type":"object","properties":{"lane":{"type":"string","minLength":1,"maxLength":256},"argv":{"type":"array","minItems":1,"maxItems":256,"items":{"type":"string","minLength":1,"maxLength":32768}},"working_directory":{"type":"string","minLength":1,"maxLength":4096},"max_output_bytes":{"type":"integer","minimum":1,"maximum":1048576},"timeout_ms":{"type":"integer","minimum":1,"maximum":300000}},"required":["lane","argv","working_directory","max_output_bytes","timeout_ms"],"additionalProperties":false}"""),
+        schema("""{"type":"object","properties":{"lane":{"type":"string","minLength":1,"maxLength":256},"argv":{"type":"array","minItems":1,"maxItems":256,"items":{"type":"string","minLength":1,"maxLength":32768}},"working_directory":{"type":"string","minLength":1,"maxLength":4096},"workspace_mode":{"type":"string","enum":["read","write"]},"max_output_bytes":{"type":"integer","minimum":1,"maximum":1048576},"timeout_ms":{"type":"integer","minimum":1,"maximum":300000}},"required":["lane","argv","working_directory","workspace_mode","max_output_bytes","timeout_ms"],"additionalProperties":false}"""),
         requirements,
         ReplayClass.NEVER_REPLAY,
         ToolAccessPolicyV1.create(
             policy,
-            listOf(AccessPolicyEntry.create(".", listOf(AccessMode.READ)).required()),
+            listOf(AccessPolicyEntry.create(".", listOf(AccessMode.READ, AccessMode.WRITE)).required()),
             lanes.map { AccessPolicyEntry.create(it, listOf(AccessMode.EXCLUSIVE)).required() },
             emptyList(),
             emptyList(),

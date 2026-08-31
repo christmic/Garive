@@ -194,8 +194,9 @@ semantics fail before start.
 `process.run` receives a non-empty executable lane plus a bounded argv vector.
 No argument string is re-parsed by a shell. Runtime resolves the lane to a
 configured executable capability and constructs the environment only from an
-explicit allowlist. It supplies a fixed working-directory capability, process
-count, open-file, duration and output bounds.
+explicit allowlist. It supplies a fixed working-directory capability with an
+explicit `read` or `write` mode plus process-count, open-file, duration and
+output bounds. A backend may not infer write access from the command or lane.
 
 Network is denied unless a Network access and origin scope were independently
 authorized and the selected executor proves enforcement. Timeout, cancellation

@@ -3,7 +3,8 @@ use std::sync::{Arc, Mutex};
 use garive_runtime::{
     BuiltinProcessExecutor, ExecutorDispatch, ExecutorDispatchError, ExecutorPort,
     ProcessBackendError, ProcessExecutable, ProcessExecutionRequest, ProcessExecutionResult,
-    ProcessExit, ProcessIsolationBackend, ProcessLane, ProcessLaneRegistry, T1_PROCESS_EXECUTOR_ID,
+    ProcessExit, ProcessIsolationBackend, ProcessLane, ProcessLaneRegistry, ProcessWorkspaceMode,
+    T1_PROCESS_EXECUTOR_ID,
 };
 use garive_tools::{
     BuiltinT1Catalogue, ExecutionFact, GrantId, InvocationGrant, ToolIntent, ToolInvocationId,
@@ -69,6 +70,7 @@ async fn process_resolves_exact_capability_and_returns_bound_receipt() {
     );
     assert_eq!(request.argv, ["cargo", "test", "-p", "garive-tools"]);
     assert_eq!(request.working_directory, ".");
+    assert_eq!(request.workspace_mode, ProcessWorkspaceMode::Write);
     assert_eq!(request.environment.len(), 1);
     assert_eq!(
         request.environment.get("LANG").map(String::as_str),
@@ -156,7 +158,7 @@ async fn dispatch(
 ) -> Result<(ExecutionFact, BuiltinProcessExecutor), ExecutorDispatchError> {
     let catalogue = BuiltinT1Catalogue::new("snapshot-1", ["rust-toolchain"]).unwrap();
     let arguments = format!(
-        r#"{{"lane":"rust-toolchain","argv":["{alias}","test","-p","garive-tools"],"working_directory":".","max_output_bytes":4096,"timeout_ms":30000}}"#
+        r#"{{"lane":"rust-toolchain","argv":["{alias}","test","-p","garive-tools"],"working_directory":".","workspace_mode":"write","max_output_bytes":4096,"timeout_ms":30000}}"#
     );
     let prepared = catalogue
         .prepare(&ToolIntent::new("model-call", T1_PROCESS_RUN, arguments))

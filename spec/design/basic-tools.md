@@ -216,25 +216,29 @@ receipt digest. File content and absolute temporary locations are absent.
 
 ## `garive.process.run@1`
 
-Input requires `lane`, non-empty `argv`, `working_directory`, `max_output_bytes`
-and `timeout_ms`:
+Input requires `lane`, non-empty `argv`, `working_directory`, explicit
+`workspace_mode`, `max_output_bytes` and `timeout_ms`:
 
 ```json
 {
   "lane":"rust-toolchain",
   "argv":["cargo","test","-p","garive-tools"],
   "working_directory":".",
+  "workspace_mode":"write",
   "max_output_bytes":65536,
   "timeout_ms":30000
 }
 ```
 
 `working_directory = "."` is the explicit workspace root identity; other
-values satisfy normal path rules. `lane` uses the C5b process
-key grammar. The access set is `Process(lane, Exclusive)` plus
-`Filesystem(working_directory, Read)`. V1 declares no network access.
+values satisfy normal path rules. `workspace_mode = read | write` is mandatory;
+it becomes the exact Filesystem access mode and may not be widened by the
+executor. `lane` uses the C5b process key grammar. The access set is
+`Process(lane, Exclusive)` plus
+`Filesystem(working_directory, workspace_mode)`. V1 declares no network access.
 
-Requirements are `FilesystemRead + Process`; replay is `NeverReplay`. F0
+Requirements are `FilesystemRead + FilesystemWrite + Process`; the exact access
+mode still limits each call. Replay is `NeverReplay`. F0
 requires filesystem/symlink/process containment, structured arguments,
 environment allowlist and resource limits. Runtime resolves `lane` to an exact
 configured executable set. It does not search caller PATH, load shell startup
