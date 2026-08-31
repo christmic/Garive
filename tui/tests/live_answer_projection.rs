@@ -9,7 +9,7 @@ mod application;
 mod input;
 
 use application::{
-    LiveAnswerAvailability, LiveAnswerExpectation, LiveAnswerPhase, LiveAnswerProjection,
+    AppModel, LiveAnswerAvailability, LiveAnswerExpectation, LiveAnswerPhase, LiveAnswerProjection,
 };
 use garive_host_client::LiveOutputEndReason;
 use garive_host_client::{LiveOutputEvent, LiveOutputEventKind};
@@ -360,4 +360,39 @@ fn detached_view_counts_each_presented_frame_and_semantic_change() {
         expectation(true),
     );
     assert!(unavailable.unseen_increment);
+}
+
+#[test]
+fn detached_live_frame_preserves_anchor_and_end_restores_follow() {
+    let mut model = AppModel::default();
+    model
+        .live_answer
+        .apply(snapshot(STREAM_A, 1, "one"), expectation(false));
+    model.viewport.follow_latest = false;
+    model.viewport.anchor_key = Some("durable-anchor".into());
+    model.viewport.source_line = 3;
+    let anchor = model.viewport.clone();
+
+    let delta = model.live_answer.apply(
+        event(
+            STREAM_A,
+            2,
+            LiveOutputEventKind::TextDelta {
+                text: " two".into(),
+            },
+        ),
+        expectation(true),
+    );
+    assert!(delta.frame_requested);
+    model.advance_live_frame();
+
+    assert_eq!(model.viewport.anchor_key, anchor.anchor_key);
+    assert_eq!(model.viewport.source_line, anchor.source_line);
+    assert!(!model.viewport.follow_latest);
+    assert_eq!(model.viewport.newer_updates, 1);
+
+    model.follow_latest();
+    assert!(model.viewport.follow_latest);
+    assert_eq!(model.viewport.anchor_key, None);
+    assert_eq!(model.viewport.newer_updates, 0);
 }

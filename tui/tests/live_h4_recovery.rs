@@ -100,14 +100,33 @@ async fn shipping_tui_recovers_live_snapshot_then_converges_to_durable_truth() {
     let clear_log = temporary.path().join("unavailable.log");
     let recovered_log = temporary.path().join("recovered.log");
     let final_log = temporary.path().join("final.log");
+    let end_log = temporary.path().join("end-follow.log");
     let stage_one = temporary.path().join("stage-one");
     let stage_precommit = temporary.path().join("stage-precommit");
     let stage_two = temporary.path().join("stage-two");
     let stage_three = temporary.path().join("stage-three");
     let stage_four = temporary.path().join("stage-four");
     let state = temporary.path().join("state");
+    let reader_log = temporary.path().join("reader.log");
+    let reader_ready = temporary.path().join("reader-ready");
+    let reader = tokio::task::spawn_blocking({
+        let session_id = session.session_id.clone();
+        let reader_log = reader_log.clone();
+        let reader_ready = reader_ready.clone();
+        let reader_state = temporary.path().join("reader-state");
+        move || {
+            run_screen_reader(
+                address,
+                &session_id,
+                &reader_log,
+                &reader_ready,
+                &reader_state,
+            )
+        }
+    });
     let expect = tokio::task::spawn_blocking({
         let session_id = session.session_id.clone();
+        let end_log = end_log.clone();
         let paths = [
             log.clone(),
             clear_log.clone(),
@@ -120,10 +139,11 @@ async fn shipping_tui_recovers_live_snapshot_then_converges_to_durable_truth() {
             stage_four.clone(),
             state,
         ];
-        move || run_expect(address, &session_id, &paths)
+        move || run_expect(address, &session_id, &paths, &end_log)
     });
 
     wait_for(&stage_one).await;
+    wait_for(&reader_ready).await;
     assert!(
         host.get_timeline(&session.session_id, 0, 1).unwrap().items[0]
             .completion_text
@@ -138,6 +158,10 @@ async fn shipping_tui_recovers_live_snapshot_then_converges_to_durable_truth() {
     ))
     .unwrap();
     wait_for(&stage_precommit).await;
+    let end_follow = fs::read_to_string(&end_log).unwrap();
+    assert!(end_follow.contains("before-disconnect"));
+    assert!(end_follow.contains("second-live-frame"));
+    assert!(!end_follow.contains("End to follow"));
     assert!(
         host.get_timeline(&session.session_id, 0, 1).unwrap().items[0]
             .completion_text
@@ -175,6 +199,7 @@ async fn shipping_tui_recovers_live_snapshot_then_converges_to_durable_truth() {
     .unwrap();
     wait_for(&stage_four).await;
     assert!(expect.await.unwrap());
+    assert!(reader.await.unwrap());
     let final_screen = fs::read_to_string(&final_log).unwrap();
     assert!(final_screen.contains("durable-authoritative-answer"));
     assert!(!final_screen.contains("Live feedback unavailable"));
@@ -182,12 +207,43 @@ async fn shipping_tui_recovers_live_snapshot_then_converges_to_durable_truth() {
     assert!(!final_screen.contains("second-live-frame"));
     assert!(!final_screen.contains("after-reconnect"));
     assert!(!final_screen.contains('▍'));
+    let reader_output = fs::read_to_string(reader_log).unwrap();
+    assert!(!reader_output.contains("before-disconnect"));
+    assert!(!reader_output.contains("second-live-frame"));
+    assert!(!reader_output.contains("after-reconnect"));
+    assert_eq!(
+        reader_output
+            .matches("durable-authoritative-answer")
+            .count(),
+        1
+    );
     let all = fs::read_to_string(log).unwrap();
     assert!(all.contains("\x1b[?1049h") && all.contains("\x1b[?1049l"));
     assert!(all.contains("\x1b]0;Garive\x07"));
     proxy.abort();
     server_shutdown.send(()).unwrap();
     server_stopped.await.unwrap().unwrap();
+}
+
+fn run_screen_reader(
+    address: SocketAddr,
+    session: &str,
+    log: &Path,
+    ready: &Path,
+    state: &Path,
+) -> bool {
+    Command::new("expect")
+        .env("TERM", "xterm-256color")
+        .env("GARIVE_TUI_BIN", env!("CARGO_BIN_EXE_garive-tui"))
+        .env("GARIVE_TUI_HOST", format!("http://{address}/"))
+        .env("GARIVE_TUI_SESSION", session)
+        .env("GARIVE_READER_LOG", log)
+        .env("GARIVE_READER_READY", ready)
+        .env("GARIVE_TUI_STATE", state)
+        .args(["-c", SCREEN_READER_SCRIPT])
+        .status()
+        .unwrap()
+        .success()
 }
 
 async fn proxy(
@@ -239,7 +295,7 @@ async fn wait_for(path: &Path) {
     .unwrap_or_else(|_| panic!("timed out waiting for {}", path.display()));
 }
 
-fn run_expect(address: SocketAddr, session: &str, paths: &[PathBuf; 10]) -> bool {
+fn run_expect(address: SocketAddr, session: &str, paths: &[PathBuf; 10], end_log: &Path) -> bool {
     Command::new("expect")
         .env("TERM", "xterm-256color")
         .env("GARIVE_TUI_BIN", env!("CARGO_BIN_EXE_garive-tui"))
@@ -249,6 +305,7 @@ fn run_expect(address: SocketAddr, session: &str, paths: &[PathBuf; 10]) -> bool
         .env("GARIVE_CLEAR_LOG", &paths[1])
         .env("GARIVE_RECOVERED_LOG", &paths[2])
         .env("GARIVE_FINAL_LOG", &paths[3])
+        .env("GARIVE_END_LOG", end_log)
         .env("GARIVE_STAGE_ONE", &paths[4])
         .env("GARIVE_STAGE_PRECOMMIT", &paths[5])
         .env("GARIVE_STAGE_TWO", &paths[6])
@@ -279,13 +336,24 @@ const EXPECT_SCRIPT: &str = r#"
     expect -exact "\033\[6n"
     send "\033\[1;1R"
     must "before-disconnect" 21
+    send "\033\[Z"
+    send "\033\[H"
     mark $env(GARIVE_STAGE_ONE)
-    must "second-live-frame" 23
+    must "1 newer" 23
+    log_file
+    log_file -a -noappend $env(GARIVE_END_LOG)
+    send "\033\[F"
+    send "\014"
+    must "\033\[6n" 25
+    send "\033\[1;1R"
+    must "before-disconnect" 27
+    must "second-live-frame" 29
+    log_file
+    log_file -a $env(GARIVE_ALL_LOG)
     mark $env(GARIVE_STAGE_PRECOMMIT)
     must "Live feedback unavailable" 31
     log_file
     log_file -a -noappend $env(GARIVE_CLEAR_LOG)
-    send "\033\[Z"
     send "\014"
     must "\033\[6n" 33
     send "\033\[1;1R"
@@ -317,6 +385,24 @@ const EXPECT_SCRIPT: &str = r#"
     mark $env(GARIVE_STAGE_FOUR)
     send "\021"
     send "\r"
+    expect eof
+"#;
+
+const SCREEN_READER_SCRIPT: &str = r#"
+    set timeout 10
+    encoding system utf-8
+    log_user 0
+    log_file -a -noappend $env(GARIVE_READER_LOG)
+    spawn -noecho /bin/sh -c {exec "$GARIVE_TUI_BIN" --host "$GARIVE_TUI_HOST" --session "$GARIVE_TUI_SESSION" --state-dir "$GARIVE_TUI_STATE" --screen-reader}
+    expect "Connection online"
+    expect "You: recover this stream"
+    set f [open $env(GARIVE_READER_READY) w]
+    puts $f ready
+    close $f
+    expect "Garive: durable-authoritative-answer"
+    send "\021"
+    send "\r"
+    expect "Terminal restored."
     expect eof
 "#;
 
