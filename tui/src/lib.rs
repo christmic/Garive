@@ -5,6 +5,8 @@
 
 mod application;
 mod args;
+#[allow(dead_code)]
+mod host;
 mod input;
 mod persistence;
 mod runtime;

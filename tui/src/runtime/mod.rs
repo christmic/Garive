@@ -5,6 +5,8 @@ mod controller;
 mod effects;
 mod external_editor;
 mod host;
+#[allow(dead_code)]
+mod host_effects;
 mod terminal;
 mod terminal_events;
 

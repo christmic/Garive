@@ -176,7 +176,13 @@ fn pending_mutation_contract_redacts_payload_and_correlates_sealed_identity() {
             request_digest: "a".repeat(64),
         })),
     };
-    assert!(tracker.take_finished(&result).is_some());
+    let completed = tracker.take_finished(&result).expect("exact completion");
+    let successor = tracker
+        .issue_successor(&completed, EffectKind::Exit, None)
+        .expect("successor identity");
+    assert!(successor.context.effect_id > completed.context.effect_id);
+    assert_eq!(successor.context.session_id, completed.context.session_id);
+    assert!(tracker.pending.contains_key(&successor.context.effect_id));
 }
 
 #[test]
@@ -232,6 +238,7 @@ fn start_turn_waits_for_exact_persistence_result_before_host_effect() {
         }]
     ));
     assert_eq!(follow_up[0].context.request_digest, Some("a".repeat(64)));
+    assert!(model.effects.pending.is_empty());
 }
 
 #[test]
@@ -357,6 +364,7 @@ fn create_session_rejects_malformed_and_waits_for_exact_persistence() {
             ..
         }]
     ));
+    assert!(model.effects.pending.is_empty());
 }
 
 #[test]
@@ -413,6 +421,7 @@ fn cancel_requires_exact_following_context_and_persistence() {
         }]
     ));
     assert_eq!(model.execution, application::ExecutionState::Following);
+    assert!(model.effects.pending.is_empty());
 }
 
 #[test]
@@ -453,6 +462,7 @@ fn continue_blocks_stale_decision_and_persistence_failure() {
             ..
         }]
     ));
+    assert!(model.effects.pending.is_empty());
 
     let mut model = suspended_model();
     let exact = reduce(
@@ -477,6 +487,7 @@ fn continue_blocks_stale_decision_and_persistence_failure() {
             ..
         }]
     ));
+    assert!(model.effects.pending.is_empty());
 
     let mut model = suspended_model();
     let persist = reduce(

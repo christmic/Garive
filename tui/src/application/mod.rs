@@ -15,8 +15,8 @@ pub(crate) use effect::AppGeneration;
 pub(crate) use effect::{AppEffect, AppEffectResult, EffectKind, EffectTag, EffectTracker};
 #[allow(unused_imports)]
 pub(crate) use effect::{
-    AppEffectOutcome, EffectFailure, PendingMutationDraft, PendingMutationKind,
-    PersistedPendingIdentity, PersistenceFailure,
+    AppEffectOutcome, EffectFailure, HostReadFailure, HostReadResponse, PendingMutationDraft,
+    PendingMutationKind, PersistedPendingIdentity, PersistenceFailure,
 };
 pub(crate) use inspector::{
     InspectorActivation, InspectorEntry, InspectorState, InspectorTone, InspectorVariant,

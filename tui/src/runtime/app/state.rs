@@ -10,6 +10,7 @@ use crate::{
     application::{
         reduce, AppAction, AppModel, ConnectionState, EffectKind, ExecutionState, Overlay,
     },
+    host::LiveHostReadPort,
     input::ComposerClickTracker,
     persistence::{AsyncStateStore, PendingCommand, Preferences, PromptHistoryEntry, StateStore},
     view, LaunchConfig,
@@ -19,6 +20,7 @@ use super::super::{
     effects::EffectRunner,
     external_editor::EditorRequest,
     host::{self, HostMessage},
+    host_effects::HostEffectRunner,
     TerminalReconfiguration,
 };
 
@@ -35,6 +37,7 @@ pub(in crate::runtime) struct RuntimeState {
     pub(in crate::runtime) client: LiveHostClient,
     pub(in crate::runtime) sender: mpsc::Sender<HostMessage>,
     effects: EffectRunner<AsyncStateStore>,
+    host_effects: HostEffectRunner<LiveHostReadPort>,
     pub(in crate::runtime) model: AppModel,
     pub(in crate::runtime) follow: Option<JoinHandle<()>>,
     pub(in crate::runtime) reconnect: Option<JoinHandle<()>>,
@@ -127,6 +130,8 @@ impl RuntimeState {
             pending_freezes_composer(&restored.pending, model.selected_session.as_deref());
         model.inspector.open = restored.preferences.activity_inspector;
         let persisted_preferences = restored.preferences.clone();
+        let host_effects =
+            HostEffectRunner::new(LiveHostReadPort::new(client.clone()), action_sender.clone());
         let effects =
             EffectRunner::new(AsyncStateStore::new(restored.store.clone()), action_sender);
         Self {
@@ -134,6 +139,7 @@ impl RuntimeState {
             client,
             sender,
             effects,
+            host_effects,
             model,
             follow: None,
             reconnect: None,
@@ -210,6 +216,9 @@ impl RuntimeState {
             match effect.kind.tag() {
                 crate::application::EffectTag::Exit => {
                     debug_assert!(self.model.quit_requested);
+                }
+                crate::application::EffectTag::LoadDefinitions => {
+                    self.host_effects.submit(effect);
                 }
                 crate::application::EffectTag::PersistPending => self.effects.submit(effect),
                 crate::application::EffectTag::StartTurn => {

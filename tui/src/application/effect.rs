@@ -1,5 +1,6 @@
 use std::collections::BTreeMap;
 
+use garive_host_client::{AgentDefinitionSummary, HostClientErrorCode};
 use serde_json::Value;
 
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -39,6 +40,8 @@ pub(crate) struct EffectContext {
 pub(crate) enum EffectKind {
     Exit,
     #[allow(dead_code)]
+    LoadDefinitions,
+    #[allow(dead_code)]
     PersistPending {
         draft: PendingMutationDraft,
     },
@@ -70,6 +73,7 @@ impl EffectKind {
     pub(crate) fn tag(&self) -> EffectTag {
         match self {
             Self::Exit => EffectTag::Exit,
+            Self::LoadDefinitions => EffectTag::LoadDefinitions,
             Self::PersistPending { .. } => EffectTag::PersistPending,
             Self::StartTurn { .. } => EffectTag::StartTurn,
             Self::CreateSession { .. } => EffectTag::CreateSession,
@@ -127,9 +131,31 @@ pub(crate) struct PersistedPendingIdentity {
     pub(crate) request_digest: String,
 }
 
+#[derive(Clone, Eq, PartialEq)]
+pub(crate) enum HostReadResponse {
+    Definitions(Vec<AgentDefinitionSummary>),
+}
+
+impl std::fmt::Debug for HostReadResponse {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Definitions(definitions) => formatter
+                .debug_struct("Definitions")
+                .field("count", &definitions.len())
+                .finish(),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct HostReadFailure {
+    pub(crate) code: HostClientErrorCode,
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum EffectTag {
     Exit,
+    LoadDefinitions,
     PersistPending,
     StartTurn,
     CreateSession,
@@ -159,12 +185,27 @@ pub(crate) enum PersistenceFailure {
     Conflict,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 #[allow(dead_code)]
 pub(crate) enum AppEffectOutcome {
     Completed,
     Failed(EffectFailure),
+    HostRead(Result<HostReadResponse, HostReadFailure>),
     PendingPersisted(Result<PersistedPendingIdentity, PersistenceFailure>),
+}
+
+impl std::fmt::Debug for AppEffectOutcome {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Completed => formatter.write_str("Completed"),
+            Self::Failed(failure) => formatter.debug_tuple("Failed").field(failure).finish(),
+            Self::HostRead(result) => formatter.debug_tuple("HostRead").field(result).finish(),
+            Self::PendingPersisted(result) => formatter
+                .debug_tuple("PendingPersisted")
+                .field(result)
+                .finish(),
+        }
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -209,6 +250,16 @@ impl EffectTracker {
             return None;
         }
         self.pending.remove(&result.context.effect_id)
+    }
+
+    #[allow(dead_code)]
+    pub(crate) fn issue_successor(
+        &mut self,
+        completed: &AppEffect,
+        kind: EffectKind,
+        request_digest: Option<String>,
+    ) -> Option<AppEffect> {
+        self.issue(kind, completed.context.session_id.clone(), request_digest)
     }
 
     pub(crate) fn has_pending_mutation(&self) -> bool {
