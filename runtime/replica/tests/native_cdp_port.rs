@@ -1,7 +1,7 @@
 use futures::{SinkExt, StreamExt};
 use garive_browser_cdp::{CdpAdapterConfig, CdpClient, CdpLimits, CdpTransport};
 use garive_runtime::{
-    BrowserPageId, BrowserSessionId, CdpBrowserSessionMode, CdpNativeAdapterPort,
+    BrowserPageId, BrowserSessionId, CdpBrowserSessionMode, CdpNativeAdapterPort, CdpPageBinding,
     NativeActionCommandV1, NativeActionId, NativeAdapterPort, NativeObservationBounds,
     NativeSnapshotId, NativeTarget,
 };
@@ -33,6 +33,10 @@ fn target() -> NativeTarget {
         session_id: BrowserSessionId::new("browser-1").expect("browser"),
         page_id: BrowserPageId::new("page-1").expect("page"),
     }
+}
+
+fn page_binding() -> CdpPageBinding {
+    CdpPageBinding::new(target(), "cdp-page-1", "cdp-session").expect("page binding")
 }
 
 fn history(id: i64, url: &str) -> Value {
@@ -128,7 +132,7 @@ async fn resulting_frames_with_popup(
         .send(Message::Text(
             json!({
                 "method":"Target.targetCreated",
-                "params":{"targetInfo":{"targetId":"popup-page","type":"page","title":"","url":"","attached":false,"openerId":"page-1"}}
+                "params":{"targetInfo":{"targetId":"popup-page","type":"page","title":"","url":"","attached":false,"openerId":"cdp-page-1"}}
             })
             .to_string()
             .into(),
@@ -149,7 +153,7 @@ async fn resulting_frames_with_popup(
         .expect("frame result");
 }
 
-async fn run_managed_popup_case(allow_popup: bool) {
+async fn run_managed_popup_case(allow_popup: bool, close_succeeds: bool, admit_wrong_origin: bool) {
     let listener = TcpListener::bind("127.0.0.1:0").await.expect("listener");
     let address = listener.local_addr().expect("address");
     let server = tokio::spawn(async move {
@@ -195,7 +199,12 @@ async fn run_managed_popup_case(allow_popup: bool) {
         }
         let activate = reply(&mut socket, json!({})).await;
         assert_eq!(activate["method"], "Target.activateTarget");
-        assert_eq!(activate["params"]["targetId"], "page-1");
+        assert_eq!(activate["params"]["targetId"], "cdp-page-1");
+        if allow_popup {
+            let close = reply(&mut socket, json!({"success":close_succeeds})).await;
+            assert_eq!(close["method"], "Target.closeTarget");
+            assert_eq!(close["params"]["targetId"], "popup-page");
+        }
     });
     let config = CdpAdapterConfig::new(
         format!("ws://{address}/devtools/browser/capability"),
@@ -204,9 +213,8 @@ async fn run_managed_popup_case(allow_popup: bool) {
     .expect("config");
     let client = CdpClient::new(CdpTransport::connect(&config).await.expect("transport"));
     let mut port = CdpNativeAdapterPort::new_with_mode(
-        target(),
+        page_binding(),
         CdpBrowserSessionMode::Managed,
-        "cdp-session",
         "revision-1",
         "run-popup",
         64,
@@ -252,30 +260,115 @@ async fn run_managed_popup_case(allow_popup: bool) {
         .expect("receipt");
     if allow_popup {
         assert_eq!(receipt.terminal_classification, "completed");
-        let pending = port.take_pending_popup().expect("pending popup");
-        assert_eq!(pending.page_id.as_str(), "popup-page");
+        let pending = port.oldest_pending_popup().expect("pending popup");
+        assert!(pending.admission_id.as_str().starts_with("popup-"));
         assert_eq!(pending.requested_origin, "https://popup.test:443");
         assert!(pending.user_gesture);
-        assert!(port.take_pending_popup().is_none());
+        assert_eq!(
+            port.oldest_pending_popup()
+                .expect("pending remains undecided")
+                .admission_id,
+            pending.admission_id
+        );
+        assert!(!format!("{pending:?}").contains("popup-page"));
+        if admit_wrong_origin {
+            let child_listener = TcpListener::bind("127.0.0.1:0")
+                .await
+                .expect("child listener");
+            let child_address = child_listener.local_addr().expect("child address");
+            let child_server = tokio::spawn(async move {
+                let (stream, _) = child_listener.accept().await.expect("child accept");
+                let mut socket = accept_async(stream).await.expect("child websocket");
+                let attach = reply(&mut socket, json!({"sessionId":"popup-session"})).await;
+                assert_eq!(attach["method"], "Target.attachToTarget");
+                assert_eq!(attach["params"]["targetId"], "popup-page");
+                for _ in 0..2 {
+                    let history =
+                        reply(&mut socket, history(1, "https://redirected.test:443/page")).await;
+                    assert_eq!(history["method"], "Page.getNavigationHistory");
+                    assert_eq!(history["sessionId"], "popup-session");
+                    let frame = reply(
+                        &mut socket,
+                        frame_tree("https://redirected.test:443", "loader-popup"),
+                    )
+                    .await;
+                    assert_eq!(frame["method"], "Page.getFrameTree");
+                    assert_eq!(frame["sessionId"], "popup-session");
+                }
+            });
+            let child_config = CdpAdapterConfig::new(
+                format!("ws://{child_address}/devtools/browser/capability"),
+                CdpLimits::new(64 * 1_024, 1, 16, 2_000).expect("child limits"),
+            )
+            .expect("child config");
+            let child_client = CdpClient::new(
+                CdpTransport::connect(&child_config)
+                    .await
+                    .expect("child transport"),
+            );
+            let child_target = NativeTarget::Browser {
+                session_id: BrowserSessionId::new("browser-1").expect("browser"),
+                page_id: BrowserPageId::new("runtime-popup").expect("popup page"),
+            };
+            assert_eq!(
+                port.admit_pending_popup(
+                    &pending.admission_id,
+                    child_target,
+                    "revision-popup",
+                    "run-popup-child",
+                    64,
+                    child_client,
+                )
+                .await
+                .err(),
+                Some(garive_runtime::NativeProtocolError::BrowserOriginDenied)
+            );
+            child_server.await.expect("child server");
+        } else {
+            let rejection = port.reject_pending_popup(&pending.admission_id).await;
+            if close_succeeds {
+                rejection.expect("explicit popup rejection");
+            } else {
+                assert_eq!(
+                    rejection,
+                    Err(garive_runtime::NativeProtocolError::ActionUncertain)
+                );
+                assert_eq!(
+                    port.preflight_action(&command),
+                    Err(garive_runtime::NativeProtocolError::BrowserAttachmentLost)
+                );
+            }
+        }
+        assert!(port.oldest_pending_popup().is_none());
     } else {
         assert_eq!(receipt.terminal_classification, "failed");
         assert_eq!(
             receipt.failure_code.as_deref(),
             Some("browser_origin_denied")
         );
-        assert!(port.take_pending_popup().is_none());
+        assert!(port.oldest_pending_popup().is_none());
     }
     server.await.expect("server");
 }
 
 #[tokio::test]
 async fn managed_popup_is_pending_until_separate_page_admission() {
-    run_managed_popup_case(true).await;
+    run_managed_popup_case(true, true, false).await;
 }
 
 #[tokio::test]
 async fn managed_popup_outside_allowed_origins_is_closed() {
-    run_managed_popup_case(false).await;
+    run_managed_popup_case(false, true, false).await;
+}
+
+#[tokio::test]
+async fn popup_cleanup_uncertainty_poison_the_parent_page_port() {
+    run_managed_popup_case(true, false, false).await;
+}
+
+#[tokio::test]
+async fn popup_admission_rechecks_the_attached_current_origin() {
+    run_managed_popup_case(true, true, true).await;
 }
 
 fn histories(current_index: usize) -> Value {
@@ -316,15 +409,9 @@ async fn frame_navigation_during_semantic_observation_rejects_the_mixed_snapshot
     )
     .expect("config");
     let client = CdpClient::new(CdpTransport::connect(&config).await.expect("transport"));
-    let mut port = CdpNativeAdapterPort::new(
-        target(),
-        "cdp-session",
-        "revision-1",
-        "run-frame-race",
-        64,
-        client,
-    )
-    .expect("port");
+    let mut port =
+        CdpNativeAdapterPort::new(page_binding(), "revision-1", "run-frame-race", 64, client)
+            .expect("port");
     assert_eq!(
         port.observe(
             &target(),
@@ -442,8 +529,7 @@ async fn concrete_port_dispatches_bound_click_type_and_clear_actions() {
     .expect("config");
     let client = CdpClient::new(CdpTransport::connect(&config).await.expect("transport"));
     let mut port =
-        CdpNativeAdapterPort::new(target(), "cdp-session", "revision-1", "run-1", 64, client)
-            .expect("port");
+        CdpNativeAdapterPort::new(page_binding(), "revision-1", "run-1", 64, client).expect("port");
     let observation = port
         .observe(
             &target(),
@@ -607,15 +693,9 @@ async fn concrete_port_selects_one_bound_native_option_with_effect_evidence() {
     )
     .expect("config");
     let client = CdpClient::new(CdpTransport::connect(&config).await.expect("transport"));
-    let mut port = CdpNativeAdapterPort::new(
-        target(),
-        "cdp-session",
-        "revision-1",
-        "run-select",
-        64,
-        client,
-    )
-    .expect("port");
+    let mut port =
+        CdpNativeAdapterPort::new(page_binding(), "revision-1", "run-select", 64, client)
+            .expect("port");
     let observation = port
         .observe(
             &target(),
@@ -729,15 +809,9 @@ async fn concrete_port_revalidates_focus_for_keys_and_binds_scroll_to_the_page_s
     )
     .expect("config");
     let client = CdpClient::new(CdpTransport::connect(&config).await.expect("transport"));
-    let mut port = CdpNativeAdapterPort::new(
-        target(),
-        "cdp-session",
-        "revision-1",
-        "run-key-scroll",
-        64,
-        client,
-    )
-    .expect("port");
+    let mut port =
+        CdpNativeAdapterPort::new(page_binding(), "revision-1", "run-key-scroll", 64, client)
+            .expect("port");
     let before = port
         .observe(
             &target(),
@@ -814,15 +888,9 @@ async fn key_dispatch_fails_before_input_when_focus_changed_after_snapshot() {
     )
     .expect("config");
     let client = CdpClient::new(CdpTransport::connect(&config).await.expect("transport"));
-    let mut port = CdpNativeAdapterPort::new(
-        target(),
-        "cdp-session",
-        "revision-1",
-        "run-focus-change",
-        64,
-        client,
-    )
-    .expect("port");
+    let mut port =
+        CdpNativeAdapterPort::new(page_binding(), "revision-1", "run-focus-change", 64, client)
+            .expect("port");
     let observation = port
         .observe(
             &target(),
@@ -882,8 +950,7 @@ async fn text_field_becoming_password_after_snapshot_fails_before_input() {
     .expect("config");
     let client = CdpClient::new(CdpTransport::connect(&config).await.expect("transport"));
     let mut port = CdpNativeAdapterPort::new(
-        target(),
-        "cdp-session",
+        page_binding(),
         "revision-1",
         "run-password-race",
         64,
@@ -962,8 +1029,7 @@ async fn action_navigation_revalidates_the_committed_history_origin() {
     .expect("config");
     let client = CdpClient::new(CdpTransport::connect(&config).await.expect("transport"));
     let mut port = CdpNativeAdapterPort::new(
-        target(),
-        "cdp-session",
+        page_binding(),
         "revision-1",
         "run-action-navigation",
         64,
@@ -1040,15 +1106,9 @@ async fn history_back_moves_only_to_a_prevalidated_origin() {
     )
     .expect("config");
     let client = CdpClient::new(CdpTransport::connect(&config).await.expect("transport"));
-    let mut port = CdpNativeAdapterPort::new(
-        target(),
-        "cdp-session",
-        "revision-1",
-        "run-history-back",
-        64,
-        client,
-    )
-    .expect("port");
+    let mut port =
+        CdpNativeAdapterPort::new(page_binding(), "revision-1", "run-history-back", 64, client)
+            .expect("port");
     let observation = port
         .observe(
             &target(),
@@ -1109,8 +1169,7 @@ async fn history_forward_denial_returns_a_receipt_without_dispatch() {
     .expect("config");
     let client = CdpClient::new(CdpTransport::connect(&config).await.expect("transport"));
     let mut port = CdpNativeAdapterPort::new(
-        target(),
-        "cdp-session",
+        page_binding(),
         "revision-1",
         "run-history-denied",
         64,
@@ -1186,15 +1245,9 @@ async fn reload_waits_for_load_and_rotates_the_snapshot_revision() {
     )
     .expect("config");
     let client = CdpClient::new(CdpTransport::connect(&config).await.expect("transport"));
-    let mut port = CdpNativeAdapterPort::new(
-        target(),
-        "cdp-session",
-        "revision-1",
-        "run-reload",
-        64,
-        client,
-    )
-    .expect("port");
+    let mut port =
+        CdpNativeAdapterPort::new(page_binding(), "revision-1", "run-reload", 64, client)
+            .expect("port");
     let observation = port
         .observe(
             &target(),
@@ -1258,8 +1311,7 @@ async fn external_history_change_makes_the_observed_snapshot_stale_before_input(
     .expect("config");
     let client = CdpClient::new(CdpTransport::connect(&config).await.expect("transport"));
     let mut port = CdpNativeAdapterPort::new(
-        target(),
-        "cdp-session",
+        page_binding(),
         "revision-1",
         "run-external-navigation",
         64,
@@ -1333,8 +1385,7 @@ async fn dispatch_loss_is_uncertain_and_invalidates_the_old_snapshot_binding() {
     .expect("config");
     let client = CdpClient::new(CdpTransport::connect(&config).await.expect("transport"));
     let mut port =
-        CdpNativeAdapterPort::new(target(), "cdp-session", "revision-1", "run-2", 64, client)
-            .expect("port");
+        CdpNativeAdapterPort::new(page_binding(), "revision-1", "run-2", 64, client).expect("port");
     let observation = port
         .observe(
             &target(),
@@ -1441,9 +1492,8 @@ async fn navigation_revalidates_committed_origin_and_rotates_target_revision() {
     )
     .expect("config");
     let client = CdpClient::new(CdpTransport::connect(&config).await.expect("transport"));
-    let mut port =
-        CdpNativeAdapterPort::new(target(), "cdp-session", "revision-1", "run-nav", 64, client)
-            .expect("port");
+    let mut port = CdpNativeAdapterPort::new(page_binding(), "revision-1", "run-nav", 64, client)
+        .expect("port");
     let before = port
         .observe(
             &target(),
@@ -1546,15 +1596,9 @@ async fn cross_origin_redirect_returns_a_failed_receipt_and_invalidates_snapshot
     )
     .expect("config");
     let client = CdpClient::new(CdpTransport::connect(&config).await.expect("transport"));
-    let mut port = CdpNativeAdapterPort::new(
-        target(),
-        "cdp-session",
-        "revision-1",
-        "run-denied",
-        64,
-        client,
-    )
-    .expect("port");
+    let mut port =
+        CdpNativeAdapterPort::new(page_binding(), "revision-1", "run-denied", 64, client)
+            .expect("port");
     let before = port
         .observe(
             &target(),
