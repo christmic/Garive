@@ -235,6 +235,17 @@ started. `act` supports the closed set:
 `GoBack`, `GoForward`, `Reload`.
 
 Click/type/select require a snapshot-local node reference and supported action.
+`select_option` treats `option` as one exact native `<option>.value`, bounded to
+4,096 Unicode scalar values and 16,384 UTF-8 bytes at the adapter boundary. The
+CDP adapter resolves the bound backend node and invokes one versioned constant
+function; caller text is passed only as a structured argument and is never
+interpolated into executable source. The function accepts only a native
+`HTMLSelectElement`, requires exactly one matching enabled option, changes the
+value, and emits bubbling `input` then `change` only when the value moved. It
+returns a bounded selected/unavailable outcome, verifies the resulting exact
+value, and releases the resolved remote object. Missing, duplicate, disabled or
+non-native options produce a trustworthy unsupported receipt without mutation;
+protocol/transport loss after dispatch remains uncertain.
 Press-key binds the snapshot's unique focused semantic node and revalidates the
 same adapter-private backend focus immediately before input; absent, ambiguous
 or changed focus fails before input. Scroll is bound to the page snapshot and
