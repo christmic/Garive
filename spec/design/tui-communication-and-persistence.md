@@ -217,6 +217,12 @@ Reconnect always starts from the last accepted cursor. The adapter tolerates
 identical replay at or below that cursor under H1 rules. It never increments the
 cursor for heartbeat, EOF, malformed event, or a value rejected by the reducer.
 
+Provider-response retry and remote-session resume are only comparative product
+evidence; they are not this protocol. The audited boundary is recorded in
+[`tui-competitive-evidence-2026-09-01.md`](../source-audit/tui-competitive-evidence-2026-09-01.md#adopt--adapt--reject-decisions).
+Garive never transfers Codex sampling backoff, Claude Remote Control semantics,
+or Qoder session flags into H1 cursor or H4 generation/sequence authority.
+
 ## Local state ownership
 
 Runtime/Ledger remains the sole durable owner of Sessions, Turns, transcript,

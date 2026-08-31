@@ -553,6 +553,13 @@ only for an active, available preview and is absent under reduced motion. The
 stable Markdown prefix is not reparsed for each delta; only the mutable final
 block may reflow until it becomes stable. Resize may reflow the entire preview.
 
+This cadence is source-backed frame coalescing, not simulated token typing.
+The competitive evidence and explicit Adopt/Adapt/Reject boundary are recorded
+in
+[`tui-competitive-evidence-2026-09-01.md`](../source-audit/tui-competitive-evidence-2026-09-01.md#adopt--adapt--reject-decisions).
+Competitor line animation or headless `stream-json` behavior cannot weaken the
+exact H4 identity, gap, convergence, or two-frame requirements above.
+
 ### Scrolling
 
 The viewport anchors to the newest content while `follow_latest` is true.
