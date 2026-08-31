@@ -1,6 +1,6 @@
 //! Explicit process-lane capabilities owned by Runtime configuration.
 
-use std::{collections::BTreeMap, path::PathBuf};
+use std::{collections::BTreeMap, fmt, path::PathBuf};
 
 /// One configured executable selected by its exact `argv[0]` alias.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -38,11 +38,22 @@ impl ProcessExecutable {
 }
 
 /// One named, immutable process capability supplied to Runtime construction.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct ProcessLane {
     name: String,
     executables: BTreeMap<String, ProcessExecutable>,
     environment: BTreeMap<String, String>,
+}
+
+impl fmt::Debug for ProcessLane {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("ProcessLane")
+            .field("name", &self.name)
+            .field("executables", &self.executables)
+            .field("environment_keys", &self.environment.keys())
+            .finish()
+    }
 }
 
 impl ProcessLane {

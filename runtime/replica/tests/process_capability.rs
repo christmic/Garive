@@ -35,6 +35,19 @@ fn registry_resolves_only_exact_configured_lanes_and_aliases() {
 }
 
 #[test]
+fn lane_debug_exposes_environment_keys_but_never_values() {
+    let lane = ProcessLane::new(
+        "rust",
+        [ProcessExecutable::new("cargo", "/opt/garive/bin/cargo").unwrap()],
+        [("ACCESS_TOKEN".into(), "secret-never-log".into())],
+    )
+    .unwrap();
+    let debug = format!("{lane:?}");
+    assert!(debug.contains("ACCESS_TOKEN"));
+    assert!(!debug.contains("secret-never-log"));
+}
+
+#[test]
 fn executable_capability_requires_alias_and_absolute_path() {
     for (alias, path) in [
         ("", "/bin/true"),
