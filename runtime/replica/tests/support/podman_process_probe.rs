@@ -91,8 +91,16 @@ fn main() {
     let network = execute(
         &backend,
         "network",
-        "/bin/ping",
-        ["ping", "-c", "1", "1.1.1.1"],
+        "/bin/busybox",
+        [
+            "busybox",
+            "wget",
+            "-T",
+            "2",
+            "-O",
+            "/tmp/network-output",
+            "http://example.com",
+        ],
         ProcessWorkspaceMode::Read,
         4096,
         2000,
