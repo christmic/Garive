@@ -418,6 +418,15 @@ impl CdpClient {
         Ok(())
     }
 
+    /// Restores the exact admitted parent page after popup creation changed focus.
+    pub async fn activate_target(&mut self, target_id: &str) -> Result<(), CdpTransportError> {
+        validate_id(target_id)?;
+        self.transport
+            .call("Target.activateTarget", json!({"targetId":target_id}), None)
+            .await?;
+        Ok(())
+    }
+
     /// Navigates one attached page and waits for the exact admitted readiness event.
     pub async fn navigate(
         &mut self,
