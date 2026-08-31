@@ -161,7 +161,7 @@ fn commit(value: &Value) -> MemoryCommit {
 }
 
 #[test]
-fn shared_queries_enforce_order_visibility_time_and_prefix_bounds() {
+fn shared_queries_enforce_order_and_runtime_prevalidated_visibility() {
     let root = fixture();
     let records: Vec<_> = root["records"]
         .as_array()
