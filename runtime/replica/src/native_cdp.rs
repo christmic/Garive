@@ -2,7 +2,8 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use garive_browser_cdp::{CdpAxNode, CdpAxTree};
+use garive_browser_cdp::{CdpAxNode, CdpAxTree, CdpFrameTree};
+use garive_tools::canonical_http_origin;
 use sha2::{Digest, Sha256};
 
 use crate::{
@@ -30,6 +31,14 @@ pub struct MappedCdpObservation {
     pub binding: CdpSnapshotBindingV1,
 }
 
+/// Frozen same-origin frame admission derived from one exact CDP frame tree.
+pub struct CdpFrameScope {
+    main_frame_id: String,
+    admitted_frame_ids: BTreeSet<String>,
+    opaque_frame_ids: BTreeSet<String>,
+    owner_frame_ids: BTreeMap<u64, String>,
+}
+
 /// Private binding from one committed snapshot to adapter node mechanics.
 pub struct CdpSnapshotBindingV1 {
     target: NativeTarget,
@@ -43,6 +52,7 @@ struct CdpBoundNode {
     backend_dom_node_id: Option<u64>,
     frame_id: Option<String>,
     actions: BTreeSet<String>,
+    opaque_frame: bool,
 }
 
 /// Exact adapter-private mechanics selected for one semantic element action.
@@ -52,6 +62,93 @@ pub struct CdpElementTarget {
     pub backend_dom_node_id: u64,
     /// Optional owning frame identity.
     pub frame_id: Option<String>,
+}
+
+impl CdpFrameScope {
+    /// Admits only frames whose complete ancestor chain retains the main origin.
+    pub fn same_origin(
+        tree: &CdpFrameTree,
+        main_origin: &str,
+    ) -> Result<Self, NativeProtocolError> {
+        let canonical_main = canonical_http_origin(main_origin)
+            .filter(|origin| origin == main_origin)
+            .ok_or(NativeProtocolError::InvalidBinding)?;
+        if tree.frames.is_empty()
+            || tree.frames.len() > 256
+            || tree.frames.first().map(|frame| frame.id.as_str())
+                != Some(tree.main_frame_id.as_str())
+        {
+            return Err(NativeProtocolError::InvalidBinding);
+        }
+        let mut known = BTreeSet::new();
+        let mut admitted = BTreeSet::new();
+        let mut opaque = BTreeSet::new();
+        for (index, frame) in tree.frames.iter().enumerate() {
+            if frame.id.is_empty()
+                || !known.insert(frame.id.clone())
+                || (index == 0 && frame.parent_id.is_some())
+                || (index > 0
+                    && !frame
+                        .parent_id
+                        .as_ref()
+                        .is_some_and(|parent| known.contains(parent)))
+            {
+                return Err(NativeProtocolError::InvalidBinding);
+            }
+            let parent_admitted = frame
+                .parent_id
+                .as_ref()
+                .is_none_or(|parent| admitted.contains(parent));
+            let same_origin = canonical_http_origin(&frame.security_origin).as_deref()
+                == Some(canonical_main.as_str());
+            if parent_admitted && same_origin {
+                admitted.insert(frame.id.clone());
+            } else {
+                opaque.insert(frame.id.clone());
+            }
+        }
+        if !admitted.contains(&tree.main_frame_id) {
+            return Err(NativeProtocolError::BrowserOriginDenied);
+        }
+        Ok(Self {
+            main_frame_id: tree.main_frame_id.clone(),
+            admitted_frame_ids: admitted,
+            opaque_frame_ids: opaque,
+            owner_frame_ids: BTreeMap::new(),
+        })
+    }
+
+    /// Returns admitted child frame identities in deterministic identity order.
+    pub fn admitted_child_frame_ids(&self) -> impl Iterator<Item = &str> {
+        self.admitted_frame_ids
+            .iter()
+            .map(String::as_str)
+            .filter(|identity| *identity != self.main_frame_id)
+    }
+
+    /// Reports whether one exact frame belongs to the frozen same-origin set.
+    pub fn admits(&self, frame_id: &str) -> bool {
+        self.admitted_frame_ids.contains(frame_id)
+    }
+
+    /// Binds one browser-proven embedding backend node to its exact child frame.
+    pub fn bind_frame_owner(
+        &mut self,
+        frame_id: &str,
+        backend_dom_node_id: u64,
+    ) -> Result<(), NativeProtocolError> {
+        if backend_dom_node_id == 0
+            || frame_id == self.main_frame_id
+            || (!self.admitted_frame_ids.contains(frame_id)
+                && !self.opaque_frame_ids.contains(frame_id))
+            || self.owner_frame_ids.contains_key(&backend_dom_node_id)
+        {
+            return Err(NativeProtocolError::InvalidBinding);
+        }
+        self.owner_frame_ids
+            .insert(backend_dom_node_id, frame_id.to_owned());
+        Ok(())
+    }
 }
 
 impl CdpSnapshotBindingV1 {
@@ -173,6 +270,9 @@ impl CdpSnapshotBindingV1 {
             .nodes
             .get(node_ref)
             .ok_or(NativeProtocolError::NodeStale)?;
+        if node.opaque_frame {
+            return Err(NativeProtocolError::BrowserFrameOpaque);
+        }
         if !node.actions.contains(action) {
             return Err(NativeProtocolError::ActionUnsupported);
         }
@@ -191,6 +291,16 @@ pub fn map_cdp_ax_tree(
     tree: &CdpAxTree,
 ) -> Result<NativeObservationV1, NativeProtocolError> {
     Ok(map_cdp_ax_tree_with_binding(context, tree)?.observation)
+}
+
+/// Maps one AX tree while collapsing every non-admitted frame to one opaque node.
+pub fn map_cdp_ax_tree_with_frame_scope(
+    context: CdpObservationContext,
+    tree: &CdpAxTree,
+    frame_scope: &CdpFrameScope,
+) -> Result<MappedCdpObservation, NativeProtocolError> {
+    let scoped = scope_tree(tree, frame_scope)?;
+    map_cdp_ax_tree_with_binding(context, &scoped)
 }
 
 /// Maps one AX tree and returns the separate private action binding.
@@ -326,6 +436,8 @@ pub fn map_cdp_ax_tree_with_binding(
                         backend_dom_node_id: node.backend_dom_node_id,
                         frame_id: node.frame_id.clone(),
                         actions: actions(node)?.into_iter().collect(),
+                        opaque_frame: normalized_token(node.role.as_deref().unwrap_or("generic"))?
+                            == "opaque_frame",
                     },
                 ))
             })
@@ -346,6 +458,94 @@ pub fn map_cdp_ax_tree_with_binding(
         observation,
         binding,
     })
+}
+
+fn scope_tree(tree: &CdpAxTree, scope: &CdpFrameScope) -> Result<CdpAxTree, NativeProtocolError> {
+    let by_id = tree
+        .nodes
+        .iter()
+        .map(|node| (node.node_id.as_str(), node))
+        .collect::<BTreeMap<_, _>>();
+    if by_id.len() != tree.nodes.len() {
+        return Err(NativeProtocolError::ReceiptInvalid);
+    }
+    let known_frame = |frame: &str| {
+        scope.admitted_frame_ids.contains(frame) || scope.opaque_frame_ids.contains(frame)
+    };
+    let mut effective = BTreeMap::<&str, String>::new();
+    while effective.len() < tree.nodes.len() {
+        let before = effective.len();
+        for node in &tree.nodes {
+            if effective.contains_key(node.node_id.as_str()) {
+                continue;
+            }
+            let frame = if let Some(frame) = node.frame_id.as_deref() {
+                if !known_frame(frame) {
+                    return Err(NativeProtocolError::ReceiptInvalid);
+                }
+                Some(frame.to_owned())
+            } else if let Some(parent) = node.parent_id.as_deref() {
+                if !by_id.contains_key(parent) {
+                    return Err(NativeProtocolError::ReceiptInvalid);
+                }
+                effective.get(parent).cloned()
+            } else {
+                Some(scope.main_frame_id.clone())
+            };
+            if let Some(frame) = frame {
+                effective.insert(node.node_id.as_str(), frame);
+            }
+        }
+        if effective.len() == before {
+            return Err(NativeProtocolError::ReceiptInvalid);
+        }
+    }
+    let mut nodes = Vec::with_capacity(tree.nodes.len());
+    for node in &tree.nodes {
+        if let Some(owner_frame) = node
+            .backend_dom_node_id
+            .and_then(|identity| scope.owner_frame_ids.get(&identity))
+            .filter(|frame| scope.opaque_frame_ids.contains(*frame))
+        {
+            let mut opaque = node.clone();
+            opaque.ignored = false;
+            opaque.role = Some("opaque_frame".into());
+            opaque.name = None;
+            opaque.value_summary = None;
+            opaque.properties.clear();
+            opaque.child_ids.clear();
+            opaque.backend_dom_node_id = None;
+            opaque.frame_id = Some(owner_frame.clone());
+            nodes.push(opaque);
+            continue;
+        }
+        let frame = &effective[node.node_id.as_str()];
+        if scope.admitted_frame_ids.contains(frame) {
+            let mut admitted = node.clone();
+            admitted.frame_id = Some(frame.clone());
+            nodes.push(admitted);
+            continue;
+        }
+        let parent_is_opaque = node
+            .parent_id
+            .as_deref()
+            .and_then(|parent| effective.get(parent))
+            .is_some_and(|parent| scope.opaque_frame_ids.contains(parent));
+        if parent_is_opaque {
+            continue;
+        }
+        let mut opaque = node.clone();
+        opaque.ignored = false;
+        opaque.role = Some("opaque_frame".into());
+        opaque.name = None;
+        opaque.value_summary = None;
+        opaque.properties.clear();
+        opaque.child_ids.clear();
+        opaque.backend_dom_node_id = None;
+        opaque.frame_id = Some(frame.clone());
+        nodes.push(opaque);
+    }
+    Ok(CdpAxTree { nodes })
 }
 
 fn nearest_visible_parent<'a>(
@@ -402,7 +602,7 @@ fn protected(node: &CdpAxNode) -> bool {
         .to_ascii_lowercase();
     matches!(
         role.as_str(),
-        "password" | "securetextfield" | "secure_text_field"
+        "opaque_frame" | "password" | "securetextfield" | "secure_text_field"
     ) || node.properties.iter().any(|property| {
         matches!(
             property.name.to_ascii_lowercase().as_str(),

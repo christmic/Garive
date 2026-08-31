@@ -1,8 +1,8 @@
-use garive_browser_cdp::{CdpAxNode, CdpAxProperty, CdpAxTree};
+use garive_browser_cdp::{CdpAxNode, CdpAxProperty, CdpAxTree, CdpFrame, CdpFrameTree};
 use garive_runtime::{
-    map_cdp_ax_tree, map_cdp_ax_tree_with_binding, BrowserPageId, BrowserSessionId,
-    CdpObservationContext, NativeNodeRef, NativeObservationBounds, NativeProtocolError,
-    NativeSensitivity, NativeSnapshotId, NativeTarget,
+    map_cdp_ax_tree, map_cdp_ax_tree_with_binding, map_cdp_ax_tree_with_frame_scope, BrowserPageId,
+    BrowserSessionId, CdpFrameScope, CdpObservationContext, NativeNodeRef, NativeObservationBounds,
+    NativeProtocolError, NativeSensitivity, NativeSnapshotId, NativeTarget,
 };
 use serde_json::json;
 
@@ -227,4 +227,89 @@ fn private_binding_resolves_only_the_exact_snapshot_node_revision_and_action() {
         ),
         Err(NativeProtocolError::NodeStale)
     );
+}
+
+#[test]
+fn frame_scope_keeps_same_origin_and_collapses_cross_origin_descendants() {
+    let frames = CdpFrameTree {
+        main_frame_id: "frame-1".into(),
+        frames: vec![
+            frame("frame-1", None, "https://main.test:443"),
+            frame("frame-2", Some("frame-1"), "https://main.test:443"),
+            frame("frame-3", Some("frame-1"), "https://other.test:443"),
+            frame("frame-4", Some("frame-3"), "https://main.test:443"),
+        ],
+    };
+    let scope = CdpFrameScope::same_origin(&frames, "https://main.test:443").expect("frame scope");
+    let mut root = node("root", None, "RootWebArea", false);
+    root.frame_id = Some("frame-1".into());
+    let mut same_root = node("same-root", Some("root"), "RootWebArea", false);
+    same_root.frame_id = Some("frame-2".into());
+    let mut same_button = node("same-button", Some("same-root"), "button", false);
+    same_button.frame_id = None;
+    same_button.backend_dom_node_id = Some(42);
+    let mut cross_root = node("cross-root", Some("root"), "RootWebArea", false);
+    cross_root.frame_id = Some("frame-3".into());
+    cross_root.name = Some("cross-origin secret".into());
+    let mut cross_secret = node("cross-secret", Some("cross-root"), "textbox", false);
+    cross_secret.frame_id = None;
+    cross_secret.value_summary = Some("must-not-leak".into());
+    let mut nested_root = node("nested-root", Some("cross-root"), "RootWebArea", false);
+    nested_root.frame_id = Some("frame-4".into());
+    let mut nested_button = node("nested-button", Some("nested-root"), "button", false);
+    nested_button.frame_id = None;
+    let mapped = map_cdp_ax_tree_with_frame_scope(
+        context(),
+        &CdpAxTree {
+            nodes: vec![
+                same_button,
+                cross_secret,
+                nested_button,
+                nested_root,
+                same_root,
+                cross_root,
+                root,
+            ],
+        },
+        &scope,
+    )
+    .expect("scoped observation");
+
+    assert_eq!(mapped.observation.nodes.len(), 4);
+    assert!(mapped
+        .observation
+        .nodes
+        .iter()
+        .any(|node| node.name.as_deref() == Some("name-same-button")));
+    assert!(!mapped.observation.nodes.iter().any(|node| {
+        node.name.as_deref() == Some("must-not-leak")
+            || node.value_summary.as_deref() == Some("must-not-leak")
+    }));
+    let opaque = mapped
+        .observation
+        .nodes
+        .iter()
+        .find(|node| node.role == "opaque_frame")
+        .expect("opaque frame");
+    assert_eq!(opaque.sensitivity, NativeSensitivity::Redacted);
+    assert!(opaque.name.is_none());
+    assert_eq!(
+        mapped.binding.resolve_click(
+            &mapped.observation.target,
+            &mapped.observation.snapshot_id,
+            &mapped.observation.target_revision,
+            &opaque.node_ref,
+        ),
+        Err(NativeProtocolError::BrowserFrameOpaque)
+    );
+}
+
+fn frame(id: &str, parent_id: Option<&str>, security_origin: &str) -> CdpFrame {
+    CdpFrame {
+        id: id.into(),
+        parent_id: parent_id.map(str::to_owned),
+        loader_id: format!("loader-{id}"),
+        url: format!("{security_origin}/frame"),
+        security_origin: security_origin.into(),
+    }
 }
