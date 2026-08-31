@@ -1,7 +1,7 @@
 use crossterm::event::{MouseButton, MouseEvent, MouseEventKind};
 
 use crate::{
-    application::{ActionOverlayIntent, AppAction, AppModel, FocusTarget, Overlay},
+    application::{ActionOverlayIntent, AppAction, AppModel, FocusTarget},
     input::ComposerClick,
     view::{
         command_suggestion_hit_test, composer_hit_test, decision_action_hit_test,
@@ -10,11 +10,9 @@ use crate::{
     },
 };
 
-use super::{
-    accept_command_suggestion,
-    navigation::{select_command, select_history, select_landmark, select_session},
-    scroll_conversation, RuntimeState,
-};
+use super::{accept_command_suggestion, scroll_conversation, RuntimeState};
+
+mod overlay;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum MouseAction {
@@ -68,8 +66,8 @@ pub(super) fn handle(mouse: MouseEvent, state: &mut RuntimeState) {
             state.dispatch(AppAction::FocusChanged(FocusTarget::Conversation));
             scroll_conversation(state, 3);
         }
-        MouseAction::OverlayMove { backwards } => move_overlay_selection(state, backwards),
-        MouseAction::OverlayActivate(index) => activate_overlay_selection(state, index),
+        MouseAction::OverlayMove { backwards } => overlay::move_selection(state, backwards),
+        MouseAction::OverlayActivate(index) => overlay::activate_selection(state, index),
         MouseAction::DecisionAction(intent) => {
             if let Some(overlay) = state.model.overlay {
                 super::overlay::activate_intent(intent, overlay, state);
@@ -190,82 +188,15 @@ fn moved_selection_wrapped(current: usize, count: usize, backwards: bool) -> usi
     }
 }
 
-fn move_overlay_selection(state: &mut RuntimeState, backwards: bool) {
-    let Some(overlay) = state.model.overlay else {
-        return;
-    };
-    match overlay {
-        Overlay::CommandPalette => {
-            let count = state.model.matching_command_indices().len();
-            state.model.command_selection =
-                moved_selection(state.model.command_selection, count, backwards);
-        }
-        Overlay::PromptHistory => {
-            let count = state.model.matching_history().count();
-            state.model.history_selection =
-                moved_selection(state.model.history_selection, count, backwards);
-        }
-        Overlay::SessionPicker => {
-            let count = state.model.matching_sessions().count();
-            if !backwards && state.model.session_selection >= count.saturating_sub(1) {
-                state.load_more_sessions();
-                return;
-            }
-            state.model.session_selection =
-                moved_selection(state.model.session_selection, count, backwards);
-        }
-        Overlay::TurnNavigator => {
-            let count = state.model.matching_landmark_indices().len();
-            state.model.turn_selection =
-                moved_selection(state.model.turn_selection, count, backwards);
-        }
-        Overlay::Inspector => super::inspector::move_selection(state, backwards),
-        Overlay::Suspension => super::overlay::move_suspension_choice(state, backwards),
-        _ => {}
-    }
-}
-
-fn moved_selection(current: usize, count: usize, backwards: bool) -> usize {
-    if backwards {
-        current.saturating_sub(1)
-    } else {
-        current.saturating_add(1).min(count.saturating_sub(1))
-    }
-}
-
-fn activate_overlay_selection(state: &mut RuntimeState, index: usize) {
-    match state.model.overlay {
-        Some(Overlay::CommandPalette) => {
-            state.model.command_selection = index;
-            select_command(state);
-        }
-        Some(Overlay::PromptHistory) => {
-            state.model.history_selection = index;
-            select_history(state);
-        }
-        Some(Overlay::SessionPicker) => {
-            state.model.session_selection = index;
-            select_session(state);
-        }
-        Some(Overlay::TurnNavigator) => {
-            state.model.turn_selection = index;
-            select_landmark(state);
-        }
-        Some(Overlay::Inspector) => {
-            super::inspector::select_index(state, index);
-            super::inspector::activate(state);
-        }
-        _ => {}
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use crossterm::event::KeyModifiers;
     use garive_host_client::SuspensionView;
 
     use super::*;
-    use crate::application::{ConversationLandmark, TerminalSize, TimelineItem, TimelineRole};
+    use crate::application::{
+        ConversationLandmark, Overlay, TerminalSize, TimelineItem, TimelineRole,
+    };
 
     fn mouse(kind: MouseEventKind, column: u16, row: u16) -> MouseEvent {
         MouseEvent {
