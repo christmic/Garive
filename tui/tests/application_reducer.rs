@@ -11,8 +11,9 @@ mod input;
 use application::{
     reduce, AppAction, AppEffect, AppEffectOutcome, AppEffectResult, AppGeneration, AppModel,
     BootState, ConnectionState, ConversationLandmark, EffectFailure, EffectKind, EffectTracker,
-    FocusTarget, InspectorVariant, Overlay, PendingMutationDraft, PendingMutationKind,
-    PersistedPendingIdentity, PersistenceFailure, TerminalSize, TimelineItem, TimelineRole,
+    FocusTarget, HostReadResponse, InspectorVariant, Overlay, PendingMutationDraft,
+    PendingMutationKind, PersistedPendingIdentity, PersistenceFailure, TerminalSize, TimelineItem,
+    TimelineRole,
 };
 use garive_host_client::SuspensionView;
 use serde_json::json;
@@ -20,18 +21,35 @@ use serde_json::json;
 #[test]
 fn boot_transitions_are_explicit_and_complete() {
     let mut model = AppModel::default();
-    assert!(reduce(&mut model, AppAction::BootStarted).is_empty());
+    let effects = reduce(&mut model, AppAction::BootStarted);
+    assert_eq!(effects.len(), 2);
     assert_eq!(model.boot, BootState::Loading);
-    reduce(
-        &mut model,
-        AppAction::BootCompleted {
-            definition_count: 2,
-            session_count: 3,
-        },
-    );
-    assert_eq!(model.boot, BootState::Ready);
+    for effect in effects {
+        let outcome = match &effect.kind {
+            EffectKind::LoadDefinitions => {
+                AppEffectOutcome::HostRead(Ok(HostReadResponse::Definitions(Vec::new())))
+            }
+            EffectKind::LoadSessionPage { request } => {
+                AppEffectOutcome::HostRead(Ok(HostReadResponse::SessionPage {
+                    request: request.clone(),
+                    sessions: Vec::new(),
+                    next_before: None,
+                }))
+            }
+            _ => unreachable!("boot read"),
+        };
+        reduce(
+            &mut model,
+            AppAction::EffectFinished(AppEffectResult {
+                context: effect.context,
+                kind: effect.kind.tag(),
+                outcome,
+            }),
+        );
+    }
+    assert_eq!(model.boot, BootState::NotConfigured);
     assert_eq!(model.connection, ConnectionState::Online);
-    assert_eq!((model.definition_count, model.session_count), (2, 3));
+    assert_eq!((model.definition_count, model.session_count), (0, 0));
 }
 
 #[test]

@@ -174,7 +174,7 @@ fn page_owner_rejects_catalog_and_purpose_stale_results_and_applies_once() {
     assert_eq!(model.sessions_next_before.as_deref(), Some("cursor-b"));
 
     let stale_append = request_page(&mut model, SessionPagePurpose::Append, Some("cursor-b"));
-    let replace = request_page(&mut model, SessionPagePurpose::Replace, None);
+    let replace = request_page(&mut model, SessionPagePurpose::CatalogRefresh, None);
     reduce(
         &mut model,
         AppAction::EffectFinished(page_success(
@@ -252,7 +252,7 @@ fn page_failure_and_panic_only_release_the_active_owner() {
     let mut model = AppModel::default();
     replace_catalog(&mut model, vec![session("initial")], Some("cursor-a"));
     let stale = request_page(&mut model, SessionPagePurpose::Append, Some("cursor-a"));
-    let active = request_page(&mut model, SessionPagePurpose::Replace, None);
+    let active = request_page(&mut model, SessionPagePurpose::CatalogRefresh, None);
     reduce(
         &mut model,
         AppAction::EffectFinished(page_failure(&stale, false)),
@@ -270,7 +270,7 @@ fn page_failure_and_panic_only_release_the_active_owner() {
         Some("Session page unavailable: transport_failure.")
     );
 
-    let panic = request_page(&mut model, SessionPagePurpose::Replace, None);
+    let panic = request_page(&mut model, SessionPagePurpose::CatalogRefresh, None);
     reduce(
         &mut model,
         AppAction::EffectFinished(page_failure(&panic, true)),
@@ -280,6 +280,112 @@ fn page_failure_and_panic_only_release_the_active_owner() {
         model.notice.as_deref(),
         Some("Ignored an invalid Session page response.")
     );
+}
+
+#[test]
+fn boot_reads_complete_once_in_either_order_and_reject_stale_generation() {
+    let mut model = AppModel::default();
+    let effects = reduce(&mut model, AppAction::BootStarted);
+    let definitions = effects
+        .iter()
+        .find(|effect| matches!(effect.kind, EffectKind::LoadDefinitions))
+        .unwrap();
+    let page = effects
+        .iter()
+        .find(|effect| matches!(effect.kind, EffectKind::LoadSessionPage { .. }))
+        .unwrap();
+    let mut stale = boot_definitions(definitions, true, false);
+    stale.context.issued_generation = AppGeneration(stale.context.issued_generation.0 + 1);
+    reduce(&mut model, AppAction::EffectFinished(stale));
+    assert_eq!(model.boot_completion_revision, 0);
+
+    reduce(
+        &mut model,
+        AppAction::EffectFinished(page_success(page, vec![session("boot-session")], None)),
+    );
+    assert_eq!(model.boot_completion_revision, 0);
+    reduce(
+        &mut model,
+        AppAction::EffectFinished(boot_definitions(definitions, true, false)),
+    );
+    assert_eq!(model.boot_completion_revision, 1);
+    assert_eq!(model.definition_count, 1);
+    assert_eq!(session_ids(&model), ["boot-session"]);
+    reduce(
+        &mut model,
+        AppAction::EffectFinished(boot_definitions(definitions, true, false)),
+    );
+    assert_eq!(model.boot_completion_revision, 1);
+}
+
+#[test]
+fn boot_single_double_failure_and_panic_settle_without_partial_ready() {
+    for (definitions_fail, page_fail, page_panic) in [
+        (true, false, false),
+        (true, true, false),
+        (false, false, true),
+    ] {
+        let mut model = AppModel::default();
+        let effects = reduce(&mut model, AppAction::BootStarted);
+        let definitions = effects
+            .iter()
+            .find(|effect| matches!(effect.kind, EffectKind::LoadDefinitions))
+            .unwrap();
+        let page = effects
+            .iter()
+            .find(|effect| matches!(effect.kind, EffectKind::LoadSessionPage { .. }))
+            .unwrap();
+        reduce(
+            &mut model,
+            AppAction::EffectFinished(boot_definitions(definitions, !definitions_fail, false)),
+        );
+        let page_result = if page_fail || page_panic {
+            page_failure(page, page_panic)
+        } else {
+            page_success(page, vec![session("available")], None)
+        };
+        reduce(&mut model, AppAction::EffectFinished(page_result));
+        assert_eq!(model.boot_completion_revision, 1);
+        assert_eq!(model.boot, application::BootState::Degraded);
+    }
+}
+
+#[test]
+fn newer_boot_and_catalog_refresh_own_truth_without_stealing_selection() {
+    let mut model = AppModel {
+        selected_session: Some("current-session".into()),
+        ..Default::default()
+    };
+    let old = reduce(&mut model, AppAction::BootStarted);
+    let new = reduce(&mut model, AppAction::BootStarted);
+    for effect in &new {
+        let result = match &effect.kind {
+            EffectKind::LoadDefinitions => boot_definitions(effect, true, false),
+            EffectKind::LoadSessionPage { .. } => {
+                page_success(effect, vec![session("new-boot")], None)
+            }
+            _ => unreachable!(),
+        };
+        reduce(&mut model, AppAction::EffectFinished(result));
+    }
+    for effect in &old {
+        let result = match &effect.kind {
+            EffectKind::LoadDefinitions => boot_definitions(effect, true, false),
+            EffectKind::LoadSessionPage { .. } => {
+                page_success(effect, vec![session("stale-boot")], None)
+            }
+            _ => unreachable!(),
+        };
+        reduce(&mut model, AppAction::EffectFinished(result));
+    }
+    assert_eq!(session_ids(&model), ["new-boot"]);
+    let refresh = request_page(&mut model, SessionPagePurpose::CatalogRefresh, None);
+    reduce(
+        &mut model,
+        AppAction::EffectFinished(page_success(&refresh, vec![session("created")], None)),
+    );
+    assert_eq!(model.selected_session.as_deref(), Some("current-session"));
+    assert_eq!(model.catalog_refresh_revision, 1);
 }
 
 async fn run(mode: Mode) -> AppEffectResult {
@@ -315,13 +421,11 @@ async fn execute_page(request: SessionPageRequest, mode: Mode) -> AppEffectResul
 }
 
 fn replace_catalog(model: &mut AppModel, sessions: Vec<SessionSummary>, next: Option<&str>) {
-    reduce(
-        model,
-        AppAction::SessionCatalogReplaced {
-            sessions,
-            next_before: next.map(str::to_owned),
-        },
-    );
+    model.sessions = sessions;
+    model.sessions_next_before = next.map(str::to_owned);
+    model.session_count = model.sessions.len();
+    model.sessions_loading = false;
+    model.session_page_owner = None;
 }
 
 fn request_page(
@@ -369,6 +473,22 @@ fn page_failure(effect: &AppEffect, panic: bool) -> AppEffectResult {
         kind: effect.kind.tag(),
         outcome: if panic {
             AppEffectOutcome::Failed(EffectFailure::Internal)
+        } else {
+            AppEffectOutcome::HostRead(Err(HostReadFailure {
+                code: HostClientErrorCode::TransportFailure,
+            }))
+        },
+    }
+}
+
+fn boot_definitions(effect: &AppEffect, success: bool, panic: bool) -> AppEffectResult {
+    AppEffectResult {
+        context: effect.context.clone(),
+        kind: effect.kind.tag(),
+        outcome: if panic {
+            AppEffectOutcome::Failed(EffectFailure::Internal)
+        } else if success {
+            AppEffectOutcome::HostRead(Ok(HostReadResponse::Definitions(vec![definition()])))
         } else {
             AppEffectOutcome::HostRead(Err(HostReadFailure {
                 code: HostClientErrorCode::TransportFailure,
