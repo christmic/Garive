@@ -16,9 +16,9 @@ use garive_provider_compatible::{MessagesDeployment, ProtocolErrorPolicy, Respon
 use garive_provider_openai::build_profile as build_openai_profile;
 use garive_provider_profile::{ConnectionInput, EndpointSelection, SecretValue};
 use garive_runtime::{
-    ActivityProjectionLimits, HostClock, LiveHostLimits, LocalExecutionAttempt,
-    LocalExecutionPolicy, RuntimeAgentCatalogue, RuntimeAgentInstallation, RuntimeHttpLimits,
-    RuntimeModelHttpTransport, T1HostSystemConfig,
+    ActivityProjectionLimits, CatalogueCapabilityPreparationFactory, HostClock, LiveHostLimits,
+    LocalExecutionAttempt, LocalExecutionPolicy, RuntimeAgentCatalogue, RuntimeAgentInstallation,
+    RuntimeHttpLimits, RuntimeModelHttpTransport, T1HostSystemConfig,
 };
 use uuid::Uuid;
 
@@ -225,14 +225,20 @@ impl<R: DesktopSecretResolver, P: DesktopProfileRegistry> DesktopConfigurationPr
         let agent_installations =
             agent_installations(&config, self.t1_host_system_config.as_ref())?;
         let default_agent_definition_id = config.default_agent_definition_id.clone();
-        let agent_catalogue = RuntimeAgentCatalogue::new(agent_installations)
-            .map_err(|_| DesktopConfigurationError::ConstructionFailure)?;
+        let agent_catalogue = Arc::new(
+            RuntimeAgentCatalogue::new(agent_installations)
+                .map_err(|_| DesktopConfigurationError::ConstructionFailure)?,
+        );
         let execution_policy = execution_policy(&config);
         Ok(Some(DesktopHostConfig {
             database_path: config.database_path,
-            agent_catalogue: Arc::new(agent_catalogue),
+            agent_catalogue: agent_catalogue.clone(),
             default_agent_definition_id,
             t1_host_system_config: self.t1_host_system_config.clone(),
+            capability_preparation: Some(Arc::new(CatalogueCapabilityPreparationFactory::new(
+                agent_catalogue,
+                None,
+            ))),
             host_limits: LiveHostLimits {
                 max_command_bytes: config.host.max_command_bytes,
                 event_batch_size: config.host.event_batch_size,
