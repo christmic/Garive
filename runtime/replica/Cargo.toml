@@ -56,3 +56,9 @@ name = "garive-runtime-crash-fixture"
 path = "tests/support/crash_fixture.rs"
 test = false
 bench = false
+
+[[bin]]
+name = "garive-podman-process-probe"
+path = "tests/support/podman_process_probe.rs"
+test = false
+bench = false
