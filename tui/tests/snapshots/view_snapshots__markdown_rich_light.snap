@@ -2,15 +2,15 @@
 source: tui/tests/view_snapshots.rs
 expression: "markdown_style_preview(Theme::Light)"
 ---
-"# " <fg=Some(Blue) bg=None +BOLD | UNDERLINED -NONE> | "Delivery" <fg=Some(Blue) bg=None +BOLD | UNDERLINED -NONE>
+"# " <fg=Some(Black) bg=None +BOLD | UNDERLINED -NONE> | "Delivery" <fg=Some(Black) bg=None +BOLD | UNDERLINED -NONE>
 "outer " <fg=Some(Black) bg=None +BOLD -NONE> | "inner" <fg=Some(Black) bg=None +BOLD | ITALIC -NONE> | " tail" <fg=Some(Black) bg=None +BOLD -NONE>
-"3. " <fg=Some(Blue) bg=None +BOLD -NONE> | "inspect" <fg=Some(Black) bg=None +NONE -NONE>
-"4. " <fg=Some(Blue) bg=None +BOLD -NONE> | "ship" <fg=Some(Black) bg=None +NONE -NONE>
-"Guide" <fg=Some(Blue) bg=None +BOLD | UNDERLINED -NONE> | " (" <fg=Some(DarkGray) bg=None +NONE -NONE> | "https://garive.local/guide" <fg=Some(Blue) bg=None +BOLD | UNDERLINED -NONE> | ")" <fg=Some(DarkGray) bg=None +NONE -NONE>
+"3. " <fg=Some(Black) bg=None +BOLD -NONE> | "inspect" <fg=Some(Black) bg=None +NONE -NONE>
+"4. " <fg=Some(Black) bg=None +BOLD -NONE> | "ship" <fg=Some(Black) bg=None +NONE -NONE>
+"Guide" <fg=Some(Black) bg=None +BOLD | UNDERLINED -NONE> | " (" <fg=Some(DarkGray) bg=None +NONE -NONE> | "https://garive.local/guide" <fg=Some(Black) bg=None +BOLD | UNDERLINED -NONE> | ")" <fg=Some(DarkGray) bg=None +NONE -NONE>
 "" <fg=Some(Black) bg=None +BOLD -NONE> | "Surface" <fg=Some(Black) bg=None +BOLD -NONE> | "" <fg=Some(Black) bg=None +BOLD -NONE> | " │ " <fg=Some(DarkGray) bg=None +NONE -NONE> | "" <fg=Some(Black) bg=None +BOLD -NONE> | "State" <fg=Some(Black) bg=None +BOLD -NONE> | "" <fg=Some(Black) bg=None +BOLD -NONE>
-"────────┼──────" <fg=Some(Blue) bg=None +BOLD -NONE>
+"────────┼──────" <fg=Some(Black) bg=None +BOLD -NONE>
 "" <fg=Some(Black) bg=None +NONE -NONE> | "macOS" <fg=Some(Black) bg=None +NONE -NONE> | "  " <fg=Some(Black) bg=None +NONE -NONE> | " │ " <fg=Some(DarkGray) bg=None +NONE -NONE> | "" <fg=Some(Black) bg=None +NONE -NONE> | "ready" <fg=Some(Black) bg=None +BOLD -NONE> | "" <fg=Some(Black) bg=None +NONE -NONE>
 "" <fg=Some(Black) bg=None +NONE -NONE> | "Other" <fg=Some(Black) bg=None +NONE -NONE> | "  " <fg=Some(Black) bg=None +NONE -NONE> | " │ " <fg=Some(DarkGray) bg=None +NONE -NONE> | "" <fg=Some(Black) bg=None +NONE -NONE> | "later" <fg=Some(Black) bg=None +NONE -NONE> | "" <fg=Some(Black) bg=None +NONE -NONE>
-"╭─ CODE" <fg=Some(Blue) bg=None +BOLD -NONE> | " · " <fg=Some(DarkGray) bg=None +NONE -NONE> | "rust" <fg=Some(Blue) bg=None +BOLD -NONE>
+"╭─ CODE" <fg=Some(Black) bg=None +BOLD -NONE> | " · " <fg=Some(DarkGray) bg=None +NONE -NONE> | "rust" <fg=Some(Black) bg=None +BOLD -NONE>
 "│ " <fg=Some(DarkGray) bg=None +NONE -NONE> | "fn" <fg=Some(Magenta) bg=None +BOLD -NONE> | " " <fg=Some(Black) bg=None +NONE -NONE> | "main" <fg=Some(Magenta) bg=None +BOLD -NONE> | "(" <fg=Some(DarkGray) bg=None +NONE -NONE> | ")" <fg=Some(DarkGray) bg=None +NONE -NONE> | " " <fg=Some(Black) bg=None +NONE -NONE> | "{" <fg=Some(DarkGray) bg=None +NONE -NONE> | "}" <fg=Some(DarkGray) bg=None +NONE -NONE>
 "╰─" <fg=Some(DarkGray) bg=None +NONE -NONE>

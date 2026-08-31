@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use garive_host_client::{
     reduce_host_events, ClientLimits, HostClientErrorCode, HostEvent, HostTerminal, HostView,
-    LiveHostClient, HOST_CLIENT_FAILURES,
+    LiveHostClient, LiveOutputEventKind, HOST_CLIENT_FAILURES,
 };
 use serde::Deserialize;
 use tokio::{
@@ -235,6 +235,118 @@ async fn live_client_round_trips_real_http_and_sse() {
 }
 
 #[tokio::test]
+async fn live_snapshot_uses_h4_bounds_instead_of_h1_event_bound() {
+    let fixture = fixture();
+    let text = "\0".repeat(1_024 * 1_024);
+    let body = serde_json::json!({
+        "api_version": "v1",
+        "session_id": "session-live-bounds",
+        "turn_id": "turn-live-bounds",
+        "execution_id": "execution-live-bounds",
+        "stream_id": "12345678-1234-4234-8234-123456789abc",
+        "sequence": 7,
+        "kind": "snapshot",
+        "text": text,
+        "through_sequence": 7
+    });
+    let encoded = serde_json::to_string(&body).unwrap();
+    assert!(encoded.len() > fixture.limits.max_event_bytes);
+    assert!(encoded.len() <= 6 * 1_024 * 1_024 + 2_048);
+    assert_eq!(text.len(), 1_024 * 1_024);
+
+    let response = http_live_sse(&encoded);
+    let (base_url, server) = serve(vec![response], Arc::new(Mutex::new(Vec::new()))).await;
+    let client = LiveHostClient::new(&base_url, limits(&fixture)).expect("client");
+    let (sender, mut receiver) = tokio::sync::mpsc::channel(1);
+    let follow = tokio::spawn(async move {
+        client
+            .follow_live_output("session-live-bounds", sender)
+            .await
+    });
+
+    let snapshot = receiver.recv().await.expect("snapshot");
+    assert!(matches!(
+        snapshot.kind,
+        LiveOutputEventKind::Snapshot {
+            text: received,
+            through_sequence: 7
+        } if received == text
+    ));
+    assert_eq!(
+        follow.await.unwrap().unwrap_err().code,
+        HostClientErrorCode::TransportFailure
+    );
+    server.await.expect("server task");
+}
+
+#[tokio::test]
+async fn live_delta_accepts_max_raw_text_after_json_escaping() {
+    let fixture = fixture();
+    let text = "\0".repeat(32 * 1_024);
+    let body = serde_json::json!({
+        "api_version": "v1",
+        "session_id": "session-live-bounds",
+        "turn_id": "turn-live-bounds",
+        "execution_id": "execution-live-bounds",
+        "stream_id": "12345678-1234-4234-8234-123456789abc",
+        "sequence": 1,
+        "kind": "text_delta",
+        "text": text
+    });
+    let encoded = serde_json::to_string(&body).unwrap();
+    assert!(encoded.len() > fixture.limits.max_event_bytes);
+    assert!(encoded.len() <= 6 * 32 * 1_024 + 2_048);
+
+    let response = http_live_sse(&encoded);
+    let (base_url, server) = serve(vec![response], Arc::new(Mutex::new(Vec::new()))).await;
+    let client = LiveHostClient::new(&base_url, limits(&fixture)).expect("client");
+    let (sender, mut receiver) = tokio::sync::mpsc::channel(1);
+    let follow = tokio::spawn(async move {
+        client
+            .follow_live_output("session-live-bounds", sender)
+            .await
+    });
+
+    let delta = receiver.recv().await.expect("delta");
+    assert!(matches!(
+        delta.kind,
+        LiveOutputEventKind::TextDelta { text: received } if received == text
+    ));
+    assert_eq!(
+        follow.await.unwrap().unwrap_err().code,
+        HostClientErrorCode::TransportFailure
+    );
+    server.await.expect("server task");
+}
+
+#[tokio::test]
+async fn live_delta_rejects_raw_text_above_h4_bound() {
+    let fixture = fixture();
+    let body = serde_json::json!({
+        "api_version": "v1",
+        "session_id": "session-live-bounds",
+        "turn_id": "turn-live-bounds",
+        "execution_id": "execution-live-bounds",
+        "stream_id": "12345678-1234-4234-8234-123456789abc",
+        "sequence": 1,
+        "kind": "text_delta",
+        "text": "x".repeat(32 * 1_024 + 1)
+    });
+    let response = http_live_sse(&serde_json::to_string(&body).unwrap());
+    let (base_url, server) = serve(vec![response], Arc::new(Mutex::new(Vec::new()))).await;
+    let client = LiveHostClient::new(&base_url, limits(&fixture)).expect("client");
+    let (sender, _receiver) = tokio::sync::mpsc::channel(1);
+
+    let error = client
+        .follow_live_output("session-live-bounds", sender)
+        .await
+        .expect_err("oversized raw delta");
+
+    assert_eq!(error.code, HostClientErrorCode::InvalidEvent);
+    server.await.expect("server task");
+}
+
+#[tokio::test]
 async fn host_fixture_errors_are_typed_without_body_disclosure() {
     let fixture = fixture();
     for host_error in &fixture.host_errors {
@@ -372,6 +484,15 @@ fn http_sse(events: &[HostEvent]) -> Vec<u8> {
         .iter()
         .map(|event| format!("data: {}\n\n", serde_json::to_string(event).unwrap()))
         .collect::<String>();
+    format!(
+        "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+        body.len()
+    )
+    .into_bytes()
+}
+
+fn http_live_sse(event: &str) -> Vec<u8> {
+    let body = format!("event: live\ndata: {event}\n\n");
     format!(
         "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
         body.len()

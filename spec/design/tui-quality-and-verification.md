@@ -38,7 +38,7 @@ Agent feature count. Evidence revisions and legal constraints are recorded in
 | Persistent convenience state | shell persistence separate from pager | core/app-server truth plus TUI state | bounded preferences/history/drafts/pending command |
 | Visual regression | snapshots and PTY harness | `insta` snapshots and frames | semantic buffer snapshots and PTY golden assertions |
 | Accessible fallback | minimal/fullscreen behavior | terminal capability-aware UI | monochrome, reduced motion, keyboard-only, screen-reader linear mode |
-| Long-conversation position | follow-aware scrollbar/timeline components with bounded hover preview | no dedicated rail transferred; see audit | shared cell-rail render/hit/hover metric, bounded public preview, theme snapshots, mouse PTY, no hidden-transcript layout |
+| Long-conversation position | follow-aware timeline navigation | no dedicated rail transferred; see audit | stable Turn anchor, visual-cell scrolling, detached unseen count, explicit End-to-follow, Turn navigator, and proof that no permanent rail changes answer measure |
 | Searchable Turn navigation | `/jump` stable-target list and restore tests | no equivalent Turn picker transferred; transcript pager/picker patterns only | typed public landmark projection, non-mutating search, exact-position activation, reload teardown, keyboard/mouse/linear parity |
 
 Garive passes a row only when the required evidence is executable. Presence of
@@ -117,7 +117,7 @@ they reveal a new stable regression class.
 
 | Axis | Required values |
 |---|---|
-| Width | `20`, `40`, `60`, `80`, `100`, `120`, `160`, `200` |
+| Width | `20`, `39`, `40`, `51`, `52`, `79`, `80`, `119`, `120`, `160`, `200` |
 | Height | `8`, `12`, `24`, `40`, `60` |
 | Theme | dark, light, mono |
 | Capability | basic ANSI, 256 color, truecolor, no Unicode border, no OSC 8 |
@@ -156,11 +156,11 @@ Each scenario launches `CARGO_BIN_EXE_garive-tui`, not a test-only entry point:
    restored;
 10. run the equivalent core flow in `--screen-reader` mode and assert ordered
     semantic lines without cursor-addressing output.
-11. render an overflowing conversation rail in follow and detached states,
-    press and drag its exact track through SGR mouse input, and prove oldest,
-    intermediate, and latest anchors without changing Markdown wrap width;
-    move over the middle track row first and prove its bounded public preview
-    without changing the current anchor, then move off-track and prove removal.
+11. render an overflowing conversation, page by one visual viewport, detach
+    while durable and live updates arrive, prove the unseen count without
+    changing the top visible source line, then press End and prove latest
+    follow resumes without changing Markdown measure; pointer wheel input must
+    consume the same rendered visual-cell geometry.
 12. type `/jump beta`, observe only the sanitized matching public Turn and its
     ordinal, move selection without changing the viewport, press Escape and
     prove the original anchor; reopen, activate with Enter and prove the exact
@@ -531,32 +531,20 @@ cursor-query reacquisition. Physical-window PNG admission remains separate.
 
 ## Conversation-position evidence
 
-Revision `cd17b5f4` freezes the stable-cell rail contract and local merge
-`1b93b115` implements it as a separate `view/position_rail.rs` component.
-Render and SGR pointer input consume one bounded metric; overlays suppress both,
-the rail reuses right padding, and drag outside the track cannot activate a
-background component. Dark, light, monochrome, compact, first/last,
-intermediate, detached, newer-update, non-overflow, tiny, and modal cases are
-bound by unit, semantic-buffer, and snapshot tests.
+The earlier `cd17b5f4`/`1b93b115` position rail and
+`61e2dbef`/`16bee8a7` hover preview are historical evidence for a rejected
+dashboard direction. The accepted conversation-first visual contract
+supersedes them: the default transcript has no permanent position rail, cell
+number, or hover preview. Their tests and implementation are not current
+admission evidence.
 
-Revision `61e2dbef` freezes the source-backed hover contract and local merge
-`16bee8a7` implements it inside the same component. Pointer motion resolves the
-same stable-cell metric as press and drag, then renders a bounded public-role,
-ordinal, and sanitized-excerpt card without changing viewport or persistence
-state. Moving off-track clears it. Overlay ownership, actual resize, focus loss,
-Session/timeline replacement, and quit clear or suppress the transient model;
-an unchanged per-frame size report must preserve it until painting.
-
-On native macOS arm64, 47 library, 54 view, and 35 snapshot/boundary tests pass,
-as do architecture, strict all-target/all-feature Clippy, formatting, and diff
-checks. The current complete 19-case shipping PTY suite passes serially in
-147.45 seconds. Its position-rail case loads 40 public cells, first observes the
-non-mutating `Cell 22 · Garive` preview and off-track removal, then drives the
-shipping binary through `#40 -> #1 -> #22 -> #40` using exact SGR press/drag
-coordinates and proves mouse and alternate-screen restoration. The focused PTY,
-reducer lifecycle contract, and strict Clippy pass again after rebasing onto the
-then-current mainline. This closes executable component and macOS PTY evidence,
-not the physical-window screenshot gate.
+Current admission instead requires executable visual-cell PageUp/PageDown and
+wheel geometry, stable detached anchors across reflow, unseen durable/live
+updates, explicit End-to-follow, and the bounded Turn navigator. Responsive
+snapshots must prove the 96-column answer measure remains unchanged at the
+`79/80` and `119/120` boundaries and that no rail metadata returns. The macOS
+shipping PTY must be rerun after those replacement assertions land; historical
+rail PTY transcripts cannot close the v2 gate.
 
 ## Completion rule
 

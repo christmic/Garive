@@ -28,21 +28,26 @@ not depend on the terminal default being light or dark.
 | `StatusChip` | padded icon/text span; semantic state style; never color-only |
 | `KeyHint` | visually distinct keycap plus verb; ordered by current action priority |
 | `SelectionRow` | full-row highlight plus stable cursor/marker; reverse video in mono |
-| `FocusFrame` | double composer border or accent region border; never moves focus on Host events |
-| `CenteredColumn` | caps readable main content at 114 cells without changing model state |
+| `FocusFrame` | stable Composer or modal boundary; focus style never changes geometry or moves on Host events |
+| `CenteredColumn` | caps readable transcript width without changing model state |
 | `ModalFrame` | dims retained workspace, clears popup bounds, rounded focus border, safe padding |
 | `AnchoredMenu` | clears only its bounded area, attaches above its owner, preserves page context and owner cursor |
-| `PositionRail` | one-cell timeline track in existing padding; shared bounded thumb/pointer/hover metrics; follow/detached variants |
-| `RailPreview` | transient two-line public-cell card anchored beside a hovered position; no layout mutation or opaque identity |
+| `RoleMarker` | restrained non-color User or Agent identity; never a full-width card border |
+| `LiveCaret` | single-cell active-output cue; hidden for reduced motion, unavailable preview, and terminal state |
 
 Implementations live in `tui/src/view/primitives.rs` and `style.rs`.
 Higher-level renderers must reuse these primitives for equivalent behavior.
-The shared Session identity/state presentation lives in `view/session.rs`; the
-rail and picker may change density, but cannot invent separate labels, glyphs,
-or state wording. The rail's row cadence and visible window also define its
-pointer hit boxes; controllers do not duplicate layout coordinates.
-The context footer lives in `view/footer.rs` and derives its hints from the
-same focus, execution, and responsive state used by input routing.
+The shared Session identity/state presentation lives in `view/session.rs`;
+SessionSwitcher and Inspector may change density, but cannot invent separate
+labels, glyphs, or state wording. Their visible windows also define pointer hit
+boxes; controllers do not duplicate layout coordinates. `ContextLine` and
+`HintLine` derive their copy from the same Session, execution, connection,
+focus, and recovery state used by input routing. `ContextLine` has no frame or
+background fill. `HintLine` renders at most one highest-priority action and may
+be absent. At supported heights of nine rows or more, an absent `HintLine`
+retains its one-row layout slot so selection, notices, and Host events never
+move the Composer hit geometry; tiny layouts below nine rows remove the slot as
+part of their explicit degradation.
 The composer lives in `view/composer.rs`. It consumes the editor's admitted
 byte range, styles whole rendered graphemes, and owns its frame, viewport, and
 cursor geometry. Dark/light selection uses the semantic selection surface;
@@ -63,7 +68,7 @@ At non-tiny heights the composer frame grows from three to at most seven rows
 using the layout's visual row count, including an exact-width cursor
 continuation row. It does not grow from logical newline count. Below the
 height breakpoint it remains three rows and follows the cursor so conversation
-and footer affordances survive.
+and the highest-priority hint survive.
 When mouse capture is enabled, composer pointer placement and drag selection
 must call the same component geometry. The border and padding are inert; CJK
 double-cell glyphs expose stable before/after insertion points, and selection
@@ -79,28 +84,54 @@ that the controller resolves. Compact grouping may omit secondary aliases only
 when the complete set remains in the manual; it may not rename an action or
 show an unbound chord.
 All time-varying presentation lives in `view/motion.rs`. An active connection
-or execution may use its calm single-cell pulse; reduced motion uses the same
-text and semantic style with a stable glyph. Screens cannot invent local frame
-sequences or schedule their own redraw loops.
+or execution may use its calm single-cell pulse, and active H4 output may use a
+`LiveCaret`. Reduced motion uses the same text and semantic style with a stable
+glyph or no caret; it does not suppress newly received content. Screens cannot
+invent local frame sequences or schedule their own redraw loops.
 
 ## Composite components
 
 | Component | Required variants |
 |---|---|
-| Header | compact/full; connection chip; execution chip; safe identity |
-| Session rail | empty/populated; selected; terminal/running/action/failed; overflow |
-| Conversation | empty/live/scrolled/newer updates; user/Agent/activity/notice cells |
-| Markdown cell | nested inline styles; numbered/unordered lists; transparent links; labeled/clipped and syntax-aware code; responsive table grid/records |
+| `ContextLine` | compact/full; safe Session and Agent identity; exceptional connection; active execution |
+| `TurnBlock` | User request; activity; live/committed answer; suspended/terminal outcome |
+| `ActivityStack` | active row; collapsed completed summary; explicit expanded Inspector detail |
+| `LiveAnswer` | empty/phase/streaming/unavailable/ended; stable prefix; mutable tail; optional caret |
+| `MarkdownAnswer` | nested inline styles; numbered/unordered lists; transparent links; labeled/clipped and syntax-aware code; responsive table grid/records |
 | Composer | idle/focused/frozen/action response; placeholder/draft/over-limit; visible grapheme selection |
-| Context footer | idle/running/notice/recovery; tiny/full width collapse |
-| Picker/palette | empty/filtered/selected/disabled; keyboard-owned selection |
+| `HintLine` | absent/action/notice/recovery; one highest-priority item |
+| `SessionSwitcher` | empty/filtered/selected/terminal/running/action/failed; overflow |
+| `Inspector` | closed/activity/recovery/details; optional wide column or overlay |
+| Command palette | empty/filtered/selected/disabled; keyboard-owned selection |
 | Turn navigator | empty/filtered/selected; public ordinal and prompt preview; keyboard/mouse/linear parity |
 | Command suggestions | prefix/selected/disabled/dismissed; composer-anchored, nonmodal, at most five rows |
-| Confirmation | safe consequence, primary action, escape action; no implicit acceptance |
+| `DecisionSheet` | suspension/confirmation; safe consequence; primary and escape actions; no implicit acceptance |
 
 Session and activity state glyphs are closed semantic vocabulary: `✓`
 completed, `●` running, `!` action required, `×` failed, `■` stopped, and `○`
 unknown/new. Unknown public codes use neutral wording and never borrow success.
+
+An explicitly opened Inspector is exactly 32 cells wide at `>=120`, including
+its single border. It never expands the transcript beyond its 96-cell maximum.
+At `40..=119` the same Activity, Recovery, or Details projection is a bounded
+top-level overlay; below 40 its open state is retained behind the safe minimum
+view. The variant title, stable selected marker, empty state, entry labels, and
+safe details remain visible without color. Fullscreen, pointer, and linear
+screen-reader variants share one ordered entry projection and activation.
+
+`ContextLine` is exactly one unbordered row. Public Session identity leads,
+followed by the Agent label. Healthy connection is absent; reconnecting,
+disconnected, and unavailable states appear only while exceptional. Active
+execution may add one compact semantic phrase. Brand background fills, padded
+status chips, clocks, raw IDs, and a second persistent status row are
+prohibited.
+
+Spacing is the transcript's primary structure. Borders are reserved for the
+Composer, modal boundaries, and an explicitly opened Inspector. The Composer
+is the only persistent framed surface; focus changes its semantic border or
+caret styling without switching border shape or moving content. Accent is
+limited to the insertion caret, current selection, active work cue, and primary
+decision. Large accent fills and repeated nested boxes are prohibited.
 
 `TurnNavigator` reuses `ModalFrame`, `SelectionRow`, and the shared filtered
 list geometry rather than inventing a second picker surface. Its title is
@@ -117,57 +148,72 @@ screen-reader presentation emits the title, filter, result count, selected
 marker, ordinal, preview, and available actions in semantic order. No variant
 shows a Turn ID, stable key, hidden activity, or full prompt in popup chrome.
 
-The conversation `PositionRail` appears only when admitted timeline cells
-extend beyond the visible cell window, the conversation is at least 20 cells
-wide and four rows high, and no linear presentation is active. It occupies one
-cell of the conversation's existing right padding, so appearing or disappearing
-never rewraps Markdown. The track is muted; its thumb is muted while following,
-accented while manually detached, and warning-styled when newer updates exist.
-Mono uses distinct track/thumb glyphs and emphasis, never color alone. Thumb
-size is proportional to visible stable cells and is at least one row. The first
-and last positions are exact even when intermediate positions are approximate
-cell progress rather than fabricated full-transcript line metrics.
+`TurnBlock` uses spacing as its primary separator: one blank row between Turns
+and none between tightly related activity and answer rows. User content has a
+left role marker and restrained emphasis without a surrounding full-width
+card. Agent prose remains on the terminal background. Public positions,
+stable keys, opaque IDs, and repeated `Conversation` titles do not appear in
+ordinary transcript chrome.
 
-With mouse capture active, pointer motion on the track may open a compact
-`RailPreview` immediately left of it. The card shows `Cell N · You|Garive|Status`
-and at most two sanitized, display-width-bounded excerpt lines. It uses normal
-popup surface and border tokens, is clamped wholly inside the conversation,
-never covers the track, and never reserves layout space. The hovered rail cell
-gains a shape or emphasis cue in monochrome as well as color themes. Moving off
-the exact rail, beginning a modal, focus loss, resize, or disabling mouse
-capture removes the card without animation.
+`ActivityStack` paints at most one active safe row plus one collapsed completed
+summary. Expanding details opens Inspector or an overlay; it does not insert a
+dashboard pane or expose tool arguments, raw paths, provider values, or hidden
+reasoning. State always has a semantic word or glyph in addition to color.
+
+`LiveAnswer` shares the Agent answer measure but does not masquerade as a
+durable cell. Its received source is partitioned into a monotonic stable
+Markdown block prefix and one mutable tail. The stable prefix keeps its parsed
+presentation; only the tail reparses as H4 deltas arrive. An active available
+preview ends with `LiveCaret`. Unavailable preview shows one muted line and no
+partial suffix. The H1/H2 committed answer atomically replaces the complete
+live component without a transition card or duplicate answer.
 
 ## Layout and degradation
 
-At 100 cells and above, the Session rail spans the workspace and the main
-column owns conversation, composer, and footer. At 160 and above, the main
-column is centered and capped. Below 100, navigation becomes an overlay.
-Below 60, footer hints collapse to the highest-priority action and help.
-Below `20x8`, render only the safe minimum-size message.
+At 120 cells and above, the bounded transcript is centered and an explicitly
+opened 32-column Inspector may share the work surface. From 80 through 119,
+the transcript remains centered and Inspector becomes an overlay. From 52
+through 79, the transcript uses the available width and metadata collapses to
+compact labels. From 40 through 51, the transcript becomes linear,
+`ActivityStack` becomes one summary row, and `HintLine` shows at most one
+action. Below 40 cells, render the safe minimum-size view while retaining the
+Composer draft in model state. Below `20x8`, the same view may reduce to only
+its bounded size message.
 
 Degradation order is ambient context, secondary hints, decoration, then
 nonessential metadata. Never remove the active action, semantic state,
-composer cursor, recovery consequence, or selected-row marker to make space.
+composer cursor, live received content, recovery consequence, or selected-row
+marker to make space.
 
 ## Interaction consistency
 
 Only the focused component owns editing/navigation input. Modal ownership
 outranks page focus. Selection persists by stable model identity, not screen
 row. `Enter` activates the visible primary action; `Esc` closes, defers, or
-requests cancellation only as admitted by the current state. Footer hints are
-derived from that same routing decision.
+requests cancellation only as admitted by the current state. Hints derive from
+that same routing decision and reduce to the single `HintLine` priority winner.
 Bounded lists keep the selected item inside their visible window. The visual
 filter and the activation result set are the same ordered collection. Pointer
 hit boxes come from the rendered component geometry and never penetrate a
 modal backdrop.
-Pressing or dragging the conversation rail maps through the same metric used to
-paint it. The first track row jumps to the oldest loaded cell; the last resumes
-latest-follow; intermediate rows select the nearest stable loaded cell and
-focus Conversation. The rail is inert behind a modal and outside its one-cell
-track. Keyboard `Home`, `End`, arrows, and pages remain equivalent paths.
-Modal geometry reserves the semantic header and composer/footer boundary on
-standard terminals. The reservation contracts responsively on short terminals
-so at least the selected row and its actions remain visible. A modal may clear
+
+`DecisionSheet` uses one display-cell row plan for visual rendering, dynamic
+height, choice hit testing, and action hit testing. Tone glyphs share the first
+consequence row and consume its width budget. Normal height keeps one blank row
+before actions; compact height removes that spacer before it removes the
+selected control or either primary/safe-exit action. Scalar input shows a
+grapheme-safe visible caret, and enum labels are sanitized and clipped without
+changing the submitted value. Linear presentation consumes the same typed
+title, body, response state, and action bindings.
+
+Conversation scrolling uses stable Turn identity. Manual upward scroll detaches
+the viewport; durable updates and visible H4 frame advances increment the
+unseen count without stealing focus or follow mode. `End` resumes latest-follow.
+Inspector and TurnNavigator may expose direct navigation, but the default
+transcript has no permanent position rail or hover preview.
+Modal geometry reserves the semantic ContextLine and Composer/HintLine
+boundary on standard terminals. The reservation contracts responsively on
+short terminals so at least the selected row and its actions remain visible. A modal may clear
 only its rectangle plus a two-cell same-height horizontal halo; it must not
 erase rows above or below, splice the composer frame, or hide the command
 palette action row. The command palette uses compact vertical chrome and a
@@ -196,8 +242,13 @@ action. Durable uncertainty is titled `Command result unknown`, not the
 ambiguous `Unknown command`.
 
 Motion ticks are scheduled only while a typed state has a visible animated
-variant. Idle, suspended, failed, disconnected, and screen-reader views do not
-run an animation timer. Terminal titles never animate.
+variant. H4 content draws use a separate bounded frame governor: adjacent
+deltas may coalesce before a frame, presented text catches received text within
+two available frames, and bursts catch up rather than preserving fake typing.
+Idle, suspended, failed, disconnected, reduced-motion caret, and screen-reader
+views do not run a decorative animation timer. Screen-reader presentation does
+not emit each delta; it may emit one phase change and emits the durable answer
+once after convergence. Terminal titles never animate.
 
 Markdown styling is compositional rather than a single mutable flag: ending an
 inner emphasis cannot erase an enclosing strong, link, or heading style.
@@ -234,13 +285,22 @@ screen. Linear mode emits one bounded handoff line and one result line.
 
 ## Conformance
 
-Every new component or variant requires: a semantic buffer test, dark/light/mono snapshot coverage at its responsive boundary, keyboard ownership tests,
-and a real macOS PTY review when it changes terminal behavior. Anchored menus
-also require geometry-derived mouse hit tests and proof that modal and
-screen-reader paths retain higher ownership. Reviews reject
-raw colors outside the palette, duplicated key-hint formatting, color-only
-state, content-dependent layout identity, and screenshots without executable
-snapshot or PTY evidence.
+Every new component or variant requires a semantic buffer test,
+dark/light/mono snapshot coverage at its responsive boundary, keyboard
+ownership tests, and a real macOS PTY review when it changes terminal behavior.
+Anchored menus also require geometry-derived mouse hit tests and proof that
+modal and screen-reader paths retain higher ownership. Reviews reject raw
+colors outside the palette, duplicated key-hint formatting, color-only state,
+content-dependent layout identity, and screenshots without executable snapshot
+or PTY evidence.
+
+## See also
+
+- [`tui-interaction-and-rendering.md`](tui-interaction-and-rendering.md) — product behavior, input ownership, and responsive composition.
+- [`host-live-output-v1.md`](host-live-output-v1.md) — H4 live-answer state,
+  frame, failure, and convergence rules.
+- [`../../docs/tui-product-redesign.md`](../../docs/tui-product-redesign.md) —
+  accepted conversation-first product decision.
 
 ## Meta
 

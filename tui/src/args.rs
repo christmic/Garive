@@ -106,7 +106,21 @@ pub(crate) fn apply_terminal_environment(
     }
     if term.is_some_and(|value| value.eq_ignore_ascii_case("dumb")) {
         config.screen_reader = true;
-        config.mouse = MouseMode::Off;
+    }
+}
+
+pub(crate) fn mouse_capture_enabled(
+    mode: MouseMode,
+    screen_reader: bool,
+    full_screen: bool,
+) -> bool {
+    if screen_reader {
+        return false;
+    }
+    match mode {
+        MouseMode::On => true,
+        MouseMode::Off => false,
+        MouseMode::Auto => full_screen,
     }
 }
 
@@ -205,7 +219,7 @@ mod tests {
         apply_terminal_environment(&mut config, Some("dumb"), true);
         assert_eq!(config.theme, Theme::Mono);
         assert!(config.screen_reader);
-        assert_eq!(config.mouse, MouseMode::Off);
+        assert_eq!(config.mouse, MouseMode::Auto);
 
         let mut explicit = parse_launch_config([
             "garive-tui",
@@ -218,5 +232,16 @@ mod tests {
         apply_terminal_environment(&mut explicit, Some("xterm-256color"), true);
         assert_eq!(explicit.theme, Theme::Light);
         assert!(!explicit.screen_reader);
+    }
+
+    #[test]
+    fn mouse_capture_resolution_preserves_preference_and_requires_accessible_full_screen() {
+        assert!(mouse_capture_enabled(MouseMode::On, false, false));
+        assert!(!mouse_capture_enabled(MouseMode::Off, false, true));
+        assert!(mouse_capture_enabled(MouseMode::Auto, false, true));
+        assert!(!mouse_capture_enabled(MouseMode::Auto, false, false));
+        for mode in [MouseMode::Auto, MouseMode::On, MouseMode::Off] {
+            assert!(!mouse_capture_enabled(mode, true, true));
+        }
     }
 }

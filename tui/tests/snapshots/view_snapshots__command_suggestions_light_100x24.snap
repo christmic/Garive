@@ -2,27 +2,27 @@
 source: tui/tests/view_snapshots.rs
 expression: "command_suggestion_frame(Theme::Light)"
 ---
-  GARIVE  research-age  /  Session session-alph                                 ● online  ·  ready
+  Session 1  ·  research-age
 
- Sessions 2                │ Conversation · 3 turns
-                           │  ╭─ YOU #2
- ▌ research-age · 123456   │  │  Summarize the release plan.
-   ✓ completed  ·  3 turns │  ╰─
-                           │
-   research-age · 987654   │    ✓  Agent action · completed
-   ● running  ·  1 turn    │
-                           │  ◆  GARIVE #6
-                           │     ## Release plan
-                           │     • Verify the Runtime
-                           │     • Ship with evidence
-                           │     cargo test passes.
-                           │╭ Commands ────────────────────────────────────────────────────────────╮
-                           ││   /theme system  Follow terminal theme                               │
-                           ││ › /theme dark  Use dark theme                                        │
-                           ││   /theme light  Use light theme                                      │
-                           ││   /theme mono  Use mono theme                                        │
-                           │╰──────────────────────────────────────────────────────────────────────╯
-                           │╔ Compose ═════════════════════════════════════════════════════════════╗
-                           │║ /theme                                                               ║
-  Ctrl+N new · Ctrl+S list │╚══════════════════════════════════════════════════════════════════════╝
-                           │  ↑/↓ select   Tab complete   Esc close                      7 / 4096 B
+    You
+      Summarize the release plan.
+      ✓  Agent action · completed
+    ◆ Garive
+      ## Release plan
+      • Verify the Runtime
+      • Ship with evidence
+      cargo test passes.
+
+
+
+
+  ╭ Commands ────────────────────────────────────────────────────────────────╮
+  │   /theme system  Follow terminal theme                                   │
+  │ › /theme dark  Use dark theme                                            │
+  │   /theme light  Use light theme                                          │
+  │   /theme mono  Use mono theme                                            │
+  ╰──────────────────────────────────────────────────────────────────────────╯
+  ╭──────────────────────────────────────────────────────────────────────────────────────────────╮
+  │ /theme                                                                                       │
+  ╰──────────────────────────────────────────────────────────────────────────────────────────────╯
+    Tab complete command

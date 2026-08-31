@@ -6,22 +6,25 @@ use crate::application::{AppAction, ExecutionState, FocusTarget, Overlay, Termin
 use crate::input::{resolve_shortcut, HistoryDraft, HistoryRecall, ShortcutIntent};
 
 mod actions;
+mod inspector;
 mod mouse;
 mod navigation;
 mod overlay;
 
 pub(super) use actions::replay_pending;
 use actions::{cancel, copy_composer_selection, create_session, submit};
-use navigation::{
-    activate_navigation_selection, conversation_page_cells, cycle_focus, move_navigation_selection,
-    move_navigation_to_edge, open_command_palette, open_prompt_history, open_session_picker,
-};
+use navigation::{cycle_focus, open_command_palette, open_prompt_history, open_session_picker};
 
 pub(super) fn handle_terminal(event: Event, state: &mut RuntimeState) {
     match event {
         Event::Resize(width, height) => {
             state.composer_clicks.reset();
-            state.dispatch(AppAction::TerminalResized(TerminalSize { width, height }))
+            state.dispatch(AppAction::TerminalResized(TerminalSize { width, height }));
+            crate::view::reflow_conversation(
+                &mut state.model,
+                state.config.theme,
+                &mut state.render_cache,
+            );
         }
         Event::FocusGained => state.dispatch(AppAction::TerminalFocusChanged(true)),
         Event::FocusLost => {
@@ -31,6 +34,12 @@ pub(super) fn handle_terminal(event: Event, state: &mut RuntimeState) {
         }
         Event::Paste(text) => {
             state.composer_clicks.reset();
+            if state.model.overlay == Some(Overlay::Suspension) {
+                if let Some(response) = state.model.suspension_response.as_mut() {
+                    let _ = response.editor.insert(&text);
+                }
+                return;
+            }
             let previous = state.model.composer.text().to_owned();
             if state.composer_is_frozen() {
                 state.explain_frozen_composer();
@@ -62,11 +71,11 @@ fn handle_key(key: KeyEvent, state: &mut RuntimeState) {
 
 fn handle_key_inner(key: KeyEvent, state: &mut RuntimeState) {
     let shortcut = resolve_shortcut(key);
-    if shortcut == Some(ShortcutIntent::Quit) {
-        state.dispatch(AppAction::QuitRequested);
+    if overlay::handle(key, state) {
         return;
     }
-    if overlay::handle(key, state) {
+    if shortcut == Some(ShortcutIntent::Quit) {
+        state.dispatch(AppAction::QuitRequested);
         return;
     }
     if shortcut.is_some_and(|intent| handle_shortcut(intent, state)) {
@@ -81,32 +90,18 @@ fn handle_key_inner(key: KeyEvent, state: &mut RuntimeState) {
         state.dispatch(AppAction::OverlayOpened(Overlay::Help));
         return;
     }
-    if state.model.focus == FocusTarget::Navigation {
-        match key.code {
-            KeyCode::Up => move_navigation_selection(&mut state.model, true),
-            KeyCode::Down => move_navigation_selection(&mut state.model, false),
-            KeyCode::Home => move_navigation_to_edge(&mut state.model, false),
-            KeyCode::End => move_navigation_to_edge(&mut state.model, true),
-            KeyCode::Enter => activate_navigation_selection(state),
-            _ => {}
-        }
-        if matches!(
-            key.code,
-            KeyCode::Up | KeyCode::Down | KeyCode::Home | KeyCode::End | KeyCode::Enter
-        ) {
-            return;
-        }
-    }
     if state.model.focus == FocusTarget::Conversation {
         match key.code {
-            KeyCode::Up => state.model.scroll_conversation_up(1),
-            KeyCode::Down => state.model.scroll_conversation_down(1),
-            KeyCode::PageUp => state
-                .model
-                .scroll_conversation_up(conversation_page_cells(state)),
-            KeyCode::PageDown => state
-                .model
-                .scroll_conversation_down(conversation_page_cells(state)),
+            KeyCode::Up => scroll_conversation(state, -1),
+            KeyCode::Down => scroll_conversation(state, 1),
+            KeyCode::PageUp => {
+                let page = crate::view::conversation_page_cells(&state.model) as isize;
+                scroll_conversation(state, -page);
+            }
+            KeyCode::PageDown => {
+                let page = crate::view::conversation_page_cells(&state.model) as isize;
+                scroll_conversation(state, page);
+            }
             KeyCode::Home => state.model.jump_to_oldest(),
             KeyCode::End => state.model.follow_latest(),
             _ => {}
@@ -122,6 +117,9 @@ fn handle_key_inner(key: KeyEvent, state: &mut RuntimeState) {
         ) {
             return;
         }
+    }
+    if state.model.focus == FocusTarget::Inspector && inspector::handle_key(key, state) {
+        return;
     }
     if state.composer_is_frozen()
         && matches!(
@@ -219,6 +217,15 @@ fn handle_key_inner(key: KeyEvent, state: &mut RuntimeState) {
         KeyCode::Enter => submit(state),
         _ => {}
     }
+}
+
+pub(super) fn scroll_conversation(state: &mut RuntimeState, cells: isize) {
+    crate::view::scroll_conversation(
+        &mut state.model,
+        state.config.theme,
+        &mut state.render_cache,
+        cells,
+    );
 }
 
 fn handle_shortcut(intent: ShortcutIntent, state: &mut RuntimeState) -> bool {
@@ -343,7 +350,10 @@ fn browse_prompt_history(state: &mut RuntimeState, direction: i8) -> bool {
 }
 
 fn handle_command_suggestion_key(key: KeyEvent, state: &mut RuntimeState) -> bool {
-    if state.config.screen_reader || !state.model.command_suggestions_active() {
+    if state.config.screen_reader
+        || state.composer_is_frozen()
+        || !state.model.command_suggestions_active()
+    {
         return false;
     }
     let count = state.model.matching_command_suggestion_indices().len();
@@ -374,6 +384,10 @@ fn handle_command_suggestion_key(key: KeyEvent, state: &mut RuntimeState) -> boo
 }
 
 pub(super) fn accept_command_suggestion(state: &mut RuntimeState) {
+    if state.composer_is_frozen() {
+        state.explain_frozen_composer();
+        return;
+    }
     let matches = state.model.matching_command_suggestion_indices();
     let Some(index) = matches
         .get(state.model.command_suggestion_selection)

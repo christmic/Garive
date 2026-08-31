@@ -1,16 +1,11 @@
 use ratatui::{
     layout::Rect,
-    style::Style,
     text::{Line, Span},
 };
 use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::UnicodeWidthStr;
 
 use super::style::Palette;
-
-pub(super) fn status_chip(content: &str, style: Style) -> Span<'static> {
-    Span::styled(format!(" {content} "), style)
-}
 
 pub(super) fn key_hints(items: &[(&str, &str)], colors: Palette) -> Line<'static> {
     let mut spans = vec![Span::raw(" ")];

@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 pub struct ClientLimits {
     /// Maximum serialized mutation body size.
     pub max_command_bytes: usize,
-    /// Maximum JSON event or response size.
+    /// Maximum H1 JSON event or bounded response size; H4 has fixed v1 bounds.
     pub max_event_bytes: usize,
     /// Maximum events accepted by one follow operation.
     pub max_events: usize,

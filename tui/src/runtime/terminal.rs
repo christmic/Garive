@@ -19,6 +19,11 @@ pub(crate) struct TerminalOptions {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum TerminalReconfiguration {
+    MouseCapture { enabled: bool },
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum TerminalError {
     NotATerminal,
     Setup,
@@ -95,6 +100,25 @@ impl<O: TerminalOps> TerminalGuard<O> {
             .set_title(title)
             .map_err(|_| TerminalError::Setup)?;
         self.current_title = Some(title.to_owned());
+        Ok(())
+    }
+
+    pub(crate) fn reconfigure(
+        &mut self,
+        request: TerminalReconfiguration,
+    ) -> Result<(), TerminalError> {
+        let TerminalReconfiguration::MouseCapture { enabled } = request;
+        if enabled == self.mouse {
+            return Ok(());
+        }
+        if enabled {
+            self.ops.enable_mouse().map_err(|_| TerminalError::Setup)?;
+        } else {
+            self.ops
+                .disable_mouse()
+                .map_err(|_| TerminalError::Restore)?;
+        }
+        self.mouse = enabled;
         Ok(())
     }
 

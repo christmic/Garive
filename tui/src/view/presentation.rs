@@ -2,14 +2,13 @@ use garive_host_client::SuspensionView;
 use serde::Deserialize;
 
 use crate::{
-    application::{ActionOverlayBinding, AppModel, Overlay, TimelineTone},
+    application::{AppModel, Overlay, TimelineTone},
     input::describe_schema,
 };
 
 pub(crate) struct ActionOverlayCopy {
     pub(crate) title: &'static str,
     pub(crate) body: String,
-    pub(crate) hints: &'static [ActionOverlayBinding],
 }
 
 pub(crate) const HELP_NOTES: &[&str] = &[
@@ -26,7 +25,10 @@ pub(crate) fn action_overlay_copy(model: &AppModel, overlay: Overlay) -> Option<
                 "Durable outcome is unknown; nothing will be inferred or replayed automatically."
                     .into()
             }),
-            hints: overlay.action_bindings()?,
+        },
+        Overlay::AbandonConfirmation => ActionOverlayCopy {
+            title: "Abandon recovery record?",
+            body: "The durable Host outcome remains unknown. Abandoning removes only this local recovery record and cannot prove that the command did not commit.".into(),
         },
         Overlay::ErrorDetails => ActionOverlayCopy {
             title: "Status details",
@@ -34,17 +36,16 @@ pub(crate) fn action_overlay_copy(model: &AppModel, overlay: Overlay) -> Option<
                 .notice
                 .clone()
                 .unwrap_or_else(|| "No additional safe details.".into()),
-            hints: overlay.action_bindings()?,
         },
         Overlay::EphemeralConfirmation => ActionOverlayCopy {
             title: "Ephemeral mode",
-            body: "A lost mutation response cannot be recovered after exit.".into(),
-            hints: overlay.action_bindings()?,
+            body: "Normal quit waits for accepted work; a signal or process loss cannot recover an unknown response."
+                .into(),
         },
         Overlay::QuitConfirmation => ActionOverlayCopy {
             title: "Quit Garive?",
-            body: "Your Sessions stay durable in the Host.".into(),
-            hints: overlay.action_bindings()?,
+            body: "Garive waits for accepted work to reach a recoverable boundary before restoring the terminal."
+                .into(),
         },
         _ => return None,
     };
@@ -70,7 +71,9 @@ struct PublicPrompt {
 
 pub(crate) fn suspension_copy(value: Option<&SuspensionView>) -> SuspensionCopy {
     let kind = value.map(|item| item.kind.as_str()).unwrap_or_default();
-    let prompt = value.and_then(|item| parse_prompt(&item.prompt_json));
+    let prompt = value
+        .filter(|item| item.prompt_schema == "garive.public-suspension-prompt.v1")
+        .and_then(|item| parse_prompt(&item.prompt_json));
     let guidance = value
         .and_then(|item| item.response_schema_json.as_deref())
         .map(describe_schema)

@@ -1,9 +1,12 @@
-use serde_json::{json, Value};
+use serde_json::Value;
 
 use crate::{
     application::{AppAction, ExecutionState, Overlay},
-    input::{parse_command, parse_schema_input, Command, CommandParse},
-    persistence::{now, DiagnosticEvent, PendingCommand, PendingKind},
+    input::{
+        parse_command, parse_schema_input, response_schema_control, Command, CommandParse,
+        InspectorCommand, SchemaControl,
+    },
+    persistence::{DiagnosticEvent, PendingCommand, PendingKind},
 };
 
 use super::{
@@ -43,20 +46,9 @@ fn create_session_with(state: &mut RuntimeState, requested: Option<String>) -> b
             state.model.overlay = Some(Overlay::ErrorDetails);
             return false;
         }
-        if !admit(
-            state,
-            id.clone(),
-            PendingKind::CreateSession,
-            None,
-            None,
-            None,
-            None,
-            None,
-            json!({"agent_definition_id": definition}),
-        ) {
+        if !state.request_create_session(id, definition) {
             return false;
         }
-        host::create_session(state.client.clone(), id, definition, state.sender.clone());
         true
     } else {
         state.model.notice = Some("No Agent definition is installed yet.".into());
@@ -91,99 +83,81 @@ pub(super) fn submit(state: &mut RuntimeState) {
         }
         return;
     }
+    if state.model.suspension.is_some() {
+        state.model.notice = Some(if state.model.suspension_is_interactive() {
+            "This Turn is waiting for a typed response; the ordinary draft was not sent.".into()
+        } else {
+            "This suspension is read-only; the ordinary draft was not sent.".into()
+        });
+        state.model.overlay = Some(Overlay::Suspension);
+        return;
+    }
     let session = state.model.selected_session.clone().unwrap_or_default();
     let id = state.command_id("turn");
-    if let (Some(turn), Some(suspension)) = (
-        state.model.selected_turn.clone(),
-        state.model.suspension.clone(),
-    ) {
-        if suspension.response_schema_json.is_some() {
-            let Some(schema) = suspension.response_schema_json.as_deref() else {
-                return;
-            };
-            let Ok(input_json) = parse_schema_input(schema, &text) else {
-                state.model.notice =
-                    Some("The response does not match the public response schema.".into());
-                state.model.overlay = Some(Overlay::ErrorDetails);
-                return;
-            };
-            if !admit(
-                state,
-                id.clone(),
-                PendingKind::ContinueTurn,
-                Some(session.clone()),
-                Some(turn.clone()),
-                Some(suspension.suspension_id.clone()),
-                Some(suspension.session_version),
-                None,
-                json!({"input_json": input_json}),
-            ) {
-                return;
-            }
-            host::continue_turn(
-                state.client.clone(),
-                host::ContinuationRequest {
-                    command_id: id,
-                    session_id: session,
-                    turn_id: turn,
-                    suspension_id: suspension.suspension_id,
-                    expected_session_version: suspension.session_version,
-                    input: host::ContinuationInput::Json(input_json),
-                },
-                state.sender.clone(),
-            );
-        } else {
-            if !admit(
-                state,
-                id.clone(),
-                PendingKind::ContinueTurn,
-                Some(session.clone()),
-                Some(turn.clone()),
-                Some(suspension.suspension_id.clone()),
-                Some(suspension.session_version),
-                None,
-                json!({"input": text}),
-            ) {
-                return;
-            }
-            host::continue_turn(
-                state.client.clone(),
-                host::ContinuationRequest {
-                    command_id: id,
-                    session_id: session,
-                    turn_id: turn,
-                    suspension_id: suspension.suspension_id,
-                    expected_session_version: suspension.session_version,
-                    input: host::ContinuationInput::Text(text),
-                },
-                state.sender.clone(),
-            );
-        }
-    } else if matches!(
+    if matches!(
         state.model.execution,
         ExecutionState::Idle | ExecutionState::Failed
     ) {
-        if !admit(
-            state,
-            id.clone(),
-            PendingKind::StartTurn,
-            Some(session.clone()),
-            None,
-            None,
-            None,
-            None,
-            json!({"text": text}),
-        ) {
-            return;
-        }
-        host::start_turn(
-            state.client.clone(),
-            id,
-            session,
-            text,
-            state.sender.clone(),
-        );
+        state.request_start_turn(id, session, text);
     }
+}
+
+pub(super) fn submit_suspension_response(state: &mut RuntimeState) {
+    let (Some(response), Some(suspension), Some(session), Some(turn)) = (
+        state.model.suspension_response.as_ref(),
+        state.model.suspension.as_ref(),
+        state.model.selected_session.as_ref(),
+        state.model.selected_turn.as_ref(),
+    ) else {
+        state.model.notice = Some("This suspension is read-only.".into());
+        return;
+    };
+    let schema_digest = suspension
+        .response_schema_digest
+        .as_deref()
+        .unwrap_or_default()
+        .to_owned();
+    if response.identity.session_id != *session
+        || response.identity.turn_id != *turn
+        || response.identity.suspension_id != suspension.suspension_id
+        || response.identity.schema_digest != schema_digest
+    {
+        state.model.suspension_response = None;
+        state.model.notice =
+            Some("The suspension changed; the stale response was discarded.".into());
+        return;
+    }
+    let Some(schema) = suspension.response_schema_json.as_deref() else {
+        return;
+    };
+    let raw = match response_schema_control(schema) {
+        Some(SchemaControl::Editor) => response.editor.text().to_owned(),
+        Some(SchemaControl::Choices(choices)) => choices
+            .get(response.choice_selection)
+            .cloned()
+            .unwrap_or_default(),
+        None => return,
+    };
+    let Ok(input_json) = parse_schema_input(schema, &raw) else {
+        state.model.notice = Some("The response does not match the public response schema.".into());
+        return;
+    };
+    let (session, turn, suspension_id, version) = (
+        session.clone(),
+        turn.clone(),
+        suspension.suspension_id.clone(),
+        suspension.session_version,
+    );
+    let id = state.command_id("continue");
+    state.request_continue_turn(
+        id,
+        session,
+        turn,
+        suspension_id,
+        version,
+        schema_digest,
+        input_json,
+    );
 }
 
 pub(super) fn execute_command(command: Command, state: &mut RuntimeState) {
@@ -197,19 +171,9 @@ pub(super) fn execute_command(command: Command, state: &mut RuntimeState) {
             state.model.overlay = Some(Overlay::SessionPicker);
         }
         Command::Jump { filter } => super::navigation::open_turn_navigator(state, filter),
+        Command::Inspect(command) => super::inspector::set_command(command, state),
         Command::Help => state.model.overlay = Some(Overlay::Help),
-        Command::Status => {
-            state.model.notice = Some(format!(
-                "Host: {}\nSession: {}\nCursor: {}",
-                match state.model.connection {
-                    crate::application::ConnectionState::Online => "online",
-                    _ => "not online",
-                },
-                state.model.selected_session.as_deref().unwrap_or("none"),
-                state.model.observed_position
-            ));
-            state.model.overlay = Some(Overlay::ErrorDetails);
-        }
+        Command::Status => super::inspector::set_command(Some(InspectorCommand::Details), state),
         Command::EditPrompt => external_editor::request(state),
         Command::Reconnect => {
             if let Some(session) = state.model.selected_session.clone() {
@@ -218,20 +182,14 @@ pub(super) fn execute_command(command: Command, state: &mut RuntimeState) {
         }
         Command::Cancel => cancel(state),
         Command::Theme(theme) => state.config.theme = theme,
-        Command::Mouse(mouse) => {
-            state.config.mouse = mouse;
-            state.model.notice =
-                Some("Mouse preference updated for the next terminal session.".into());
-            state.model.overlay = Some(Overlay::ErrorDetails);
-        }
+        Command::Mouse(mouse) => state.set_mouse_mode(mouse),
         Command::Retry => retry_pending(state),
         Command::CopyLast => {
             let value = state
                 .model
-                .timeline
-                .iter()
-                .rev()
-                .find(|item| item.role == crate::application::TimelineRole::Agent)
+                .durable_children()
+                .filter(|item| item.role == crate::application::TimelineRole::Agent)
+                .last()
                 .map(|item| item.text.clone());
             copy_value(value, state, true);
         }
@@ -275,60 +233,22 @@ pub(super) fn cancel(state: &mut RuntimeState) {
     ) {
         let id = state.command_id("cancel");
         let position = state.model.observed_position.max(1);
-        if !admit(
-            state,
-            id.clone(),
-            PendingKind::CancelTurn,
-            Some(session.clone()),
-            Some(turn.clone()),
-            None,
-            None,
-            Some(position),
-            json!({"session_id": session, "requested_through_position": position}),
-        ) {
-            return;
-        }
-        host::cancel_turn(
-            state.client.clone(),
-            id,
-            session,
-            turn,
-            position,
-            state.sender.clone(),
-        );
+        state.request_cancel_turn(id, session, turn, position);
     }
 }
 
-#[allow(clippy::too_many_arguments)]
-fn admit(
-    state: &mut RuntimeState,
-    command_id: String,
-    kind: PendingKind,
-    session_id: Option<String>,
-    turn_id: Option<String>,
-    suspension_id: Option<String>,
-    expected_session_version: Option<u64>,
-    requested_through_position: Option<u64>,
-    request_payload: Value,
-) -> bool {
-    state.admit_pending(PendingCommand {
-        schema_version: 1,
-        command_id,
-        kind,
-        session_id,
-        turn_id,
-        suspension_id,
-        expected_session_version,
-        requested_through_position,
-        request_payload,
-        request_digest: String::new(),
-        created_at: now(),
-    })
-}
-
 pub(super) fn retry_pending(state: &mut RuntimeState) {
-    let Some(pending) = state.pending_for_context().cloned() else {
-        state.model.notice = Some("No recoverable pending command is loaded.".into());
+    if state.exact_retry_in_progress() {
+        state.model.notice = Some("An exact retry is already in progress.".into());
+        state.model.overlay = Some(Overlay::ErrorDetails);
+        return;
+    }
+    let Some(pending) = state.recoverable_pending_for_context().cloned() else {
+        state.model.notice = Some(if state.pending_for_context().is_some() {
+            "The pending command is still in flight; exact retry is unavailable.".into()
+        } else {
+            "No recoverable pending command is loaded.".into()
+        });
         state.model.overlay = Some(Overlay::ErrorDetails);
         return;
     };
@@ -338,16 +258,24 @@ pub(super) fn retry_pending(state: &mut RuntimeState) {
         state.model.overlay = Some(Overlay::ErrorDetails);
         return;
     }
-    state.retry_after_refresh = Some(pending.command_id.clone());
+    if !state.begin_exact_retry(&pending.command_id) {
+        state.model.notice = Some("Exact retry ownership could not be acquired.".into());
+        state.model.overlay = Some(Overlay::ErrorDetails);
+        return;
+    }
     let _ = state.store.record_diagnostic(DiagnosticEvent::RetryQueued);
     state.model.overlay = None;
     state.model.notice = Some("Refreshing Host truth before exact retry…".into());
     if let Some(session_id) = pending.session_id {
         state.load(session_id);
     } else {
-        host::bootstrap(state.client.clone(), state.sender.clone());
+        state.refresh_session_catalog();
     }
 }
+
+#[cfg(test)]
+#[path = "actions_tests.rs"]
+mod tests;
 
 pub(in crate::runtime) fn replay_pending(state: &mut RuntimeState, pending: PendingCommand) {
     let _ = state.store.record_diagnostic(DiagnosticEvent::RetrySent);

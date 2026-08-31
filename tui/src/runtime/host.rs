@@ -1,11 +1,14 @@
 use garive_host_client::{
-    AgentDefinitionSummary, CreateSessionResponse, HostClientErrorCode, HostEvent, LiveHostClient,
-    SessionSummary, SessionView, TurnCommandResponse, TurnTimelineItem,
+    CreateSessionResponse, HostClientErrorCode, HostEvent, LiveHostClient, LiveOutputEvent,
+    SessionView, TurnCommandResponse, TurnTimelineItem,
 };
 use serde_json::Value;
 use tokio::{sync::mpsc, task::JoinHandle};
 
-pub(crate) const PAGE_LIMIT: usize = 100;
+use crate::host::PAGE_LIMIT;
+
+#[path = "host_debug.rs"]
+mod host_debug;
 
 pub(crate) struct ContinuationRequest {
     pub(crate) command_id: String,
@@ -21,17 +24,7 @@ pub(crate) enum ContinuationInput {
     Json(Value),
 }
 
-#[derive(Debug)]
 pub(crate) enum HostMessage {
-    Bootstrapped {
-        definitions: Vec<AgentDefinitionSummary>,
-        sessions: Vec<SessionSummary>,
-        next_before: Option<String>,
-    },
-    SessionPageLoaded {
-        sessions: Vec<SessionSummary>,
-        next_before: Option<String>,
-    },
     SnapshotLoaded {
         request_id: u64,
         session_id: String,
@@ -50,11 +43,20 @@ pub(crate) enum HostMessage {
         response: TurnCommandResponse,
     },
     Event(HostEvent),
+    LiveOutput(LiveOutputEvent),
     FollowEnded {
         session_id: String,
         code: HostClientErrorCode,
     },
+    LiveFollowEnded {
+        session_id: String,
+        code: HostClientErrorCode,
+    },
     ReconnectDue {
+        session_id: String,
+        attempt: u32,
+    },
+    LiveReconnectDue {
         session_id: String,
         attempt: u32,
     },
@@ -66,53 +68,8 @@ pub(crate) enum HostMessage {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) enum HostOperation {
-    Bootstrap,
     Snapshot { request_id: u64 },
-    SessionPage,
     Mutation { command_id: String },
-}
-
-pub(crate) fn bootstrap(client: LiveHostClient, sender: mpsc::Sender<HostMessage>) {
-    tokio::spawn(async move {
-        let result = async {
-            let definitions = client.list_agent_definitions().await?.definitions;
-            let page = client.list_sessions(PAGE_LIMIT, None).await?;
-            Ok::<_, garive_host_client::HostClientError>((definitions, page))
-        }
-        .await;
-        let message = match result {
-            Ok((definitions, page)) => HostMessage::Bootstrapped {
-                definitions,
-                sessions: page.sessions,
-                next_before: page.next_before,
-            },
-            Err(error) => HostMessage::Failed {
-                operation: HostOperation::Bootstrap,
-                error,
-            },
-        };
-        let _ = sender.send(message).await;
-    });
-}
-
-pub(crate) fn load_session_page(
-    client: LiveHostClient,
-    before: String,
-    sender: mpsc::Sender<HostMessage>,
-) {
-    tokio::spawn(async move {
-        let message = match client.list_sessions(PAGE_LIMIT, Some(&before)).await {
-            Ok(page) => HostMessage::SessionPageLoaded {
-                sessions: page.sessions,
-                next_before: page.next_before,
-            },
-            Err(error) => HostMessage::Failed {
-                operation: HostOperation::SessionPage,
-                error,
-            },
-        };
-        let _ = sender.send(message).await;
-    });
 }
 
 pub(crate) fn load_snapshot(
@@ -326,6 +283,34 @@ pub(crate) fn follow(
     })
 }
 
+pub(crate) fn follow_live(
+    client: LiveHostClient,
+    session_id: String,
+    sender: mpsc::Sender<HostMessage>,
+) -> JoinHandle<()> {
+    tokio::spawn(async move {
+        let (event_sender, mut events) = mpsc::channel(256);
+        let follow = tokio::spawn({
+            let client = client.clone();
+            let session_id = session_id.clone();
+            async move { client.follow_live_output(&session_id, event_sender).await }
+        });
+        while let Some(event) = events.recv().await {
+            if sender.send(HostMessage::LiveOutput(event)).await.is_err() {
+                follow.abort();
+                return;
+            }
+        }
+        let code = match follow.await {
+            Ok(Err(error)) => error.code,
+            Ok(Ok(())) | Err(_) => HostClientErrorCode::TransportFailure,
+        };
+        let _ = sender
+            .send(HostMessage::LiveFollowEnded { session_id, code })
+            .await;
+    })
+}
+
 pub(crate) fn schedule_reconnect(
     session_id: String,
     attempt: u32,
@@ -348,3 +333,30 @@ pub(crate) fn schedule_reconnect(
             .await;
     })
 }
+
+pub(crate) fn schedule_live_reconnect(
+    session_id: String,
+    attempt: u32,
+    sender: mpsc::Sender<HostMessage>,
+) -> JoinHandle<()> {
+    tokio::spawn(async move {
+        let delay_ms = match attempt {
+            1 => 250,
+            2 => 500,
+            3 => 1_000,
+            4 => 2_000,
+            _ => 4_000,
+        };
+        tokio::time::sleep(std::time::Duration::from_millis(delay_ms)).await;
+        let _ = sender
+            .send(HostMessage::LiveReconnectDue {
+                session_id,
+                attempt,
+            })
+            .await;
+    })
+}
+
+#[cfg(test)]
+#[path = "host_debug_tests.rs"]
+mod tests;

@@ -1,0 +1,87 @@
+---
+source: tui/tests/view_snapshots.rs
+expression: frozen_composer_matrix()
+---
+theme=Dark width=40 border=Style::new().yellow().bg(Color::Reset).underline_color(Color::Reset) cursor=None
+Session 1
+
+  ◆ Garive
+    ## Release plan
+    • Verify the Runtime
+    • Ship with evidence
+    cargo test passes.
+
+╭ Draft locked ────────────────────────╮
+│ Retained pending draft               │
+╰─────────────────────────── read only ╯
+ ● Waiting for durable command truth…
+
+theme=Dark width=100 border=Style::new().yellow().bg(Color::Reset).underline_color(Color::Reset) cursor=None
+  Session 1  ·  research-age
+
+    ◆ Garive
+      ## Release plan
+      • Verify the Runtime
+      • Ship with evidence
+      cargo test passes.
+
+  ╭ Draft locked ────────────────────────────────────────────────────────────────────────────────╮
+  │ Retained pending draft                                                                       │
+  ╰─────────────────────────────────────────────────────────────────────────────────── read only ╯
+   ● Waiting for durable command truth…
+
+theme=Light width=40 border=Style::new().yellow().bg(Color::Reset).underline_color(Color::Reset) cursor=None
+Session 1
+
+  ◆ Garive
+    ## Release plan
+    • Verify the Runtime
+    • Ship with evidence
+    cargo test passes.
+
+╭ Draft locked ────────────────────────╮
+│ Retained pending draft               │
+╰─────────────────────────── read only ╯
+ ● Waiting for durable command truth…
+
+theme=Light width=100 border=Style::new().yellow().bg(Color::Reset).underline_color(Color::Reset) cursor=None
+  Session 1  ·  research-age
+
+    ◆ Garive
+      ## Release plan
+      • Verify the Runtime
+      • Ship with evidence
+      cargo test passes.
+
+  ╭ Draft locked ────────────────────────────────────────────────────────────────────────────────╮
+  │ Retained pending draft                                                                       │
+  ╰─────────────────────────────────────────────────────────────────────────────────── read only ╯
+   ● Waiting for durable command truth…
+
+theme=Mono width=40 border=Style::new().fg(Color::Reset).bg(Color::Reset).underline_color(Color::Reset) cursor=None
+Session 1
+
+  ◆ Garive
+    ## Release plan
+    • Verify the Runtime
+    • Ship with evidence
+    cargo test passes.
+
+╭ Draft locked ────────────────────────╮
+│ Retained pending draft               │
+╰─────────────────────────── read only ╯
+ ● Waiting for durable command truth…
+
+theme=Mono width=100 border=Style::new().fg(Color::Reset).bg(Color::Reset).underline_color(Color::Reset) cursor=None
+  Session 1  ·  research-age
+
+    ◆ Garive
+      ## Release plan
+      • Verify the Runtime
+      • Ship with evidence
+      cargo test passes.
+
+  ╭ Draft locked ────────────────────────────────────────────────────────────────────────────────╮
+  │ Retained pending draft                                                                       │
+  ╰─────────────────────────────────────────────────────────────────────────────────── read only ╯
+   ● Waiting for durable command truth…

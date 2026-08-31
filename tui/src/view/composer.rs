@@ -14,33 +14,43 @@ use crate::{
 
 use super::{safe_text, style::Palette};
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum ComposerVariant {
+    Idle,
+    Focused,
+    Frozen,
+    ActionResponse,
+}
+
 pub(super) fn render(model: &AppModel, colors: Palette, area: Rect, buffer: &mut Buffer) {
-    let title = if model.execution == ExecutionState::Suspended {
-        " Action response "
-    } else {
-        " Compose "
-    };
-    let block = Block::default()
-        .title(Line::styled(title, colors.title))
+    let variant = variant(model);
+    let mut block = Block::default()
         .borders(Borders::ALL)
-        .border_type(if model.focus == FocusTarget::Composer {
-            BorderType::Double
-        } else {
-            BorderType::Rounded
-        })
-        .border_style(if model.focus == FocusTarget::Composer {
-            colors.composer_border
-        } else {
-            colors.border
+        .border_type(BorderType::Rounded)
+        .border_style(match variant {
+            ComposerVariant::Focused => colors.composer_border,
+            ComposerVariant::Frozen => colors.warning,
+            ComposerVariant::Idle | ComposerVariant::ActionResponse => colors.border,
         })
         .padding(Padding::horizontal(1));
+    block = match variant {
+        ComposerVariant::Frozen => block
+            .title(Line::styled(" Draft locked ", colors.warning))
+            .title_bottom(Line::styled(" read only ", colors.warning).right_aligned()),
+        ComposerVariant::ActionResponse => {
+            block.title(Line::styled(" Action response ", colors.title))
+        }
+        ComposerVariant::Idle | ComposerVariant::Focused => block,
+    };
     let inner = block.inner(area);
     block.render(area, buffer);
     let text = if model.composer.text().is_empty() {
-        Text::from(Line::styled(
-            "›  Message Garive — / for commands",
-            colors.placeholder,
-        ))
+        let placeholder = if variant == ComposerVariant::Frozen {
+            "Draft retained · waiting for durable truth"
+        } else {
+            "Message Garive  ·  / for commands"
+        };
+        Text::from(Line::styled(placeholder, colors.placeholder))
     } else {
         EditorLayout::new(&model.composer, inner.width).text(colors)
     };
@@ -51,7 +61,22 @@ pub(super) fn render(model: &AppModel, colors: Palette, area: Rect, buffer: &mut
         .render(inner, buffer);
 }
 
+fn variant(model: &AppModel) -> ComposerVariant {
+    if model.composer_is_frozen {
+        ComposerVariant::Frozen
+    } else if model.execution == ExecutionState::Suspended {
+        ComposerVariant::ActionResponse
+    } else if model.focus == FocusTarget::Composer {
+        ComposerVariant::Focused
+    } else {
+        ComposerVariant::Idle
+    }
+}
+
 pub(super) fn cursor(model: &AppModel, area: Rect) -> Option<(u16, u16)> {
+    if model.composer_is_frozen {
+        return None;
+    }
     let inner_width = area.width.saturating_sub(4);
     let inner_height = area.height.saturating_sub(2);
     if inner_width == 0 || inner_height == 0 {
@@ -80,6 +105,9 @@ pub(super) fn selection_at(
     row: u16,
     clamp: bool,
 ) -> Option<usize> {
+    if model.composer_is_frozen {
+        return None;
+    }
     let inner = Rect::new(
         area.x.saturating_add(2),
         area.y.saturating_add(1),

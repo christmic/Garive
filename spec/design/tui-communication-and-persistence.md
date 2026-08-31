@@ -123,6 +123,10 @@ Exact retry loads the record, recomputes its digest, reconstructs the same Host
 request and command ID, and sends no alternative representation. For canonical
 JSON continuation the persisted bytes must already be RFC 8785 canonical and
 match the durable response-schema digest. A retry never reparses editor text.
+Only a command explicitly classified as having an unknown result is retryable;
+an ordinary pending or in-flight mutation is not. One local retry owner spans
+the fresh Host-truth read, exact replay, and matching mutation result, so a
+repeated retry action cannot create a concurrent owner for the same command.
 
 Explicit abandonment removes only the local pending record after a confirmation
 that states the durable outcome remains unknown. It does not cancel, roll back,
@@ -255,6 +259,10 @@ oversized text reject the entire file. Unknown schema versions preserve no
 fields. Defaults are `system`, OS reduced-motion when discoverable otherwise
 false, mouse `auto`, expanded rail, closed inspector, bell true, and draft
 persistence true.
+
+`activity_inspector` is Inspector's only persisted value and means open or
+closed. Its Activity/Recovery/Details variant, selected entry identity, scroll
+window, and focus are transient application state and never enter this file.
 
 Limits are 32 drafts, 64 KiB total draft UTF-8, and the Host command byte bound
 per draft. Least-recently-updated idle drafts evict first. A draft bound failure

@@ -1,5 +1,5 @@
 use crate::{
-    application::{AppAction, AppModel, FocusTarget, Overlay},
+    application::{AppAction, FocusTarget, Overlay},
     input::{parse_command, CommandParse, COMMAND_PALETTE},
 };
 
@@ -10,97 +10,33 @@ pub(super) fn cycle_focus(state: &mut RuntimeState, backwards: bool) {
         state.model.terminal_size.width,
         state.model.focus,
         backwards,
+        state.model.inspector.open,
     );
     state.dispatch(AppAction::FocusChanged(next));
-    if next == FocusTarget::Navigation {
-        ensure_navigation_selection(&mut state.model);
+}
+
+fn next_focus(
+    width: u16,
+    current: FocusTarget,
+    backwards: bool,
+    inspector_open: bool,
+) -> FocusTarget {
+    if width >= 120 && inspector_open {
+        return match (backwards, current) {
+            (false, FocusTarget::Composer) => FocusTarget::Conversation,
+            (false, FocusTarget::Conversation) => FocusTarget::Inspector,
+            (false, _) => FocusTarget::Composer,
+            (true, FocusTarget::Composer) => FocusTarget::Inspector,
+            (true, FocusTarget::Inspector) => FocusTarget::Conversation,
+            (true, _) => FocusTarget::Composer,
+        };
     }
-}
-
-pub(super) fn move_navigation_selection(model: &mut AppModel, backwards: bool) {
-    ensure_navigation_selection(model);
-    let Some(current) = model.navigation_selection.as_deref() else {
-        return;
-    };
-    let Some(index) = model
-        .sessions
-        .iter()
-        .position(|session| session.session_id == current)
-    else {
-        return;
-    };
-    let target = if backwards {
-        index.saturating_sub(1)
-    } else {
-        (index + 1).min(model.sessions.len().saturating_sub(1))
-    };
-    model.navigation_selection = model
-        .sessions
-        .get(target)
-        .map(|session| session.session_id.clone());
-}
-
-pub(super) fn move_navigation_to_edge(model: &mut AppModel, last: bool) {
-    let session = if last {
-        model.sessions.last()
-    } else {
-        model.sessions.first()
-    };
-    model.navigation_selection = session.map(|value| value.session_id.clone());
-}
-
-pub(super) fn activate_navigation_selection(state: &mut RuntimeState) {
-    ensure_navigation_selection(&mut state.model);
-    if let Some(session_id) = state.model.navigation_selection.clone() {
-        state.load(session_id);
+    match (backwards, current) {
+        (false, FocusTarget::Conversation) => FocusTarget::Composer,
+        (false, _) => FocusTarget::Conversation,
+        (true, FocusTarget::Composer) => FocusTarget::Conversation,
+        (true, _) => FocusTarget::Composer,
     }
-}
-
-fn ensure_navigation_selection(model: &mut AppModel) {
-    let current_is_visible = model.navigation_selection.as_deref().is_some_and(|id| {
-        model
-            .sessions
-            .iter()
-            .any(|session| session.session_id == id)
-    });
-    if current_is_visible {
-        return;
-    }
-    model.navigation_selection = model
-        .selected_session
-        .as_ref()
-        .filter(|id| {
-            model
-                .sessions
-                .iter()
-                .any(|session| &session.session_id == *id)
-        })
-        .cloned()
-        .or_else(|| {
-            model
-                .sessions
-                .first()
-                .map(|session| session.session_id.clone())
-        });
-}
-
-fn next_focus(width: u16, current: FocusTarget, backwards: bool) -> FocusTarget {
-    match (width >= 100, backwards, current) {
-        (true, false, FocusTarget::Navigation) => FocusTarget::Conversation,
-        (true, false, FocusTarget::Conversation) => FocusTarget::Composer,
-        (true, false, _) => FocusTarget::Navigation,
-        (true, true, FocusTarget::Navigation) => FocusTarget::Composer,
-        (true, true, FocusTarget::Conversation) => FocusTarget::Navigation,
-        (true, true, _) => FocusTarget::Conversation,
-        (false, false, FocusTarget::Conversation) => FocusTarget::Composer,
-        (false, false, _) => FocusTarget::Conversation,
-        (false, true, FocusTarget::Composer) => FocusTarget::Conversation,
-        (false, true, _) => FocusTarget::Composer,
-    }
-}
-
-pub(super) fn conversation_page_cells(state: &RuntimeState) -> usize {
-    usize::from(state.model.terminal_size.height.saturating_sub(8) / 3).max(1)
 }
 
 pub(super) fn is_safe_query_character(character: char) -> bool {
@@ -184,13 +120,7 @@ pub(super) fn open_turn_navigator(state: &mut RuntimeState, filter: Option<Strin
             .viewport
             .anchor_key
             .as_deref()
-            .and_then(|key| {
-                state
-                    .model
-                    .timeline
-                    .iter()
-                    .find(|item| item.stable_key == key)
-            })
+            .and_then(|key| state.model.durable_child(key))
             .map(|item| item.position)
             .unwrap_or(0);
         matches
@@ -271,63 +201,44 @@ pub(super) fn matching_sessions(state: &RuntimeState) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use garive_host_client::SessionSummary;
 
     #[test]
-    fn focus_cycle_matches_responsive_regions() {
+    fn focus_cycle_adds_wide_inspector_without_changing_existing_order() {
         assert_eq!(
-            next_focus(120, FocusTarget::Composer, false),
-            FocusTarget::Navigation
-        );
-        assert_eq!(
-            next_focus(120, FocusTarget::Navigation, false),
+            next_focus(120, FocusTarget::Composer, false, true),
             FocusTarget::Conversation
         );
         assert_eq!(
-            next_focus(80, FocusTarget::Composer, false),
-            FocusTarget::Conversation
+            next_focus(120, FocusTarget::Conversation, false, true),
+            FocusTarget::Inspector
         );
         assert_eq!(
-            next_focus(80, FocusTarget::Conversation, true),
+            next_focus(120, FocusTarget::Inspector, false, true),
             FocusTarget::Composer
         );
-    }
-
-    #[test]
-    fn navigation_selection_is_stable_bounded_and_seeded_from_active_session() {
-        let mut model = AppModel {
-            sessions: vec![
-                session("session-a"),
-                session("session-b"),
-                session("session-c"),
-            ],
-            selected_session: Some("session-b".into()),
-            ..Default::default()
-        };
-        move_navigation_selection(&mut model, true);
-        assert_eq!(model.navigation_selection.as_deref(), Some("session-a"));
-        move_navigation_selection(&mut model, true);
-        assert_eq!(model.navigation_selection.as_deref(), Some("session-a"));
-        move_navigation_to_edge(&mut model, true);
-        assert_eq!(model.navigation_selection.as_deref(), Some("session-c"));
-
-        model.navigation_selection = Some("stale".into());
-        move_navigation_selection(&mut model, false);
-        assert_eq!(model.navigation_selection.as_deref(), Some("session-c"));
-    }
-
-    fn session(id: &str) -> SessionSummary {
-        SessionSummary {
-            api_version: "v1".into(),
-            session_id: id.into(),
-            agent_instance_id: "agent-instance".into(),
-            definition_id: "definition".into(),
-            definition_revision: "revision".into(),
-            opened_at: "2026-08-30T00:00:00Z".into(),
-            latest_position: 1,
-            latest_turn_id: Some("turn".into()),
-            latest_turn_state: Some("running".into()),
-            turn_count: 1,
-        }
+        assert_eq!(
+            next_focus(120, FocusTarget::Composer, true, true),
+            FocusTarget::Inspector
+        );
+        assert_eq!(
+            next_focus(120, FocusTarget::Inspector, true, true),
+            FocusTarget::Conversation
+        );
+        assert_eq!(
+            next_focus(120, FocusTarget::Conversation, true, true),
+            FocusTarget::Composer
+        );
+        assert_eq!(
+            next_focus(80, FocusTarget::Composer, false, true),
+            FocusTarget::Conversation
+        );
+        assert_eq!(
+            next_focus(120, FocusTarget::Conversation, false, false),
+            FocusTarget::Composer
+        );
+        assert_eq!(
+            next_focus(80, FocusTarget::Conversation, true, true),
+            FocusTarget::Composer
+        );
     }
 }

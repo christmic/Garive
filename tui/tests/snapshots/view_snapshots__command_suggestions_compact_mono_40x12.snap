@@ -2,7 +2,7 @@
 source: tui/tests/view_snapshots.rs
 expression: "command_suggestion_frame_at(Theme::Mono, 40, 12)"
 ---
-  GARIVE                    ●  ·  ready
+Session 1
 
 ╭ Commands ────────────────────────────╮
 │   /theme system  Follow terminal th… │
@@ -10,7 +10,7 @@ expression: "command_suggestion_frame_at(Theme::Mono, 40, 12)"
 │   /theme light  Use light theme      │
 │   /theme mono  Use mono theme        │
 ╰──────────────────────────────────────╯
-╔ Compose ═════════════════════════════╗
-║ /theme                               ║
-╚══════════════════════════════════════╝
-  Tab complete   Esc close   7 / 4096 B
+╭──────────────────────────────────────╮
+│ /theme                               │
+╰──────────────────────────────────────╯
+  Tab complete command

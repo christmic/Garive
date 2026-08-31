@@ -2,7 +2,6 @@
 source: tui/tests/view_snapshots.rs
 expression: "frame(&turns, Theme::Mono, 40, 12)"
 ---
-  GARIVE                  ●  ·  running
   ╭ Jump to a Turn ──────────────────╮
   │                                  │
   │  Search  release                 │
@@ -11,6 +10,7 @@ expression: "frame(&turns, Theme::Mono, 40, 12)"
   │    Enter jump   Esc close        │
   │                                  │
   ╰──────────────────────────────────╯
-║ Ask a follow-up…                     ║
-╚══════════════════════════════════════╝
-  Esc cancel   ? help       18 / 4096 B
+╭──────────────────────────────────────╮
+│ Ask a follow-up…                     │
+╰──────────────────────────────────────╯
+  Esc cancel run

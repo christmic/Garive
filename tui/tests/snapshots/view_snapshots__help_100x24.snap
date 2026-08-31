@@ -2,16 +2,16 @@
 source: tui/tests/view_snapshots.rs
 expression: "frame(&help, Theme::Dark, 100, 24)"
 ---
-  GARIVE  research-age  /  Session session-alph                               ● online  ·  running
+  Session 1  ·  research-age                                                         Agent running
 
- Sessions 2                │ Conversation · ● live
-              ╭ Keyboard guide ──────────────────────────────────────────────────────╮
- ▌ research-  │                                                                      │
-   ✓ complet  │    Enter send   Ctrl+J new line   Ctrl+N new Session                 │
-              │    Ctrl+S open Sessions   Ctrl+P open commands                       │
-   research-  │    Ctrl+R open prompt history   Ctrl+G edit externally               │
-   ● running  │    Ctrl+U/K kill to line edge   Ctrl+Y yank killed text              │
-              │    Esc cancel the running Turn   Ctrl+Q ask to quit                  │
+    You
+      Summar  ╭ Keyboard guide ──────────────────────────────────────────────────────╮
+      ✓  Age  │                                                                      │
+    ◆ Garive  │    Enter send   Ctrl+J new line   Ctrl+N new Session                 │
+      ## Rel  │    Ctrl+S open Sessions   Ctrl+P open commands                       │
+      • Veri  │    Ctrl+R open prompt history   Ctrl+G edit externally               │
+      • Ship  │    Ctrl+U/K kill to line edge   Ctrl+Y yank killed text              │
+      cargo   │    Esc cancel the running Turn   Ctrl+Q ask to quit                  │
               │                                                                      │
               │  Durable truth comes from the local Garive Host.                     │
               │  No function keys are required. Color and mouse are optional.        │
@@ -19,10 +19,10 @@ expression: "frame(&help, Theme::Dark, 100, 24)"
               │  manually.                                                           │
               │                                                                      │
               ╰──────────────────────────────────────────────────────────────────────╯
-                           │
-                           │
-                           │────────────────────────────────────────────────────────────────────────
-                           │╔ Compose ═════════════════════════════════════════════════════════════╗
-                           │║ Ask a follow-up…                                                     ║
-  Ctrl+N new · Ctrl+S list │╚══════════════════════════════════════════════════════════════════════╝
-                           │  Esc cancel   Ctrl+S sessions   Ctrl+P commands   ? help   18 / 4096 B
+
+
+
+  ╭──────────────────────────────────────────────────────────────────────────────────────────────╮
+  │ Ask a follow-up…                                                                             │
+  ╰──────────────────────────────────────────────────────────────────────────────────────────────╯
+    Esc cancel run

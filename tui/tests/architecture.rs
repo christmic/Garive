@@ -32,6 +32,24 @@ fn production_modules_remain_bounded() {
     );
 }
 
+#[test]
+fn session_pagination_uses_one_typed_runtime_boundary_in_all_terminal_modes() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let state = fs::read_to_string(root.join("src/runtime/app/state.rs"))
+        .expect("runtime state is readable");
+    let screen_reader = fs::read_to_string(root.join("src/runtime/app/screen_reader.rs"))
+        .expect("screen-reader runtime is readable");
+    let full_screen =
+        fs::read_to_string(root.join("src/runtime/app.rs")).expect("runtime is readable");
+
+    assert!(state.contains("AppAction::LoadSessionPageRequested"));
+    assert!(!state.contains("host::load_session_page"));
+    assert!(screen_reader.contains("controller::handle_terminal"));
+    assert!(full_screen.contains("controller::handle_terminal"));
+    assert!(!screen_reader.contains("list_sessions("));
+    assert!(!screen_reader.contains("LoadSessionPageRequested"));
+}
+
 fn collect_rust_files(directory: &Path, output: &mut Vec<std::path::PathBuf>) {
     for entry in fs::read_dir(directory).expect("source directory is readable") {
         let path = entry.expect("source entry is readable").path();
