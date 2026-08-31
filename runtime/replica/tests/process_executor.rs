@@ -2,19 +2,21 @@ use std::sync::{Arc, Mutex};
 
 use garive_runtime::{
     BuiltinProcessExecutor, ExecutorDispatch, ExecutorDispatchError, ExecutorPort,
-    ProcessBackendError, ProcessExecutable, ProcessExecutionRequest, ProcessExecutionResult,
-    ProcessExit, ProcessIsolationBackend, ProcessLane, ProcessLaneRegistry, ProcessWorkspaceMode,
-    T1_PROCESS_EXECUTOR_ID,
+    ExecutorRecoveryRequest, ProcessBackendError, ProcessExecutable, ProcessExecutionRequest,
+    ProcessExecutionResult, ProcessExit, ProcessIsolationBackend, ProcessLane, ProcessLaneRegistry,
+    ProcessWorkspaceMode, T1_PROCESS_EXECUTOR_ID,
 };
 use garive_tools::{
     BuiltinT1Catalogue, ExecutionFact, GrantId, InvocationGrant, ToolIntent, ToolInvocationId,
     T1_PROCESS_RUN,
 };
+use sha2::{Digest, Sha256};
 
 struct RecordingBackend {
     preflighted: Mutex<Vec<ProcessExecutionRequest>>,
     executed: Mutex<Vec<ProcessExecutionRequest>>,
     result: Mutex<Result<ProcessExecutionResult, ProcessBackendError>>,
+    reconciled: Mutex<Vec<(String, String)>>,
 }
 
 impl RecordingBackend {
@@ -23,6 +25,7 @@ impl RecordingBackend {
             preflighted: Mutex::new(Vec::new()),
             executed: Mutex::new(Vec::new()),
             result: Mutex::new(result),
+            reconciled: Mutex::new(Vec::new()),
         }
     }
 }
@@ -39,6 +42,18 @@ impl ProcessIsolationBackend for RecordingBackend {
     ) -> Result<ProcessExecutionResult, ProcessBackendError> {
         self.executed.lock().unwrap().push(request);
         self.result.lock().unwrap().clone()
+    }
+
+    fn terminate_or_prove_absent(
+        &self,
+        invocation_id: &ToolInvocationId,
+        dispatch_attempt_id: &str,
+    ) -> Result<(), ProcessBackendError> {
+        self.reconciled
+            .lock()
+            .unwrap()
+            .push((invocation_id.as_str().into(), dispatch_attempt_id.into()));
+        Ok(())
     }
 }
 
@@ -149,6 +164,36 @@ async fn changed_executor_attempt_never_reaches_backend() {
 
     assert_eq!(error, ExecutorDispatchError::ReceiptInvalid);
     assert!(backend.executed.lock().unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn lost_started_process_delegates_exact_idempotent_cleanup() {
+    let backend = Arc::new(RecordingBackend::new(Ok(result(ProcessExit::Code(0)))));
+    let (fact, mut executor) = dispatch(Arc::clone(&backend), "cargo", None).await.unwrap();
+    let invocation = ToolInvocationId::new("process-invocation").unwrap();
+    let digest = format!("{:x}", Sha256::digest(invocation.as_str().as_bytes()));
+    let attempt = format!("process-dispatch-{}", &digest[..24]);
+    let prepared_digest = match fact {
+        ExecutionFact::Completed {
+            receipt: Some(receipt),
+            ..
+        } => receipt.prepared_digest,
+        _ => panic!("expected process receipt"),
+    };
+
+    executor
+        .reconcile_started_loss(ExecutorRecoveryRequest {
+            invocation_id: &invocation,
+            prepared_digest: &prepared_digest,
+            executor_id: T1_PROCESS_EXECUTOR_ID,
+            executor_revision: "process-v1",
+            dispatch_attempt_id: &attempt,
+        })
+        .unwrap();
+    assert_eq!(
+        backend.reconciled.lock().unwrap().as_slice(),
+        [("process-invocation".into(), attempt)]
+    );
 }
 
 async fn dispatch(
