@@ -157,6 +157,16 @@ async fn history_move_and_reload_prove_the_exact_current_entry() {
             {"id":2,"url":"https://example.test:443/two"},
             {"id":3,"url":"https://example.test:443/three"}
         ]);
+        let pending = reply(&mut socket, json!({"currentIndex":-1,"entries":[]})).await;
+        assert_eq!(pending["method"], "Page.getNavigationHistory");
+        let created = reply(
+            &mut socket,
+            json!({"currentIndex":0,"entries":[{
+                "id":20,"title":"","transitionType":"link","url":"","userTypedURL":""
+            }]}),
+        )
+        .await;
+        assert_eq!(created["method"], "Page.getNavigationHistory");
         let initial = reply(
             &mut socket,
             json!({"currentIndex":1,"entries":entries.clone()}),
@@ -212,6 +222,20 @@ async fn history_move_and_reload_prove_the_exact_current_entry() {
     )
     .expect("config");
     let mut client = CdpClient::new(CdpTransport::connect(&config).await.expect("transport"));
+    assert_eq!(
+        client
+            .current_history_entry_if_available("session-1")
+            .await
+            .expect("pending history"),
+        None
+    );
+    assert_eq!(
+        client
+            .current_history_entry_if_available("session-1")
+            .await
+            .expect("created empty history"),
+        None
+    );
     let history = client
         .navigation_history("session-1")
         .await
