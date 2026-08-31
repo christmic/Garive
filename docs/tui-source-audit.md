@@ -170,10 +170,18 @@ separately preserves prompt ownership for Drag/Up after the pointer leaves the
 prompt. At their pinned revisions, Codex explicitly drops mouse events in
 `codex-rs/tui/src/tui/event_stream.rs:189-250`, while
 Pi's editor has no mouse handler (its `stdin-buffer.ts:102-110` only frames SGR
-sequences). Garive therefore authors its own smaller grapheme/cell hit test and
-focus-cancel lifecycle; it adopts only the directly observed down/drag/up
-ownership invariant, not Grok's multi-click, clipboard, element, or accelerated
-edge-scroll behavior.
+sequences). The same pinned Grok textarea directly classifies same-cell clicks
+at `textarea.rs:1216-1314`: double-click selects a word-class run, whitespace
+falls back to cursor placement, and triple-click selects a newline-delimited
+line. Its tests at `textarea_tests.rs:4428-4619` bind punctuation, underscore,
+Unicode, line-end, and cursor behavior.
+
+Garive authors its own smaller grapheme/cell hit test, focus-cancel lifecycle,
+500 ms pure click classifier, Unicode class resolver, and selection semantics.
+It adopts the directly observed down/drag/up ownership and word/line gesture
+invariants, but not Grok's clipboard writes, element-display behavior,
+Neovim-style interior cursor, or accelerated edge scrolling. Codex/Pi remain
+negative corroboration rather than inferred multi-click implementations.
 
 ## Codex findings
 

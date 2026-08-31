@@ -231,6 +231,12 @@ to select complete displayed characters; releasing leaves the selection ready
 for replacement or keyboard movement. Dragging just beyond the text viewport
 extends to its nearest visible insertion point. Borders and padding are inert,
 and switching terminal focus safely cancels an unfinished drag.
+Double-click the same text cell to select its complete Unicode word or
+punctuation run; double-clicking whitespace only places the cursor. A third
+click selects the complete logical line, ready for replacement. The sequence
+must stay on one cell within 500 ms and resets after typing, paste, resize,
+focus loss, or a click outside the composer. Multi-click selection never copies
+text automatically.
 
 ## Slash commands
 

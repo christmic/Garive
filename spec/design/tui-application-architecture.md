@@ -66,6 +66,7 @@ tui/src/
     mod.rs               key/paste/mouse routing
     editor.rs            grapheme-aware multiline editor
     history.rs           transient bounded prompt-history browser
+    mouse_gesture.rs     deterministic composer multi-click classification
     commands.rs          parser, typed registry, and shared availability contract
   persistence.rs         preference and pending-command ports/adapters
   runtime/
@@ -102,6 +103,13 @@ key priority and completion edits. Mouse routing consumes view geometry and
 cannot reproduce row coordinates. The modal command palette and visual-only
 anchored menu share the catalog but remain separate components because their
 search grammar, focus, accessibility, and backdrop contracts differ.
+
+Composer multi-click also has separate owners. `input/mouse_gesture.rs`
+classifies same-cell clicks within 500 ms as place, word, or logical-line
+selection; `EditorState` resolves Unicode grapheme classes and newline ranges;
+`view/composer.rs` remains the only screen-cell hit-test authority. Runtime
+stores only transient click timing/count and cancels it on keyboard, paste,
+resize, focus loss, or a click outside the composer.
 
 The composer is similarly bounded. `EditorState` owns admitted text and
 grapheme-indexed editing state; the private `EditorLayout` in

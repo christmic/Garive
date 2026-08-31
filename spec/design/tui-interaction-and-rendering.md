@@ -236,6 +236,15 @@ hit regions retain higher priority, and composer border/padding never places a
 cursor. Mouse coordinates are interpreted by the composer's shared wrapped
 layout rather than by controller-owned row math.
 
+A single left click places the grapheme cursor and may begin a drag. A second
+left click on the identical terminal cell within 500 ms selects the complete
+Unicode word-class or punctuation run under that cell; whitespace only places
+the cursor. A third selects the complete newline-delimited logical line,
+including its trailing newline when present. The fourth begins a new cycle.
+Typing, paste, resize, focus loss, or any non-composer click cancels the cycle.
+Word/line selection reuses the normal semantic selection style and replacement
+path; it never copies implicitly or exposes hidden buffer content.
+
 The editor accepts newline, tab-as-spaces, and printable Unicode. C0/C1 control
 characters other than newline/tab are rejected. Bidi isolate characters may be
 retained in the request but render with a visible safety marker; bidi override

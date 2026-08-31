@@ -394,6 +394,18 @@ inserts `X` and observes `woXrk`. It exits normally and proves alternate-screen
 restoration. Strict all-target/all-feature Clippy, formatting, and diff checks
 passed.
 
+Merge revision `ebd6ab0f` adds a pure same-cell multi-click classifier plus
+grapheme-safe word/punctuation and logical-line selection. Contracts cover the
+500 ms boundary, position/reset cancellation, Unicode alphanumeric/underscore
+runs, punctuation runs, whitespace, CJK, and trailing-newline inclusion. After
+rebasing onto `f5635e75`, all 37 library, 12 editor, 50 view, 32
+snapshot/boundary, and 14 shipping-binary macOS PTY tests passed. The added
+`100x24` mono SGR-mouse PTY double-clicks `beta`, observes reverse video and
+replaces it with `X`; it then triple-clicks the resulting `alpha X` line,
+observes both styled runs, replaces the line with `Y`, and proves mouse-mode
+plus alternate-screen restoration. Strict workspace all-target/all-feature
+Clippy, formatting, and diff checks passed.
+
 For unavailable local platforms, checked CI evidence may close the build gate;
 native interaction remains explicitly unverified until its named run exists.
 SSH/mosh, screen, non-UTF-8 locale, and legacy Windows Console stay outside the

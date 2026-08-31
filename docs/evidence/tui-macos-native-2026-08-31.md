@@ -345,6 +345,18 @@ and proved alternate-screen restoration. Strict all-target/all-feature Clippy
 passed with warnings denied; formatting and diff checks were clean. This is
 executable shipping-binary evidence, not a physical-window screenshot.
 
+Merge revision `ebd6ab0f` adds same-cell double/triple-click composer
+selection. On native macOS arm64 after rebasing onto `f5635e75`, all 37
+library, 12 editor, 50 view, 32 snapshot/boundary, and 14 shipping-binary PTY
+tests passed. The new `100x24` monochrome Expect PTY sends real SGR down/up
+pairs: double-click visibly selects `beta` and typing replaces it with `X`;
+triple-click visibly selects both runs of the resulting `alpha X` logical line
+and typing replaces it with `Y`. The raw transcript binds reverse-video word
+and line spans, mouse disable, and alternate-screen restore sequences. Strict
+workspace all-target/all-feature Clippy passed with warnings denied; formatting
+and diff checks were clean. This is executable shipping-binary evidence, not a
+physical-window screenshot.
+
 ## Terminal behavior checked during this run
 
 Launching the release shipping binary in a macOS PTY whose actual environment
