@@ -2,7 +2,7 @@
 
 use std::{collections::BTreeMap, path::PathBuf};
 
-/// One configured executable selected by its exact argv[0] alias.
+/// One configured executable selected by its exact `argv[0]` alias.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ProcessExecutable {
     alias: String,
@@ -26,7 +26,7 @@ impl ProcessExecutable {
         Ok(value)
     }
 
-    /// Returns the exact argv[0] alias exposed to the tool contract.
+    /// Returns the exact `argv[0]` alias exposed to the tool contract.
     pub fn alias(&self) -> &str {
         &self.alias
     }
@@ -89,7 +89,7 @@ impl ProcessLane {
         &self.name
     }
 
-    /// Resolves argv[0] without consulting PATH.
+    /// Resolves `argv[0]` without consulting PATH.
     pub fn executable(&self, alias: &str) -> Option<&ProcessExecutable> {
         self.executables.get(alias)
     }
