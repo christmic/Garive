@@ -100,7 +100,7 @@ fn serve(stream: &mut TcpStream, address: SocketAddr) {
         "/form" => (
             "200 OK",
             "Content-Type: text/html; charset=utf-8\r\n".into(),
-            r#"<!doctype html><title>Runtime port fixture</title><body style="height:4000px" onscroll="document.querySelector('main').setAttribute('aria-label','Scrolled')"><main><label>Account <input aria-label="Account name"></label><button data-count="0" onclick="this.dataset.count=String(Number(this.dataset.count)+1);this.setAttribute('aria-label','Submitted '+this.dataset.count)">Submit form</button></main></body>"#,
+            r#"<!doctype html><title>Runtime port fixture</title><body style="height:4000px" onscroll="document.querySelector('main').setAttribute('aria-label','Scrolled')"><main><label>Account <input aria-label="Account name"></label><label>Mode <select aria-label="Execution mode" onchange="this.setAttribute('aria-label','Execution mode '+this.value)"><option value="safe">Safe</option><option value="stable">Stable</option></select></label><button data-count="0" onclick="this.dataset.count=String(Number(this.dataset.count)+1);this.setAttribute('aria-label','Submitted '+this.dataset.count)">Submit form</button></main></body>"#,
         ),
         _ => ("204 No Content", String::new(), ""),
     };
@@ -228,7 +228,41 @@ async fn managed_chrome_runs_through_the_governed_runtime_port() {
         .iter()
         .any(|node| node.name.as_deref() == Some("Account name")));
 
-    let submit = after
+    let mode = after
+        .nodes
+        .iter()
+        .find(|node| node.name.as_deref() == Some("Execution mode"))
+        .expect("mode select")
+        .node_ref
+        .clone();
+    let select = NativeActionCommandV1 {
+        action_id: NativeActionId::new("managed-select").expect("action"),
+        target: target.clone(),
+        expected_snapshot_id: after.snapshot_id.clone(),
+        target_revision: after.target_revision.clone(),
+        prepared_input: json!({
+            "action":"select_option",
+            "node_ref":mode.as_str(),
+            "option":"stable",
+            "allowed_navigation_origins":[]
+        }),
+    };
+    let select_binding = port.preflight_action(&select).expect("select preflight");
+    let select_receipt = port
+        .dispatch_action(&select, &select_binding)
+        .await
+        .expect("select receipt");
+    assert_eq!(select_receipt.terminal_classification, "completed");
+    let after_select = port
+        .observe(&target, Some(&after.snapshot_id), bounds)
+        .await
+        .expect("post-select observation");
+    assert!(after_select
+        .nodes
+        .iter()
+        .any(|node| node.name.as_deref() == Some("Execution mode stable")));
+
+    let submit = after_select
         .nodes
         .iter()
         .find(|node| node.name.as_deref() == Some("Submit form"))
@@ -238,8 +272,8 @@ async fn managed_chrome_runs_through_the_governed_runtime_port() {
     let click = NativeActionCommandV1 {
         action_id: NativeActionId::new("managed-click").expect("action"),
         target: target.clone(),
-        expected_snapshot_id: after.snapshot_id.clone(),
-        target_revision: after.target_revision.clone(),
+        expected_snapshot_id: after_select.snapshot_id.clone(),
+        target_revision: after_select.target_revision.clone(),
         prepared_input: json!({
             "action":"click",
             "node_ref":submit.as_str(),
@@ -251,7 +285,7 @@ async fn managed_chrome_runs_through_the_governed_runtime_port() {
         .await
         .expect("click receipt");
     let after_click = port
-        .observe(&target, Some(&after.snapshot_id), bounds)
+        .observe(&target, Some(&after_select.snapshot_id), bounds)
         .await
         .expect("post-click observation");
     let submitted = after_click

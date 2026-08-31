@@ -196,6 +196,9 @@ fn admitted_method(method: &str) -> bool {
             | "DOM.focus"
             | "DOM.scrollIntoViewIfNeeded"
             | "DOM.getBoxModel"
+            | "DOM.resolveNode"
+            | "Runtime.callFunctionOn"
+            | "Runtime.releaseObject"
     )
 }
 

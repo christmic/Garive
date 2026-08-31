@@ -3,8 +3,8 @@
 use std::time::Duration;
 
 use garive_browser_cdp::{
-    CdpClient, CdpHistoryEntry, CdpNavigationResult, CdpPortableKey, CdpTransportError,
-    CdpWaitUntil, CDP_ADAPTER_REVISION,
+    CdpClient, CdpHistoryEntry, CdpNavigationResult, CdpPortableKey, CdpSelectOutcome,
+    CdpTransportError, CdpWaitUntil, CDP_ADAPTER_REVISION,
 };
 use garive_tools::canonical_http_origin;
 use serde_json::json;
@@ -114,6 +114,12 @@ impl CdpNativeAdapterPort {
                 &command.target_revision,
                 &node_ref,
             )?,
+            "select_option" => binding.resolve_select_option(
+                &command.target,
+                &command.expected_snapshot_id,
+                &command.target_revision,
+                &node_ref,
+            )?,
             _ => return Err(NativeProtocolError::ActionUnsupported),
         };
         let text = if action == "type_text" {
@@ -128,10 +134,26 @@ impl CdpNativeAdapterPort {
         } else {
             None
         };
+        let option = if action == "select_option" {
+            Some(
+                command
+                    .prepared_input
+                    .get("option")
+                    .and_then(serde_json::Value::as_str)
+                    .filter(|value| {
+                        !value.is_empty() && value.chars().count() <= 4_096 && value.len() <= 16_384
+                    })
+                    .ok_or(NativeProtocolError::InvalidBinding)?
+                    .to_owned(),
+            )
+        } else {
+            None
+        };
         Ok(ResolvedAction {
             action: action.into(),
             target,
             text,
+            option,
             allowed_navigation_origins: allowed_navigation_origins(command)?,
         })
     }
@@ -151,6 +173,7 @@ impl CdpNativeAdapterPort {
             "node_backend_id": resolved.target.backend_dom_node_id,
             "frame_id": resolved.target.frame_id,
             "text": resolved.text,
+            "option": resolved.option,
             "allowed_navigation_origins": resolved.allowed_navigation_origins,
         }))?;
         Ok(NativeAdapterBindingV1 {
@@ -742,6 +765,8 @@ impl NativeAdapterPort for CdpNativeAdapterPort {
             }
             let before_history = self.revalidate_history_snapshot().await?;
             self.current_binding = None;
+            let mut semantic_failure = None;
+            let mut selection_changed = None;
             let result = match resolved.action.as_str() {
                 "click" => {
                     self.client
@@ -768,6 +793,27 @@ impl NativeAdapterPort for CdpNativeAdapterPort {
                         )
                         .await
                 }
+                "select_option" => {
+                    match self
+                        .client
+                        .select_option_backend_node(
+                            &self.cdp_session_id,
+                            resolved.target.backend_dom_node_id,
+                            resolved.option.as_deref().unwrap_or_default(),
+                        )
+                        .await
+                    {
+                        Ok(CdpSelectOutcome::Selected { changed }) => {
+                            selection_changed = Some(changed);
+                            Ok(())
+                        }
+                        Ok(CdpSelectOutcome::OptionUnavailable) => {
+                            semantic_failure = Some(NativeProtocolError::ActionUnsupported);
+                            Ok(())
+                        }
+                        Err(error) => Err(error),
+                    }
+                }
                 _ => return Err(NativeProtocolError::ActionUnsupported),
             };
             if result.is_err() {
@@ -778,18 +824,26 @@ impl NativeAdapterPort for CdpNativeAdapterPort {
                 .current_history_entry(&self.cdp_session_id)
                 .await
                 .map_err(|_| NativeProtocolError::ActionUncertain)?;
-            let outcome = action_navigation_outcome(
+            let mut outcome = action_navigation_outcome(
                 &mut self.target_revision,
                 &before_history,
                 &after_history,
                 &resolved.allowed_navigation_origins,
             );
+            if outcome.failure_code.is_none() {
+                if let Some(failure) = semantic_failure {
+                    outcome.terminal_classification = "failed";
+                    outcome.failure_code = Some(failure.code().to_owned());
+                }
+            }
             self.last_history_entry = Some(after_history.clone());
             let receipt_evidence_digest = canonical_digest(&json!({
                 "action_id": command.action_id.as_str(),
                 "preflight_evidence_digest": binding.preflight_evidence_digest,
                 "terminal_classification": outcome.terminal_classification,
                 "failure_code": outcome.failure_code,
+                "semantic_action": resolved.action,
+                "selection_changed": selection_changed,
                 "history_entry_id": after_history.id,
                 "final_origin": outcome.final_origin,
                 "target_revision": self.target_revision,
@@ -811,6 +865,7 @@ struct ResolvedAction {
     action: String,
     target: CdpElementTarget,
     text: Option<String>,
+    option: Option<String>,
     allowed_navigation_origins: Vec<String>,
 }
 

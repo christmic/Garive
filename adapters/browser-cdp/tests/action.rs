@@ -1,6 +1,6 @@
 use futures::{SinkExt, StreamExt};
 use garive_adapter_browser_cdp::{
-    CdpAdapterConfig, CdpClient, CdpLimits, CdpPortableKey, CdpTransport,
+    CdpAdapterConfig, CdpClient, CdpLimits, CdpPortableKey, CdpSelectOutcome, CdpTransport,
 };
 use serde_json::{json, Value};
 use tokio::net::TcpListener;
@@ -23,6 +23,75 @@ async fn next(
         .await
         .expect("response");
     command
+}
+
+#[tokio::test]
+async fn select_option_uses_one_fixed_function_and_releases_the_exact_node() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.expect("listener");
+    let address = listener.local_addr().expect("address");
+    let server = tokio::spawn(async move {
+        let (stream, _) = listener.accept().await.expect("accept");
+        let mut socket = accept_async(stream).await.expect("websocket");
+        let resolve = next(
+            &mut socket,
+            json!({"object":{"type":"object","subtype":"node","objectId":"select-42"}}),
+        )
+        .await;
+        assert_eq!(resolve["method"], "DOM.resolveNode");
+        assert_eq!(resolve["params"], json!({"backendNodeId":42}));
+
+        let call = next(
+            &mut socket,
+            json!({"result":{"type":"object","value":{"status":"selected","changed":true,"value":"stable"}}}),
+        )
+        .await;
+        assert_eq!(call["method"], "Runtime.callFunctionOn");
+        assert_eq!(call["params"]["objectId"], "select-42");
+        assert_eq!(call["params"]["arguments"], json!([{"value":"stable"}]));
+        assert_eq!(call["params"]["returnByValue"], true);
+        let declaration = call["params"]["functionDeclaration"]
+            .as_str()
+            .expect("fixed function");
+        assert!(declaration.contains("HTMLSelectElement"));
+        assert!(!declaration.contains("stable"));
+
+        let release = next(&mut socket, json!({})).await;
+        assert_eq!(release["method"], "Runtime.releaseObject");
+        assert_eq!(release["params"], json!({"objectId":"select-42"}));
+
+        next(
+            &mut socket,
+            json!({"object":{"type":"object","subtype":"node","objectId":"select-42"}}),
+        )
+        .await;
+        next(
+            &mut socket,
+            json!({"result":{"type":"object","value":{"status":"unavailable"}}}),
+        )
+        .await;
+        next(&mut socket, json!({})).await;
+    });
+    let config = CdpAdapterConfig::new(
+        format!("ws://{address}/devtools/browser/capability"),
+        CdpLimits::new(64 * 1_024, 1, 16, 2_000).expect("limits"),
+    )
+    .expect("config");
+    let mut client = CdpClient::new(CdpTransport::connect(&config).await.expect("transport"));
+
+    let outcome = client
+        .select_option_backend_node("session-1", 42, "stable")
+        .await
+        .expect("select option");
+
+    assert_eq!(outcome, CdpSelectOutcome::Selected { changed: true });
+    assert_eq!(
+        client
+            .select_option_backend_node("session-1", 42, "missing")
+            .await
+            .expect("unavailable option"),
+        CdpSelectOutcome::OptionUnavailable
+    );
+    server.await.expect("server");
 }
 
 #[tokio::test]

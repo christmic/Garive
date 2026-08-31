@@ -237,6 +237,104 @@ async fn concrete_port_dispatches_bound_click_type_and_clear_actions() {
 }
 
 #[tokio::test]
+async fn concrete_port_selects_one_bound_native_option_with_effect_evidence() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.expect("listener");
+    let address = listener.local_addr().expect("address");
+    let server = tokio::spawn(async move {
+        let (stream, _) = listener.accept().await.expect("accept");
+        let mut socket = accept_async(stream).await.expect("websocket");
+        assert_eq!(
+            reply(&mut socket, json!({})).await["method"],
+            "Accessibility.enable"
+        );
+        let tree = reply(
+            &mut socket,
+            json!({"nodes":[
+                {"nodeId":"select","ignored":false,"role":{"value":"combobox"},"name":{"value":"Mode"},"backendDOMNodeId":42,"parentId":"root"},
+                {"nodeId":"root","ignored":false,"role":{"value":"RootWebArea"},"childIds":["select"]}
+            ]}),
+        )
+        .await;
+        assert_eq!(tree["method"], "Accessibility.getFullAXTree");
+        reply(&mut socket, history(1, "https://fixture.test:443/form")).await;
+        reply(&mut socket, history(1, "https://fixture.test:443/form")).await;
+        let resolve = reply(
+            &mut socket,
+            json!({"object":{"type":"object","subtype":"node","objectId":"select-42"}}),
+        )
+        .await;
+        assert_eq!(resolve["method"], "DOM.resolveNode");
+        let select = reply(
+            &mut socket,
+            json!({"result":{"type":"object","value":{"status":"selected","changed":true,"value":"stable"}}}),
+        )
+        .await;
+        assert_eq!(select["method"], "Runtime.callFunctionOn");
+        assert_eq!(select["params"]["arguments"], json!([{"value":"stable"}]));
+        assert_eq!(
+            reply(&mut socket, json!({})).await["method"],
+            "Runtime.releaseObject"
+        );
+        reply(&mut socket, history(1, "https://fixture.test:443/form")).await;
+    });
+    let config = CdpAdapterConfig::new(
+        format!("ws://{address}/devtools/browser/capability"),
+        CdpLimits::new(64 * 1_024, 1, 16, 2_000).expect("limits"),
+    )
+    .expect("config");
+    let client = CdpClient::new(CdpTransport::connect(&config).await.expect("transport"));
+    let mut port = CdpNativeAdapterPort::new(
+        target(),
+        "cdp-session",
+        "revision-1",
+        "run-select",
+        64,
+        client,
+    )
+    .expect("port");
+    let observation = port
+        .observe(
+            &target(),
+            None,
+            NativeObservationBounds {
+                max_nodes: 16,
+                max_text_bytes: 4_096,
+            },
+        )
+        .await
+        .expect("observation");
+    let node_ref = observation
+        .nodes
+        .iter()
+        .find(|node| node.role == "combobox")
+        .expect("combobox")
+        .node_ref
+        .clone();
+    let command = NativeActionCommandV1 {
+        action_id: NativeActionId::new("action-select").expect("action"),
+        target: target(),
+        expected_snapshot_id: observation.snapshot_id.clone(),
+        target_revision: observation.target_revision.clone(),
+        prepared_input: json!({
+            "action":"select_option",
+            "node_ref":node_ref.as_str(),
+            "option":"stable",
+            "allowed_navigation_origins":[]
+        }),
+    };
+    let binding = port.preflight_action(&command).expect("preflight");
+
+    let receipt = port
+        .dispatch_action(&command, &binding)
+        .await
+        .expect("receipt");
+
+    assert_eq!(receipt.terminal_classification, "completed");
+    assert!(receipt.failure_code.is_none());
+    server.await.expect("server");
+}
+
+#[tokio::test]
 async fn concrete_port_revalidates_focus_for_keys_and_binds_scroll_to_the_page_snapshot() {
     let listener = TcpListener::bind("127.0.0.1:0").await.expect("listener");
     let address = listener.local_addr().expect("address");

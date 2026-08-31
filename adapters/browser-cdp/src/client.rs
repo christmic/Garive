@@ -11,10 +11,30 @@ use url::Url;
 use crate::{CdpProtocolError, CdpTransport, CdpTransportError};
 
 const MAX_ACTION_TEXT_BYTES: usize = 32_768;
+const MAX_OPTION_SCALARS: usize = 4_096;
+const MAX_OPTION_UTF8_BYTES: usize = 16_384;
 const MAX_SCROLL_DELTA: u64 = 100_000;
 const MAX_LAYOUT_EXTENT: f64 = 10_000_000.0;
 const SCROLL_SETTLE_ATTEMPTS: usize = 50;
 const SCROLL_SETTLE_INTERVAL: Duration = Duration::from_millis(10);
+const SELECT_OPTION_FUNCTION: &str = r#"function(value) {
+    if (!(this instanceof HTMLSelectElement)) return {status: "unavailable"};
+    const matches = Array.from(this.options).filter(option => option.value === value);
+    if (matches.length !== 1) return {status: "unavailable"};
+    const option = matches[0];
+    if (option.disabled || (option.parentElement instanceof HTMLOptGroupElement && option.parentElement.disabled)) {
+        return {status: "unavailable"};
+    }
+    const before = this.value;
+    this.value = value;
+    if (this.value !== value) return {status: "unavailable"};
+    const changed = before !== this.value;
+    if (changed) {
+        this.dispatchEvent(new Event("input", {bubbles: true, composed: true}));
+        this.dispatchEvent(new Event("change", {bubbles: true}));
+    }
+    return {status: "selected", changed, value: this.value};
+}"#;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 struct CdpViewportMetrics {
@@ -93,6 +113,18 @@ pub struct CdpAxNode {
 pub struct CdpAxTree {
     /// Nodes in browser-returned order.
     pub nodes: Vec<CdpAxNode>,
+}
+
+/// Trustworthy terminal classification from the fixed native select operation.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum CdpSelectOutcome {
+    /// One exact enabled option was selected; `changed` reports value movement.
+    Selected {
+        /// Whether the selected value differed before dispatch.
+        changed: bool,
+    },
+    /// The target was not a native select or the option was absent/ambiguous/disabled.
+    OptionUnavailable,
 }
 
 /// Exact T2 page readiness condition mapped to CDP events.
@@ -481,6 +513,85 @@ impl CdpClient {
                 .await?;
         }
         Ok(())
+    }
+
+    /// Selects one unique enabled native option through a fixed adapter function.
+    pub async fn select_option_backend_node(
+        &mut self,
+        session_id: &str,
+        backend_dom_node_id: u64,
+        option: &str,
+    ) -> Result<CdpSelectOutcome, CdpTransportError> {
+        validate_id(session_id)?;
+        if backend_dom_node_id == 0
+            || option.is_empty()
+            || option.chars().count() > MAX_OPTION_SCALARS
+            || option.len() > MAX_OPTION_UTF8_BYTES
+        {
+            return Err(protocol());
+        }
+        let resolved = self
+            .transport
+            .call(
+                "DOM.resolveNode",
+                json!({"backendNodeId":backend_dom_node_id}),
+                Some(session_id.into()),
+            )
+            .await?;
+        let object_id = resolved
+            .get("object")
+            .and_then(Value::as_object)
+            .and_then(|object| object.get("objectId"))
+            .and_then(Value::as_str)
+            .filter(|value| !value.is_empty() && value.len() <= 4_096)
+            .ok_or_else(protocol)?
+            .to_owned();
+        let selection = self
+            .transport
+            .call(
+                "Runtime.callFunctionOn",
+                json!({
+                    "objectId":object_id,
+                    "functionDeclaration":SELECT_OPTION_FUNCTION,
+                    "arguments":[{"value":option}],
+                    "returnByValue":true,
+                    "awaitPromise":false,
+                    "userGesture":true
+                }),
+                Some(session_id.into()),
+            )
+            .await;
+        let release = self
+            .transport
+            .call(
+                "Runtime.releaseObject",
+                json!({"objectId":object_id}),
+                Some(session_id.into()),
+            )
+            .await;
+        let selection = selection?;
+        release?;
+        if selection.get("exceptionDetails").is_some() {
+            return Err(protocol());
+        }
+        let result = selection
+            .get("result")
+            .and_then(Value::as_object)
+            .and_then(|result| result.get("value"))
+            .and_then(Value::as_object)
+            .ok_or_else(protocol)?;
+        match result.get("status").and_then(Value::as_str) {
+            Some("selected") if result.get("value").and_then(Value::as_str) == Some(option) => {
+                Ok(CdpSelectOutcome::Selected {
+                    changed: result
+                        .get("changed")
+                        .and_then(Value::as_bool)
+                        .ok_or_else(protocol)?,
+                })
+            }
+            Some("unavailable") => Ok(CdpSelectOutcome::OptionUnavailable),
+            _ => Err(protocol()),
+        }
     }
 
     /// Dispatches one closed portable key down/up pair to the current page focus.

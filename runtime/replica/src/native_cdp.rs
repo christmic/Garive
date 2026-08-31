@@ -143,6 +143,23 @@ impl CdpSnapshotBindingV1 {
         )
     }
 
+    /// Resolves native option selection under exact binding and declared support.
+    pub fn resolve_select_option(
+        &self,
+        target: &NativeTarget,
+        expected_snapshot_id: &NativeSnapshotId,
+        target_revision: &str,
+        node_ref: &NativeNodeRef,
+    ) -> Result<CdpElementTarget, NativeProtocolError> {
+        self.resolve_element(
+            target,
+            expected_snapshot_id,
+            target_revision,
+            node_ref,
+            "select_option",
+        )
+    }
+
     fn resolve_element(
         &self,
         target: &NativeTarget,
