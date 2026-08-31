@@ -535,6 +535,26 @@ impl CdpClient {
         Ok(history.entries[history.current_index].clone())
     }
 
+    /// Returns no entry only for Chromium's exact newly-attached empty-history state.
+    pub async fn current_history_entry_if_available(
+        &mut self,
+        session_id: &str,
+    ) -> Result<Option<CdpHistoryEntry>, CdpTransportError> {
+        validate_id(session_id)?;
+        let result = self
+            .transport
+            .call(
+                "Page.getNavigationHistory",
+                json!({}),
+                Some(session_id.into()),
+            )
+            .await?;
+        let Some(history) = parse_optional_navigation_history(&result)? else {
+            return Ok(None);
+        };
+        Ok(Some(history.entries[history.current_index].clone()))
+    }
+
     /// Returns the bounded ordered top-level navigation history.
     pub async fn navigation_history(
         &mut self,
@@ -1417,6 +1437,43 @@ fn parse_navigation_history(result: &Value) -> Result<CdpNavigationHistory, CdpT
         current_index,
         entries,
     })
+}
+
+fn parse_optional_navigation_history(
+    result: &Value,
+) -> Result<Option<CdpNavigationHistory>, CdpTransportError> {
+    let current_index = result
+        .get("currentIndex")
+        .and_then(Value::as_i64)
+        .ok_or_else(protocol)?;
+    let entries = result
+        .get("entries")
+        .and_then(Value::as_array)
+        .ok_or_else(protocol)?;
+    if current_index == -1 && entries.is_empty() {
+        return Ok(None);
+    }
+    if current_index == 0 && entries.len() == 1 {
+        let entry = entries[0].as_object().ok_or_else(protocol)?;
+        let id_valid = entry
+            .get("id")
+            .and_then(Value::as_i64)
+            .is_some_and(|id| id >= 0);
+        let pending_url = entry.get("url").and_then(Value::as_str) == Some("")
+            && entry.get("userTypedURL").and_then(Value::as_str) == Some("");
+        let title_valid = entry
+            .get("title")
+            .and_then(Value::as_str)
+            .is_some_and(|title| title.len() <= 4_096);
+        let transition_valid = entry
+            .get("transitionType")
+            .and_then(Value::as_str)
+            .is_some_and(|transition| !transition.is_empty() && transition.len() <= 128);
+        if id_valid && pending_url && title_valid && transition_valid {
+            return Ok(None);
+        }
+    }
+    parse_navigation_history(result).map(Some)
 }
 
 fn property_truthy(value: &Value) -> bool {
