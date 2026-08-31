@@ -17,9 +17,9 @@ use sha2::{Digest, Sha256};
 use crate::{
     commit_planned_turn, get_turn, plan_cancel_turn, plan_continue_turn, plan_start_turn,
     reconstruct_suspended_turn, CancelReason, CancelTurnCommand, ContinuationInput,
-    ContinueTurnCommand, GetTurnQuery, InteractionInputRepresentation, RuntimeCommandError,
-    RuntimeCommandId, RuntimeSuspensionKind, RuntimeTurnStatus, SqliteLedger, SqliteLedgerError,
-    StartTurnCommand,
+    ContinueTurnCommand, GetTurnQuery, InteractionInputRepresentation, LiveOutputHub,
+    LiveOutputSubscriber, RuntimeCommandError, RuntimeCommandId, RuntimeSuspensionKind,
+    RuntimeTurnStatus, SqliteLedger, SqliteLedgerError, StartTurnCommand,
 };
 
 use super::{
@@ -60,6 +60,26 @@ impl LiveHost {
         )
     }
 
+    /// Constructs a Host with an explicitly shared H4 live-output hub.
+    pub fn new_with_live_output(
+        database_path: impl AsRef<Path>,
+        installed: InstalledAgent,
+        limits: LiveHostLimits,
+        clock: Arc<dyn HostClock>,
+        dispatcher: Arc<dyn TurnDispatcher>,
+        live_output: LiveOutputHub,
+    ) -> Result<Self, LiveHostError> {
+        Self::construct(
+            database_path,
+            installed,
+            limits,
+            HostReadLimits::PRODUCT_DEFAULT,
+            clock,
+            dispatcher,
+            Some(live_output),
+        )
+    }
+
     /// Constructs a Host with explicit independent H2 projection bounds.
     pub fn new_with_read_limits(
         database_path: impl AsRef<Path>,
@@ -68,6 +88,26 @@ impl LiveHost {
         read_limits: HostReadLimits,
         clock: Arc<dyn HostClock>,
         dispatcher: Arc<dyn TurnDispatcher>,
+    ) -> Result<Self, LiveHostError> {
+        Self::construct(
+            database_path,
+            installed,
+            limits,
+            read_limits,
+            clock,
+            dispatcher,
+            None,
+        )
+    }
+
+    fn construct(
+        database_path: impl AsRef<Path>,
+        installed: InstalledAgent,
+        limits: LiveHostLimits,
+        read_limits: HostReadLimits,
+        clock: Arc<dyn HostClock>,
+        dispatcher: Arc<dyn TurnDispatcher>,
+        live_output: Option<LiveOutputHub>,
     ) -> Result<Self, LiveHostError> {
         validate_installed(&installed, limits)?;
         if !read_limits.valid() {
@@ -82,8 +122,35 @@ impl LiveHost {
                 read_limits,
                 clock,
                 dispatcher,
+                live_output,
             }),
         })
+    }
+
+    /// Returns the configured H4 hub for an explicitly shared worker composition.
+    pub fn live_output_hub(&self) -> Option<LiveOutputHub> {
+        self.state.live_output.clone()
+    }
+
+    pub(crate) fn subscribe_live_output(
+        &self,
+        session: &str,
+    ) -> Result<LiveOutputSubscriber, LiveHostError> {
+        let session_id = identity::<SessionId>(session)?;
+        let exists = self
+            .ledger()?
+            .session_watermark(&session_id)
+            .map_err(map_sqlite)?
+            .is_some();
+        if !exists {
+            return Err(LiveHostError::NotFound);
+        }
+        self.state
+            .live_output
+            .as_ref()
+            .ok_or(LiveHostError::NotFound)?
+            .subscribe(session)
+            .map_err(|_| LiveHostError::DurabilityUnavailable)
     }
 
     /// Lists installed Agent definitions without exposing Runtime configuration.

@@ -19,6 +19,7 @@ use super::{
     validate_key, CancelTurnBody, ContinueTurnBody, CreateSessionBody, ErrorBody, LiveHost,
     LiveHostError, LiveHostEvent, StartTurnBody,
 };
+use crate::{LiveOutputReceiveError, LiveOutputSubscriber};
 
 const IDEMPOTENCY_KEY: &str = "idempotency-key";
 
@@ -39,7 +40,7 @@ impl LiveHostServer {
             .await
             .map_err(LiveHostServerError::Io)?;
         let local_addr = listener.local_addr().map_err(LiveHostServerError::Io)?;
-        let app = Router::new()
+        let mut app = Router::new()
             .route("/v1/agent-definitions", get(agent_definitions))
             .route("/v1/sessions", post(create_session).get(session_page))
             .route("/v1/sessions/:session_id", get(session_view))
@@ -47,9 +48,11 @@ impl LiveHostServer {
             .route("/v1/sessions/:session_id/turns", post(start_turn))
             .route("/v1/turns/:operation", post(mutate_turn))
             .route("/v1/sessions/:session_id/events", get(events))
-            .route("/internal/mobile/wake-snapshot", get(mobile_wake_snapshot))
-            .fallback(not_found)
-            .with_state(host);
+            .route("/internal/mobile/wake-snapshot", get(mobile_wake_snapshot));
+        if host.live_output_hub().is_some() {
+            app = app.route("/v1/sessions/:session_id/live", get(live_output));
+        }
+        let app = app.fallback(not_found).with_state(host);
         Ok(Self {
             listener,
             local_addr,
@@ -72,6 +75,34 @@ impl LiveHostServer {
             .await
             .map_err(LiveHostServerError::Io)
     }
+}
+
+async fn live_output(State(host): State<LiveHost>, Path(session_id): Path<String>) -> Response {
+    let subscriber = match host.subscribe_live_output(&session_id) {
+        Ok(subscriber) => subscriber,
+        Err(error) => return error_response(error),
+    };
+    let keepalive = Duration::from_millis(host.limits().event_poll_interval_ms);
+    let events = stream::unfold(subscriber, next_live_output);
+    Sse::new(events)
+        .keep_alive(
+            axum::response::sse::KeepAlive::new()
+                .interval(keepalive)
+                .text("keepalive"),
+        )
+        .into_response()
+}
+
+async fn next_live_output(
+    mut subscriber: LiveOutputSubscriber,
+) -> Option<(Result<Event, Infallible>, LiveOutputSubscriber)> {
+    let value = match subscriber.recv().await {
+        Ok(value) => value,
+        Err(LiveOutputReceiveError::Gap | LiveOutputReceiveError::Closed) => return None,
+    };
+    let data = serde_json::to_string(&value).ok()?;
+    let event = Event::default().event("live").data(data);
+    Some((Ok(event), subscriber))
 }
 
 async fn agent_definitions(State(host): State<LiveHost>) -> Response {

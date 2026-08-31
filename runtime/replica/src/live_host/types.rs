@@ -697,4 +697,5 @@ pub(crate) struct LiveHostState {
     pub read_limits: HostReadLimits,
     pub clock: Arc<dyn HostClock>,
     pub dispatcher: Arc<dyn TurnDispatcher>,
+    pub live_output: Option<crate::LiveOutputHub>,
 }

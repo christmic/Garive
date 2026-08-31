@@ -153,9 +153,9 @@ disk.
 
 The publisher never awaits a terminal renderer. A subscriber that falls behind
 the bounded broadcast buffer receives a local `gap` result, not a silently
-advanced sequence. The HTTP route converts a gap to `preview_unavailable` and
-closes that stream after sending it. Reconnect receives a current snapshot when
-the generation is still active.
+advanced sequence. The HTTP route closes that stream on a gap; the client turns
+the non-terminal EOF into local `PreviewUnavailable` before reconnecting.
+Reconnect receives a current snapshot when the generation is still active.
 
 The Rust client validates exact version, Session ownership, identity bounds,
 closed kind/field combinations, stream consistency, and contiguous sequences.
