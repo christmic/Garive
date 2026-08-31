@@ -343,6 +343,13 @@ Agent Snapshot before Core starts. Constructing the T1 system value does not
 implicitly enable tools, discover host paths, read environment variables or
 alter an Agent snapshot.
 
+Product activation installs T1 only in a Workspace Agent whose Session contract
+requires one explicit Workspace execution scope. A general Agent with no such
+scope remains a separate Definition and does not inherit T1 because the Host
+has T1 machine resources. Zero or multiple Workspace roots cannot be resolved
+by selecting an arbitrary attachment, the first attachment, or a process-global
+default; they fail before an executor is bound.
+
 ## Stable safe terminal codes
 
 T1 uses existing preparation/governance failures plus:
