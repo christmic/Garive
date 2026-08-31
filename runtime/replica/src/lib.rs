@@ -45,7 +45,7 @@ pub use builtin_workspace_executor::{BuiltinWorkspaceExecutor, T1_WORKSPACE_EXEC
 pub use confined_read_executor::ConfinedFileReadExecutor;
 pub use core_bridge::{
     authorize_memory_query, authorize_memory_write, canonical_model_request_digest,
-    decode_committed_memory_recall, derive_knowledge_recovery, execute_durable_agent,
+    decode_committed_memory_recall, derive_knowledge_recovery,
     execute_durable_agent_with_capabilities, execute_durable_agent_with_f0,
     execute_durable_agent_with_skill_activation, execute_durable_model_only,
     execute_durable_model_only_with_capabilities, execute_durable_model_only_with_skill_activation,

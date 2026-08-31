@@ -15,7 +15,8 @@ use garive_core::{
     ClockPort, ContextCandidate, ContextPort, ContextPortError, ContextPurpose, ContextRequest,
     EventSink, ExecutionId as CoreExecutionId, ExecutionLimits, FactRef, MissingUsagePolicy,
     ModelOnlyLimits, ModelRecoveryPolicy, OutputLimitAction, PortFailure, Retention,
-    SessionId as CoreSessionId, TerminalRecoveryAction, TurnId as CoreTurnId, Visibility,
+    SessionId as CoreSessionId, TerminalRecoveryAction, ToolPreparationPort, TurnId as CoreTurnId,
+    Visibility,
 };
 use garive_knowledge::{
     Citation, CitationScheme, ContentBinding as KnowledgeContent, FreshnessRequirement,
@@ -41,24 +42,29 @@ use garive_provider_anthropic::build_profile as build_anthropic_profile;
 use garive_provider_compatible::{MessagesDeployment, ProtocolErrorPolicy};
 use garive_provider_profile::{ConnectionInput, EndpointSelection, SecretValue};
 use garive_runtime::{
-    commit_planned_turn, execute_durable_agent, execute_durable_model_only,
+    commit_planned_turn, execute_durable_agent_with_f0, execute_durable_model_only,
     execute_durable_model_only_with_capabilities, plan_cancel_turn, plan_memory_retrieval,
     plan_skill_activation, plan_start_turn, AuthorityDecision, AuthorityFuture, AuthorityPort,
     AuthorityRequest, CancelReason, CancelTurnCommand, DurableExecutionConfig,
     DurableExecutionError, EffectiveRuntimeLimits, ExecutionLeaseRequest, ExecutorDispatch,
-    ExecutorFuture, ExecutorPort, KnowledgeAccessGrant, KnowledgeConnector,
-    KnowledgeConnectorFuture, KnowledgeConnectorOutcome, MemoryRetrievalContext,
-    ModelLifecycleContext, PreparedAgentCapabilities, PreparedExecution,
+    ExecutorFuture, ExecutorPort, F0ExecutionGovernance, F0GovernanceContext, KnowledgeAccessGrant,
+    KnowledgeConnector, KnowledgeConnectorFuture, KnowledgeConnectorOutcome,
+    MemoryRetrievalContext, ModelLifecycleContext, PreparedAgentCapabilities, PreparedExecution,
     PreparedKnowledgeCapability, RuntimeCommandError, RuntimeCommandId, RuntimeHttpLimits,
-    RuntimeModelHttpTransport, SkillActivationContext, SqliteLedger, StartTurnCommand,
-    TerminalPublicationError, TerminalPublisher,
+    RuntimeModelHttpTransport, SafetyDecisionV1, SafetyDisposition, SafetyEvaluation, SafetyFuture,
+    SafetyPort, SandboxAdmission, SandboxAdmissionPort, SandboxAdmissionRequest, SandboxBindingV1,
+    SkillActivationContext, SqliteLedger, StartTurnCommand, TerminalPublicationError,
+    TerminalPublisher,
 };
 use garive_skill::{
     ActivationMode, ActivationPolicy, ContentBinding, SkillActivationRequest, SkillDefinition,
 };
 use garive_tools::{
-    EffectReceipt, ExecutionCapability, ExecutionFact, ExecutionRequirements, ReceiptId,
-    ReplayClass, TerminalClassification, ToolDefinition,
+    AccessMode, AccessNamespace, AccessPolicyEntry, EffectReceipt, ExecutionCapability,
+    ExecutionFact, ExecutionRequirements, InvocationAccessSet, PreparationError, PreparedToolCall,
+    ReceiptId, ReplayClass, ResourceAccess, SandboxControl, SandboxRequirementsV1,
+    TerminalClassification, ToolAccessPolicyV1, ToolAccessResolver, ToolCatalog, ToolDefinition,
+    ToolIntent,
 };
 use tempfile::tempdir;
 
@@ -680,6 +686,108 @@ impl AuthorityPort for Authority {
     }
 }
 
+struct ReadAccessResolver;
+
+impl ToolAccessResolver for ReadAccessResolver {
+    fn revision(&self) -> &str {
+        "read-resolver-v1"
+    }
+
+    fn resolve(
+        &self,
+        arguments: &serde_json::Value,
+    ) -> Result<InvocationAccessSet, PreparationError> {
+        InvocationAccessSet::new([ResourceAccess::new(
+            AccessNamespace::Filesystem,
+            arguments["path"].as_str().unwrap_or_default(),
+            AccessMode::Read,
+        )?])
+    }
+}
+
+struct ReadPreparation(ToolCatalog);
+
+impl ToolPreparationPort for ReadPreparation {
+    fn prepare(&self, intent: &ToolIntent) -> Result<PreparedToolCall, PreparationError> {
+        self.0.prepare_v3(intent, &ReadAccessResolver)
+    }
+}
+
+struct AllowReadSafety(ExecutionRequirements);
+
+impl SafetyPort for AllowReadSafety {
+    fn decide<'a>(&'a mut self, request: &'a garive_runtime::SafetyRequestV1) -> SafetyFuture<'a> {
+        Box::pin(async move {
+            Ok(SafetyEvaluation {
+                decision: SafetyDecisionV1::new(
+                    "read-safety",
+                    SafetyDisposition::Allow,
+                    request.invocation_id().clone(),
+                    request.prepared_digest(),
+                    Some("a".repeat(64)),
+                    "policy-1",
+                    None,
+                )
+                .unwrap(),
+                granted_requirements: Some(self.0.clone()),
+                interaction: None,
+            })
+        })
+    }
+}
+
+struct ReadSandbox;
+
+impl SandboxAdmissionPort for ReadSandbox {
+    fn admit(
+        &mut self,
+        _: SandboxAdmissionRequest<'_>,
+    ) -> Result<SandboxAdmission, garive_runtime::GovernedRuntimePortError> {
+        Ok(SandboxAdmission {
+            binding: SandboxBindingV1::new(
+                "read-binding",
+                "workspace",
+                "local.read",
+                "1",
+                "policy-1",
+                read_access_policy(),
+                read_sandbox_requirements(),
+            )
+            .unwrap(),
+            effective_limits_digest: "b".repeat(64),
+            preflight_id: "read-preflight".into(),
+            dispatch_attempt_id: "tool-dispatch".into(),
+        })
+    }
+}
+
+fn read_access_policy() -> ToolAccessPolicyV1 {
+    ToolAccessPolicyV1::new(
+        "read-policy-v1",
+        [AccessPolicyEntry::new("a", [AccessMode::Read]).unwrap()],
+        [],
+        [],
+        [],
+        1,
+        1_024,
+    )
+    .unwrap()
+}
+
+fn read_sandbox_requirements() -> SandboxRequirementsV1 {
+    SandboxRequirementsV1::new(
+        [ExecutionCapability::FilesystemRead],
+        [
+            SandboxControl::FilesystemScope,
+            SandboxControl::SymlinkContainment,
+            SandboxControl::ResourceLimits,
+        ],
+        None,
+        8,
+    )
+    .unwrap()
+}
+
 struct Executor {
     path: PathBuf,
     session: SessionId,
@@ -965,17 +1073,24 @@ fn complete_agent_loop_coordinates_model_effect_context_and_terminal_commits() {
     };
     let requirements =
         ExecutionRequirements::new([ExecutionCapability::FilesystemRead], 1_000, 1_024).unwrap();
+    let definition = ToolDefinition::new_v3(
+        "read_file",
+        "1",
+        "Read one file.",
+        serde_json::json!({"type":"object","properties":{"path":{"type":"string"}},"required":["path"],"additionalProperties":false}),
+        requirements.clone(),
+        ReplayClass::ReadOnly,
+        read_access_policy(),
+        "read-resolver-v1",
+        read_sandbox_requirements(),
+    )
+    .unwrap();
     let capabilities = AgentToolCapabilities {
-        definitions: vec![ToolDefinition::new(
-            "read_file",
-            "1",
-            "Read one file.",
-            serde_json::json!({"type":"object","properties":{"path":{"type":"string"}},"required":["path"],"additionalProperties":false}),
-            requirements,
-            ReplayClass::ReadOnly,
-        )
-        .unwrap()],
+        definitions: vec![definition.clone()],
     };
+    let preparation = ReadPreparation(ToolCatalog::new([definition]).unwrap());
+    let mut safety = AllowReadSafety(requirements);
+    let mut sandbox = ReadSandbox;
     let mut context = Context { positions: vec![] };
     let signals = Signals;
     let mut events = Signals;
@@ -986,7 +1101,7 @@ fn complete_agent_loop_coordinates_model_effect_context_and_terminal_commits() {
         calls: 0,
         expected_terminal: ["execution.completed", "turn.completed"],
     };
-    let result = block_on(execute_durable_agent(
+    let result = block_on(execute_durable_agent_with_f0(
         &mut ledger,
         &config,
         &request,
@@ -995,6 +1110,17 @@ fn complete_agent_loop_coordinates_model_effect_context_and_terminal_commits() {
         &model,
         &mut authority,
         &mut executor,
+        F0ExecutionGovernance {
+            preparation: &preparation,
+            safety: &mut safety,
+            sandbox: &mut sandbox,
+            context: F0GovernanceContext {
+                actor_authority_reference: "actor".into(),
+                goal_reference: None,
+                plan_reference: None,
+                effective_policy_revision: "policy-1".into(),
+            },
+        },
         &mut events,
         &signals,
         &signals,
@@ -1005,7 +1131,7 @@ fn complete_agent_loop_coordinates_model_effect_context_and_terminal_commits() {
         result.report.outcome,
         AgentOutcome::Completed { .. }
     ));
-    assert_eq!(context.positions, [4, 14]);
+    assert_eq!(context.positions, [4, 17]);
     assert_eq!(publisher.calls, 1);
     let kinds = ledger
         .load_turn(&plan.turn_id)
@@ -1025,7 +1151,10 @@ fn complete_agent_loop_coordinates_model_effect_context_and_terminal_commits() {
             "model.started",
             "model.completed",
             "effect.prepared",
+            "safety.decided",
             "effect.authorized",
+            "sandbox.bound",
+            "sandbox.preflighted",
             "effect.started",
             "effect.receipt",
             "effect.completed",
