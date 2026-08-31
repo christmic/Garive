@@ -174,7 +174,23 @@ BrowserNode {
 
 DOM/backend identifiers remain adapter-private. Shadow DOM, frames and native
 browser chrome are separate scope boundaries. Cross-origin frames appear as
-opaque nodes unless that origin and frame are independently admitted.
+opaque nodes in v1. Independently admitting another origin requires a future
+contract revision; top-level Network authority does not imply frame admission.
+
+One browser observation freezes a bounded `Page.getFrameTree` before semantic
+collection and requires an exactly equivalent typed frame tree after all frame
+work. Frame identity includes the exact parent, loader, URL and security origin;
+any difference rejects the mixed observation as stale. Runtime admits a child
+only when its canonical security origin equals the main document origin and
+its complete parent chain is already admitted. A same-origin descendant below
+an opaque ancestor therefore remains opaque.
+
+The CDP adapter resolves every child through `DOM.getFrameOwner`. Runtime reads
+`Accessibility.getFullAXTree(frameId)` only for admitted same-origin frames and
+combines them under one aggregate node/text bound. An unadmitted frame's proven
+owner becomes exactly one `opaque_frame` with no name, value, actions or backend
+node identity; descendant semantics are never requested. Acting on that
+snapshot-local reference fails `browser_frame_opaque` before dispatch.
 
 ### Browser tools
 
@@ -259,6 +275,11 @@ current entry, invalidates the prior snapshot, and rotates the target revision.
 The private observation binding includes current history identity, so ambient
 history changes make old input stale. Key names use a portable closed catalogue;
 text is one bounded UTF-8 value.
+Every action also re-reads the exact frame tree immediately before dispatch and
+again after trustworthy action/history evidence. A changed loader or frame tree
+rotates `target_revision` even when the top-level URL/history entry is unchanged;
+post-dispatch frame evidence loss is uncertain. The receipt digest binds whether
+the frame tree changed.
 Coordinates are not accepted by browser v1. File upload requires a separate
 opaque workspace file capability. Download requires a separately authorized
 Artifact target and receipt; it never writes to ambient Downloads.
