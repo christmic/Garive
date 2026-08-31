@@ -88,12 +88,14 @@ pub(super) fn handle(key: KeyEvent, state: &mut RuntimeState) -> bool {
                 .min(matching_history(state).len().saturating_sub(1))
         }
         KeyCode::Enter if overlay == Overlay::PromptHistory => select_history(state),
-        KeyCode::Up if overlay == Overlay::CommandPalette => {
-            state.model.command_selection = state.model.command_selection.saturating_sub(1)
-        }
-        KeyCode::Down if overlay == Overlay::CommandPalette => {
-            state.model.command_selection = (state.model.command_selection + 1)
-                .min(matching_commands(state).len().saturating_sub(1))
+        KeyCode::Up | KeyCode::Down | KeyCode::Home | KeyCode::End
+            if overlay == Overlay::CommandPalette =>
+        {
+            state.model.command_selection = command_selection_after_key(
+                state.model.command_selection,
+                matching_commands(state).len(),
+                key.code,
+            )
         }
         KeyCode::Enter if overlay == Overlay::CommandPalette => select_command(state),
         KeyCode::Char(character)
@@ -191,6 +193,16 @@ pub(super) fn handle(key: KeyEvent, state: &mut RuntimeState) -> bool {
         _ => {}
     }
     true
+}
+
+fn command_selection_after_key(current: usize, count: usize, key: KeyCode) -> usize {
+    match key {
+        KeyCode::Up => current.saturating_sub(1),
+        KeyCode::Down => current.saturating_add(1).min(count.saturating_sub(1)),
+        KeyCode::Home => 0,
+        KeyCode::End => count.saturating_sub(1),
+        _ => current.min(count.saturating_sub(1)),
+    }
 }
 
 pub(super) fn activate_intent(
@@ -344,5 +356,27 @@ fn action_overlay_key(key: KeyEvent) -> Option<ActionOverlayKey> {
             Some(ActionOverlayKey::Character(character.to_ascii_lowercase()))
         }
         _ => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn command_palette_navigation_covers_edges_without_leaving_the_result_set() {
+        let count = crate::input::COMMAND_PALETTE.len();
+        assert_eq!(command_selection_after_key(0, count, KeyCode::Up), 0);
+        assert_eq!(command_selection_after_key(0, count, KeyCode::Down), 1);
+        assert_eq!(command_selection_after_key(10, count, KeyCode::Home), 0);
+        assert_eq!(
+            command_selection_after_key(10, count, KeyCode::End),
+            count - 1
+        );
+        assert_eq!(
+            command_selection_after_key(count - 1, count, KeyCode::Down),
+            count - 1
+        );
+        assert_eq!(command_selection_after_key(5, 0, KeyCode::End), 0);
     }
 }

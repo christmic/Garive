@@ -596,7 +596,7 @@ fn linear_overlays_share_filtered_results_and_selection_windows() {
         ..Default::default()
     };
     let commands = view::linear_overlay(&model);
-    assert!(commands.contains("> 1. /copy last: Copy last completion"));
+    assert!(commands.contains("Selected 1 of 1: /copy last. Copy last completion"));
     assert!(commands.contains("Unavailable: no completion is visible"));
     assert!(!commands.contains("/status"));
 
@@ -619,6 +619,35 @@ fn linear_overlays_share_filtered_results_and_selection_windows() {
     assert!(sessions.contains("> 1. Session 2, needle-agent"));
     assert!(!sessions.contains("000001"));
     assert!(!sessions.contains("other-agent"));
+}
+
+#[test]
+fn compact_command_palette_keeps_visual_and_accessible_windows_in_lockstep() {
+    let mut model = AppModel {
+        overlay: Some(Overlay::CommandPalette),
+        command_selection: input::COMMAND_PALETTE.len() - 1,
+        terminal_size: application::TerminalSize {
+            width: 40,
+            height: 8,
+        },
+        ..Default::default()
+    };
+    let visual = frame(&model, 40, 8);
+    let linear = view::linear_overlay(&model);
+    assert!(visual.contains("Search  type to search"));
+    assert!(visual.contains("Showing 20–21 / 21 · ↑19"));
+    assert!(visual.contains("› /quit"));
+    assert!(visual.contains("Enter run"));
+    assert!(visual.contains("Esc close"));
+    assert!(linear.contains("Showing commands 20 through 21 of 21"));
+    assert!(linear.contains("Selected 21 of 21: /quit. Exit safely."));
+
+    model.command_filter = "not present anywhere".into();
+    model.command_selection = 0;
+    let empty_visual = frame(&model, 40, 8);
+    let empty_linear = view::linear_overlay(&model);
+    assert!(empty_visual.contains("No matching commands"));
+    assert!(empty_linear.contains("0 matching commands"));
 }
 
 #[test]

@@ -1,6 +1,6 @@
 ---
 source: tui/tests/view_snapshots.rs
-expression: "frame(&palette, Theme::Light, 160, 28)"
+expression: "frame(&palette, Theme::Mono, 160, 28)"
 ---
                                 Session 1  ·  research-age                                                         Agent running
 

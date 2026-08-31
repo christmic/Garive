@@ -8,7 +8,7 @@ use unicode_width::UnicodeWidthStr;
 
 use crate::{
     application::{AppModel, Overlay},
-    input::{help_hints, COMMAND_PALETTE},
+    input::help_hints,
     Theme,
 };
 
@@ -21,6 +21,7 @@ use super::{
     style::Palette,
 };
 
+pub(super) mod command_palette;
 pub(super) mod geometry;
 
 use geometry::{overlay_geometry, overlay_padding};
@@ -38,6 +39,10 @@ pub(super) fn render_overlay(
     buffer: &mut Buffer,
 ) {
     let colors = palette(theme);
+    if overlay == Overlay::CommandPalette {
+        command_palette::render(model, colors, area, buffer);
+        return;
+    }
     let geometry = overlay_geometry(model, overlay, area);
     let popup = geometry.popup;
     buffer.set_style(area, colors.modal_backdrop);
@@ -99,10 +104,7 @@ fn overlay_spec(
     content_height: u16,
 ) -> OverlaySpec {
     match overlay {
-        Overlay::CommandPalette => OverlaySpec {
-            title: " Command palette ".into(),
-            content: palette_text(model, colors, window.unwrap_or((0, 0)), content_width),
-        },
+        Overlay::CommandPalette => unreachable!("CommandPalette owns its composite renderer"),
         Overlay::Help => OverlaySpec {
             title: " Keyboard guide ".into(),
             content: help_text(colors, content_width),
@@ -139,10 +141,7 @@ fn selection_row(
     window: Option<(usize, usize)>,
 ) -> Option<u16> {
     let (selection, count) = match overlay {
-        Overlay::CommandPalette => (
-            model.command_selection,
-            model.matching_command_indices().len(),
-        ),
+        Overlay::CommandPalette => unreachable!("CommandPalette owns its selection row"),
         Overlay::SessionPicker => (model.session_selection, model.matching_sessions().count()),
         Overlay::TurnNavigator => (
             model.turn_selection,
@@ -299,57 +298,6 @@ fn history_text(model: &AppModel, colors: Palette, (start, end): (usize, usize))
     rows.push(Line::default());
     rows.push(key_hints(
         &[("↑/↓", "select"), ("Enter", "restore"), ("Esc", "close")],
-        colors,
-    ));
-    Text::from(rows)
-}
-
-fn palette_text(
-    model: &AppModel,
-    colors: Palette,
-    (start, end): (usize, usize),
-    content_width: u16,
-) -> Text<'static> {
-    let mut rows = vec![search_line("Search", &model.command_filter, colors)];
-    let matches = model.matching_command_indices();
-    rows.extend(
-        matches[start..end]
-            .iter()
-            .enumerate()
-            .map(|(offset, index)| {
-                let command = COMMAND_PALETTE[*index];
-                let marker = if start + offset == model.command_selection {
-                    "›"
-                } else {
-                    " "
-                };
-                let reason = command
-                    .unavailable_reason(model.command_context())
-                    .map(|reason| format!("unavailable · {reason}"));
-                let detail = truncate_display(
-                    reason.as_deref().unwrap_or(command.help),
-                    usize::from(content_width).saturating_sub(20),
-                );
-                Line::from(vec![
-                    Span::styled(format!("{marker} "), colors.selected),
-                    Span::styled(format!("{:<18}", command.input), colors.accent),
-                    Span::styled(
-                        detail,
-                        if reason.is_some() {
-                            colors.warning
-                        } else {
-                            colors.normal
-                        },
-                    ),
-                ])
-            })
-            .collect::<Vec<_>>(),
-    );
-    if rows.len() == 1 {
-        rows.push(Line::styled("  No matching commands", colors.muted));
-    }
-    rows.push(key_hints(
-        &[("↑/↓", "select"), ("Enter", "run"), ("Esc", "close")],
         colors,
     ));
     Text::from(rows)

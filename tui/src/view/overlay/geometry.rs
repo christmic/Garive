@@ -5,10 +5,7 @@ use ratatui::{
 };
 use unicode_width::UnicodeWidthStr;
 
-use crate::{
-    application::{AppModel, Overlay},
-    input::COMMAND_PALETTE,
-};
+use crate::application::{AppModel, Overlay};
 
 use super::super::{
     decision_sheet,
@@ -23,6 +20,11 @@ pub(super) struct OverlayGeometry {
 }
 
 pub(super) fn overlay_geometry(model: &AppModel, overlay: Overlay, area: Rect) -> OverlayGeometry {
+    assert_ne!(
+        overlay,
+        Overlay::CommandPalette,
+        "CommandPalette owns its geometry"
+    );
     let desired_width = desired_width(overlay);
     let popup_width = desired_width.min(area.width.saturating_sub(4));
     let desired_height = desired_height(model, overlay, popup_width);
@@ -37,16 +39,7 @@ pub(super) fn overlay_geometry(model: &AppModel, overlay: Overlay, area: Rect) -
         .padding(overlay_padding(overlay))
         .inner(popup);
     let window = list_count_and_selection(model, overlay).map(|(count, selected)| {
-        let fixed_rows = if overlay == Overlay::CommandPalette {
-            2
-        } else {
-            3
-        };
-        selection_window(
-            count,
-            selected,
-            usize::from(inner.height.saturating_sub(fixed_rows)),
-        )
+        selection_window(count, selected, usize::from(inner.height.saturating_sub(3)))
     });
     OverlayGeometry {
         popup,
@@ -73,16 +66,15 @@ fn modal_area(model: &AppModel, overlay: Overlay, area: Rect) -> Rect {
 }
 
 pub(super) fn overlay_padding(overlay: Overlay) -> Padding {
-    if overlay == Overlay::CommandPalette {
-        Padding::new(2, 2, 0, 1)
-    } else {
-        Padding::new(2, 2, 1, 1)
+    match overlay {
+        Overlay::CommandPalette => unreachable!("CommandPalette owns its padding"),
+        _ => Padding::new(2, 2, 1, 1),
     }
 }
 
 fn desired_width(overlay: Overlay) -> u16 {
     match overlay {
-        Overlay::CommandPalette => 74,
+        Overlay::CommandPalette => unreachable!("CommandPalette owns its width"),
         Overlay::Help => 72,
         Overlay::TurnNavigator => 72,
         Overlay::Inspector => 62,
@@ -99,10 +91,7 @@ fn desired_width(overlay: Overlay) -> u16 {
 
 fn desired_height(model: &AppModel, overlay: Overlay, popup_width: u16) -> u16 {
     match overlay {
-        Overlay::CommandPalette => u16::try_from(COMMAND_PALETTE.len())
-            .unwrap_or(u16::MAX)
-            .saturating_add(5)
-            .clamp(10, 21),
+        Overlay::CommandPalette => unreachable!("CommandPalette owns its height"),
         Overlay::Help => 14,
         Overlay::SessionPicker => u16::try_from(model.matching_sessions().count())
             .unwrap_or(u16::MAX)
@@ -146,6 +135,9 @@ pub(in crate::view) fn selection_at(
     column: u16,
     row: u16,
 ) -> Option<usize> {
+    if overlay == Overlay::CommandPalette {
+        return super::command_palette::selection_at(model, area, column, row);
+    }
     let geometry = overlay_geometry(model, overlay, area);
     if overlay == Overlay::Inspector {
         return super::super::inspector::selection_at(model, geometry.popup, column, row);
@@ -169,6 +161,9 @@ pub(in crate::view) fn contains(
     column: u16,
     row: u16,
 ) -> bool {
+    if overlay == Overlay::CommandPalette {
+        return super::command_palette::contains(model, area, column, row);
+    }
     overlay_geometry(model, overlay, area)
         .popup
         .contains((column, row).into())
@@ -181,8 +176,8 @@ pub(in crate::view) fn decision_action_at(
     column: u16,
     row: u16,
 ) -> Option<ActionOverlayIntent> {
-    let geometry = overlay_geometry(model, overlay, area);
     let spec = decision_sheet::project(model, overlay)?;
+    let geometry = overlay_geometry(model, overlay, area);
     let layout = decision_sheet::layout(
         &spec,
         geometry.inner.width,
@@ -213,11 +208,11 @@ pub(in crate::view) fn decision_choice_at(
     column: u16,
     row: u16,
 ) -> Option<usize> {
+    let spec = decision_sheet::project(model, overlay)?;
     let geometry = overlay_geometry(model, overlay, area);
     if column < geometry.inner.x || column >= geometry.inner.right() {
         return None;
     }
-    let spec = decision_sheet::project(model, overlay)?;
     let layout = decision_sheet::layout(
         &spec,
         geometry.inner.width,
@@ -234,10 +229,7 @@ pub(in crate::view) fn decision_choice_at(
 
 fn list_count_and_selection(model: &AppModel, overlay: Overlay) -> Option<(usize, usize)> {
     match overlay {
-        Overlay::CommandPalette => Some((
-            model.matching_command_indices().len(),
-            model.command_selection,
-        )),
+        Overlay::CommandPalette => unreachable!("CommandPalette owns its result window"),
         Overlay::SessionPicker => {
             Some((model.matching_sessions().count(), model.session_selection))
         }

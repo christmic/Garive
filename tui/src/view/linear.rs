@@ -1,7 +1,4 @@
-use crate::{
-    application::{AppModel, Overlay},
-    input::COMMAND_PALETTE,
-};
+use crate::application::{AppModel, Overlay};
 
 use super::{decision_sheet, presentation::HELP_NOTES, primitives::selection_window, short_id};
 use crate::input::help_hints;
@@ -21,7 +18,7 @@ pub(crate) fn overlay_text(model: &AppModel) -> String {
         return String::new();
     };
     let value = match overlay {
-        Overlay::CommandPalette => command_palette(model),
+        Overlay::CommandPalette => super::overlay::command_palette::linear_text(model),
         Overlay::Help => help(),
         Overlay::SessionPicker => session_picker(model),
         Overlay::TurnNavigator => turn_navigator(model),
@@ -51,30 +48,6 @@ pub(crate) fn safe(value: &str) -> String {
             value => value,
         })
         .collect()
-}
-
-fn command_palette(model: &AppModel) -> String {
-    let matches = model.matching_command_indices();
-    let rows = window(matches.len(), model.command_selection)
-        .map(|index| {
-            let command = COMMAND_PALETTE[matches[index]];
-            let unavailable = command
-                .unavailable_reason(model.command_context())
-                .map_or_else(String::new, |reason| format!(". Unavailable: {reason}"));
-            numbered(
-                index,
-                model.command_selection,
-                format!("{}: {}{unavailable}", command.input, command.help),
-            )
-        })
-        .collect::<Vec<_>>();
-    list_prompt(
-        "Command palette",
-        &model.command_filter,
-        rows,
-        "No matching commands.",
-        "Use arrows and Enter, or Escape to close.",
-    )
 }
 
 fn session_picker(model: &AppModel) -> String {

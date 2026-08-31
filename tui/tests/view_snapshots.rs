@@ -109,9 +109,33 @@ fn responsive_product_frames_match_reviewed_snapshots() {
         markdown_table_narrow_preview(Theme::Mono)
     );
 
-    let mut wide = model;
-    wide.overlay = Some(Overlay::CommandPalette);
-    insta::assert_snapshot!("wide_palette_160x28", frame(&wide, Theme::Light, 160, 28));
+    let mut palette = model;
+    palette.overlay = Some(Overlay::CommandPalette);
+    palette.command_selection = input::COMMAND_PALETTE.len() - 1;
+    insta::assert_snapshot!(
+        "command_palette_quit_dark_160x28",
+        frame(&palette, Theme::Dark, 160, 28)
+    );
+    insta::assert_snapshot!(
+        "wide_palette_160x28",
+        frame(&palette, Theme::Light, 160, 28)
+    );
+    insta::assert_snapshot!(
+        "command_palette_quit_mono_160x28",
+        frame(&palette, Theme::Mono, 160, 28)
+    );
+    insta::assert_snapshot!(
+        "command_palette_quit_dark_40x8",
+        frame(&palette, Theme::Dark, 40, 8)
+    );
+    insta::assert_snapshot!(
+        "command_palette_quit_light_40x8",
+        frame(&palette, Theme::Light, 40, 8)
+    );
+    insta::assert_snapshot!(
+        "command_palette_quit_mono_40x8",
+        frame(&palette, Theme::Mono, 40, 8)
+    );
 
     let mut help = product_model();
     help.overlay = Some(Overlay::Help);
