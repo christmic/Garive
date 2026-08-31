@@ -11,13 +11,17 @@ use std::{
     time::Duration,
 };
 
-use garive_core::{AgentOutcome, ExecutionReport, StopReason, SuspensionReason, UsageSummary};
+use garive_core::{
+    AgentEvent, AgentEventKind, AgentOutcome, EventSink, ExecutionId as CoreExecutionId,
+    ExecutionReport, SessionId as CoreSessionId, StopReason, SuspensionReason,
+    TurnId as CoreTurnId, UsageSummary,
+};
 use garive_ledger::SessionId;
-use garive_llm::{ModelItem, TokenCount};
+use garive_llm::{ModelItem, ModelOutputKind, ModelStreamEvent, TokenCount};
 use garive_runtime::{
     plan_core_terminal, CommittedTurn, CoreTerminalContext, EffectiveRuntimeLimits, HostClock,
-    InstalledAgent, LiveHost, LiveHostLimits, LiveHostServer, SqliteLedger, TurnDispatchError,
-    TurnDispatcher,
+    InstalledAgent, LiveHost, LiveHostLimits, LiveHostServer, LiveOutputEndReason, LiveOutputHub,
+    LiveOutputLimits, SqliteLedger, TurnDispatchError, TurnDispatcher,
 };
 
 struct Clock;
@@ -31,6 +35,7 @@ impl HostClock for Clock {
 struct CompletingDispatcher {
     database: PathBuf,
     calls: AtomicUsize,
+    live_output: LiveOutputHub,
 }
 
 impl TurnDispatcher for CompletingDispatcher {
@@ -41,6 +46,15 @@ impl TurnDispatcher for CompletingDispatcher {
             estimated: false,
         };
         let call = self.calls.fetch_add(1, Ordering::SeqCst);
+        if call == 0 {
+            schedule_streaming_completion(
+                self.database.clone(),
+                turn.clone(),
+                usage,
+                self.live_output.clone(),
+            );
+            return Ok(());
+        }
         if call == 3 {
             schedule_cancel_terminal(self.database.clone(), turn.clone(), usage);
             return Ok(());
@@ -61,12 +75,7 @@ impl TurnDispatcher for CompletingDispatcher {
         } else {
             AgentOutcome::Completed {
                 response_items: vec![ModelItem::Text {
-                    text: if call == 0 {
-                        "answer from production runtime"
-                    } else {
-                        "answer after continuation"
-                    }
-                    .into(),
+                    text: "answer after continuation".into(),
                 }],
                 usage,
             }
@@ -92,6 +101,81 @@ impl TurnDispatcher for CompletingDispatcher {
             .map_err(|_| TurnDispatchError)?;
         Ok(())
     }
+}
+
+fn schedule_streaming_completion(
+    database: PathBuf,
+    turn: CommittedTurn,
+    usage: UsageSummary,
+    live_output: LiveOutputHub,
+) {
+    thread::spawn(move || {
+        let core_event = |kind| AgentEvent {
+            session_id: CoreSessionId::try_from(turn.session_id.as_str()).unwrap(),
+            turn_id: CoreTurnId::try_from(turn.turn_id.as_str()).unwrap(),
+            execution_id: CoreExecutionId::try_from(turn.execution_id.as_str()).unwrap(),
+            kind,
+        };
+        let mut sink = live_output.event_sink();
+        sink.emit(core_event(AgentEventKind::ExecutionStarted))
+            .unwrap();
+        sink.emit(core_event(AgentEventKind::ModelStream(
+            ModelStreamEvent::OutputItemStarted {
+                output_index: 0,
+                kind: ModelOutputKind::Text,
+            },
+        )))
+        .unwrap();
+        sink.emit(core_event(AgentEventKind::ModelStream(
+            ModelStreamEvent::TextDelta {
+                output_index: 0,
+                delta: "answer from ".into(),
+            },
+        )))
+        .unwrap();
+        thread::sleep(Duration::from_millis(180));
+        sink.emit(core_event(AgentEventKind::ModelStream(
+            ModelStreamEvent::TextDelta {
+                output_index: 0,
+                delta: "production runtime".into(),
+            },
+        )))
+        .unwrap();
+        thread::sleep(Duration::from_millis(180));
+        sink.emit(core_event(AgentEventKind::OutcomeProposed))
+            .unwrap();
+        let report = ExecutionReport {
+            outcome: AgentOutcome::Completed {
+                response_items: vec![ModelItem::Text {
+                    text: "answer from production runtime".into(),
+                }],
+                usage,
+            },
+            completed_iterations: 1,
+            usage,
+        };
+        let facts = plan_core_terminal(
+            &CoreTerminalContext {
+                turn_id: turn.turn_id.clone(),
+                execution_id: turn.execution_id.clone(),
+                recorded_at: "2026-08-30T00:00:01Z".into(),
+            },
+            &report,
+        )
+        .unwrap();
+        SqliteLedger::open(&database)
+            .unwrap()
+            .commit(turn.session_id.clone(), turn.session_version, facts)
+            .unwrap();
+        live_output
+            .end_execution(
+                turn.session_id.as_str(),
+                turn.turn_id.as_str(),
+                turn.execution_id.as_str(),
+                LiveOutputEndReason::TerminalCommitted,
+            )
+            .unwrap();
+    });
 }
 
 fn schedule_delayed_completion(database: PathBuf, turn: CommittedTurn, usage: UsageSummary) {
@@ -175,7 +259,15 @@ async fn shipping_tui_round_trips_through_production_sqlite_runtime() {
     for _ in 0..2 {
         let temporary = tempfile::tempdir().unwrap();
         let database = temporary.path().join("runtime.sqlite3");
-        let host = LiveHost::new(
+        let live_output = LiveOutputHub::new(LiveOutputLimits {
+            max_active_executions: 4,
+            max_preview_bytes: 1_024 * 1_024,
+            max_event_bytes: 32 * 1_024,
+            broadcast_capacity: 256,
+            max_subscribers_per_session: 8,
+        })
+        .unwrap();
+        let host = LiveHost::new_with_live_output(
             &database,
             installed(),
             LiveHostLimits {
@@ -188,7 +280,9 @@ async fn shipping_tui_round_trips_through_production_sqlite_runtime() {
             Arc::new(CompletingDispatcher {
                 database: database.clone(),
                 calls: AtomicUsize::new(0),
+                live_output: live_output.clone(),
             }),
+            live_output,
         )
         .unwrap();
         let server = LiveHostServer::bind(host.clone(), "127.0.0.1:0".parse().unwrap())
@@ -313,6 +407,8 @@ fn run_expect(address: SocketAddr, state: &Path, log: &Path, restart: bool) -> b
             expect { "Keyboard guide" {} timeout { exit 20 } }
             after 300
             send "\033"
+            expect { "Generating response" {} timeout { exit 22 } }
+            expect { "answer from" {} timeout { exit 23 } }
             expect { "answer from production runtime" {} timeout { exit 21 } }
             send "second question\r"
             expect "Action required"
