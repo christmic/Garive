@@ -1,7 +1,7 @@
 use super::{
-    bootstrap, AppAction, AppEffect, AppEffectOutcome, AppModel, BootState, ConnectionState,
-    EffectKind, ExecutionState, FocusTarget, HostReadResponse, Overlay, PendingMutationKind,
-    SessionPageOwner, SessionPagePurpose, SessionPageRequest, SnapshotOwner, SnapshotRequest,
+    bootstrap, snapshot, AppAction, AppEffect, AppEffectOutcome, AppModel, EffectKind,
+    ExecutionState, FocusTarget, HostReadResponse, Overlay, PendingMutationKind, SessionPageOwner,
+    SessionPagePurpose, SessionPageRequest, SnapshotOwner,
 };
 
 pub(crate) fn reduce(model: &mut AppModel, action: AppAction) -> Vec<AppEffect> {
@@ -218,7 +218,7 @@ pub(crate) fn reduce(model: &mut AppModel, action: AppAction) -> Vec<AppEffect> 
                 return finish_session_page(model, effect.context, request.clone(), result.outcome);
             }
             if let EffectKind::LoadSnapshot { request } = &effect.kind {
-                return finish_snapshot(model, effect.context, request.clone(), result.outcome);
+                return snapshot::finish(model, effect.context, request.clone(), result.outcome);
             }
             match (effect.kind, result.outcome) {
                 (
@@ -294,61 +294,6 @@ pub(crate) fn reduce(model: &mut AppModel, action: AppAction) -> Vec<AppEffect> 
             }
         }
     }
-}
-
-fn finish_snapshot(
-    model: &mut AppModel,
-    context: super::EffectContext,
-    request: SnapshotRequest,
-    outcome: AppEffectOutcome,
-) -> Vec<AppEffect> {
-    let is_active = model.selected_session.as_deref() == Some(request.session_id.as_str())
-        && model
-            .snapshot_owner
-            .as_ref()
-            .is_some_and(|owner| owner.context == context && owner.request == request);
-    if !is_active {
-        return Vec::new();
-    }
-    model.snapshot_owner = None;
-    model.snapshot_handoff = None;
-    model.snapshot_failure = None;
-    match outcome {
-        AppEffectOutcome::HostRead(Ok(HostReadResponse::Snapshot(snapshot)))
-            if snapshot.request == request =>
-        {
-            model.snapshot_handoff = Some(*snapshot);
-        }
-        AppEffectOutcome::HostRead(Err(failure)) => {
-            model.snapshot_failure = Some(failure);
-            if matches!(
-                failure.code,
-                garive_host_client::HostClientErrorCode::InvalidConfiguration
-                    | garive_host_client::HostClientErrorCode::InvalidEvent
-                    | garive_host_client::HostClientErrorCode::EventOrderViolation
-                    | garive_host_client::HostClientErrorCode::EventLimitExceeded
-            ) {
-                model.boot = BootState::Degraded;
-                model.connection = ConnectionState::Unavailable {
-                    safe_code: failure.code.wire_name(),
-                };
-                model.execution = ExecutionState::Failed;
-            } else if failure.host_rejected {
-                model.connection = ConnectionState::Online;
-            } else {
-                model.connection = ConnectionState::Disconnected { attempt: 0 };
-            }
-            model.notice = Some(format!(
-                "Snapshot unavailable: {}.",
-                failure.code.wire_name()
-            ));
-        }
-        _ => {
-            model.notice = Some("Ignored an invalid Snapshot response.".into());
-        }
-    }
-    model.snapshot_completion_revision = model.snapshot_completion_revision.saturating_add(1);
-    Vec::new()
 }
 
 fn session_page_request_is_admitted(model: &AppModel, request: &SessionPageRequest) -> bool {

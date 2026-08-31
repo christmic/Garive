@@ -5,6 +5,7 @@ mod effect;
 mod inspector;
 mod live_answer;
 mod model;
+mod snapshot;
 mod turn_block;
 mod update;
 
