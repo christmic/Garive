@@ -393,6 +393,38 @@ New Work remains 64 px high, Running 97 px, and the 480 px governed-approval
 Composer remains fully visible at 272.7 px. All measured states have zero
 internal and document overflow.
 
+### T. Installed Codex desktop document-system audit
+
+The user clarified that fidelity must cover desktop composition, not only UX
+flows. The second supplied reference and the installed bundle were therefore
+audited as a desktop file workbench: native window rhythm, rail material,
+docked pane chrome, document canvas and Markdown typography were treated as one
+system rather than independent component styling.
+
+The installed Markdown module sets the desktop host fallback to 13 px body and
+12 px code, uses 1.625 leading, and derives a 3.25 px spacing unit from one
+quarter of the body size. Heading scales are 1.5×/1.25×/1.125× with 26 px and
+22.75 px line boxes for h1 and h2/h3. Paragraphs, lists, quotes, rules, tables,
+inline code and fenced code all consume that same rhythm. This is direct
+resource evidence from version `26.825.51511`, not a visual estimate.
+
+Garive's file pane previously used a 14 px/1.7 body, a 25 px h1 and sparse
+26/10 px h2 margins. A fenced block also became a large tinted rounded card,
+which made a rendered source file look like an embedded webpage. The shared
+Desktop/Web tree now uses the resource-backed 13 px document scale, formulaic
+heading and block rhythm, a 24 px left reading edge and a plain document code
+region with the language at its trailing edge. Exact-source Copy remains
+keyboard reachable and discloses visually on hover/focus.
+
+The chrome values are executable tokens rather than scattered constants:
+34 px window/tab row and 30 px file toolbar. They sit beside explicit document
+tokens in the shared visual system, while native traffic-light clearance and
+window dragging remain desktop-adapter behavior. At 1280 px the live fixture
+measures x=558 for the pane divider, x=583 for document content, y=68 for h1,
+19.5 px h1 text, 13 px body and 21.125 px body line height, with zero document
+overflow. The same tree remains the Web implementation; only native window
+insets differ.
+
 ## Gate 1 — Codex fidelity
 
 This gate passes only when both Desktop and Web show:

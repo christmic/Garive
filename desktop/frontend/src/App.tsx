@@ -76,8 +76,8 @@ const visualArtifactTimeline = {
   api_version: "v1", session_id: "visual-artifact-session", scanned_through_position: 24,
   observed_max_position: 24, has_more: false, items: [{ turn_id: "visual-artifact-turn",
     started_position: 3, latest_position: 24, state: "completed",
-    user_text: "Create a concise launch decision memo in my Workspace",
-    completion_text: "The launch decision memo was created in your authorized Workspace.",
+    user_text: "Document how to deploy Garive from source on a new machine",
+    completion_text: "The deployment runbook was created in your authorized Workspace.",
     content_truncated: false, activities: [],
   }],
 } satisfies HostTimelinePage;
@@ -85,15 +85,15 @@ const visualArtifactPage = {
   api_version: "v1", session_id: "visual-artifact-session", scanned_through_position: 23,
   observed_max_position: 24, has_more: false, items: [{ api_version: "v1",
     artifact_id: "artifact-launch-memo", revision: 1, session_id: "visual-artifact-session",
-    turn_id: "visual-artifact-turn", display_name: "launch-decision.md", kind: "document",
-    mime_type: "text/markdown", byte_size: 714, content_digest: "7".repeat(64),
+    turn_id: "visual-artifact-turn", display_name: "deployment-from-source.md", kind: "document",
+    mime_type: "text/markdown", byte_size: 1_248, content_digest: "7".repeat(64),
     committed_position: 23, verification: "not_run", preview: "text",
     workspace_id: "workspace-preview", revealable: true, exportable: true,
   }],
 } satisfies HostArtifactPage;
 const visualArtifactPreview = {
   schema_version: 1, artifact_id: "artifact-launch-memo", revision: 1, kind: "text",
-  content_utf8: "# Launch decision\n\nProceed with a reversible pilot for the design-partner cohort.\n\n## Decision\n\n- Owner: Product Operations\n- Review gate: 14 September\n- Rollback: pause new invitations while preserving collected feedback\n\n## Next step\n\nPublish the pilot brief and confirm the named launch owner.",
+  content_utf8: "# Deploy Garive from source on a new machine\n\n> This runbook takes an operator from a clean clone to a configured local Garive Host and a working Desktop client.\n\n## Audience\n\nOperators and contributors installing Garive on a new macOS or Linux machine. The reader needs a model endpoint and credential, but does not need prior knowledge of the Runtime.\n\n## Why\n\nGarive is a multi-toolchain repository. The production Agent and Runtime are Rust, while Web/Desktop, mobile, and the verification engine have independent build chains.\n\n## Quick start: Host plus Desktop\n\nRun every command from the repository root unless a command changes directory.\n\n### 1. Clone and select the revision\n\n```sh\ngit clone git@github.com:christmic/Garive.git\ncd Garive\ngit switch master\ngit pull --ff-only\ngit status --short --branch\n```\n\nFor a reproducible deployment, record `git rev-parse HEAD` in the deployment record and do not build from a dirty tree.\n\n### 2. Install the minimum toolchain\n\nInstall Rust, Node.js, pnpm, and the platform WebView prerequisites before building.",
   truncated: false,
 } satisfies ArtifactPreview;
 const visualUsageBudget = {
@@ -923,7 +923,8 @@ function Timeline({ state, dispatch, t }: { state: WorkState; dispatch: WorkDisp
   </div>;
 }
 
-function MarkdownCodeBlock({ children, t }: { children?: ReactNode; t: (key: MessageKey) => string }) {
+function MarkdownCodeBlock({ children, t, variant = "result" }: { children?: ReactNode;
+  t: (key: MessageKey) => string; variant?: "result" | "document" }) {
   const [copied, setCopied] = useState(false);
   const code = markdownNodeText(children).replace(/\n$/, "");
   const child = Children.toArray(children).find((node) => isValidElement(node));
@@ -936,7 +937,8 @@ function MarkdownCodeBlock({ children, t }: { children?: ReactNode; t: (key: Mes
       window.setTimeout(() => setCopied(false), 1_500);
     } catch { setCopied(false); }
   };
-  return <div className="code-block" role="region" aria-label={t("timeline.codeBlock")}>
+  return <div className={`code-block ${variant === "document" ? "document-code-block" : ""}`}
+    role="region" aria-label={t("timeline.codeBlock")}>
     <header><span>{language}</span><button type="button" aria-label={t(copied
       ? "timeline.codeCopied" : "timeline.copyCode")} title={t(copied
         ? "timeline.codeCopied" : "timeline.copyCode")} onClick={() => void copy()}><Icon name={copied
@@ -1108,7 +1110,8 @@ function ResultDeliverables({ state, t, previewCloseRequest, onPreviewTitle }: {
         : previewState === "unavailable" ? <div className="preview-state error" role="alert"><Icon name="warning" />{t("artifact.changed")}</div>
           : preview && (sourceMode ? <pre className="artifact-source" aria-label={t("artifact.sourceAria")}>{preview.content_utf8}</pre>
             : <div className="artifact-preview-content"><Markdown skipHtml remarkPlugins={[remarkGfm]}
-              components={{ a: ({ children }) => <span className="safe-link">{children}</span> }}>{preview.content_utf8}</Markdown></div>)}
+              components={{ a: ({ children }) => <span className="safe-link">{children}</span>,
+                pre: ({ children }) => <MarkdownCodeBlock t={t} variant="document">{children}</MarkdownCodeBlock> }}>{preview.content_utf8}</Markdown></div>)}
       <footer><Icon name="shield" />{t("artifact.digestPrefix")} {selected.revision}</footer>
     </section>}
     {results.length > 0 && <div className="deliverable-section-label">{t("artifact.snapshots")}</div>}
