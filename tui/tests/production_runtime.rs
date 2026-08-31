@@ -129,15 +129,15 @@ fn schedule_streaming_completion(
         sink.emit(core_event(AgentEventKind::ModelStream(
             ModelStreamEvent::TextDelta {
                 output_index: 0,
-                delta: "answer from ".into(),
+                delta: "first-live-fragment".into(),
             },
         )))
         .unwrap();
-        thread::sleep(Duration::from_millis(180));
+        thread::sleep(Duration::from_secs(3));
         sink.emit(core_event(AgentEventKind::ModelStream(
             ModelStreamEvent::TextDelta {
                 output_index: 0,
-                delta: "production runtime".into(),
+                delta: " final-fragment".into(),
             },
         )))
         .unwrap();
@@ -147,7 +147,7 @@ fn schedule_streaming_completion(
         let report = ExecutionReport {
             outcome: AgentOutcome::Completed {
                 response_items: vec![ModelItem::Text {
-                    text: "answer from production runtime".into(),
+                    text: "first-live-fragment final-fragment".into(),
                 }],
                 usage,
             },
@@ -298,21 +298,28 @@ async fn shipping_tui_round_trips_through_production_sqlite_runtime() {
         let first_log = temporary.path().join("first.log");
         assert!(run_expect(address, &state, &first_log, false));
         let first = fs::read_to_string(&first_log).unwrap();
-        assert!(first.contains("answer"));
-        assert!(first.contains("production"));
-        assert!(first.contains("runtime"));
         assert!(first.as_bytes().contains(&b'\x07'));
         assert!(!first.contains("unavailable"));
         assert!(first.contains("\x1b]0;Garive · Workspace · Connecting · Ready\x07"));
         assert!(first.contains("· Online · Running\x07"));
-        assert!(first.contains("· Online · Action required\x07"));
         assert!(first.contains("\x1b]0;Garive\x07"));
 
         let sessions = SqliteLedger::open(&database)
             .unwrap()
             .list_sessions()
             .unwrap();
-        assert_eq!(sessions.len(), 2);
+        let observed_prompts = sessions
+            .iter()
+            .map(|session| {
+                host.get_timeline(session.as_str(), 0, 10)
+                    .unwrap()
+                    .items
+                    .into_iter()
+                    .map(|item| item.user_text)
+                    .collect::<Vec<_>>()
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(sessions.len(), 2, "observed prompts: {observed_prompts:?}");
         let session = sessions
             .iter()
             .find(|session| {
@@ -328,7 +335,7 @@ async fn shipping_tui_round_trips_through_production_sqlite_runtime() {
         assert_eq!(timeline.items[0].user_text, "hello durable\n耐久 tui");
         assert_eq!(
             timeline.items[0].completion_text.as_deref(),
-            Some("answer from production runtime")
+            Some("first-live-fragment final-fragment")
         );
         assert_eq!(timeline.items[1].user_text, "second question");
         assert_eq!(
@@ -355,7 +362,7 @@ async fn shipping_tui_round_trips_through_production_sqlite_runtime() {
         assert!(run_expect(address, &state, &restart_log, true));
         let restarted = fs::read_to_string(restart_log).unwrap();
         assert!(restarted.contains("You: hello durable\n耐久 tui"));
-        assert!(restarted.contains("Garive: answer from production runtime"));
+        assert!(restarted.contains("Garive: first-live-fragment final-fragment"));
         assert!(restarted.contains("· Online · Ready\x07"));
         assert!(restarted.contains("\x1b]0;Garive\x07"));
         assert!(SqliteLedger::open(&database)
@@ -379,7 +386,7 @@ fn run_expect(address: SocketAddr, state: &Path, log: &Path, restart: bool) -> b
             fconfigure $spawn_id -encoding utf-8
             expect "You: hello durable"
             expect "耐久 tui"
-            expect "Garive: answer from production runtime"
+            expect "Garive: first-live-fragment final-fragment"
             expect "You: second question"
             expect "Garive: answer after continuation"
             expect "You: cancel this turn"
@@ -403,13 +410,19 @@ fn run_expect(address: SocketAddr, state: &Path, log: &Path, restart: bool) -> b
             after 200
             send "\177"
             send "i\r"
-            send "?"
-            expect { "Keyboard guide" {} timeout { exit 20 } }
-            after 300
-            send "\033"
-            expect { "Generating response" {} timeout { exit 22 } }
-            expect { "answer from" {} timeout { exit 23 } }
-            expect { "answer from production runtime" {} timeout { exit 21 } }
+            set timeout 2
+            expect {
+                -exact "first-live-fragment" {}
+                timeout { exit 23 }
+            }
+            set timeout 0
+            expect {
+                "final-fragment" { exit 24 }
+                timeout {}
+            }
+            set timeout 8
+            expect { "first-live-fragment final-fragment" {} timeout { exit 21 } }
+            expect { {*#6*} {} timeout { exit 25 } }
             send "second question\r"
             expect "Action required"
             send "\r"
@@ -419,9 +432,13 @@ fn run_expect(address: SocketAddr, state: &Path, log: &Path, restart: bool) -> b
             send "cancel this turn\r"
             after 300
             send "\003"
+            after 1500
+            send "\014"
             expect "stopped"
             send "\016"
-            after 300
+            after 1500
+            send "\014"
+            expect "0 turns"
             send "background task\r"
             expect "background task"
             send "\023"

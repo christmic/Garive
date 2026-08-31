@@ -24,6 +24,10 @@ impl MotionFrame {
         }
     }
 
+    pub(crate) const fn is_reduced(self) -> bool {
+        self.reduced
+    }
+
     fn pulse(self) -> Option<&'static str> {
         (!self.reduced).then(|| PULSE[(self.tick as usize / 2) % PULSE.len()])
     }

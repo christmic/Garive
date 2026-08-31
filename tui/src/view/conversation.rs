@@ -13,11 +13,15 @@ use crate::{
     Theme,
 };
 
-use super::{empty_detail, empty_title, markdown::render_markdown, palette, safe_text, turn_label};
+use super::{
+    empty_detail, empty_title, markdown::render_markdown, palette, safe_text, turn_label,
+    MotionFrame,
+};
 
 pub(super) fn render_conversation(
     model: &AppModel,
     theme: Theme,
+    motion: MotionFrame,
     area: Rect,
     buffer: &mut Buffer,
     cache: &mut RenderCache,
@@ -34,8 +38,8 @@ pub(super) fn render_conversation(
         )
         .padding(Padding::new(2, 2, 1, 0));
     let inner = block.inner(area);
-    let window = (!model.timeline.is_empty())
-        .then(|| conversation_window(model, theme, inner.width, inner.height, cache));
+    let window = (!model.timeline.is_empty() || model.live_answer.current().is_some())
+        .then(|| conversation_window(model, theme, motion, inner.width, inner.height, cache));
     let title = if model.viewport.newer_updates > 0 {
         format!(
             " Conversation · {} newer updates ",
@@ -64,7 +68,7 @@ pub(super) fn render_conversation(
     block.render(area, buffer);
     let mut lines = Vec::new();
     let mut scroll = 0;
-    if model.timeline.is_empty() {
+    if model.timeline.is_empty() && model.live_answer.current().is_none() {
         lines.push(Line::default());
         lines.push(Line::styled(empty_title(model.boot), colors.empty_title));
         lines.push(Line::styled(empty_detail(model.boot), colors.muted));
@@ -90,6 +94,7 @@ struct ConversationWindow {
 fn conversation_window(
     model: &AppModel,
     theme: Theme,
+    motion: MotionFrame,
     width: u16,
     height: u16,
     cache: &mut RenderCache,
@@ -99,6 +104,11 @@ fn conversation_window(
     let mut laid_out = 0;
     let mut measured_height: usize = 0;
     if model.viewport.follow_latest {
+        if let Some(answer) = model.live_answer.current() {
+            let cell = super::live_answer::render(answer, theme, width, motion.is_reduced());
+            measured_height = measured_height.saturating_add(wrapped_height(&cell, width));
+            cells.push_front(cell);
+        }
         for item in model.timeline.iter().rev() {
             let cell = cache.render(item, width, theme);
             measured_height = measured_height.saturating_add(wrapped_height(&cell, width));
@@ -327,7 +337,14 @@ mod tests {
             });
         }
 
-        let window = conversation_window(&model, Theme::Dark, 90, 30, &mut RenderCache::default());
+        let window = conversation_window(
+            &model,
+            Theme::Dark,
+            MotionFrame::reduced(),
+            90,
+            30,
+            &mut RenderCache::default(),
+        );
 
         assert!(window.laid_out < 30);
     }

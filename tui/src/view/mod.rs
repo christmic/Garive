@@ -14,6 +14,7 @@ mod composer;
 mod conversation;
 mod footer;
 mod linear;
+mod live_answer;
 mod markdown_syntax;
 mod markdown_table;
 mod motion;
@@ -81,9 +82,9 @@ pub(crate) fn render_cached_with_motion(
         } else {
             workspace[1]
         };
-        render_content(model, theme, content, buffer, cache)
+        render_content(model, theme, motion, content, buffer, cache)
     } else {
-        render_content(model, theme, frame[1], buffer, cache)
+        render_content(model, theme, motion, frame[1], buffer, cache)
     };
     if let Some(overlay) = model.overlay {
         render_overlay(model, overlay, theme, area, buffer);
@@ -98,12 +99,13 @@ pub(crate) fn render_cached_with_motion(
 fn render_content(
     model: &AppModel,
     theme: Theme,
+    motion: MotionFrame,
     area: Rect,
     buffer: &mut Buffer,
     cache: &mut RenderCache,
 ) -> Rect {
     let rows = content_rows(model, area);
-    render_conversation(model, theme, rows[0], buffer, cache);
+    render_conversation(model, theme, motion, rows[0], buffer, cache);
     composer::render(model, palette(theme), rows[1], buffer);
     render_footer(model, theme, rows[2], buffer);
     command_suggestions::render(model, rows[1], palette(theme), buffer);
