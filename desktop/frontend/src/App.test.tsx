@@ -118,6 +118,16 @@ describe("Desktop product experience", () => {
     expect(screen.queryByRole("button", { name: "Account and app menu" })).toBeNull();
   });
 
+  it("presents durable search as a compact desktop finder", async () => {
+    const view = render(<App />);
+    fireEvent.click(await screen.findByTitle("Search durable work (⌘F)"));
+    expect(screen.getByRole("heading", { name: "Find your work" })).toBeTruthy();
+    expect(screen.getByRole("textbox", { name: "Search durable work" })).toBeTruthy();
+    expect(screen.getByRole("group", { name: "Filter durable work" })).toBeTruthy();
+    expect(view.container.querySelector(".search-toolbar")).not.toBeNull();
+    expect(view.container.querySelector(".search-result-heading")?.textContent).toContain("Recents");
+  });
+
   it("opens one truthful usage view without changing durable task state", async () => {
     render(<App usageBudget={{ source: "included_plan", state: "critical",
       scopeLabel: "Personal plan", periodLabel: "5-hour window", remainingPercent: 8,

@@ -178,6 +178,23 @@ focuses the Composer. Measured at 1280×800, heading/Composer/starters share
 x=470 and width=546; at 720px and 480px the Composer and starters retain a
 12px vertical gap with zero document overflow.
 
+### H. Native shell and durable Search audit
+
+The shared shell previously declared macOS traffic-light insets in CSS without
+marking the Desktop document as the native client. The signed app therefore did
+not admit its own platform branch, and collapsing the rail could place the
+restore control beneath native window controls. Desktop now declares its client
+identity at the entry point, reserves the 70px titlebar safe zone when the rail
+is absent, and gives compact rails or narrow navigation sheets a traffic-light
+row with no competing controls. Web keeps the same work geometry without the
+native inset.
+
+Search also no longer reads as a generic page of cards. It is a 39rem desktop
+finder with one compact field/filter surface and 44px state-first result rows.
+At 1280, 820, 720 and 480px it retains zero document overflow; state copy
+remains visible until the narrowest layout, where the task rail and row dot
+still preserve condition without crowding the work title.
+
 ## Gate 1 — Codex fidelity
 
 This gate passes only when both Desktop and Web show:
