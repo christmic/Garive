@@ -1,3 +1,5 @@
+#[cfg(unix)]
+use std::{fs, os::unix::fs::PermissionsExt};
 use std::{
     path::Path,
     sync::{
@@ -10,9 +12,10 @@ use garive_core::{
     MissingUsagePolicy, ModelRecoveryPolicy, OutputLimitAction, TerminalRecoveryAction,
 };
 use garive_desktop::{
-    builtin_desktop_agent_installation, DesktopHost, DesktopHostConfig, DesktopOperations,
-    DesktopState, DesktopTerminal, DesktopWorkspaceContextFile, DesktopWorkspaceExecutionFactory,
-    DesktopWorkspaceGrant, DesktopWorkspaceService,
+    builtin_desktop_agent_installation, builtin_desktop_workspace_agent_installation, DesktopHost,
+    DesktopHostConfig, DesktopOperations, DesktopState, DesktopTerminal,
+    DesktopWorkspaceContextFile, DesktopWorkspaceExecutionFactory, DesktopWorkspaceGrant,
+    DesktopWorkspaceService,
 };
 use garive_ledger::SessionId;
 use garive_llm::{
@@ -23,8 +26,10 @@ use garive_llm::{
 use garive_runtime::{
     CommittedTurn, HostClock, LiveHostLimits, LiveOutputEventKind, LocalExecutionAttempt,
     LocalExecutionPolicy, LocalGovernedExecution, LocalGovernedExecutionFactory, LocalWorkerError,
-    RuntimeAgentCatalogue, SqliteLedger,
+    ProcessExecutable, ProcessLane, ProcessLaneRegistry, RuntimeAgentCatalogue, SqliteLedger,
+    T1HostSystemConfig,
 };
+use garive_tools::T1_READ_TEXT;
 use tempfile::tempdir;
 
 struct FixedHostClock;
@@ -149,6 +154,44 @@ struct WorkspaceWritingModel {
     arguments: String,
 }
 
+struct WorkspaceReadingModel(AtomicU64);
+
+impl ModelPort for WorkspaceReadingModel {
+    fn invoke<'a>(
+        &'a self,
+        _: &'a ModelRequest,
+        _: &'a mut dyn ModelObserver,
+        _: &'a dyn ModelCancellation,
+    ) -> ModelFuture<'a> {
+        Box::pin(async move {
+            let call = self.0.fetch_add(1, Ordering::SeqCst);
+            Ok(InvokeOutcome::Completed {
+                items: if call == 0 {
+                    vec![ModelItem::ToolIntent {
+                        model_call_id: "read-call-1".into(),
+                        tool_name: T1_READ_TEXT.into(),
+                        arguments_json: serde_json::json!({
+                            "path":"note.txt",
+                            "max_bytes":4096
+                        })
+                        .to_string(),
+                    }]
+                } else {
+                    vec![ModelItem::Text {
+                        text: "workspace read completed".into(),
+                    }]
+                },
+                usage: usage(),
+                stop_reason: if call == 0 {
+                    ModelStopReason::ToolUse
+                } else {
+                    ModelStopReason::EndTurn
+                },
+            })
+        })
+    }
+}
+
 impl ModelPort for WorkspaceWritingModel {
     fn invoke<'a>(
         &'a self,
@@ -223,6 +266,7 @@ fn desktop_host_config(database: &Path, model: Arc<dyn ModelPort>) -> DesktopHos
             .unwrap(),
         ),
         default_agent_definition_id: "definition-main".into(),
+        t1_host_system_config: None,
         host_limits: LiveHostLimits {
             max_command_bytes: 4_096,
             event_batch_size: 64,
@@ -884,4 +928,117 @@ async fn approved_workspace_write_commits_receipt_and_creates_an_atomic_artifact
             "effect.observation",
         ]
     );
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn workspace_agent_runs_t1_read_through_the_complete_f0_chain() {
+    let directory = tempdir().unwrap();
+    let workspace_path = directory.path().join("Workspace");
+    fs::create_dir(&workspace_path).unwrap();
+    fs::write(workspace_path.join("note.txt"), "bound workspace content").unwrap();
+    let workspaces = DesktopWorkspaceService::default();
+    let selected = workspaces.admit_selected(&workspace_path, "main").unwrap();
+    let writable = workspaces
+        .authorize_writes(&selected.workspace_id, &workspace_path, "main")
+        .unwrap();
+    let t1 = t1_host(directory.path());
+    let database = directory.path().join("workspace-t1.db");
+    let mut config = desktop_host_config(
+        &database,
+        Arc::new(WorkspaceReadingModel(AtomicU64::new(0))),
+    );
+    let workspace_agent = builtin_desktop_workspace_agent_installation(
+        "definition-workspace",
+        "desktop-workspace",
+        &t1.tool_capabilities().unwrap(),
+    )
+    .unwrap();
+    config.agent_catalogue = Arc::new(
+        RuntimeAgentCatalogue::new([
+            builtin_desktop_agent_installation("definition-main", "desktop-main").unwrap(),
+            workspace_agent,
+        ])
+        .unwrap(),
+    );
+    config.t1_host_system_config = Some(t1.clone());
+    let factory = DesktopWorkspaceExecutionFactory::new(database.clone(), workspaces, "main")
+        .unwrap()
+        .with_t1_host_system_config(t1);
+    let state = DesktopState::default();
+    state
+        .install(DesktopHost::new_governed(config, Arc::new(factory)).unwrap())
+        .unwrap();
+    let session_id = state.create_session("definition-workspace").unwrap();
+    state.attach_workspace(&session_id, &writable).unwrap();
+
+    let result = state
+        .run_turn_in_session_isolated(
+            "definition-workspace".into(),
+            Some(session_id.clone()),
+            "read note.txt".into(),
+        )
+        .await
+        .unwrap();
+    let ledger = SqliteLedger::open(&database).unwrap();
+    let session = SessionId::try_from(session_id.as_str()).unwrap();
+    let watermark = ledger.session_watermark(&session).unwrap().unwrap();
+    let facts = ledger
+        .read_facts(&session, 0, watermark.max_position, None)
+        .unwrap();
+    let audit = facts
+        .iter()
+        .map(|fact| (fact.kind.as_str(), fact.payload.as_json()))
+        .collect::<Vec<_>>();
+    assert_eq!(
+        result.terminal,
+        DesktopTerminal::Completed,
+        "result={result:?} timeline={:?} audit={audit:?}",
+        state.session_timeline(&session_id, 0, 8).unwrap(),
+    );
+    assert_eq!(result.text, "workspace read completed");
+    for required in [
+        "effect.prepared",
+        "safety.decided",
+        "effect.authorized",
+        "sandbox.bound",
+        "sandbox.preflighted",
+        "effect.started",
+        "effect.receipt",
+        "effect.observation",
+    ] {
+        assert!(
+            facts.iter().any(|fact| fact.kind.as_str() == required),
+            "{required}"
+        );
+    }
+}
+
+#[cfg(unix)]
+fn t1_host(root: &Path) -> T1HostSystemConfig {
+    let patch_recovery = root.join("patch-recovery");
+    let process_recovery = root.join("process-recovery");
+    for directory in [&patch_recovery, &process_recovery] {
+        fs::create_dir(directory).unwrap();
+        fs::set_permissions(directory, fs::Permissions::from_mode(0o700)).unwrap();
+    }
+    let lanes = ProcessLaneRegistry::new([ProcessLane::new(
+        "rust",
+        [ProcessExecutable::new("cargo", "/opt/garive/bin/cargo").unwrap()],
+        Vec::new(),
+    )
+    .unwrap()])
+    .unwrap();
+    T1HostSystemConfig::new(
+        "t1.policy.v1",
+        "t1.executor.v1",
+        "/opt/garive/bin/podman",
+        "unix:///var/run/garive-podman.sock",
+        format!("localhost/garive-runner@sha256:{}", "a".repeat(64)),
+        patch_recovery,
+        process_recovery,
+        5_000,
+        lanes,
+    )
+    .unwrap()
 }

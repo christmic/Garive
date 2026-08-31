@@ -232,6 +232,7 @@ impl<R: DesktopSecretResolver, P: DesktopProfileRegistry> DesktopConfigurationPr
             database_path: config.database_path,
             agent_catalogue: Arc::new(agent_catalogue),
             default_agent_definition_id,
+            t1_host_system_config: self.t1_host_system_config.clone(),
             host_limits: LiveHostLimits {
                 max_command_bytes: config.host.max_command_bytes,
                 event_batch_size: config.host.event_batch_size,

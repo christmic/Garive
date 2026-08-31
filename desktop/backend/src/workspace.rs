@@ -807,6 +807,27 @@ impl DesktopWorkspaceService {
         self.resolve_root_descriptor(workspace_id)
     }
 
+    pub(crate) fn resolve_runtime_root(
+        &self,
+        workspace_id: &str,
+        grant_revision: u64,
+        owner_window: &str,
+    ) -> Result<PathBuf, DesktopWorkspaceError> {
+        let grant = self.verify(workspace_id, owner_window)?;
+        if grant.access != "read_write" || grant.grant_revision != grant_revision {
+            return Err(DesktopWorkspaceError::CapabilityInvalid);
+        }
+        let active = self
+            .active
+            .lock()
+            .map_err(|_| DesktopWorkspaceError::Unavailable)?;
+        let workspace = active
+            .get(workspace_id)
+            .ok_or(DesktopWorkspaceError::CapabilityInvalid)?;
+        revalidate_directory(&workspace.canonical_root, workspace.identity)?;
+        Ok(workspace.canonical_root.clone())
+    }
+
     /// Reads one exact committed text Artifact through its active Workspace descriptor.
     #[allow(clippy::too_many_arguments)]
     pub fn preview_text_artifact(
