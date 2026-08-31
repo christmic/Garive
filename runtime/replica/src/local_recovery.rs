@@ -109,16 +109,17 @@ fn recover_local_dispatches_inner(
                         let committed = ledger
                             .commit(session_id.clone(), snapshot.session_version, plan.facts)
                             .map_err(|_| LocalRecoveryError::DurabilityUnavailable)?;
-                        output.push(CommittedTurn {
-                            session_id: session_id.clone(),
-                            turn_id: plan.turn_id,
+                        output.push(committed_turn(
+                            &snapshot,
+                            session_id.clone(),
+                            plan.turn_id,
                             execution_id,
-                            session_version: committed.session_version,
-                            committed_position: *committed
+                            committed.session_version,
+                            *committed
                                 .positions
                                 .last()
                                 .ok_or(LocalRecoveryError::CorruptRecoveryState)?,
-                        });
+                        )?);
                         break;
                     }
                     RuntimeRecoveryAction::ClassifyEffectUncertain => {
@@ -203,13 +204,14 @@ fn reconcile_lost_process(
         .execution_id
         .clone()
         .ok_or(LocalRecoveryError::CorruptRecoveryState)?;
-    let committed = CommittedTurn {
-        session_id: session_id.clone(),
-        turn_id: turn_id.clone(),
+    let committed = committed_turn(
+        snapshot,
+        session_id.clone(),
+        turn_id.clone(),
         execution_id,
-        session_version: snapshot.session_version,
-        committed_position: snapshot.through_position,
-    };
+        snapshot.session_version,
+        snapshot.through_position,
+    )?;
     let mut governed = factory
         .create(&committed)
         .map_err(|_| LocalRecoveryError::F0RecoveryFailed)?;
@@ -279,13 +281,14 @@ fn acknowledge_recovered_receipt(
     receipt
         .validate()
         .map_err(|_| LocalRecoveryError::CorruptRecoveryState)?;
-    let committed = CommittedTurn {
-        session_id: session_id.clone(),
-        turn_id: turn_id.clone(),
+    let committed = committed_turn(
+        snapshot,
+        session_id.clone(),
+        turn_id.clone(),
         execution_id,
-        session_version: snapshot.session_version,
-        committed_position: snapshot.through_position,
-    };
+        snapshot.session_version,
+        snapshot.through_position,
+    )?;
     let mut governed = factory
         .create(&committed)
         .map_err(|_| LocalRecoveryError::F0RecoveryFailed)?;
@@ -327,13 +330,14 @@ fn resume_f0(
         })
         .and_then(|fact| fact.tool_invocation_id.as_ref())
         .ok_or(LocalRecoveryError::CorruptRecoveryState)?;
-    let committed = CommittedTurn {
-        session_id: session_id.clone(),
-        turn_id: turn_id.clone(),
-        execution_id: execution_id.clone(),
-        session_version: snapshot.session_version,
-        committed_position: snapshot.through_position,
-    };
+    let committed = committed_turn(
+        snapshot,
+        session_id.clone(),
+        turn_id.clone(),
+        execution_id.clone(),
+        snapshot.session_version,
+        snapshot.through_position,
+    )?;
     let mut governed = factory
         .create(&committed)
         .map_err(|_| LocalRecoveryError::F0RecoveryFailed)?;
@@ -476,6 +480,28 @@ fn restart_plan(
         recorded_at: recorded_at.to_owned(),
     };
     plan_recovery_restart(&command).map_err(|_| LocalRecoveryError::CorruptRecoveryState)
+}
+
+fn committed_turn(
+    snapshot: &TurnSnapshot,
+    session_id: garive_ledger::SessionId,
+    turn_id: garive_ledger::TurnId,
+    execution_id: garive_ledger::ExecutionId,
+    session_version: u64,
+    committed_position: u64,
+) -> Result<CommittedTurn, LocalRecoveryError> {
+    let started = latest(snapshot, "turn.started")?;
+    let value = payload(started)?;
+    Ok(CommittedTurn {
+        session_id,
+        turn_id,
+        execution_id,
+        definition_id: text(&value, "definition_id")?.to_owned(),
+        definition_revision: text(&value, "definition_revision")?.to_owned(),
+        snapshot_digest: text(&value, "snapshot_digest")?.to_owned(),
+        session_version,
+        committed_position,
+    })
 }
 
 fn latest<'a>(

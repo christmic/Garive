@@ -104,6 +104,43 @@ pub struct SnapshotBoundGovernedExecutionFactory {
     inner: Arc<dyn LocalGovernedExecutionFactory>,
 }
 
+/// Selects and enforces an installed snapshot from durable Turn coordinates.
+pub struct CatalogueBoundGovernedExecutionFactory {
+    catalogue: Arc<RuntimeAgentCatalogue>,
+    inner: Arc<dyn LocalGovernedExecutionFactory>,
+}
+
+impl CatalogueBoundGovernedExecutionFactory {
+    /// Binds a governed factory to one immutable Host installation catalogue.
+    pub fn new(
+        catalogue: Arc<RuntimeAgentCatalogue>,
+        inner: Arc<dyn LocalGovernedExecutionFactory>,
+    ) -> Self {
+        Self { catalogue, inner }
+    }
+}
+
+impl LocalGovernedExecutionFactory for CatalogueBoundGovernedExecutionFactory {
+    fn create(
+        &self,
+        committed: &CommittedTurn,
+    ) -> Result<LocalGovernedExecution, LocalWorkerError> {
+        let installation = self
+            .catalogue
+            .resolve(
+                &committed.definition_id,
+                &committed.definition_revision,
+                &committed.snapshot_digest,
+            )
+            .map_err(|_| LocalWorkerError::InvalidComposition)?;
+        let execution = self.inner.create(committed)?;
+        installation
+            .validate_tool_capabilities(&execution.capabilities)
+            .map_err(|_| LocalWorkerError::InvalidComposition)?;
+        Ok(execution)
+    }
+}
+
 impl SnapshotBoundGovernedExecutionFactory {
     /// Binds an executor factory to the exact installed Agent snapshot.
     pub fn new(

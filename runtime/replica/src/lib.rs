@@ -56,8 +56,8 @@ mod sqlite_ledger;
 mod t1_system_composition;
 
 pub use agent_installation::{
-    RuntimeAgentCatalogue, RuntimeAgentInstallation, RuntimeAgentInstallationError,
-    SnapshotBoundGovernedExecutionFactory,
+    CatalogueBoundGovernedExecutionFactory, RuntimeAgentCatalogue, RuntimeAgentInstallation,
+    RuntimeAgentInstallationError, SnapshotBoundGovernedExecutionFactory,
 };
 #[cfg(unix)]
 pub use builtin_patch_executor::{BuiltinPatchExecutor, T1_PATCH_EXECUTOR_ID};
