@@ -75,7 +75,10 @@ cargo test -p garive-runtime --test native_cdp_managed_chromium -- --ignored --n
 The Runtime mock-transport gate additionally proves concrete-port observe,
 preflight, bound navigate/click/type/clear/select dispatch, receipt validation,
 post-success invalidation and post-dispatch connection-loss classification as
-uncertain with the old binding invalidated. Same-origin redirect rotates the
+uncertain with the complete port poisoned. A pre-observation connection loss
+returns `browser_attachment_lost`; both paths clear private snapshot and
+pending-popup bindings, and every later operation returns attachment lost
+without native access. Same-origin redirect rotates the
 opaque target revision; cross-origin redirect produces a trustworthy failed
 receipt with `browser_origin_denied`. The gate also proves focused key
 revalidation, settled viewport scroll, private current-history stale detection,
@@ -122,7 +125,7 @@ into the receipt digest. Typed `DOM.getFrameOwner` binds child frame identities
 to their embedding backend nodes. Runtime reads AX subtrees only for same-origin
 frames with a fully admitted ancestor chain and collapses a cross-origin owner
 to one nameless, valueless and actionless opaque node. The ordinary adapter
-suite passes 16 tests and the focused Runtime mapping/port suites pass 23 tests
+suite passes 16 tests and the focused Runtime mapping/port suites pass 24 tests
 under strict Clippy.
 
 The baseline now covers one navigation redirect, one form, open shadow DOM and
@@ -138,5 +141,6 @@ isolation, protected-field redaction, popup pending admission, popup origin
 denial, independent popup admission/observation and parent-focus restoration.
 It also covers native Managed download denial without accepting a path or
 persisting the canary. Real-browser history actions, attached-session
-extension/native-messaging evidence, attachment loss and durable Started/crash
-fault injection remain open. This is not a complete Browser Use claim.
+extension/native-messaging evidence, real browser-process death and durable
+Started/crash fault injection remain open. This is not a complete Browser Use
+claim.
