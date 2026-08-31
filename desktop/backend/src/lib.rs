@@ -23,6 +23,8 @@ mod product_store;
 mod setup;
 mod system_configuration;
 mod system_provider;
+#[cfg(unix)]
+mod t1_configuration;
 mod update_configuration;
 mod workspace;
 mod workspace_bookmark;
@@ -82,6 +84,8 @@ pub use system_provider::{
     SystemDesktopSecretResolver, ANTHROPIC_MESSAGES_PROFILE_ID, DESKTOP_CONFIG_FILE,
     DESKTOP_CREDENTIAL_SERVICE, OPENAI_RESPONSES_PROFILE_ID,
 };
+#[cfg(unix)]
+pub use t1_configuration::{DesktopT1ConfigurationProvider, DESKTOP_T1_CONFIG_FILE};
 pub use update_configuration::desktop_updater_configured;
 pub use workspace::{
     DesktopArtifactContent, DesktopArtifactPreview, DesktopWorkspaceAuthorization,

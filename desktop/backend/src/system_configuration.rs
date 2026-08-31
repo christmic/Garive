@@ -397,7 +397,7 @@ fn optional_zero(value: Option<u64>) -> bool {
     value == Some(0)
 }
 
-fn unique_json(bytes: &[u8]) -> Result<Value, DesktopConfigurationError> {
+pub(crate) fn unique_json(bytes: &[u8]) -> Result<Value, DesktopConfigurationError> {
     let mut deserializer = serde_json::Deserializer::from_slice(bytes);
     let value = UniqueValue::deserialize(&mut deserializer)
         .map_err(|_| DesktopConfigurationError::InvalidDocument)?

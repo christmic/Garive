@@ -324,7 +324,7 @@ fn missing_usage(config: &DesktopSystemConfiguration) -> MissingUsagePolicy {
     }
 }
 
-fn read_bounded(path: &Path) -> Result<Vec<u8>, DesktopConfigurationError> {
+pub(crate) fn read_bounded(path: &Path) -> Result<Vec<u8>, DesktopConfigurationError> {
     let metadata = match fs::symlink_metadata(path) {
         Ok(value) => value,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
