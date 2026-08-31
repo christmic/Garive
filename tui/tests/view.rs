@@ -12,7 +12,11 @@ mod view;
 
 use application::{AppModel, BootState, FocusTarget, Overlay, TimelineItem, TimelineRole};
 use garive_host_client::{SessionSummary, SuspensionView};
-use ratatui::{buffer::Buffer, layout::Rect, style::Modifier};
+use ratatui::{
+    buffer::Buffer,
+    layout::Rect,
+    style::{Color, Modifier},
+};
 
 fn frame(model: &AppModel, width: u16, height: u16) -> String {
     let area = Rect::new(0, 0, width, height);
@@ -63,6 +67,61 @@ fn standard_frame_has_navigation_timeline_and_safe_text() {
     assert!(standard.contains("session-1234"));
     assert!(standard.contains("answer�[31m⟦LRI⟧x⟦PDI⟧"));
     assert!(!standard.contains('\u{1b}'));
+}
+
+#[test]
+fn conversation_position_rail_shares_exact_geometry_and_modal_ownership() {
+    let mut model = AppModel {
+        terminal_size: application::TerminalSize {
+            width: 100,
+            height: 24,
+        },
+        focus: FocusTarget::Conversation,
+        ..Default::default()
+    };
+    for position in 0..20 {
+        model.timeline.push(TimelineItem {
+            stable_key: format!("cell-{position}"),
+            position: position + 1,
+            role: TimelineRole::Agent,
+            tone: Default::default(),
+            text: format!("bounded answer {position}"),
+        });
+    }
+    let rendered = frame(&model, 100, 24);
+    assert!(rendered.contains('█'));
+    assert_eq!(view::conversation_rail_hit_test(&model, 98, 3), Some(0));
+    assert_eq!(view::conversation_rail_hit_test(&model, 98, 18), Some(19));
+    assert_eq!(view::conversation_rail_hit_test(&model, 97, 10), None);
+
+    model.viewport.follow_latest = false;
+    model.viewport.anchor_key = Some("cell-5".into());
+    model.viewport.newer_updates = 2;
+    let area = Rect::new(0, 0, 100, 24);
+    let mut dark = Buffer::empty(area);
+    let _ = view::render_cached(
+        &model,
+        Theme::Dark,
+        area,
+        &mut dark,
+        &mut view::RenderCache::default(),
+    );
+    let mut light = Buffer::empty(area);
+    let _ = view::render_cached(
+        &model,
+        Theme::Light,
+        area,
+        &mut light,
+        &mut view::RenderCache::default(),
+    );
+    assert_eq!(dark[(98, 8)].symbol(), "┃");
+    assert_eq!(light[(98, 8)].symbol(), "┃");
+    assert_eq!(dark[(98, 8)].fg, Color::Yellow);
+    assert_eq!(light[(98, 8)].fg, Color::Yellow);
+    assert_ne!(dark[(98, 3)].fg, light[(98, 3)].fg);
+
+    model.overlay = Some(Overlay::Help);
+    assert_eq!(view::conversation_rail_hit_test(&model, 98, 3), None);
 }
 
 #[test]

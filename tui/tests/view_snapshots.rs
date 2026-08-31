@@ -31,6 +31,19 @@ fn responsive_product_frames_match_reviewed_snapshots() {
         frame(&wrapped, Theme::Mono, 40, 16)
     );
     insta::assert_snapshot!("standard_100x24", frame(&model, Theme::Dark, 100, 24));
+    let rail = position_rail_model();
+    insta::assert_snapshot!(
+        "conversation_rail_dark_100x24",
+        frame(&rail, Theme::Dark, 100, 24)
+    );
+    insta::assert_snapshot!(
+        "conversation_rail_light_100x24",
+        frame(&rail, Theme::Light, 100, 24)
+    );
+    insta::assert_snapshot!(
+        "conversation_rail_mono_100x24",
+        frame(&rail, Theme::Mono, 100, 24)
+    );
     insta::assert_snapshot!(
         "motion_running_dark_100x24",
         motion_frame(&model, Theme::Dark, 4, 100, 24)
@@ -221,6 +234,28 @@ fn product_model() -> AppModel {
         ),
     ];
     model.composer.replace("Ask a follow-up…").unwrap();
+    model
+}
+
+fn position_rail_model() -> AppModel {
+    let mut model = product_model();
+    model.timeline.clear();
+    for position in 0..20 {
+        model.timeline.push(item(
+            &format!("rail-{position}"),
+            position + 1,
+            if position % 2 == 0 {
+                TimelineRole::User
+            } else {
+                TimelineRole::Agent
+            },
+            &format!("Position rail evidence cell {position}."),
+        ));
+    }
+    model.focus = application::FocusTarget::Conversation;
+    model.viewport.follow_latest = false;
+    model.viewport.anchor_key = Some("rail-6".into());
+    model.viewport.newer_updates = 3;
     model
 }
 

@@ -76,6 +76,7 @@ pub(super) fn render_conversation(
         .wrap(Wrap { trim: false })
         .scroll((scroll.min(u16::MAX as usize) as u16, 0))
         .render(inner, buffer);
+    super::position_rail::render(model, theme, area, buffer);
 }
 
 struct ConversationWindow {

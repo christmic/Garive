@@ -5,13 +5,13 @@ expression: "frame(&wrapped, Theme::Mono, 40, 16)"
   GARIVE                  ●  ·  running
 
  Conversation · ↑ earlier
-
-  ◆  GARIVE #6
-     ## Release plan
-     • Verify the Runtime
-     • Ship with evidence
-     cargo test passes.
-
+                                      ·
+  ◆  GARIVE #6                        ·
+     ## Release plan                  █
+     • Verify the Runtime             █
+     • Ship with evidence             █
+     cargo test passes.               █
+                                      █
 ────────────────────────────────────────
 ╔ Compose ═════════════════════════════╗
 ║ Composer grows with soft wrapping    ║

@@ -4,8 +4,8 @@ use crate::{
     application::{AppAction, AppModel, FocusTarget, Overlay},
     input::ComposerClick,
     view::{
-        command_suggestion_hit_test, composer_hit_test, navigation_hit_test, overlay_contains,
-        overlay_hit_test,
+        command_suggestion_hit_test, composer_hit_test, conversation_rail_hit_test,
+        navigation_hit_test, overlay_contains, overlay_hit_test,
     },
 };
 
@@ -18,6 +18,7 @@ use super::{
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum MouseAction {
     ConversationScroll { backwards: bool },
+    ConversationJump(usize),
     SessionActivate(usize),
     OverlayMove { backwards: bool },
     OverlayActivate(usize),
@@ -62,6 +63,10 @@ pub(super) fn handle(mouse: MouseEvent, state: &mut RuntimeState) {
         MouseAction::ConversationScroll { backwards: false } => {
             state.dispatch(AppAction::FocusChanged(FocusTarget::Conversation));
             state.model.scroll_conversation_down(3);
+        }
+        MouseAction::ConversationJump(index) => {
+            state.dispatch(AppAction::FocusChanged(FocusTarget::Conversation));
+            state.model.jump_to_timeline_index(index);
         }
         MouseAction::SessionActivate(index) => {
             state.dispatch(AppAction::FocusChanged(FocusTarget::Navigation));
@@ -131,12 +136,20 @@ fn route(model: &AppModel, mouse: MouseEvent) -> Option<MouseAction> {
         MouseEventKind::ScrollUp => Some(MouseAction::ConversationScroll { backwards: true }),
         MouseEventKind::ScrollDown => Some(MouseAction::ConversationScroll { backwards: false }),
         MouseEventKind::Down(MouseButton::Left) => {
-            composer_hit_test(model, mouse.column, mouse.row, false)
-                .map(MouseAction::ComposerPlace)
+            conversation_rail_hit_test(model, mouse.column, mouse.row)
+                .map(MouseAction::ConversationJump)
                 .or_else(|| {
-                    navigation_hit_test(model, mouse.column, mouse.row)
-                        .map(MouseAction::SessionActivate)
+                    composer_hit_test(model, mouse.column, mouse.row, false)
+                        .map(MouseAction::ComposerPlace)
+                        .or_else(|| {
+                            navigation_hit_test(model, mouse.column, mouse.row)
+                                .map(MouseAction::SessionActivate)
+                        })
                 })
+        }
+        MouseEventKind::Drag(MouseButton::Left) => {
+            conversation_rail_hit_test(model, mouse.column, mouse.row)
+                .map(MouseAction::ConversationJump)
         }
         _ => None,
     }
@@ -212,7 +225,7 @@ mod tests {
     use crossterm::event::KeyModifiers;
 
     use super::*;
-    use crate::application::TerminalSize;
+    use crate::application::{TerminalSize, TimelineItem, TimelineRole};
 
     fn mouse(kind: MouseEventKind, column: u16, row: u16) -> MouseEvent {
         MouseEvent {
@@ -281,6 +294,54 @@ mod tests {
                 mouse(MouseEventKind::Down(MouseButton::Left), 31, 21)
             ),
             Some(MouseAction::ComposerPlace(1))
+        );
+    }
+
+    #[test]
+    fn conversation_rail_routes_press_and_drag_through_shared_geometry() {
+        let mut model = AppModel {
+            terminal_size: TerminalSize {
+                width: 100,
+                height: 24,
+            },
+            ..Default::default()
+        };
+        for position in 0..20 {
+            model.timeline.push(TimelineItem {
+                stable_key: format!("cell-{position}"),
+                position: position + 1,
+                role: TimelineRole::Agent,
+                tone: Default::default(),
+                text: "bounded".into(),
+            });
+        }
+        assert_eq!(
+            route(
+                &model,
+                mouse(MouseEventKind::Down(MouseButton::Left), 98, 3)
+            ),
+            Some(MouseAction::ConversationJump(0))
+        );
+        assert!(matches!(
+            route(
+                &model,
+                mouse(MouseEventKind::Drag(MouseButton::Left), 98, 10)
+            ),
+            Some(MouseAction::ConversationJump(8..=12))
+        ));
+        assert_eq!(
+            route(
+                &model,
+                mouse(MouseEventKind::Drag(MouseButton::Left), 97, 10)
+            ),
+            None
+        );
+        assert_eq!(
+            route(
+                &model,
+                mouse(MouseEventKind::Down(MouseButton::Left), 98, 18)
+            ),
+            Some(MouseAction::ConversationJump(19))
         );
     }
 }

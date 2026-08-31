@@ -448,4 +448,18 @@ impl AppModel {
         self.viewport.source_line = 0;
         self.viewport.newer_updates = 0;
     }
+
+    pub(crate) fn jump_to_timeline_index(&mut self, index: usize) {
+        if self.timeline.is_empty() {
+            return;
+        }
+        let target = index.min(self.timeline.len() - 1);
+        if target + 1 == self.timeline.len() {
+            self.follow_latest();
+            return;
+        }
+        self.viewport.follow_latest = false;
+        self.viewport.anchor_key = Some(self.timeline[target].stable_key.clone());
+        self.viewport.source_line = 0;
+    }
 }

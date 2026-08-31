@@ -18,6 +18,7 @@ mod markdown_syntax;
 mod markdown_table;
 mod motion;
 mod overlay;
+mod position_rail;
 pub(crate) mod presentation;
 mod primitives;
 mod session;
@@ -107,6 +108,12 @@ fn render_content(
     render_footer(model, theme, rows[2], buffer);
     command_suggestions::render(model, rows[1], palette(theme), buffer);
     rows[1]
+}
+
+pub(crate) fn conversation_rail_hit_test(model: &AppModel, column: u16, row: u16) -> Option<usize> {
+    let full = Rect::new(0, 0, model.terminal_size.width, model.terminal_size.height);
+    let conversation = content_rows(model, main_content_area(full))[0];
+    position_rail::target_at(model, conversation, column, row)
 }
 
 fn content_rows(model: &AppModel, area: Rect) -> std::rc::Rc<[Rect]> {

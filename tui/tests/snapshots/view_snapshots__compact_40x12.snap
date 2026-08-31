@@ -5,10 +5,10 @@ expression: "frame(&model, Theme::Mono, 40, 12)"
   GARIVE                  ●  ·  running
 
  Conversation · ↑ earlier
-     • Verify the Runtime
-     • Ship with evidence
-     cargo test passes.
-
+     • Verify the Runtime             ·
+     • Ship with evidence             ·
+     cargo test passes.               █
+                                      █
 ────────────────────────────────────────
 ╔ Compose ═════════════════════════════╗
 ║ Ask a follow-up…                     ║
