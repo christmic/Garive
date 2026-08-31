@@ -2,7 +2,7 @@ import { invoke as tauriInvoke } from "@tauri-apps/api/core";
 import type { Invoke } from "../ipc/host";
 import {
   cancelProductTurn, continueProductApproval, continueProductTurn, createProductSession, getProductDefinitions,
-  getProductEvents, getProductSessions, getProductTimeline, startProductTurn,
+  followProductLiveOutput, getProductEvents, getProductSessions, getProductTimeline, startProductTurn,
   type TurnCommandReceipt,
 } from "../ipc/productHost";
 import { TauriPreferenceBytesPort } from "../ipc/productStore";
@@ -111,8 +111,19 @@ export class DesktopProductEffectPort implements ProductEffectPort {
     sessionId: string, afterPosition: number, signal: AbortSignal,
   ): AsyncIterable<AppEffectPayload> {
     let cursor = afterPosition;
+    let liveQueue: AppEffectPayload[] = [];
+    void followProductLiveOutput(sessionId, (output) => {
+      if (signal.aborted) return;
+      if (liveQueue.length >= 256) liveQueue = [{ type: "live_output", output: {
+        ...output, kind: "preview_unavailable", text: undefined,
+        throughSequence: undefined, phase: undefined, labelKey: undefined, reason: undefined,
+      } }];
+      else liveQueue.push({ type: "live_output", output });
+    }, this.invoke).catch(() => undefined);
     while (!signal.aborted) {
+      while (liveQueue.length) yield liveQueue.shift()!;
       const page = await getProductEvents(sessionId, cursor, this.invoke);
+      while (liveQueue.length) yield liveQueue.shift()!;
       let previous = cursor;
       for (const event of page.events) {
         if (event.position <= previous || event.position > page.observed_max_position) protocol();

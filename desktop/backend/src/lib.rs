@@ -9,7 +9,8 @@ use garive_llm::ModelPort;
 use garive_runtime::{
     local_dispatch_queue, HostClock, HostContinuationInput, HostEventPage,
     HostWorkspaceContextEntry, InstalledAgent, LiveHost, LiveHostEvent, LiveHostLimits,
-    LocalDispatchQueue, LocalExecutionAttempt, LocalExecutionPolicy, LocalExecutionWorker,
+    LiveOutputHub, LiveOutputLimits, LiveOutputSubscriber, LocalDispatchQueue,
+    LocalExecutionAttempt, LocalExecutionPolicy, LocalExecutionWorker,
     LocalGovernedExecutionFactory,
 };
 use serde::Serialize;
@@ -254,12 +255,21 @@ impl DesktopHost {
         let definition_id = config.installed_agent.definition_id.clone();
         let (dispatcher, queue) = local_dispatch_queue(config.dispatch_capacity)
             .map_err(|_| DesktopHostError::InvalidConfiguration)?;
-        let host = LiveHost::new(
+        let live_output = LiveOutputHub::new(LiveOutputLimits {
+            max_active_executions: config.dispatch_capacity,
+            max_preview_bytes: 1024 * 1024,
+            max_event_bytes: 64 * 1024,
+            broadcast_capacity: 128,
+            max_subscribers_per_session: 8,
+        })
+        .map_err(|_| DesktopHostError::InvalidConfiguration)?;
+        let host = LiveHost::new_with_live_output(
             &config.database_path,
             config.installed_agent,
             config.host_limits,
             config.host_clock,
             dispatcher,
+            live_output.clone(),
         )
         .map_err(|_| DesktopHostError::InvalidConfiguration)?;
         let worker = match governed {
@@ -275,7 +285,8 @@ impl DesktopHost {
                 config.model,
             ),
         }
-        .map_err(|_| DesktopHostError::InvalidConfiguration)?;
+        .map_err(|_| DesktopHostError::InvalidConfiguration)?
+        .with_live_output(live_output);
         Ok(Self {
             host,
             definition_id,
@@ -444,6 +455,16 @@ impl DesktopHost {
         self.host
             .read_event_page(session_id, after_position)
             .map(DesktopEventPage::from)
+            .map_err(|_| DesktopHostError::ProjectionFailure)
+    }
+
+    /// Subscribes to bounded ephemeral output for one Session.
+    pub fn subscribe_live_output(
+        &self,
+        session_id: &str,
+    ) -> Result<LiveOutputSubscriber, DesktopHostError> {
+        self.host
+            .subscribe_live_output(session_id)
             .map_err(|_| DesktopHostError::ProjectionFailure)
     }
 
@@ -777,6 +798,14 @@ impl DesktopState {
     ) -> Result<DesktopProductTimelinePage, DesktopHostError> {
         self.installed_host()?
             .product_timeline(session_id, after_position, limit)
+    }
+
+    /// Subscribes to one installed Session's bounded ephemeral output.
+    pub fn subscribe_live_output(
+        &self,
+        session_id: &str,
+    ) -> Result<LiveOutputSubscriber, DesktopHostError> {
+        self.installed_host()?.subscribe_live_output(session_id)
     }
 
     /// Creates or exactly replays one caller-addressed Session command.

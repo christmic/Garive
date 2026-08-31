@@ -23,6 +23,7 @@ export interface WorkState {
   readonly activities: readonly HostActivity[];
   readonly artifacts: readonly HostArtifact[];
   readonly workspaces: readonly WorkspaceAttachment[];
+  readonly livePreview?: AppViewState["livePreview"];
   readonly draft: string;
   readonly error?: string;
   readonly inspectorOpen: boolean;
@@ -54,6 +55,7 @@ export const initialWorkState: WorkState = {
   activities: [],
   artifacts: [],
   workspaces: [],
+  livePreview: undefined,
   draft: "",
   inspectorOpen: false,
   inspectorTab: "activity",
@@ -103,6 +105,7 @@ export function reduceWork(state: WorkState, event: WorkEvent): WorkState {
         activities: event.timeline.items.flatMap((item) => item.activities),
         artifacts: [],
         workspaces: [],
+        livePreview: undefined,
         draft: "",
         error: undefined,
       };
@@ -143,7 +146,7 @@ function projectProduct(state: WorkState, view: AppViewState): WorkState {
     phase: ["submitting", "following", "cancelling", "reconnecting", "continuing"]
       .includes(view.execution) ? "submitting" : "idle",
     execution: view.execution,
-    sessionId, draft, messages: productMessages(view),
+    sessionId, draft, messages: productMessages(view), livePreview: view.livePreview,
     activities: view.activities.map((activity) => ({ api_version: "v1",
       activity_id: activity.activityId, kind: activity.kind, label_key: activity.labelKey ?? "agent.activity.updated",
       state: activity.state, source_position: activity.position, terminal: activity.terminal ?? false,

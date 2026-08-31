@@ -132,7 +132,8 @@ impl LiveHost {
         self.state.live_output.clone()
     }
 
-    pub(crate) fn subscribe_live_output(
+    /// Subscribes to bounded ephemeral output for one existing Session.
+    pub fn subscribe_live_output(
         &self,
         session: &str,
     ) -> Result<LiveOutputSubscriber, LiveHostError> {

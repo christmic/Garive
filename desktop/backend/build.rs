@@ -47,6 +47,7 @@ fn main() {
             "continue_product_turn",
             "continue_product_approval",
             "get_session_events",
+            "follow_live_output",
         ]),
     ))
     .expect("failed to build Garive Desktop permissions")

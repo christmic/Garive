@@ -798,8 +798,19 @@ function Timeline({ state, dispatch, t }: { state: WorkState; dispatch: WorkDisp
     : <article className="message assistant-message" key={message.id}><div><div className="result-markdown"><Markdown skipHtml remarkPlugins={[remarkGfm]}
       components={{ a: ({ children }) => <span className="safe-link">{children}</span> }}>{message.text || terminalCopy(message.terminal, t)}</Markdown></div>
       <div className="result-meta"><span><Icon name={message.terminal === "completed" ? "check" : "warning"} />{terminalCopy(message.terminal, t)}</span><div className="result-actions"><button type="button" disabled={!message.text} onClick={() => downloadMarkdown(message.id, message.text)}>{t("timeline.export")}</button><button type="button" onClick={() => void copyResult(message.id, message.text)}>{t(copiedId === message.id ? "timeline.copied" : "timeline.copy")}</button></div></div></div></article>)}
+    {state.livePreview && <article className="message assistant-message live-answer" aria-label={t("timeline.liveAnswer")}>
+      {state.livePreview.available && state.livePreview.text
+        ? <div className="result-markdown"><Markdown skipHtml remarkPlugins={[remarkGfm]}>{state.livePreview.text}</Markdown></div>
+        : <p><span className="live-pulse"><span /></span>{livePhaseCopy(state.livePreview.labelKey, t)}</p>}
+    </article>}
     <p className="sr-only" aria-live="polite" aria-atomic="true">{announcement}</p>
   </div>;
+}
+
+function livePhaseCopy(key: string | undefined, t: (key: MessageKey) => string): string {
+  const labels: Record<string, MessageKey> = { "agent.live.preparing": "timeline.livePreparing",
+    "agent.live.generating": "timeline.liveGenerating", "agent.live.finalizing": "timeline.liveFinalizing" };
+  return t(labels[key ?? ""] ?? "timeline.working");
 }
 
 export function TurnProgress({ activities, onOpen, t }: { activities: WorkState["activities"];

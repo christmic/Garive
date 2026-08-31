@@ -13,6 +13,7 @@ import {
 import {
   ProductPortError, type ProductEffectPort,
 } from "../../desktop/frontend/src/app/ProductRuntime";
+import { decodeLiveOutput } from "../../desktop/frontend/src/state/liveOutput";
 import { FetchHostClient, HostClientError } from "./host";
 
 const LIMITS = { max_document_bytes: 64 * 1024, max_drafts: 64,
@@ -63,9 +64,7 @@ export class WebProductEffectPort implements ProductEffectPort {
         }
         case "follow_events": {
           const sessionId = required(effect.sessionId);
-          for await (const raw of this.host.followEvents(sessionId, position(effect.afterPosition), signal)) {
-            yield mapHostEvent(decodeHostEvent(raw), sessionId);
-          }
+          yield* this.#follow(sessionId, position(effect.afterPosition), signal);
           return;
         }
         case "create_session": {
@@ -123,6 +122,28 @@ export class WebProductEffectPort implements ProductEffectPort {
       if (page.scanned_through_position === after) protocol(); after = page.scanned_through_position;
     }
     return protocol();
+  }
+  async *#follow(sessionId: string, afterPosition: number, signal: AbortSignal): AsyncIterable<AppEffectPayload> {
+    const durable = this.host.followEvents(sessionId, afterPosition, signal)[Symbol.asyncIterator]();
+    const live = this.host.followLiveOutput(sessionId, signal)[Symbol.asyncIterator]();
+    let durableNext = durable.next(); let liveNext: Promise<IteratorResult<unknown>> | undefined = live.next();
+    while (!signal.aborted) {
+      const candidates: Promise<{ source: "durable" | "live"; result: IteratorResult<unknown> }>[] = [
+        durableNext.then((result) => ({ source: "durable" as const, result })),
+      ];
+      if (liveNext) candidates.push(liveNext.then((result) => ({ source: "live" as const, result }))
+        .catch(() => ({ source: "live" as const, result: { done: true, value: undefined } })));
+      const next = await Promise.race(candidates);
+      if (next.source === "live") {
+        if (next.result.done) { liveNext = undefined; continue; }
+        yield { type: "live_output", output: decodeLiveOutput(next.result.value, sessionId) };
+        liveNext = live.next();
+      } else {
+        if (next.result.done) return;
+        yield mapHostEvent(decodeHostEvent(next.result.value), sessionId);
+        durableNext = durable.next();
+      }
+    }
   }
 }
 

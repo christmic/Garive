@@ -752,6 +752,33 @@ async fn continue_product_approval(
 }
 
 #[tauri::command]
+async fn follow_live_output(
+    state: tauri::State<'_, garive_desktop::DesktopState>,
+    session_id: String,
+    on_event: tauri::ipc::Channel<garive_runtime::LiveOutputEvent>,
+) -> Result<(), String> {
+    let mut subscriber = state
+        .subscribe_live_output(&session_id)
+        .map_err(|error| error.code().to_owned())?;
+    loop {
+        let event = subscriber
+            .recv()
+            .await
+            .map_err(|_| "live_output_unavailable".to_owned())?;
+        let ended = matches!(
+            event.kind,
+            garive_runtime::LiveOutputEventKind::Ended { .. }
+        );
+        on_event
+            .send(event)
+            .map_err(|_| "live_output_channel_closed".to_owned())?;
+        if ended {
+            return Ok(());
+        }
+    }
+}
+
+#[tauri::command]
 fn get_session_events(
     state: tauri::State<'_, garive_desktop::DesktopState>,
     session_id: String,
@@ -884,7 +911,8 @@ fn main() {
             cancel_product_turn,
             continue_product_turn,
             continue_product_approval,
-            get_session_events
+            get_session_events,
+            follow_live_output
         ])
         .run(tauri::generate_context!())
         .expect("Garive desktop runtime failed");
