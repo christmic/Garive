@@ -280,7 +280,9 @@ fn failure_reason(code: KnowledgeErrorCode) -> KnowledgeFailureReason {
     }
 }
 
-fn knowledge_input(value: &KnowledgeEvidence) -> Result<ModelInputItem, DurableExecutionError> {
+pub(crate) fn knowledge_input(
+    value: &KnowledgeEvidence,
+) -> Result<ModelInputItem, DurableExecutionError> {
     let content_utf8 = value
         .content()
         .inline_utf8()

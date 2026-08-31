@@ -73,6 +73,7 @@ fn sqlite_restart_distinguishes_requested_dispatched_and_terminal_positions() {
         derive_knowledge_recovery(&restarted, &recovery).unwrap(),
         KnowledgeRecoveryAction::RedispatchSameRequest {
             request_digest: request_digest.clone(),
+            request_through_position: 4,
         }
     );
 
@@ -109,6 +110,7 @@ fn sqlite_restart_distinguishes_requested_dispatched_and_terminal_positions() {
         KnowledgeRecoveryAction::ReturnTerminal {
             request_digest,
             terminal_position: 7,
+            request_through_position: 4,
             completed: true,
         }
     );
@@ -281,7 +283,7 @@ fn verify_local_cut(cut: LocalCut) {
     let recovered = recover_local_dispatches(&mut restarted, 3, "2026-08-29T00:00:02Z")
         .unwrap_or_else(|error| panic!("{cut:?} recovery failed: {error:?}"));
     assert_eq!(recovered.len(), 1);
-    if matches!(cut, LocalCut::Requested) {
+    if matches!(cut, LocalCut::Requested | LocalCut::Completed) {
         assert_eq!(recovered[0].execution_id, execution);
     } else {
         assert_ne!(recovered[0].execution_id, execution);
@@ -297,18 +299,15 @@ fn verify_local_cut(cut: LocalCut) {
                 .any(|fact| fact.kind.as_str() == "execution.abandoned"));
         }
         LocalCut::Completed => {
-            let abandoned = facts
+            assert!(facts
                 .iter()
-                .position(|fact| fact.kind.as_str() == "execution.abandoned")
-                .unwrap();
-            let terminal = facts
-                .iter()
-                .position(|fact| fact.kind.as_str() == "knowledge.completed")
-                .unwrap();
-            assert!(terminal < abandoned);
+                .any(|fact| fact.kind.as_str() == "knowledge.completed"));
             assert!(!facts
                 .iter()
                 .any(|fact| fact.kind.as_str() == "knowledge.failed"));
+            assert!(!facts
+                .iter()
+                .any(|fact| fact.kind.as_str() == "execution.abandoned"));
         }
         LocalCut::Failed => {
             let abandoned = facts

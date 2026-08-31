@@ -43,6 +43,14 @@ pub struct PreparedAgentCapabilities {
     pub memory_retrieval: Option<PlannedMemoryRetrieval>,
     /// Exact K0 retrieval executed durably before Core sees its evidence.
     pub knowledge_retrieval: Option<PreparedKnowledgeCapability>,
+    /// Previously completed K0 evidence reconstructed without connector dispatch.
+    pub recovered_knowledge: Option<RecoveredKnowledgeContext>,
+}
+
+/// Trustworthy completed Knowledge context reconstructed from the durable ledger.
+pub struct RecoveredKnowledgeContext {
+    pub(crate) terminal_position: u64,
+    pub(crate) items: Vec<ModelInputItem>,
 }
 
 /// Runtime-owned F0 brokers and immutable authority context for one Execution.
@@ -107,6 +115,7 @@ pub async fn execute_durable_model_only_with_skill_activation(
             skill_activation: Some(activation),
             memory_retrieval: None,
             knowledge_retrieval: None,
+            recovered_knowledge: None,
         },
         context,
         model,
@@ -274,6 +283,7 @@ pub async fn execute_durable_agent_with_skill_activation(
             skill_activation: Some(activation),
             memory_retrieval: None,
             knowledge_retrieval: None,
+            recovered_knowledge: None,
         },
         capabilities,
         context,
@@ -538,6 +548,28 @@ async fn prepare_capabilities(
                 ));
         }
         effective.context_request.through_position = position;
+    }
+    if let Some(recovered) = capabilities.recovered_knowledge {
+        if recovered.terminal_position == 0 {
+            return Err(DurableExecutionError::Command(
+                RuntimeCommandError::InvalidCommand,
+            ));
+        }
+        if !recovered.items.is_empty() {
+            effective
+                .capability_context_candidates
+                .push(capability_candidate(
+                    request,
+                    recovered.terminal_position,
+                    CandidateKind::Knowledge,
+                    Retention::Optional,
+                    recovered.items,
+                ));
+        }
+        effective.context_request.through_position = effective
+            .context_request
+            .through_position
+            .max(recovered.terminal_position);
     }
     Ok(effective)
 }

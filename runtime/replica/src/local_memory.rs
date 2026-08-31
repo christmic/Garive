@@ -5,8 +5,9 @@ use std::sync::Arc;
 use garive_config::CapabilityKind;
 use garive_core::{AgentEntry, ResumeInput};
 use garive_knowledge::{
-    ContentBinding as KnowledgeContentBinding, FreshnessRequirement, KnowledgeQueryMode,
-    KnowledgeRequest, KnowledgeSourceDescriptor,
+    complete_knowledge, Citation, CitationScheme, ContentBinding as KnowledgeContentBinding,
+    FreshnessRequirement, KnowledgeEvidence, KnowledgeFreshness, KnowledgeQueryMode,
+    KnowledgeRequest, KnowledgeSourceDescriptor, KnowledgeTrustClass,
 };
 use garive_memory::{
     ContentBinding, MemoryDocumentLimits, MemoryPurpose, MemoryQuery, MemoryScope, MemoryScore,
@@ -18,7 +19,7 @@ use crate::{
     authorize_memory_query, plan_memory_retrieval, LocalCapabilityPreparationFactory,
     LocalCapabilityPreparationInput, LocalWorkerError, MemoryAccessGrant, MemoryControlGrant,
     MemoryPrefix, MemoryRepositoryError, MemoryRetrievalContext, PreparedAgentCapabilities,
-    PreparedKnowledgeCapability, RuntimeAgentCatalogue, SqliteLedger,
+    PreparedKnowledgeCapability, RecoveredKnowledgeContext, RuntimeAgentCatalogue, SqliteLedger,
 };
 
 /// Portable M0 contract version supported by local production composition.
@@ -243,7 +244,9 @@ impl LocalCapabilityPreparationFactory for CatalogueCapabilityPreparationFactory
                     LOCAL_KNOWLEDGE_CONTRACT_VERSION,
                     &binding.descriptor_digest,
                 )?;
-                prepared.knowledge_retrieval = Some(prepare_knowledge(input, binding)?);
+                let (retrieval, recovered) = prepare_knowledge(ledger, input, binding)?;
+                prepared.knowledge_retrieval = retrieval;
+                prepared.recovered_knowledge = recovered;
             }
             _ => return Err(LocalWorkerError::CapabilityBindingMismatch),
         }
@@ -270,38 +273,331 @@ fn verify_descriptor(
 }
 
 fn prepare_knowledge(
+    ledger: &SqliteLedger,
     input: LocalCapabilityPreparationInput<'_>,
     binding: &LocalKnowledgeSystemBinding,
-) -> Result<PreparedKnowledgeCapability, LocalWorkerError> {
+) -> Result<
+    (
+        Option<PreparedKnowledgeCapability>,
+        Option<RecoveredKnowledgeContext>,
+    ),
+    LocalWorkerError,
+> {
     let query = KnowledgeContentBinding::from_inline(entry_content(&input.request.entry));
     let identity = knowledge_identity(input.committed, binding, query.digest())?;
-    let request = KnowledgeRequest::new(
-        format!("knowledge-request-{identity}"),
-        binding.source.source_id(),
-        binding.source.source_revision(),
-        KnowledgeQueryMode::Keyword,
-        query,
-        Vec::new(),
-        input.committed.committed_position,
-        binding.max_chunks,
-        binding.max_total_bytes,
-        binding.deadline_budget_ms,
-        FreshnessRequirement::CachedAllowed,
-    )
-    .map_err(|_| LocalWorkerError::KnowledgePreparationFailed)?;
+    let request_id = format!("knowledge-request-{identity}");
+    let request = existing_knowledge_request(ledger, input, binding, &request_id, query.digest())?
+        .map_or_else(
+            || {
+                KnowledgeRequest::new(
+                    &request_id,
+                    binding.source.source_id(),
+                    binding.source.source_revision(),
+                    KnowledgeQueryMode::Keyword,
+                    query,
+                    Vec::new(),
+                    input.committed.committed_position,
+                    binding.max_chunks,
+                    binding.max_total_bytes,
+                    binding.deadline_budget_ms,
+                    FreshnessRequirement::CachedAllowed,
+                )
+            },
+            Ok,
+        )
+        .map_err(|_| LocalWorkerError::KnowledgePreparationFailed)?;
     let grant = crate::KnowledgeAccessGrant::new(
         binding.source.source_id(),
         binding.source.source_revision(),
     )
     .map_err(|_| LocalWorkerError::KnowledgePreparationFailed)?;
-    PreparedKnowledgeCapability::new(
+    if let Some(recovered) = recover_completed_knowledge(ledger, input, binding, &request)? {
+        return Ok((None, Some(recovered)));
+    }
+    let prepared = PreparedKnowledgeCapability::new(
         binding.source.clone(),
         request,
         grant,
         format!("knowledge-dispatch-{identity}"),
         binding.connector.clone(),
     )
+    .map_err(|_| LocalWorkerError::KnowledgePreparationFailed)?;
+    Ok((Some(prepared), None))
+}
+
+fn existing_knowledge_request(
+    ledger: &SqliteLedger,
+    input: LocalCapabilityPreparationInput<'_>,
+    binding: &LocalKnowledgeSystemBinding,
+    request_id: &str,
+    query_digest: &str,
+) -> Result<Option<KnowledgeRequest>, LocalWorkerError> {
+    let snapshot = ledger
+        .load_turn(&input.committed.turn_id)
+        .map_err(|_| LocalWorkerError::KnowledgePreparationFailed)?;
+    let mut matches = Vec::new();
+    for fact in snapshot.facts.iter().filter(|fact| {
+        fact.execution_id.as_ref() == Some(&input.committed.execution_id)
+            && fact.kind.as_str() == "knowledge.requested"
+    }) {
+        let payload = serde_json::from_str::<serde_json::Value>(fact.payload.as_json())
+            .map_err(|_| LocalWorkerError::KnowledgePreparationFailed)?;
+        if payload
+            .get("request_id")
+            .and_then(serde_json::Value::as_str)
+            == Some(request_id)
+        {
+            matches.push(payload);
+        }
+    }
+    let ([] | [_]) = matches.as_slice() else {
+        return Err(LocalWorkerError::KnowledgePreparationFailed);
+    };
+    let Some(payload) = matches.first() else {
+        return Ok(None);
+    };
+    let query = payload
+        .get("query")
+        .and_then(serde_json::Value::as_object)
+        .ok_or(LocalWorkerError::KnowledgePreparationFailed)?;
+    let query = KnowledgeContentBinding::inline(
+        query
+            .get("digest")
+            .and_then(serde_json::Value::as_str)
+            .ok_or(LocalWorkerError::KnowledgePreparationFailed)?,
+        query
+            .get("inline_utf8")
+            .and_then(serde_json::Value::as_str)
+            .ok_or(LocalWorkerError::KnowledgePreparationFailed)?,
+    )
+    .map_err(|_| LocalWorkerError::KnowledgePreparationFailed)?;
+    let empty_filters = payload
+        .pointer("/filters/inline_utf8")
+        .and_then(serde_json::Value::as_str)
+        == Some("[]");
+    if query.digest() != query_digest
+        || payload.get("source_id").and_then(serde_json::Value::as_str)
+            != Some(binding.source.source_id())
+        || payload
+            .get("source_revision")
+            .and_then(serde_json::Value::as_str)
+            != Some(binding.source.source_revision())
+        || payload.get("mode").and_then(serde_json::Value::as_str) != Some("keyword")
+        || payload
+            .get("freshness_kind")
+            .and_then(serde_json::Value::as_str)
+            != Some("cached_allowed")
+        || !empty_filters
+    {
+        return Err(LocalWorkerError::KnowledgePreparationFailed);
+    }
+    let request = KnowledgeRequest::new(
+        request_id,
+        binding.source.source_id(),
+        binding.source.source_revision(),
+        KnowledgeQueryMode::Keyword,
+        query,
+        Vec::new(),
+        number(payload, "through_position")?,
+        u32::try_from(number(payload, "max_chunks")?)
+            .map_err(|_| LocalWorkerError::KnowledgePreparationFailed)?,
+        number(payload, "max_total_bytes")?,
+        number(payload, "deadline_budget_ms")?,
+        FreshnessRequirement::CachedAllowed,
+    )
+    .map_err(|_| LocalWorkerError::KnowledgePreparationFailed)?;
+    if payload
+        .get("request_digest")
+        .and_then(serde_json::Value::as_str)
+        != Some(
+            &request
+                .request_digest()
+                .map_err(|_| LocalWorkerError::KnowledgePreparationFailed)?,
+        )
+    {
+        return Err(LocalWorkerError::KnowledgePreparationFailed);
+    }
+    Ok(Some(request))
+}
+
+fn recover_completed_knowledge(
+    ledger: &SqliteLedger,
+    input: LocalCapabilityPreparationInput<'_>,
+    binding: &LocalKnowledgeSystemBinding,
+    request: &KnowledgeRequest,
+) -> Result<Option<RecoveredKnowledgeContext>, LocalWorkerError> {
+    let snapshot = ledger
+        .load_turn(&input.committed.turn_id)
+        .map_err(|_| LocalWorkerError::KnowledgePreparationFailed)?;
+    let has_requested = snapshot.facts.iter().any(|fact| {
+        fact.execution_id.as_ref() == Some(&input.committed.execution_id)
+            && fact.kind.as_str() == "knowledge.requested"
+            && serde_json::from_str::<serde_json::Value>(fact.payload.as_json())
+                .ok()
+                .and_then(|payload| {
+                    payload
+                        .get("request_id")
+                        .and_then(serde_json::Value::as_str)
+                        .map(|value| value == request.request_id())
+                })
+                == Some(true)
+    });
+    if !has_requested {
+        return Ok(None);
+    }
+    let context = crate::KnowledgeRecoveryContext {
+        session_id: input.committed.session_id.clone(),
+        turn_id: input.committed.turn_id.clone(),
+        execution_id: input.committed.execution_id.clone(),
+        through_position: snapshot.through_position,
+        request_id: request.request_id().to_owned(),
+    };
+    let action = crate::derive_knowledge_recovery(ledger, &context)
+        .map_err(|_| LocalWorkerError::KnowledgePreparationFailed)?;
+    let crate::KnowledgeRecoveryAction::ReturnTerminal {
+        request_digest,
+        terminal_position,
+        request_through_position,
+        completed: true,
+    } = action
+    else {
+        return Ok(None);
+    };
+    if request_digest
+        != request
+            .request_digest()
+            .map_err(|_| LocalWorkerError::KnowledgePreparationFailed)?
+        || request_through_position != request.through_position()
+    {
+        return Err(LocalWorkerError::KnowledgePreparationFailed);
+    }
+    let terminal = snapshot
+        .facts
+        .iter()
+        .find(|fact| fact.position == terminal_position)
+        .ok_or(LocalWorkerError::KnowledgePreparationFailed)?;
+    let payload: serde_json::Value = serde_json::from_str(terminal.payload.as_json())
+        .map_err(|_| LocalWorkerError::KnowledgePreparationFailed)?;
+    let bindings = payload
+        .get("evidence")
+        .and_then(serde_json::Value::as_array)
+        .ok_or(LocalWorkerError::KnowledgePreparationFailed)?;
+    let evidence = bindings
+        .iter()
+        .map(|value| recover_evidence(value, &binding.source))
+        .collect::<Result<Vec<_>, _>>()?;
+    let completed = complete_knowledge(request, &binding.source, evidence, true)
+        .map_err(|_| LocalWorkerError::KnowledgePreparationFailed)?;
+    let items = completed
+        .evidence
+        .iter()
+        .map(crate::core_bridge::knowledge_input)
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|_| LocalWorkerError::KnowledgePreparationFailed)?;
+    Ok(Some(RecoveredKnowledgeContext {
+        terminal_position,
+        items,
+    }))
+}
+
+fn recover_evidence(
+    value: &serde_json::Value,
+    source: &KnowledgeSourceDescriptor,
+) -> Result<KnowledgeEvidence, LocalWorkerError> {
+    let text = |name: &str| {
+        value
+            .get(name)
+            .and_then(serde_json::Value::as_str)
+            .ok_or(LocalWorkerError::KnowledgePreparationFailed)
+    };
+    let content_value = value
+        .get("content")
+        .and_then(serde_json::Value::as_object)
+        .ok_or(LocalWorkerError::KnowledgePreparationFailed)?;
+    let content = KnowledgeContentBinding::inline(
+        content_value
+            .get("digest")
+            .and_then(serde_json::Value::as_str)
+            .ok_or(LocalWorkerError::KnowledgePreparationFailed)?,
+        content_value
+            .get("inline_utf8")
+            .and_then(serde_json::Value::as_str)
+            .ok_or(LocalWorkerError::KnowledgePreparationFailed)?,
+    )
+    .map_err(|_| LocalWorkerError::KnowledgePreparationFailed)?;
+    let citation = Citation::new(
+        citation_scheme(text("citation_kind")?)?,
+        text("citation_locator")?,
+        optional_text(value, "citation_title")?,
+        optional_text(value, "canonical_uri")?,
+        text("citation_content_digest")?,
+    )
+    .map_err(|_| LocalWorkerError::KnowledgePreparationFailed)?;
+    KnowledgeEvidence::new(
+        text("evidence_id")?,
+        source.source_id(),
+        source.source_revision(),
+        optional_text(value, "source_snapshot_digest")?,
+        content,
+        number(value, "content_byte_length")?,
+        citation,
+        text("retrieved_at_utc")?,
+        freshness(text("freshness")?)?,
+        trust(text("trust_class")?)?,
+        u16::try_from(number(value, "rank_basis_points")?)
+            .map_err(|_| LocalWorkerError::KnowledgePreparationFailed)?,
+    )
     .map_err(|_| LocalWorkerError::KnowledgePreparationFailed)
+}
+
+fn optional_text(
+    value: &serde_json::Value,
+    name: &str,
+) -> Result<Option<String>, LocalWorkerError> {
+    value
+        .get(name)
+        .map(|item| {
+            item.as_str()
+                .map(str::to_owned)
+                .ok_or(LocalWorkerError::KnowledgePreparationFailed)
+        })
+        .transpose()
+}
+
+fn number(value: &serde_json::Value, name: &str) -> Result<u64, LocalWorkerError> {
+    value
+        .get(name)
+        .and_then(serde_json::Value::as_u64)
+        .ok_or(LocalWorkerError::KnowledgePreparationFailed)
+}
+
+fn citation_scheme(value: &str) -> Result<CitationScheme, LocalWorkerError> {
+    match value {
+        "uri_fragment" => Ok(CitationScheme::UriFragment),
+        "document_offset" => Ok(CitationScheme::DocumentOffset),
+        "record_key" => Ok(CitationScheme::RecordKey),
+        "opaque_locator" => Ok(CitationScheme::OpaqueLocator),
+        _ => Err(LocalWorkerError::KnowledgePreparationFailed),
+    }
+}
+
+fn freshness(value: &str) -> Result<KnowledgeFreshness, LocalWorkerError> {
+    match value {
+        "fresh" => Ok(KnowledgeFreshness::Fresh),
+        "cached" => Ok(KnowledgeFreshness::Cached),
+        "stale" => Ok(KnowledgeFreshness::Stale),
+        _ => Err(LocalWorkerError::KnowledgePreparationFailed),
+    }
+}
+
+fn trust(value: &str) -> Result<KnowledgeTrustClass, LocalWorkerError> {
+    match value {
+        "curated" => Ok(KnowledgeTrustClass::Curated),
+        "first_party" => Ok(KnowledgeTrustClass::FirstParty),
+        "third_party" => Ok(KnowledgeTrustClass::ThirdParty),
+        "untrusted" => Ok(KnowledgeTrustClass::Untrusted),
+        _ => Err(LocalWorkerError::KnowledgePreparationFailed),
+    }
 }
 
 fn knowledge_identity(

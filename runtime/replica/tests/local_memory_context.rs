@@ -15,9 +15,9 @@ use garive_core::{
     MissingUsagePolicy, ModelRecoveryPolicy, OutputLimitAction, TerminalRecoveryAction,
 };
 use garive_knowledge::{
-    Citation, CitationScheme, ContentBinding as KnowledgeContent, KnowledgeEvidence,
-    KnowledgeFreshness, KnowledgeQueryMode, KnowledgeSourceDescriptor, KnowledgeSourceKind,
-    KnowledgeTrustClass,
+    Citation, CitationScheme, ContentBinding as KnowledgeContent, FreshnessRequirement,
+    KnowledgeEvidence, KnowledgeFreshness, KnowledgeQueryMode, KnowledgeRequest,
+    KnowledgeSourceDescriptor, KnowledgeSourceKind, KnowledgeTrustClass,
 };
 use garive_llm::{
     InvokeOutcome, ModelCancellation, ModelCapability, ModelFuture, ModelInputContent, ModelItem,
@@ -31,15 +31,18 @@ use garive_memory::{
     MemoryTypeDescriptor, MemoryTypeRegistry,
 };
 use garive_runtime::{
-    local_dispatch_queue, plan_classified_memory_write, reconstruct_local_start,
+    local_dispatch_queue, plan_classified_memory_write, plan_knowledge_completed,
+    plan_knowledge_dispatched, plan_knowledge_requested, reconstruct_local_start,
     recover_local_dispatches, CatalogueCapabilityPreparationFactory, CommittedTurn, HostClock,
-    KnowledgeConnector, KnowledgeConnectorFuture, KnowledgeConnectorOutcome, LiveHost,
-    LiveHostLimits, LocalCapabilityPreparationFactory, LocalCapabilityPreparationInput,
-    LocalExecutionAttempt, LocalExecutionPolicy, LocalExecutionWorker, LocalKnowledgeSystemBinding,
-    LocalMemorySystemBinding, LocalWorkerDisposition, LocalWorkerError, MemoryControlAction,
-    MemoryControlGrant, MemoryWriteContext, RuntimeAgentCatalogue, RuntimeAgentInstallation,
-    SqliteLedger, KEYWORD_CURRENT_INPUT_REVISION, USER_DECLARED_PUSH_REVISION,
+    KnowledgeConnector, KnowledgeConnectorFuture, KnowledgeConnectorOutcome,
+    KnowledgeLifecycleContext, LiveHost, LiveHostLimits, LocalCapabilityPreparationFactory,
+    LocalCapabilityPreparationInput, LocalExecutionAttempt, LocalExecutionPolicy,
+    LocalExecutionWorker, LocalKnowledgeSystemBinding, LocalMemorySystemBinding,
+    LocalWorkerDisposition, LocalWorkerError, MemoryControlAction, MemoryControlGrant,
+    MemoryWriteContext, RuntimeAgentCatalogue, RuntimeAgentInstallation, SqliteLedger,
+    KEYWORD_CURRENT_INPUT_REVISION, USER_DECLARED_PUSH_REVISION,
 };
+use sha2::{Digest, Sha256};
 use tempfile::tempdir;
 
 const DESCRIPTOR_DIGEST: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
@@ -508,6 +511,254 @@ async fn exact_knowledge_source_completes_before_model_and_missing_binding_fails
             .unwrap();
         assert!(requested < dispatched && dispatched < completed && completed < model);
     }
+}
+
+#[tokio::test]
+async fn restart_after_knowledge_completed_reuses_evidence_without_connector_dispatch() {
+    let directory = tempdir().unwrap();
+    let database = directory.path().join("knowledge-completed-restart.db");
+    let installation = installation(false, true);
+    let installed = installation.clone_installed_agent();
+    let catalogue = Arc::new(RuntimeAgentCatalogue::new([installation]).unwrap());
+    let connector = Arc::new(KnowledgeConnectorStub(AtomicUsize::new(0)));
+    let factory = Arc::new(
+        CatalogueCapabilityPreparationFactory::new(catalogue, None)
+            .with_knowledge(knowledge_binding(connector.clone())),
+    );
+    let (discard_dispatcher, discard_queue) = local_dispatch_queue(1).unwrap();
+    drop(discard_queue);
+    let host = LiveHost::new(
+        &database,
+        installed.clone(),
+        host_limits(),
+        Arc::new(Clock),
+        discard_dispatcher,
+    )
+    .unwrap();
+    let session = host.create_session("create", "agent").unwrap();
+    let turn = host
+        .start_turn("start", &session.session_id, "lookup")
+        .unwrap();
+    let session_id = garive_ledger::SessionId::try_from(session.session_id.as_str()).unwrap();
+    let mut ledger = SqliteLedger::open(&database).unwrap();
+    let old = CommittedTurn {
+        session_id: session_id.clone(),
+        turn_id: garive_ledger::TurnId::try_from(turn.turn_id.as_str()).unwrap(),
+        execution_id: garive_ledger::ExecutionId::try_from(turn.execution_id.as_str()).unwrap(),
+        definition_id: installed.definition_id.clone(),
+        definition_revision: installed.definition_revision.clone(),
+        snapshot_digest: installed.snapshot_digest.clone(),
+        session_version: ledger.session_version(&session_id).unwrap().unwrap(),
+        committed_position: turn.committed_position,
+    };
+    let query = KnowledgeContent::from_inline("lookup");
+    let identity = knowledge_test_identity(&old, query.digest());
+    let request = KnowledgeRequest::new(
+        format!("knowledge-request-{identity}"),
+        "docs",
+        "docs.v1",
+        KnowledgeQueryMode::Keyword,
+        query,
+        vec![],
+        old.committed_position,
+        4,
+        4_096,
+        1_000,
+        FreshnessRequirement::CachedAllowed,
+    )
+    .unwrap();
+    let lifecycle = KnowledgeLifecycleContext {
+        turn_id: old.turn_id.clone(),
+        execution_id: old.execution_id.clone(),
+        recorded_at: "2026-09-01T00:00:01Z".into(),
+    };
+    let prepared = plan_knowledge_requested(&lifecycle, &request).unwrap();
+    let dispatched = plan_knowledge_dispatched(
+        &lifecycle,
+        &prepared,
+        &format!("knowledge-dispatch-{identity}"),
+    )
+    .unwrap();
+    let completed = plan_knowledge_completed(
+        &lifecycle,
+        &prepared,
+        &knowledge_source(),
+        &request,
+        vec![knowledge_evidence()],
+        true,
+    )
+    .unwrap();
+    ledger
+        .commit(
+            session_id,
+            old.session_version,
+            vec![prepared.fact, dispatched, completed.fact],
+        )
+        .unwrap();
+    drop(ledger);
+
+    let mut restarted = SqliteLedger::open(&database).unwrap();
+    let recovered = recover_local_dispatches(&mut restarted, 3, "2026-09-01T00:00:02Z").unwrap();
+    assert_eq!(recovered.len(), 1);
+    assert_eq!(recovered[0].execution_id, old.execution_id);
+    assert!(recovered[0].committed_position > old.committed_position);
+    drop(restarted);
+
+    let ledger = SqliteLedger::open(&database).unwrap();
+    let reconstructed = reconstruct_local_start(&ledger, &recovered[0], &policy(), &attempt())
+        .expect("reconstruct completed cut");
+    factory
+        .prepare(
+            &ledger,
+            LocalCapabilityPreparationInput {
+                committed: &recovered[0],
+                request: &reconstructed.request,
+                recorded_at: "2026-09-01T00:00:02Z",
+            },
+        )
+        .expect("recover completed knowledge context");
+    drop(ledger);
+
+    let worker = LocalExecutionWorker::new(&database, policy(), Arc::new(KnowledgeCheckingModel))
+        .unwrap()
+        .with_capability_preparation(factory);
+    let disposition = worker.execute(&recovered[0], &attempt()).await;
+    if !matches!(
+        disposition,
+        Ok(LocalWorkerDisposition::TerminalCommitted { .. })
+    ) {
+        let facts = SqliteLedger::open(&database)
+            .unwrap()
+            .load_turn(&old.turn_id)
+            .unwrap()
+            .facts
+            .into_iter()
+            .map(|fact| {
+                (
+                    fact.kind.as_str().to_owned(),
+                    fact.payload.as_json().to_owned(),
+                )
+            })
+            .collect::<Vec<_>>();
+        panic!("{disposition:?}: {facts:?}");
+    }
+    assert_eq!(connector.0.load(Ordering::SeqCst), 0);
+}
+
+#[tokio::test]
+async fn restart_after_knowledge_requested_redispatches_the_exact_request_once() {
+    let directory = tempdir().unwrap();
+    let database = directory.path().join("knowledge-requested-restart.db");
+    let installation = installation(false, true);
+    let installed = installation.clone_installed_agent();
+    let catalogue = Arc::new(RuntimeAgentCatalogue::new([installation]).unwrap());
+    let connector = Arc::new(KnowledgeConnectorStub(AtomicUsize::new(0)));
+    let factory = Arc::new(
+        CatalogueCapabilityPreparationFactory::new(catalogue, None)
+            .with_knowledge(knowledge_binding(connector.clone())),
+    );
+    let (discard_dispatcher, discard_queue) = local_dispatch_queue(1).unwrap();
+    drop(discard_queue);
+    let host = LiveHost::new(
+        &database,
+        installed.clone(),
+        host_limits(),
+        Arc::new(Clock),
+        discard_dispatcher,
+    )
+    .unwrap();
+    let session = host.create_session("create", "agent").unwrap();
+    let turn = host
+        .start_turn("start", &session.session_id, "lookup")
+        .unwrap();
+    let session_id = garive_ledger::SessionId::try_from(session.session_id.as_str()).unwrap();
+    let mut ledger = SqliteLedger::open(&database).unwrap();
+    let old = CommittedTurn {
+        session_id: session_id.clone(),
+        turn_id: garive_ledger::TurnId::try_from(turn.turn_id.as_str()).unwrap(),
+        execution_id: garive_ledger::ExecutionId::try_from(turn.execution_id.as_str()).unwrap(),
+        definition_id: installed.definition_id.clone(),
+        definition_revision: installed.definition_revision.clone(),
+        snapshot_digest: installed.snapshot_digest.clone(),
+        session_version: ledger.session_version(&session_id).unwrap().unwrap(),
+        committed_position: turn.committed_position,
+    };
+    let query = KnowledgeContent::from_inline("lookup");
+    let identity = knowledge_test_identity(&old, query.digest());
+    let request = KnowledgeRequest::new(
+        format!("knowledge-request-{identity}"),
+        "docs",
+        "docs.v1",
+        KnowledgeQueryMode::Keyword,
+        query,
+        vec![],
+        old.committed_position,
+        4,
+        4_096,
+        1_000,
+        FreshnessRequirement::CachedAllowed,
+    )
+    .unwrap();
+    let requested = plan_knowledge_requested(
+        &KnowledgeLifecycleContext {
+            turn_id: old.turn_id.clone(),
+            execution_id: old.execution_id.clone(),
+            recorded_at: "2026-09-01T00:00:01Z".into(),
+        },
+        &request,
+    )
+    .unwrap();
+    ledger
+        .commit(session_id, old.session_version, vec![requested.fact])
+        .unwrap();
+    drop(ledger);
+
+    let mut restarted = SqliteLedger::open(&database).unwrap();
+    let recovered = recover_local_dispatches(&mut restarted, 3, "2026-09-01T00:00:02Z").unwrap();
+    assert_eq!(recovered.len(), 1);
+    assert_eq!(recovered[0].execution_id, old.execution_id);
+    drop(restarted);
+
+    let worker = LocalExecutionWorker::new(&database, policy(), Arc::new(KnowledgeCheckingModel))
+        .unwrap()
+        .with_capability_preparation(factory);
+    assert!(matches!(
+        worker.execute(&recovered[0], &attempt()).await,
+        Ok(LocalWorkerDisposition::TerminalCommitted { .. })
+    ));
+    assert_eq!(connector.0.load(Ordering::SeqCst), 1);
+    let facts = SqliteLedger::open(&database)
+        .unwrap()
+        .load_turn(&old.turn_id)
+        .unwrap()
+        .facts;
+    for kind in [
+        "knowledge.requested",
+        "knowledge.dispatched",
+        "knowledge.completed",
+    ] {
+        assert_eq!(
+            facts
+                .iter()
+                .filter(|fact| fact.kind.as_str() == kind)
+                .count(),
+            1
+        );
+    }
+}
+
+fn knowledge_test_identity(committed: &CommittedTurn, query_digest: &str) -> String {
+    let bytes = serde_jcs::to_vec(&serde_json::json!({
+        "contract": "garive.local-knowledge-preparation",
+        "version": 1,
+        "execution_id": committed.execution_id.as_str(),
+        "source_id": "docs",
+        "source_revision": "docs.v1",
+        "request_policy_revision": KEYWORD_CURRENT_INPUT_REVISION,
+        "query_digest": query_digest,
+    }))
+    .unwrap();
+    format!("{:x}", Sha256::digest(bytes))
 }
 
 #[tokio::test]
