@@ -189,15 +189,27 @@ resource limits. Runtime:
 
 1. verifies each current content digest;
 2. constructs every new bounded byte sequence without mutation;
-3. writes/fsyncs a workspace journal and same-directory temporary files;
+3. atomically publishes and fsyncs a bounded journal under a separate
+   Runtime-private recovery-directory capability, then writes/fsyncs
+   deterministic same-directory temporary files without replacing any
+   pre-existing entry;
 4. atomically replaces files in canonical order;
 5. fsyncs directories and commits a receipt containing before/new digests;
-6. removes the journal only after durable result publication posture exists.
+6. removes the journal only after `effect.receipt` is durable and the executor
+   confirms that the exact receipt result digest matches the journal-derived
+   result.
 
 Recovery uses the journal to finish or reconstruct; it never applies patch
 hunks again based only on missing result. Multi-file visibility is transaction-
 like only through the Runtime journal/recovery contract, not an OS-wide atomic
 rename claim.
+
+The recovery journal is not inside the Agent-visible Workspace authority.
+Every stored path, digest and temporary name is revalidated against the exact
+Prepared call before mutation. A malformed or changed journal, an unexpected
+temporary, or content outside the before/after digest pair becomes uncertain.
+At startup, a durable receipt is acknowledged through the same concrete
+executor before Runtime reconstructs a missing terminal fact.
 
 Result contains ordered `{path,before_digest,after_digest}` entries and one
 receipt digest. File content and absolute temporary locations are absent.

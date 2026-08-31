@@ -247,7 +247,7 @@ Diagnostic strings are neither compatibility keys nor model-visible content.
 | Allow committed, no binding | Select/preflight under current revisions. |
 | binding committed, no Started | Revalidate all revisions; dispatch may proceed with same invocation. |
 | Started, no receipt | Apply C5 replay proof; otherwise reconcile. |
-| receipt, no result | Reconstruct from verified receipt/content reference. |
+| receipt, no result | Reconstruct the verified receipt, require the same executor to acknowledge its recovery state, then reconstruct from the receipt/content reference without dispatch. |
 | terminal result | Return idempotently. |
 
 Configured recovery reconstructs the same Prepared-v3 invocation and calls the
