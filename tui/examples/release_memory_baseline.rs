@@ -14,7 +14,7 @@ mod view;
 
 use std::{hint::black_box, process::Command};
 
-use application::{AppModel, BootState, TimelineItem, TimelineRole};
+use application::{AppModel, BootState, TimelineItem, TimelineRole, TurnBlock, TurnBlockKey};
 use garive_host_client::SessionSummary;
 use ratatui::{buffer::Buffer, layout::Rect};
 use serde::Serialize;
@@ -99,12 +99,26 @@ fn main() {
 }
 
 fn run_sample() {
+    let cells = timeline();
     let mut model = AppModel {
         boot: BootState::Ready,
         session_count: SESSIONS,
         sessions: sessions(),
         selected_session: Some("session-0".into()),
-        timeline: timeline(),
+        turn_blocks: cells
+            .chunks(3)
+            .enumerate()
+            .map(|(index, children)| TurnBlock {
+                key: TurnBlockKey {
+                    session_id: "session-0".into(),
+                    turn_id: format!("turn-{index}"),
+                },
+                user: children[0].clone(),
+                activities: children.get(1).cloned().into_iter().collect(),
+                committed_answer: children.get(2).cloned(),
+                outcome: None,
+            })
+            .collect(),
         ..Default::default()
     };
     model.follow_latest();
@@ -114,7 +128,7 @@ fn run_sample() {
     view::render_cached(&model, Theme::Dark, area, &mut buffer, &mut cache);
     black_box((&model, &buffer, &cache));
     assert_eq!(model.sessions.len(), SESSIONS);
-    assert_eq!(model.timeline.len(), CELLS);
+    assert_eq!(model.durable_children().count(), CELLS);
 }
 
 fn measure_peak(executable: &std::path::Path) -> u64 {
