@@ -1,7 +1,7 @@
 use garive_host_client::HostClientErrorCode;
 
 use crate::{
-    application::{AppAction, BootState, ConnectionState, ExecutionState, Overlay},
+    application::{BootState, ConnectionState, ExecutionState, Overlay},
     persistence::{DiagnosticEvent, PendingKind},
 };
 
@@ -22,42 +22,6 @@ use correlation::{
 
 pub(super) fn handle_host(message: HostMessage, state: &mut RuntimeState) {
     match message {
-        HostMessage::SnapshotLoaded {
-            request_id,
-            session_id,
-            view,
-            items,
-            follow_position,
-        } if state.model.selected_session.as_deref() == Some(&session_id)
-            && request_id == state.snapshot_request =>
-        {
-            install_timeline(&mut state.model, items);
-            state.model.reconcile_inspector_surface();
-            state.model.observed_position = follow_position;
-            state.model.connection = ConnectionState::Online;
-            state.model.session_count = state.model.sessions.len();
-            if let Some(summary) = state
-                .model
-                .sessions
-                .iter_mut()
-                .find(|item| item.session_id == session_id)
-            {
-                *summary = view.session;
-            }
-            state.follow = Some(host::follow(
-                state.client.clone(),
-                session_id.clone(),
-                follow_position,
-                state.sender.clone(),
-            ));
-            state.live_follow = Some(host::follow_live(
-                state.client.clone(),
-                session_id.clone(),
-                state.sender.clone(),
-            ));
-            replay_queued_for_session(state, &session_id);
-        }
-        HostMessage::SnapshotLoaded { .. } => {}
         HostMessage::SessionCreated {
             command_id,
             response,
@@ -251,50 +215,16 @@ pub(super) fn handle_host(message: HostMessage, state: &mut RuntimeState) {
             ));
         }
         HostMessage::Failed { operation, error } => {
-            if let HostOperation::Mutation { command_id } = &operation {
-                if unique_pending(&state.pending, command_id).is_none() {
-                    refresh_after_unmatched_mutation(state);
-                    return;
-                }
-            }
-            let refresh_failed = matches!(
-                &operation,
-                HostOperation::Snapshot { request_id } if *request_id == state.snapshot_request
-            );
-            if refresh_failed && state.cancel_exact_retry_refresh() {
-                state.model.notice =
-                    Some("Fresh Host truth could not be loaded; exact retry was not sent.".into());
+            let HostOperation::Mutation { command_id } = &operation;
+            if unique_pending(&state.pending, command_id).is_none() {
+                refresh_after_unmatched_mutation(state);
+                return;
             }
             let code = error.code;
             let _ = state.store.record_diagnostic(DiagnosticEvent::HostFailure {
                 safe_code: code.wire_name(),
             });
             match operation {
-                HostOperation::Snapshot { request_id } if request_id != state.snapshot_request => {}
-                HostOperation::Snapshot { .. }
-                    if matches!(
-                        code,
-                        HostClientErrorCode::InvalidConfiguration
-                            | HostClientErrorCode::InvalidEvent
-                            | HostClientErrorCode::EventOrderViolation
-                            | HostClientErrorCode::EventLimitExceeded
-                    ) =>
-                {
-                    state.dispatch(AppAction::HostUnavailable {
-                        safe_code: code.wire_name(),
-                    });
-                    state.model.execution = ExecutionState::Failed;
-                }
-                HostOperation::Snapshot { .. } if error.status.is_some() => {
-                    state.model.connection = ConnectionState::Online;
-                    state.model.notice =
-                        Some(format!("Snapshot refresh deferred: {}.", code.wire_name()));
-                }
-                HostOperation::Snapshot { .. } => {
-                    state.model.connection = ConnectionState::Disconnected {
-                        attempt: state.reconnect_attempt,
-                    };
-                }
                 HostOperation::Mutation { command_id } if error.status.is_some() => {
                     state.reject_pending(&command_id, code);
                     state.model.connection = ConnectionState::Online;
@@ -378,6 +308,50 @@ pub(super) fn apply_catalog_refresh_completion(state: &mut RuntimeState) {
         state.model.notice =
             Some("Fresh Host truth could not be loaded; exact retry was not sent.".into());
     }
+}
+
+pub(super) fn apply_snapshot_completion(state: &mut RuntimeState) {
+    let Some(snapshot) = state.model.snapshot_handoff.take() else {
+        if let Some(failure) = state.model.snapshot_failure.take() {
+            let _ = state.store.record_diagnostic(DiagnosticEvent::HostFailure {
+                safe_code: failure.code.wire_name(),
+            });
+        }
+        if state.cancel_exact_retry_refresh() {
+            state.model.notice =
+                Some("Fresh Host truth could not be loaded; exact retry was not sent.".into());
+        }
+        return;
+    };
+    let session_id = snapshot.request.session_id;
+    if state.model.selected_session.as_deref() != Some(session_id.as_str()) {
+        return;
+    }
+    install_timeline(&mut state.model, snapshot.items);
+    state.model.reconcile_inspector_surface();
+    state.model.observed_position = snapshot.follow_position;
+    state.model.connection = ConnectionState::Online;
+    state.model.session_count = state.model.sessions.len();
+    if let Some(summary) = state
+        .model
+        .sessions
+        .iter_mut()
+        .find(|item| item.session_id == session_id)
+    {
+        *summary = snapshot.view.session;
+    }
+    state.follow = Some(host::follow(
+        state.client.clone(),
+        session_id.clone(),
+        snapshot.follow_position,
+        state.sender.clone(),
+    ));
+    state.live_follow = Some(host::follow_live(
+        state.client.clone(),
+        session_id.clone(),
+        state.sender.clone(),
+    ));
+    replay_queued_for_session(state, &session_id);
 }
 
 fn replay_queued_for_session(state: &mut RuntimeState, session_id: &str) -> bool {

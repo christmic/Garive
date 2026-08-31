@@ -53,24 +53,6 @@ fn boot_transitions_are_explicit_and_complete() {
 }
 
 #[test]
-fn unavailable_host_has_a_safe_public_code() {
-    let mut model = AppModel::default();
-    reduce(
-        &mut model,
-        AppAction::HostUnavailable {
-            safe_code: "protocol_error",
-        },
-    );
-    assert_eq!(model.boot, BootState::Degraded);
-    assert_eq!(
-        model.connection,
-        ConnectionState::Unavailable {
-            safe_code: "protocol_error"
-        }
-    );
-}
-
-#[test]
 fn switching_sessions_restores_a_bounded_independent_viewport() {
     let mut model = AppModel {
         selected_session: Some("session-a".into()),

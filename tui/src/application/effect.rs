@@ -111,12 +111,38 @@ impl std::fmt::Debug for SnapshotRequest {
     }
 }
 
+impl SnapshotRequest {
+    pub(crate) fn identity_digest(&self) -> String {
+        let mut hasher = Sha256::new();
+        hasher.update(b"garive-tui-snapshot-v1\0");
+        hasher.update(self.session_id.as_bytes());
+        format!("{:x}", hasher.finalize())
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct SnapshotOwner {
+    pub(crate) context: EffectContext,
+    pub(crate) request: SnapshotRequest,
+}
+
 #[derive(Clone, Eq, PartialEq)]
 pub(crate) struct SnapshotRead {
     pub(crate) request: SnapshotRequest,
     pub(crate) view: SessionView,
     pub(crate) items: Vec<TurnTimelineItem>,
     pub(crate) follow_position: u64,
+}
+
+impl std::fmt::Debug for SnapshotRead {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("SnapshotRead")
+            .field("request", &self.request)
+            .field("item_count", &self.items.len())
+            .field("follow_position", &self.follow_position)
+            .finish()
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -264,6 +290,7 @@ impl std::fmt::Debug for HostReadResponse {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) struct HostReadFailure {
     pub(crate) code: HostClientErrorCode,
+    pub(crate) host_rejected: bool,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

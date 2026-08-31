@@ -125,12 +125,16 @@ impl SnapshotScan {
 const fn invalid_snapshot() -> HostReadFailure {
     HostReadFailure {
         code: HostClientErrorCode::InvalidEvent,
+        host_rejected: false,
     }
 }
 
 impl From<HostClientError> for HostReadFailure {
     fn from(error: HostClientError) -> Self {
-        Self { code: error.code }
+        Self {
+            code: error.code,
+            host_rejected: error.status.is_some(),
+        }
     }
 }
 
