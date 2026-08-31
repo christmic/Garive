@@ -262,6 +262,14 @@ terminal result only when the executor proves the process tree terminated and
 the receipt binds that classification. Otherwise C5 returns uncertainty and
 operator reconciliation.
 
+After Runtime loss following `effect.started`, `NeverReplay` forbids command
+redispatch but does not permit a detached process to remain alive. Startup
+reconstructs the exact invocation, executor revision and dispatch-attempt
+binding, then asks that same executor to idempotently terminate the process tree
+or prove that no matching execution exists. Only after this succeeds may
+Runtime commit `effect.uncertain`. Failure leaves the original Started position
+recoverable and fails startup recovery; it never fabricates a terminal receipt.
+
 ## Catalogue admission
 
 The catalogue constructor freezes:

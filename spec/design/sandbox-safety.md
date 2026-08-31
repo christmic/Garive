@@ -203,6 +203,13 @@ authorized and the selected executor proves enforcement. Timeout, cancellation
 or worker loss after process start requires a trustworthy terminal receipt;
 otherwise the effect is uncertain. Exit status alone is not a receipt.
 
+Process cleanup is a separate safety obligation from result recovery. For an
+exact Started invocation, the selected backend must expose an idempotent
+terminate-or-prove-absent operation bound to the executor revision and dispatch
+attempt. Runtime executes that operation before publishing crash uncertainty.
+Process-group signaling without a backend guarantee that children cannot escape
+the group is not whole-tree termination proof.
+
 ## Network enforcement
 
 Exact origins use the C5b canonical `scheme://host:port` identity. The
