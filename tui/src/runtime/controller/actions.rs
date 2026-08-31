@@ -2,7 +2,10 @@ use serde_json::{json, Value};
 
 use crate::{
     application::{AppAction, ExecutionState, Overlay},
-    input::{parse_command, parse_schema_input, Command, CommandParse, InspectorCommand},
+    input::{
+        parse_command, parse_schema_input, response_schema_control, Command, CommandParse,
+        InspectorCommand, SchemaControl,
+    },
     persistence::{now, DiagnosticEvent, PendingCommand, PendingKind},
 };
 
@@ -156,7 +159,15 @@ pub(super) fn submit_suspension_response(state: &mut RuntimeState) {
     let Some(schema) = suspension.response_schema_json.as_deref() else {
         return;
     };
-    let Ok(input_json) = parse_schema_input(schema, response.editor.text()) else {
+    let raw = match response_schema_control(schema) {
+        Some(SchemaControl::Editor) => response.editor.text().to_owned(),
+        Some(SchemaControl::Choices(choices)) => choices
+            .get(response.choice_selection)
+            .cloned()
+            .unwrap_or_default(),
+        None => return,
+    };
+    let Ok(input_json) = parse_schema_input(schema, &raw) else {
         state.model.notice = Some("The response does not match the public response schema.".into());
         return;
     };

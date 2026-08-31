@@ -40,6 +40,7 @@ pub(in crate::runtime) struct RuntimeState {
     pub(in crate::runtime) pending: Vec<PendingCommand>,
     pending_recovery: BTreeSet<String>,
     pub(in crate::runtime) ephemeral_confirmed: bool,
+    pub(in crate::runtime) deferred_ephemeral: Option<PendingCommand>,
     pub(in crate::runtime) queued_prompt: Option<String>,
     pub(in crate::runtime) snapshot_request: u64,
     pub(super) background_follows: BTreeMap<String, BackgroundFollow>,
@@ -131,6 +132,7 @@ impl RuntimeState {
             pending: restored.pending,
             pending_recovery,
             ephemeral_confirmed: false,
+            deferred_ephemeral: None,
             queued_prompt: None,
             snapshot_request: 0,
             background_follows: BTreeMap::new(),
@@ -323,6 +325,12 @@ impl RuntimeState {
 
     pub(in crate::runtime) fn admit_pending(&mut self, pending: PendingCommand) -> bool {
         if self.store.is_ephemeral() && !self.ephemeral_confirmed {
+            if self.deferred_ephemeral.is_some() {
+                self.model.notice =
+                    Some("An ephemeral operation is already awaiting consent.".into());
+                return false;
+            }
+            self.deferred_ephemeral = Some(pending);
             self.model.overlay = Some(Overlay::EphemeralConfirmation);
             return false;
         }

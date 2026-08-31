@@ -381,6 +381,27 @@ fn decision_sheet_spec(model: &AppModel, overlay: Overlay, colors: Palette) -> O
                 ));
                 ("Response", guidance)
             }
+            decision_sheet::DecisionResponseSpec::Choices {
+                guidance,
+                choices,
+                selected,
+            } => {
+                lines.extend(choices.into_iter().enumerate().map(|(index, choice)| {
+                    Line::styled(
+                        format!(
+                            "{} {}",
+                            if index == selected { "›" } else { " " },
+                            truncate_display(&safe_text(&choice), 48)
+                        ),
+                        if index == selected {
+                            colors.selected
+                        } else {
+                            colors.normal
+                        },
+                    )
+                }));
+                ("Choose", guidance)
+            }
             decision_sheet::DecisionResponseSpec::ReadOnly { guidance } => ("Read only", guidance),
         };
         lines.extend([

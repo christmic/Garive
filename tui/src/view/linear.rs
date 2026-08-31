@@ -162,6 +162,15 @@ fn linear_decision_sheet(model: &AppModel, overlay: Overlay) -> String {
             decision_sheet::DecisionResponseSpec::ReadOnly { guidance } => {
                 format!(" Read only: {guidance}")
             }
+            decision_sheet::DecisionResponseSpec::Choices {
+                guidance,
+                choices,
+                selected,
+            } => format!(
+                " Choices: {}. Selected: {}. {guidance}",
+                choices.join(", "),
+                choices.get(selected).map(String::as_str).unwrap_or("none")
+            ),
         });
     let guidance = spec
         .actions

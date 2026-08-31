@@ -1,4 +1,7 @@
-use crate::application::{ActionOverlayBinding, AppModel, Overlay};
+use crate::{
+    application::{ActionOverlayBinding, AppModel, Overlay},
+    input::{response_schema_control, SchemaControl},
+};
 
 use super::presentation::{action_overlay_copy, suspension_copy};
 
@@ -14,6 +17,11 @@ pub(crate) enum DecisionResponseSpec {
     Editor {
         guidance: &'static str,
         draft: String,
+    },
+    Choices {
+        guidance: &'static str,
+        choices: Vec<String>,
+        selected: usize,
     },
     ReadOnly {
         guidance: &'static str,
@@ -53,20 +61,43 @@ fn suspension(model: &AppModel) -> DecisionSheetSpec {
     DecisionSheetSpec {
         title: copy.title.into(),
         body,
-        response: Some(if model.suspension_is_interactive() {
-            DecisionResponseSpec::Editor {
-                guidance: copy.guidance,
-                draft: model
-                    .suspension_response
-                    .as_ref()
-                    .map(|state| state.editor.text().to_owned())
-                    .unwrap_or_default(),
-            }
-        } else {
-            DecisionResponseSpec::ReadOnly {
-                guidance: "This suspension is status-only; no response can be submitted here.",
-            }
-        }),
+        response: Some(
+            if let Some(control) = model
+                .suspension_is_interactive()
+                .then(|| {
+                    model.suspension.as_ref().and_then(|suspension| {
+                        suspension
+                            .response_schema_json
+                            .as_deref()
+                            .and_then(response_schema_control)
+                    })
+                })
+                .flatten()
+            {
+                match control {
+                    SchemaControl::Editor => DecisionResponseSpec::Editor {
+                        guidance: copy.guidance,
+                        draft: model
+                            .suspension_response
+                            .as_ref()
+                            .map(|state| state.editor.text().to_owned())
+                            .unwrap_or_default(),
+                    },
+                    SchemaControl::Choices(choices) => DecisionResponseSpec::Choices {
+                        guidance: copy.guidance,
+                        selected: model
+                            .suspension_response
+                            .as_ref()
+                            .map_or(0, |state| state.choice_selection),
+                        choices,
+                    },
+                }
+            } else {
+                DecisionResponseSpec::ReadOnly {
+                    guidance: "This suspension is status-only; no response can be submitted here.",
+                }
+            },
+        ),
         tone: DecisionSheetTone::Warning,
         actions: model
             .decision_bindings(Overlay::Suspension)

@@ -1,6 +1,7 @@
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 use crate::application::{ActionOverlayIntent, ActionOverlayKey, AppAction, Overlay};
+use crate::input::{response_schema_control, SchemaControl};
 
 use super::{
     actions::{retry_pending, submit_suspension_response},
@@ -26,11 +27,21 @@ pub(super) fn handle(key: KeyEvent, state: &mut RuntimeState) -> bool {
         .map(|binding| binding.intent)
     {
         match intent {
-            ActionOverlayIntent::Close => state.dispatch(AppAction::OverlayClosed),
+            ActionOverlayIntent::Close => {
+                if overlay == Overlay::EphemeralConfirmation {
+                    state.deferred_ephemeral = None;
+                }
+                state.dispatch(AppAction::OverlayClosed);
+            }
             ActionOverlayIntent::ConfirmQuit => state.dispatch(AppAction::QuitConfirmed),
             ActionOverlayIntent::AcceptEphemeral => {
                 state.ephemeral_confirmed = true;
                 state.model.overlay = None;
+                if let Some(pending) = state.deferred_ephemeral.take() {
+                    if state.admit_pending(pending.clone()) {
+                        super::replay_pending(state, pending);
+                    }
+                }
             }
             ActionOverlayIntent::ExactRetry => retry_pending(state),
             ActionOverlayIntent::OpenAbandonConfirmation => {
@@ -159,11 +170,19 @@ pub(super) fn handle(key: KeyEvent, state: &mut RuntimeState) -> bool {
             if overlay == Overlay::Suspension
                 && !key
                     .modifiers
-                    .intersects(KeyModifiers::CONTROL | KeyModifiers::ALT) =>
+                    .intersects(KeyModifiers::CONTROL | KeyModifiers::ALT)
+                && suspension_uses_editor(state) =>
         {
-            if let Some(response) = state.model.suspension_response.as_mut() {
-                let _ = response.editor.insert(&character.to_string());
-            }
+            let response = state
+                .model
+                .suspension_response
+                .as_mut()
+                .expect("interactive suspension has response state");
+            let _ = response.editor.insert(&character.to_string());
+        }
+        KeyCode::Up if overlay == Overlay::Suspension => move_suspension_choice(state, true),
+        KeyCode::Down | KeyCode::Char(' ' | 'j') if overlay == Overlay::Suspension => {
+            move_suspension_choice(state, false)
         }
         KeyCode::Backspace if overlay == Overlay::Suspension => {
             if let Some(response) = state.model.suspension_response.as_mut() {
@@ -202,6 +221,43 @@ pub(super) fn handle(key: KeyEvent, state: &mut RuntimeState) -> bool {
         _ => {}
     }
     true
+}
+
+fn suspension_uses_editor(state: &RuntimeState) -> bool {
+    state
+        .model
+        .suspension
+        .as_ref()
+        .and_then(|suspension| suspension.response_schema_json.as_deref())
+        .and_then(response_schema_control)
+        == Some(SchemaControl::Editor)
+}
+
+fn move_suspension_choice(state: &mut RuntimeState, backwards: bool) {
+    let count = state
+        .model
+        .suspension
+        .as_ref()
+        .and_then(|suspension| suspension.response_schema_json.as_deref())
+        .and_then(response_schema_control)
+        .and_then(|control| match control {
+            SchemaControl::Choices(choices) => Some(choices.len()),
+            SchemaControl::Editor => None,
+        })
+        .unwrap_or(0);
+    let Some(response) = state.model.suspension_response.as_mut() else {
+        return;
+    };
+    response.choice_selection = if backwards {
+        response
+            .choice_selection
+            .checked_sub(1)
+            .unwrap_or(count.saturating_sub(1))
+    } else if count == 0 {
+        0
+    } else {
+        (response.choice_selection + 1) % count
+    };
 }
 
 fn action_overlay_key(key: KeyEvent) -> Option<ActionOverlayKey> {

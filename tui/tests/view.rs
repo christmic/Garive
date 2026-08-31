@@ -242,6 +242,37 @@ fn suspension_response_identity_preserves_only_the_exact_schema_bound_editor() {
 }
 
 #[test]
+fn boolean_suspension_projects_one_shared_keyboard_and_screen_reader_choice() {
+    let mut model = AppModel {
+        terminal_size: application::TerminalSize {
+            width: 100,
+            height: 24,
+        },
+        selected_session: Some("session".into()),
+        selected_turn: Some("turn".into()),
+        overlay: Some(Overlay::Suspension),
+        suspension: Some(SuspensionView {
+            suspension_id: "s".into(),
+            session_version: 2,
+            kind: "approval_required".into(),
+            prompt_schema: "garive.public-suspension-prompt.v1".into(),
+            prompt_json: r#"{"schema_version":1,"title_key":"title","message_text":"Continue?","action_label_key":"allow"}"#.into(),
+            prompt_digest: "0".repeat(64),
+            response_schema_json: Some(r#"{"type":"boolean"}"#.into()),
+            response_schema_digest: Some("1".repeat(64)),
+        }),
+        ..Default::default()
+    };
+    model.reconcile_suspension_response();
+    model.suspension_response.as_mut().unwrap().choice_selection = 1;
+    let visual = frame(&model, 100, 24);
+    let linear = view::linear_overlay(&model);
+    assert!(visual.contains("› false"));
+    assert!(visual.contains("Enter submit response"));
+    assert!(linear.contains("Selected: false"));
+}
+
+#[test]
 fn resolved_suspension_cannot_return_from_quit_to_a_stale_sheet() {
     let mut model = AppModel {
         overlay: Some(Overlay::QuitConfirmation),

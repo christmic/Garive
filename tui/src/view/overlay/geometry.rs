@@ -138,6 +138,7 @@ fn decision_height(model: &AppModel, overlay: Overlay, popup_width: u16) -> u16 
     let fixed =
         5 + spec.response.as_ref().map_or(0, |response| match response {
             decision_sheet::DecisionResponseSpec::Editor { .. } => 4,
+            decision_sheet::DecisionResponseSpec::Choices { choices, .. } => 3 + choices.len(),
             decision_sheet::DecisionResponseSpec::ReadOnly { .. } => 3,
         }) + usize::from(!spec.actions.is_empty()) * 2;
     u16::try_from(body_rows.saturating_add(fixed)).unwrap_or(u16::MAX)

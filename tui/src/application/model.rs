@@ -326,6 +326,7 @@ pub(crate) struct SuspensionResponseIdentity {
 pub(crate) struct SuspensionResponseState {
     pub(crate) identity: SuspensionResponseIdentity,
     pub(crate) editor: EditorState,
+    pub(crate) choice_selection: usize,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -433,6 +434,7 @@ impl AppModel {
                 self.suspension_response = Some(SuspensionResponseState {
                     identity,
                     editor: EditorState::new(16 * 1_024),
+                    choice_selection: 0,
                 });
             }
             (_, None) => self.suspension_response = None,
