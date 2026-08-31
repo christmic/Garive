@@ -93,7 +93,7 @@ pub async fn run(config: LaunchConfig) -> Result<(), TuiError> {
         SystemTerminal::default(),
         TerminalOptions {
             screen_reader: config.screen_reader,
-            mouse: config.mouse == crate::MouseMode::On,
+            mouse: crate::args::mouse_capture_enabled(config.mouse, config.screen_reader, true),
         },
     )
     .map_err(map_terminal_error)?;
@@ -142,7 +142,11 @@ pub async fn run(config: LaunchConfig) -> Result<(), TuiError> {
                         SystemTerminal::default(),
                         TerminalOptions {
                             screen_reader: false,
-                            mouse: state.config.mouse == crate::MouseMode::On,
+                            mouse: crate::args::mouse_capture_enabled(
+                                state.config.mouse,
+                                false,
+                                true,
+                            ),
                         },
                     )
                     .map_err(map_terminal_error)?;
