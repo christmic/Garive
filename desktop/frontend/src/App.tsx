@@ -111,6 +111,7 @@ export function App({ client = "desktop", webCapabilities, createProductPort,
   const desktop = client === "desktop";
   const [state, dispatch] = useReducer(reduceWork, initialWorkState);
   const [screen, setScreen] = useState<Screen>("work");
+  const [navigationOpen, setNavigationOpen] = useState(false);
   const [recents, setRecents] = useState<readonly RecentTask[]>([]);
   const [recentTitles, setRecentTitles] = useState<Readonly<Record<string, string>>>({});
   const [commandOpen, setCommandOpen] = useState(false);
@@ -120,6 +121,8 @@ export function App({ client = "desktop", webCapabilities, createProductPort,
   const [preferences, setPreferences] = useState(readDesktopPreferences);
   const [systemDark, setSystemDark] = useState(() =>
     window.matchMedia("(prefers-color-scheme: dark)").matches);
+  const [smallWindow, setSmallWindow] = useState(() =>
+    window.matchMedia("(max-width: 480px)").matches);
   const locale = resolveDesktopLocale(preferences.locale);
   const t = useMemo(() => createTranslator(locale), [locale]);
   const taskSummary = useMemo(() => summarizeTasks(recents), [recents]);
@@ -142,6 +145,15 @@ export function App({ client = "desktop", webCapabilities, createProductPort,
   useEffect(() => {
     const query = window.matchMedia("(prefers-color-scheme: dark)");
     const changed = (event: MediaQueryListEvent) => setSystemDark(event.matches);
+    query.addEventListener("change", changed);
+    return () => query.removeEventListener("change", changed);
+  }, []);
+  useEffect(() => {
+    const query = window.matchMedia("(max-width: 480px)");
+    const changed = (event: MediaQueryListEvent) => {
+      setSmallWindow(event.matches);
+      if (!event.matches) setNavigationOpen(false);
+    };
     query.addEventListener("change", changed);
     return () => query.removeEventListener("change", changed);
   }, []);
@@ -234,7 +246,7 @@ export function App({ client = "desktop", webCapabilities, createProductPort,
 
   const beginNewWork = useCallback(() => {
     dispatch({ type: "new_work" }); pendingDraft.current = ""; setQueuedSubmission(undefined);
-    setSelectedContext(undefined); setScreen("work");
+    setSelectedContext(undefined); setScreen("work"); setNavigationOpen(false);
     void ensureProductSession();
     requestAnimationFrame(() => composer.current?.focus());
   }, [ensureProductSession]);
@@ -340,6 +352,9 @@ export function App({ client = "desktop", webCapabilities, createProductPort,
 
   useEffect(() => {
     const shortcuts = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && navigationOpen) {
+        event.preventDefault(); setNavigationOpen(false); return;
+      }
       if (!event.metaKey) return;
       if (event.key.toLowerCase() === "n") {
         event.preventDefault(); beginNewWork();
@@ -353,7 +368,7 @@ export function App({ client = "desktop", webCapabilities, createProductPort,
     };
     window.addEventListener("keydown", shortcuts);
     return () => window.removeEventListener("keydown", shortcuts);
-  }, [beginNewWork]);
+  }, [beginNewWork, navigationOpen]);
 
   const title = useMemo(() => {
     const first = state.messages.find((message) => message.role === "user")?.text;
@@ -525,7 +540,11 @@ export function App({ client = "desktop", webCapabilities, createProductPort,
   return <div className={`desktop-root theme-${effectiveTheme} density-${preferences.density}`}>
     <div className="app-shell" inert={Boolean(pickerGrant) || commandOpen}
       aria-hidden={Boolean(pickerGrant) || commandOpen}>
-      <aside className="sidebar" aria-label={t("shell.primaryNavigation")}>
+      <aside id="primary-navigation" className={navigationOpen ? "sidebar navigation-open" : "sidebar"}
+        aria-label={t("shell.primaryNavigation")} inert={smallWindow && !navigationOpen}
+        aria-hidden={smallWindow && !navigationOpen} onClickCapture={(event) => {
+          if ((event.target as HTMLElement).closest("button")) setNavigationOpen(false);
+        }}>
         <div className="titlebar-drag" data-tauri-drag-region />
         <div className="brand"><span className="brand-mark"><Icon name="sparkle" /></span><span>Garive</span></div>
         <button className="new-work" type="button" aria-label={t("nav.newWork")} onClick={beginNewWork}>
@@ -566,10 +585,16 @@ export function App({ client = "desktop", webCapabilities, createProductPort,
           </div>
         </div>
       </aside>
+      {navigationOpen && <button className="navigation-backdrop" type="button"
+        aria-label={t("shell.closeNavigation")} onClick={() => setNavigationOpen(false)} />}
 
-      <main className="main-surface">
+      <main className="main-surface" inert={smallWindow && navigationOpen}
+        aria-hidden={smallWindow && navigationOpen}>
         <header className="topbar" data-tauri-drag-region>
-          <div className="topbar-title"><span>{screen === "work" ? title : screen === "search" ? t("nav.search") : screen === "agents" ? t("nav.agents") : t("nav.settings")}</span>
+          <div className="topbar-title"><button className="navigation-trigger icon-button" type="button"
+            aria-label={t("shell.openNavigation")} aria-expanded={navigationOpen}
+            aria-controls="primary-navigation" onClick={() => setNavigationOpen((open) => !open)}><Icon name="panel" /></button>
+            <span>{screen === "work" ? title : screen === "search" ? t("nav.search") : screen === "agents" ? t("nav.agents") : t("nav.settings")}</span>
             {screen === "work" && <span className="local-badge"><span />{t("shell.local")}</span>}
             {visualTest && <span className="local-badge qa-badge">{t("shell.qaPreview")}</span>}
           </div>

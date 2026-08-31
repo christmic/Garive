@@ -139,4 +139,22 @@ describe("Desktop product experience", () => {
     fireEvent.keyDown(screen.getByRole("dialog"), { key: "Escape" });
     expect(screen.queryByRole("dialog", { name: "Garive command center" })).toBeNull();
   });
+
+  it("keeps navigation reachable as a dismissible small-window sheet", async () => {
+    Object.defineProperty(window, "matchMedia", { configurable: true, value: vi.fn((query: string) => ({
+      matches: query === "(max-width: 480px)", addEventListener: vi.fn(), removeEventListener: vi.fn(),
+    })) });
+    render(<App />);
+    await screen.findByText("What should we accomplish?");
+    const trigger = screen.getByRole("button", { name: "Open navigation" });
+    expect(trigger.getAttribute("aria-expanded")).toBe("false");
+    expect(document.querySelector("#primary-navigation")?.hasAttribute("inert")).toBe(true);
+    fireEvent.click(trigger);
+    expect(trigger.getAttribute("aria-expanded")).toBe("true");
+    expect(screen.getByRole("button", { name: "Close navigation" })).toBeTruthy();
+    expect(document.querySelector("#primary-navigation")?.hasAttribute("inert")).toBe(false);
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(trigger.getAttribute("aria-expanded")).toBe("false");
+    expect(screen.queryByRole("button", { name: "Close navigation" })).toBeNull();
+  });
 });
