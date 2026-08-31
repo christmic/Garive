@@ -150,6 +150,18 @@ fn record(
     .map_err(|_| MemoryErrorCode::CorruptMemoryState)
 }
 
+pub(crate) fn decode_memory_record(
+    payload_json: &str,
+    status: MemoryStatus,
+) -> Result<MemoryRecord, MemoryErrorCode> {
+    let value: Value =
+        serde_json::from_str(payload_json).map_err(|_| MemoryErrorCode::CorruptMemoryState)?;
+    let object = value
+        .as_object()
+        .ok_or(MemoryErrorCode::CorruptMemoryState)?;
+    record(object, status)
+}
+
 fn content(value: Option<&Value>) -> Result<ContentBinding, MemoryErrorCode> {
     let value = value
         .and_then(Value::as_object)

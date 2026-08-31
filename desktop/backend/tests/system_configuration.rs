@@ -26,7 +26,8 @@ use garive_llm::{
 use garive_provider_profile::SecretValue;
 use garive_runtime::{
     CommittedTurn, LocalGovernedExecution, LocalGovernedExecutionFactory, LocalWorkerError,
-    ProcessExecutable, ProcessLane, ProcessLaneRegistry, RuntimeHttpLimits, T1HostSystemConfig,
+    ProcessExecutable, ProcessLane, ProcessLaneRegistry, RuntimeHttpLimits, SqliteLedger,
+    T1HostSystemConfig,
 };
 use tempfile::tempdir;
 
@@ -504,6 +505,18 @@ async fn committed_setup_constructs_runtime_after_explicit_restart() {
         .await
         .expect("durable turn after setup restart");
     assert_eq!(result.text, "configured durable answer");
+    let ledger = SqliteLedger::open(directory.path().join("garive-desktop.db")).unwrap();
+    let turn = garive_ledger::TurnId::try_from(result.turn_id.as_str()).unwrap();
+    let facts = ledger.load_turn(&turn).unwrap().facts;
+    let memory = facts
+        .iter()
+        .position(|fact| fact.kind.as_str() == "memory.retrieval_recorded")
+        .unwrap();
+    let model = facts
+        .iter()
+        .position(|fact| fact.kind.as_str() == "model.started")
+        .unwrap();
+    assert!(memory < model);
 }
 
 #[test]

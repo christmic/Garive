@@ -267,6 +267,13 @@ Tool arguments, hidden reasoning, credentials, paths, raw provider values, and
 internal Ledger facts are absent. Streaming token/tool output is not simulated;
 the UI shows a running state until an admitted public event exists.
 
+The collapsed Composer status rail is goal-first. It names the running state,
+shows the latest admitted user request as the bounded goal summary and keeps at
+most one current public Activity state at the trailing edge. Tool labels and
+the ordered Activity list belong to the Environment drill-in and assistive
+description, not the always-visible rail. Elapsed time, percentage complete and
+stage count are absent unless the Host supplies those exact trusted facts.
+
 ## Local versus durable state
 
 | State | Owner |

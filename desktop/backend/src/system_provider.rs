@@ -11,13 +11,15 @@ use garive_core::{
     MissingUsagePolicy, ModelRecoveryPolicy, OutputLimitAction, TerminalRecoveryAction,
 };
 use garive_llm::{ModelCapability, ModelOutputSettings, ModelPort, TextMode};
+use garive_memory::{MemoryAuthorizedScope, MemoryDocumentLimits, MemoryScope, MemoryScopeClass};
 use garive_provider_anthropic::build_profile as build_anthropic_profile;
 use garive_provider_compatible::{MessagesDeployment, ProtocolErrorPolicy, ResponsesDeployment};
 use garive_provider_openai::build_profile as build_openai_profile;
 use garive_provider_profile::{ConnectionInput, EndpointSelection, SecretValue};
 use garive_runtime::{
-    ActivityProjectionLimits, HostClock, LiveHostLimits, LocalExecutionAttempt,
-    LocalExecutionPolicy, RuntimeAgentCatalogue, RuntimeAgentInstallation, RuntimeHttpLimits,
+    ActivityProjectionLimits, CatalogueCapabilityPreparationFactory, HostClock, LiveHostLimits,
+    LocalExecutionAttempt, LocalExecutionPolicy, LocalMemorySystemBinding, MemoryControlAction,
+    MemoryControlGrant, RuntimeAgentCatalogue, RuntimeAgentInstallation, RuntimeHttpLimits,
     RuntimeModelHttpTransport, T1HostSystemConfig,
 };
 use uuid::Uuid;
@@ -25,7 +27,9 @@ use uuid::Uuid;
 use crate::{
     desktop_agent::{
         builtin_desktop_agent_installation, builtin_desktop_workspace_agent_installation,
-        DESKTOP_AGENT_REVISION, DESKTOP_WORKSPACE_AGENT_REVISION,
+        desktop_agent_installation_for_revision, desktop_workspace_agent_installation_for_revision,
+        DESKTOP_AGENT_REVISION, DESKTOP_WORKSPACE_AGENT_REVISION, LEGACY_DESKTOP_AGENT_REVISION,
+        LEGACY_DESKTOP_WORKSPACE_AGENT_REVISION,
     },
     system_configuration::{
         MissingUsageDocument, OutputLimitDocument, TerminalActionDocument, MAX_DESKTOP_CONFIG_BYTES,
@@ -225,14 +229,55 @@ impl<R: DesktopSecretResolver, P: DesktopProfileRegistry> DesktopConfigurationPr
         let agent_installations =
             agent_installations(&config, self.t1_host_system_config.as_ref())?;
         let default_agent_definition_id = config.default_agent_definition_id.clone();
-        let agent_catalogue = RuntimeAgentCatalogue::new(agent_installations)
-            .map_err(|_| DesktopConfigurationError::ConstructionFailure)?;
+        let agent_catalogue = Arc::new(
+            RuntimeAgentCatalogue::new(agent_installations)
+                .map_err(|_| DesktopConfigurationError::ConstructionFailure)?,
+        );
+        let memory = config
+            .memory
+            .as_ref()
+            .map(|memory| {
+                LocalMemorySystemBinding::new(
+                    crate::desktop_agent::DESKTOP_MEMORY_CAPABILITY_NAME,
+                    crate::desktop_agent::DESKTOP_MEMORY_CAPABILITY_REVISION,
+                    crate::desktop_agent::DESKTOP_MEMORY_DESCRIPTOR_DIGEST,
+                    &memory.namespace_id,
+                    &memory.retriever_revision,
+                    &memory.source_policy_revision,
+                    MemoryControlGrant::new(
+                        &memory.namespace_id,
+                        [MemoryControlAction::Export],
+                        [MemoryAuthorizedScope {
+                            scope: MemoryScopeClass::User,
+                            owner_id: memory.scope_owner_id.clone(),
+                        }],
+                    )
+                    .map_err(|_| DesktopConfigurationError::ConstructionFailure)?,
+                    vec![MemoryScope::Namespace],
+                    MemoryDocumentLimits::new(
+                        memory.max_document_bytes,
+                        memory.max_content_bytes,
+                        memory.max_id_bytes,
+                    )
+                    .map_err(|_| DesktopConfigurationError::ConstructionFailure)?,
+                    memory.max_results,
+                    memory.max_total_bytes,
+                    memory.max_repository_records,
+                    memory.max_repository_facts,
+                )
+                .map_err(|_| DesktopConfigurationError::ConstructionFailure)
+            })
+            .transpose()?;
         let execution_policy = execution_policy(&config);
         Ok(Some(DesktopHostConfig {
             database_path: config.database_path,
-            agent_catalogue: Arc::new(agent_catalogue),
+            agent_catalogue: agent_catalogue.clone(),
             default_agent_definition_id,
             t1_host_system_config: self.t1_host_system_config.clone(),
+            capability_preparation: Some(Arc::new(CatalogueCapabilityPreparationFactory::new(
+                agent_catalogue,
+                memory,
+            ))),
             host_limits: LiveHostLimits {
                 max_command_bytes: config.host.max_command_bytes,
                 event_batch_size: config.host.event_batch_size,
@@ -277,6 +322,25 @@ fn agent_installations(
                     &document.definition_id,
                     &document.agent_instance_namespace,
                     &capabilities,
+                )
+            }
+            LEGACY_DESKTOP_AGENT_REVISION => desktop_agent_installation_for_revision(
+                &document.definition_id,
+                LEGACY_DESKTOP_AGENT_REVISION,
+                &document.agent_instance_namespace,
+                false,
+            ),
+            LEGACY_DESKTOP_WORKSPACE_AGENT_REVISION => {
+                let capabilities = t1_host_system_config
+                    .ok_or(DesktopConfigurationError::ConstructionFailure)?
+                    .tool_capabilities()
+                    .map_err(|_| DesktopConfigurationError::ConstructionFailure)?;
+                desktop_workspace_agent_installation_for_revision(
+                    &document.definition_id,
+                    LEGACY_DESKTOP_WORKSPACE_AGENT_REVISION,
+                    &document.agent_instance_namespace,
+                    &capabilities,
+                    false,
                 )
             }
             _ => return Err(DesktopConfigurationError::ConstructionFailure),

@@ -72,6 +72,13 @@ describe("Desktop visual accessibility contract", () => {
     expect(CSS).toContain("width: min(620px, 100%)");
     expect(CSS).toContain(".workspace-entry { display: grid; grid-template-columns: minmax(0, 1fr) 34px;");
     expect(CSS).toContain(".entry-icon { display: grid; place-items: center; width: 24px; height: 24px; color: var(--text-tertiary); background: transparent;");
+    expect(CSS).toContain(".search-empty { padding: 52px 8px; color: var(--text-secondary); background: transparent;");
+    expect(CSS).toContain(".theme-dark .search-results { background: transparent; }");
+    expect(CSS).toContain(".agents-heading { display: flex; align-items: end; justify-content: space-between; gap: 24px; padding: 40px 0 18px;");
+    expect(CSS).toContain(".settings-heading { padding: 40px 0 18px; }");
+    expect(CSS).toContain("grid-template-columns: 18px minmax(0, 1fr) auto auto");
+    expect(CSS).toContain(".progress-state { color: var(--text-tertiary); font-size: var(--text-2xs); white-space: nowrap; }");
+    expect(CSS).toContain(".topbar-actions .icon-button[aria-expanded=\"true\"] { color: var(--text-primary); background: transparent; }");
   });
 });
 

@@ -75,6 +75,7 @@ pub use memory_maintenance_projection::{
     MemoryMaintenanceProjection, RecordedMemoryDecision, RecordedMemoryErasure,
 };
 pub use memory_maintenance_recovery::reconstruct_memory_maintenance_projection;
+pub(crate) use memory_recovery::decode_memory_record;
 pub use memory_recovery::{reconstruct_memory_state, verify_memory_evidence, MemoryPrefix};
 pub use memory_repository_recovery::{
     reconstruct_memory_repository, reconstruct_memory_repository_projection,

@@ -31,8 +31,8 @@
       },
       "expected_expires_at": "2027-01-15T08:15:00Z",
       "expected_endpoint_mode": "fixed",
-      "effective_configuration_digest": "f6930067ae371b7f403fc781e5842f0ed26a508eb5b98ab8d42055676f375118",
-      "plan_digest": "7dcdab7e0f8c09f7c31cef973a5829b61844144f5e944f86e1451b6e2e367b6a"
+      "effective_configuration_digest": "198a3ab5477fb995a1c34872381716fcdbbd5a9bc2e4105371a3018a05cac7ee",
+      "plan_digest": "2c596ce0fabe3a5c6ffc6463868e52f3276cc410e44f3654a57ecf632f6519cd"
     },
     {
       "name": "override_endpoint",
@@ -53,8 +53,8 @@
       },
       "expected_expires_at": "2027-01-15T08:15:00Z",
       "expected_endpoint_mode": "override",
-      "effective_configuration_digest": "0c1d6b18382bc432ce32b39114d5b2363d76e81a3af3fbb0ac06835756a796e4",
-      "plan_digest": "b22bae2924b43173dd13cb7091af8af496a4f523c0f8c23423307c71ae9b4fd2"
+      "effective_configuration_digest": "ec231625a1e0f91a3d07e65a448c65d48185f410938408466e3bbec1d8d36382",
+      "plan_digest": "0e1ffea4bc8b68e82a7be29181b8a89a93c231b834dbc8d39c814736f401e865"
     }
   ],
   "failure_codes": [

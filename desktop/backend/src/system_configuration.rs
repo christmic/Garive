@@ -64,6 +64,7 @@ pub struct DesktopSystemConfiguration {
     pub(crate) installed_agents: Vec<InstalledAgentDocument>,
     pub(crate) host: HostDocument,
     pub(crate) execution: ExecutionDocument,
+    pub(crate) memory: Option<MemoryDocument>,
     pub(crate) http: HttpDocument,
     pub(crate) dispatch_capacity: usize,
     pub(crate) execution_lease_duration_ms: u64,
@@ -106,13 +107,16 @@ impl DesktopSystemConfiguration {
             raw.installed_agent.is_some(),
             raw.default_agent_definition_id.is_some(),
             raw.installed_agents.is_some(),
+            raw.memory.is_some(),
         ) {
-            (1, None, None, true, false, false) => {}
-            (2, Some(revision), Some(setup_id), true, false, false)
+            (1, None, None, true, false, false, false) => {}
+            (2, Some(revision), Some(setup_id), true, false, false, false)
                 if revision > 0 && !setup_id.is_empty() => {}
-            (3, Some(revision), Some(setup_id), false, true, true)
+            (3, Some(revision), Some(setup_id), false, true, true, false)
                 if revision > 0 && !setup_id.is_empty() => {}
-            (1..=3, _, _, _, _, _) => return Err(DesktopConfigurationError::InvalidDocument),
+            (4, Some(revision), Some(setup_id), false, true, true, true)
+                if revision > 0 && !setup_id.is_empty() => {}
+            (1..=4, _, _, _, _, _, _) => return Err(DesktopConfigurationError::InvalidDocument),
             _ => return Err(DesktopConfigurationError::UnsupportedVersion),
         }
         let database_file = Path::new(&raw.database_file);
@@ -125,7 +129,7 @@ impl DesktopSystemConfiguration {
             return Err(DesktopConfigurationError::InvalidPath);
         }
         validate(&raw)?;
-        let (default_agent_definition_id, installed_agents) = if raw.schema_version == 3 {
+        let (default_agent_definition_id, installed_agents) = if raw.schema_version >= 3 {
             (
                 raw.default_agent_definition_id
                     .take()
@@ -150,6 +154,7 @@ impl DesktopSystemConfiguration {
             installed_agents,
             host: raw.host,
             execution: raw.execution,
+            memory: raw.memory,
             http: raw.http,
             dispatch_capacity: raw.dispatch_capacity,
             execution_lease_duration_ms: raw.execution_lease_duration_ms,
@@ -213,6 +218,8 @@ struct RawDocument {
     installed_agents: Option<Vec<InstalledAgentDocument>>,
     host: HostDocument,
     execution: ExecutionDocument,
+    #[serde(default)]
+    memory: Option<MemoryDocument>,
     http: HttpDocument,
     dispatch_capacity: usize,
     execution_lease_duration_ms: u64,
@@ -293,6 +300,22 @@ pub(crate) struct ExecutionDocument {
     pub(crate) missing_usage_estimate_output_tokens: Option<u64>,
 }
 
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct MemoryDocument {
+    pub(crate) namespace_id: String,
+    pub(crate) scope_owner_id: String,
+    pub(crate) retriever_revision: String,
+    pub(crate) source_policy_revision: String,
+    pub(crate) max_results: u32,
+    pub(crate) max_total_bytes: u64,
+    pub(crate) max_repository_records: usize,
+    pub(crate) max_repository_facts: usize,
+    pub(crate) max_document_bytes: usize,
+    pub(crate) max_content_bytes: usize,
+    pub(crate) max_id_bytes: usize,
+}
+
 #[derive(Clone, Copy, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub(crate) enum OutputLimitDocument {
@@ -358,6 +381,23 @@ fn validate(raw: &RawDocument) -> Result<(), DesktopConfigurationError> {
         || raw.execution_lease_duration_ms == 0
         || !valid_output_limit(&raw.execution)
         || !valid_missing_usage(&raw.execution)
+        || raw.memory.as_ref().is_some_and(|memory| {
+            [
+                memory.namespace_id.as_str(),
+                memory.scope_owner_id.as_str(),
+                memory.retriever_revision.as_str(),
+                memory.source_policy_revision.as_str(),
+            ]
+            .iter()
+            .any(|value| value.is_empty() || value.len() > 256 || value.trim() != *value)
+                || memory.max_results == 0
+                || memory.max_total_bytes == 0
+                || memory.max_repository_records == 0
+                || memory.max_repository_facts == 0
+                || memory.max_document_bytes == 0
+                || memory.max_content_bytes == 0
+                || memory.max_id_bytes == 0
+        })
     {
         return Err(DesktopConfigurationError::InvalidValue);
     }
@@ -382,7 +422,7 @@ fn validate(raw: &RawDocument) -> Result<(), DesktopConfigurationError> {
 fn agent_documents(
     raw: &RawDocument,
 ) -> Result<(&str, Vec<&InstalledAgentDocument>), DesktopConfigurationError> {
-    if raw.schema_version == 3 {
+    if raw.schema_version >= 3 {
         Ok((
             raw.default_agent_definition_id
                 .as_deref()

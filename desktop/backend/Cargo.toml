@@ -17,6 +17,7 @@ garive-core = { path = "../../engine/core" }
 garive-config = { path = "../../engine/config" }
 garive-ledger = { path = "../../engine/ledger" }
 garive-llm = { path = "../../engine/llm" }
+garive-memory = { path = "../../engine/memory" }
 garive-provider-anthropic = { path = "../../providers/anthropic" }
 garive-provider-compatible = { path = "../../providers/compatible" }
 garive-provider-openai = { path = "../../providers/openai" }

@@ -24,6 +24,7 @@ mod goal_runtime;
 mod live_host;
 mod live_output;
 mod local_composition;
+mod local_memory;
 mod local_recovery;
 mod local_worker;
 mod memory_control;
@@ -148,13 +149,19 @@ pub use local_composition::{
     reconstruct_local_start, LocalExecutionAttempt, LocalExecutionPolicy, LocalReconstructionError,
     ReconstructedLocalExecution,
 };
+pub use local_memory::{
+    CatalogueCapabilityPreparationFactory, LocalKnowledgeSystemBinding, LocalMemorySystemBinding,
+    KEYWORD_CURRENT_INPUT_REVISION, LOCAL_KNOWLEDGE_CONTRACT_VERSION,
+    LOCAL_MEMORY_CONTRACT_VERSION, USER_DECLARED_PUSH_REVISION,
+};
 pub use local_recovery::{
     recover_local_dispatches, recover_local_dispatches_with_f0, LocalRecoveryError,
 };
 pub use local_worker::{
-    local_dispatch_queue, LocalDispatchQueue, LocalExecutionWorker, LocalF0Governance,
-    LocalGovernedExecution, LocalGovernedExecutionFactory, LocalTurnDispatcher,
-    LocalWorkerDisposition, LocalWorkerError, LocalWorkerShutdownReport,
+    local_dispatch_queue, LocalCapabilityPreparationFactory, LocalCapabilityPreparationInput,
+    LocalDispatchQueue, LocalExecutionWorker, LocalF0Governance, LocalGovernedExecution,
+    LocalGovernedExecutionFactory, LocalTurnDispatcher, LocalWorkerDisposition, LocalWorkerError,
+    LocalWorkerShutdownReport,
 };
 pub use memory_control::{
     MemoryControlAction, MemoryControlGrant, MemoryControlProjection, MemoryControlRuntimeError,
@@ -237,9 +244,9 @@ pub use scheduler_runtime::{
     ScheduleRuntimeState, ScheduleTickConfig, ScheduleTickOutcome,
 };
 pub use sqlite_ledger::{
-    ExecutionLease, ExecutionLeaseError, ExecutionLeaseRequest, MemoryRepositoryCommitError,
-    MemoryRepositoryImportCommitError, ScheduleLease, ScheduleLeaseError, ScheduleLeaseRequest,
-    SessionWatermark, SqliteLedger, SqliteLedgerError,
+    ExecutionLease, ExecutionLeaseError, ExecutionLeaseRequest, MemoryContextRepositorySnapshot,
+    MemoryRepositoryCommitError, MemoryRepositoryImportCommitError, ScheduleLease,
+    ScheduleLeaseError, ScheduleLeaseRequest, SessionWatermark, SqliteLedger, SqliteLedgerError,
 };
 pub use t1_dispatch::t1_dispatch_attempt_id;
 #[cfg(unix)]

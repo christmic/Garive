@@ -17,7 +17,7 @@ public class MemoryFixtureTest {
     ).jsonObject
 
     @Test
-    public fun sharedQueriesEnforceOrderVisibilityTimeAndPrefixBounds(): Unit {
+    public fun sharedQueriesEnforceOrderAndRuntimePrevalidatedVisibility(): Unit {
         val records = root.array("records").map(::record)
         val scores = root.array("scores").map { element ->
             val value = element.jsonObject

@@ -132,18 +132,27 @@ both bounds, restricted flag and optional frozen restricted-grant digest.
 `query_id` is excluded because the outer typed identity owns idempotency;
 changing any semantic field while reusing it is a conflict.
 
-Runtime returns only active, unexpired, authorized revisions visible through
-the fixed query position and frozen `as_of_utc`. Restricted records require an
-explicit frozen grant; `include_restricted=true` requires
+Runtime supplies only revisions reconstructed from its authorized canonical
+fixed-prefix set. `through_position` is the consuming Turn's local context
+boundary; it is not comparable with a record's `valid_from_position`, which is
+local to the Session that committed that record. Runtime rejects a record
+outside every source prefix before calling the portable retriever. The
+retriever then filters active, unexpired, scope-authorized revisions under
+frozen `as_of_utc`; it must not infer cross-Session visibility by comparing the
+two local position numbers. Restricted records require an explicit frozen
+grant; `include_restricted=true` requires
 `restricted_grant_digest`, while false forbids it. The digest is a binding to
 Runtime's authority decision, not authority by itself.
 
 `content_byte_length` is the Runtime-verified exact byte size behind the
 ContentBinding and is charged against `max_total_bytes`; inline content must
-match its UTF-8 length. Portable ordering is descending relevance, then descending
-`valid_from_position`, then lexical record/revision identity. Results are
-truncated before return to satisfy both limits. Equal input and fixed durable
-prefix under one retriever revision produce equal scores and ordering. The
+match its UTF-8 length. Portable ordering is descending relevance, then lexical
+record/revision identity. `valid_from_position` is not a cross-Session recency
+key and cannot break ties. A Runtime retriever that needs recency must score it
+from a source-aware index under a new exact `retriever_revision`. Results are
+truncated before return to satisfy both limits. Equal Runtime-authorized input
+and fixed durable prefixes under one retriever revision produce equal scores
+and ordering. The
 retrieval implementation need not expose its index representation, but an
 embedding/model/network-backed retriever is a separate Runtime port with
 explicit configuration and cannot be discovered inside Engine.
@@ -200,6 +209,8 @@ Diagnostic text and retrieval scores are not compatibility keys.
 - shared Rust/Kotlin validation, ordering, supersession and failure fixtures;
 - property tests for deterministic bounds and no tombstoned/expired leakage;
 - Runtime tests for namespace isolation and restricted access;
+- shared regression proving positions from different Sessions are never
+  compared as one global sequence;
 - SQLite restart tests proving commit-before-context and exact retrieval replay;
 - conflicting proposal/revision tests commit no partial facts;
 - no environment, network, database or embedding dependency in Engine Memory.

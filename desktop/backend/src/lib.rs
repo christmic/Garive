@@ -9,8 +9,8 @@ use garive_llm::ModelPort;
 use garive_runtime::{
     local_dispatch_queue, CatalogueBoundGovernedExecutionFactory, HostClock, HostContinuationInput,
     HostEventPage, HostWorkspaceContextEntry, LiveHost, LiveHostEvent, LiveHostLimits,
-    LiveOutputHub, LiveOutputLimits, LiveOutputSubscriber, LocalDispatchQueue,
-    LocalExecutionAttempt, LocalExecutionPolicy, LocalExecutionWorker,
+    LiveOutputHub, LiveOutputLimits, LiveOutputSubscriber, LocalCapabilityPreparationFactory,
+    LocalDispatchQueue, LocalExecutionAttempt, LocalExecutionPolicy, LocalExecutionWorker,
     LocalGovernedExecutionFactory, RuntimeAgentCatalogue,
 };
 use serde::Serialize;
@@ -140,6 +140,8 @@ pub struct DesktopHostConfig {
     pub default_agent_definition_id: String,
     /// Exact optional machine T1 resources matching Workspace Agent snapshots.
     pub t1_host_system_config: Option<garive_runtime::T1HostSystemConfig>,
+    /// Exact backend-constructed Memory/Knowledge preparation, when installed.
+    pub capability_preparation: Option<Arc<dyn LocalCapabilityPreparationFactory>>,
     /// Bounded Host command and projection policy.
     pub host_limits: LiveHostLimits,
     /// Bounded local Agent execution policy.
@@ -301,7 +303,7 @@ impl DesktopHost {
             live_output.clone(),
         )
         .map_err(|_| DesktopHostError::InvalidConfiguration)?;
-        let worker = match governed {
+        let mut worker = match governed {
             Some(factory) => LocalExecutionWorker::new_governed(
                 &config.database_path,
                 config.execution_policy,
@@ -317,8 +319,11 @@ impl DesktopHost {
                 config.model,
             ),
         }
-        .map_err(|_| DesktopHostError::InvalidConfiguration)?
-        .with_live_output(live_output);
+        .map_err(|_| DesktopHostError::InvalidConfiguration)?;
+        if let Some(factory) = config.capability_preparation {
+            worker = worker.with_capability_preparation(factory);
+        }
+        let worker = worker.with_live_output(live_output);
         Ok(Self {
             host,
             definition_id,

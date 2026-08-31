@@ -28,7 +28,10 @@ use sha2::{Digest, Sha256};
 use uuid::Uuid;
 
 use crate::{
-    desktop_agent::{DESKTOP_AGENT_REVISION, DESKTOP_WORKSPACE_AGENT_REVISION},
+    desktop_agent::{
+        DESKTOP_AGENT_REVISION, DESKTOP_WORKSPACE_AGENT_REVISION, LEGACY_DESKTOP_AGENT_REVISION,
+        LEGACY_DESKTOP_WORKSPACE_AGENT_REVISION,
+    },
     workspace::WorkspaceWriteRoot,
     workspace_t1_execution::{extend_with_t1, WorkspaceT1Governance},
     DesktopWorkspaceService,
@@ -89,8 +92,8 @@ impl LocalGovernedExecutionFactory for DesktopWorkspaceExecutionFactory {
         let definition = desktop_workspace_tool_definition()?;
         let tool_revision = definition.revision().to_owned();
         let policy_revision = match committed.definition_revision.as_str() {
-            DESKTOP_AGENT_REVISION => tool_revision.clone(),
-            DESKTOP_WORKSPACE_AGENT_REVISION => self
+            DESKTOP_AGENT_REVISION | LEGACY_DESKTOP_AGENT_REVISION => tool_revision.clone(),
+            DESKTOP_WORKSPACE_AGENT_REVISION | LEGACY_DESKTOP_WORKSPACE_AGENT_REVISION => self
                 .t1_host_system_config
                 .as_ref()
                 .ok_or(LocalWorkerError::InvalidComposition)?
@@ -140,7 +143,10 @@ impl LocalGovernedExecutionFactory for DesktopWorkspaceExecutionFactory {
                 },
             },
         };
-        if committed.definition_revision == DESKTOP_AGENT_REVISION {
+        if matches!(
+            committed.definition_revision.as_str(),
+            DESKTOP_AGENT_REVISION | LEGACY_DESKTOP_AGENT_REVISION
+        ) {
             return Ok(base);
         }
         let attachment = single_workspace_attachment(&snapshot)?;

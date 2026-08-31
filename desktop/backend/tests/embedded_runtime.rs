@@ -305,6 +305,7 @@ fn desktop_host_config(database: &Path, model: Arc<dyn ModelPort>) -> DesktopHos
         ),
         default_agent_definition_id: "definition-main".into(),
         t1_host_system_config: None,
+        capability_preparation: None,
         host_limits: LiveHostLimits {
             max_command_bytes: 4_096,
             event_batch_size: 64,

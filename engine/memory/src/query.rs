@@ -273,7 +273,6 @@ pub fn retrieve_memory(
         if record.namespace_id() != query.namespace_id
             || !query.allowed_scopes.contains(record.scope())
             || record.status() != MemoryStatus::Active
-            || record.valid_from_position() > query.through_position
             || record
                 .expires_at_utc()
                 .is_some_and(|expiry| expired(expiry, &query.as_of_utc))
@@ -293,7 +292,6 @@ pub fn retrieve_memory(
     eligible.sort_by_key(|(record, score)| {
         (
             Reverse(score.relevance_basis_points),
-            Reverse(record.valid_from_position()),
             record.record_id(),
             record.revision_id(),
         )

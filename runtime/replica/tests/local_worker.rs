@@ -16,9 +16,11 @@ use garive_llm::{
 use garive_runtime::{
     local_dispatch_queue, recover_local_dispatches, CommittedTurn, EffectiveRuntimeLimits,
     HostClock, InstalledAgent, LiveHost, LiveHostLimits, LiveOutputEndReason, LiveOutputEventKind,
-    LiveOutputHub, LiveOutputLimits, LocalExecutionAttempt, LocalExecutionPolicy,
+    LiveOutputHub, LiveOutputLimits, LocalCapabilityPreparationFactory,
+    LocalCapabilityPreparationInput, LocalExecutionAttempt, LocalExecutionPolicy,
     LocalExecutionWorker, LocalF0Governance, LocalGovernedExecution, LocalGovernedExecutionFactory,
-    LocalWorkerDisposition, LocalWorkerError, SqliteLedger, TurnDispatcher,
+    LocalWorkerDisposition, LocalWorkerError, PreparedAgentCapabilities, SqliteLedger,
+    TurnDispatcher,
 };
 use garive_runtime::{
     AuthorityDecision, AuthorityFuture, AuthorityPort, AuthorityRequest, ExecutorDispatch,
@@ -89,6 +91,24 @@ impl ModelPort for CompletingModel {
                 stop_reason: ModelStopReason::EndTurn,
             })
         })
+    }
+}
+
+struct EmptyCapabilityPreparation(AtomicUsize);
+impl LocalCapabilityPreparationFactory for EmptyCapabilityPreparation {
+    fn prepare(
+        &self,
+        ledger: &SqliteLedger,
+        input: LocalCapabilityPreparationInput<'_>,
+    ) -> Result<PreparedAgentCapabilities, LocalWorkerError> {
+        self.0.fetch_add(1, Ordering::SeqCst);
+        assert_eq!(input.recorded_at, "2026-08-29T00:00:01Z");
+        assert_eq!(
+            input.request.session_id.as_str(),
+            input.committed.session_id.as_str()
+        );
+        assert!(ledger.load_turn(&input.committed.turn_id).is_ok());
+        Ok(PreparedAgentCapabilities::default())
     }
 }
 
@@ -415,8 +435,10 @@ async fn committed_turn_runs_to_durable_host_terminal_once() {
         .subscribe(&session.session_id)
         .expect("subscriber");
     let model = Arc::new(CompletingModel(AtomicUsize::new(0)));
+    let capability_preparation = Arc::new(EmptyCapabilityPreparation(AtomicUsize::new(0)));
     let worker = LocalExecutionWorker::new(&database, policy(), model.clone())
         .expect("worker")
+        .with_capability_preparation(capability_preparation.clone())
         .with_live_output(live_output);
     let disposition = queue
         .try_run_next(&worker, &attempt())
@@ -429,6 +451,7 @@ async fn committed_turn_runs_to_durable_host_terminal_once() {
     assert_eq!(terminal_positions.len(), 2);
     assert!(terminal_positions[0] > turn.committed_position);
     assert_eq!(model.0.load(Ordering::SeqCst), 1);
+    assert_eq!(capability_preparation.0.load(Ordering::SeqCst), 1);
     let mut live_events = Vec::new();
     while let Some(event) = live.try_recv().expect("live receive") {
         live_events.push(event);
@@ -463,6 +486,7 @@ async fn committed_turn_runs_to_durable_host_terminal_once() {
         Ok(LocalWorkerDisposition::AlreadyTerminal)
     );
     assert_eq!(model.0.load(Ordering::SeqCst), 1);
+    assert_eq!(capability_preparation.0.load(Ordering::SeqCst), 1);
 
     let page = host
         .read_event_page(&session.session_id, 0)

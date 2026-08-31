@@ -36,6 +36,9 @@ neither is itself representative compression or Creativity evidence. See
 
 [`capability-runtime-facts.md`](capability-runtime-facts.md) is the coordinated
 CF0 payload companion for S0/M0/K0/Q0/MA0 and must be accepted with this set.
+[`local-capability-composition.md`](local-capability-composition.md) owns the
+shipping local Runtime binding that constructs M0/K0 inputs; portable
+implementation evidence alone does not establish product availability.
 
 S0 is first because it is an immutable context capability with no external
 effect. M0 and K0 then define two deliberately different evidence sources. Q0

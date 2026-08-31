@@ -1117,10 +1117,15 @@ fn configuration(
             "installed_agents": [agent, agent_document(workspace.installed_agent())]
         })
     } else {
-        json!({"installed_agent": agent})
+        json!({
+            "default_agent_definition_id": input.definition_id,
+            "installed_agents": [agent]
+        })
     };
-    let schema_version = if t1_tool_capabilities.is_some() { 3 } else { 2 };
-    let mut value = json!({"schema_version":schema_version,"configuration_revision":revision,"setup_id":setup_id,"database_file":"garive-desktop.db","host":{"max_command_bytes":65536,"event_batch_size":64,"event_poll_interval_ms":100},"execution":{"profile_id":input.profile_id,"credential_ref":credential_ref,"endpoint":input.endpoint_override,"model_target_id":input.model_target_id,"model_id":input.model_id,"deployment_id":input.deployment_id,"recovery_policy_revision":"desktop-recovery-1","max_output_tokens":8192,"max_context_items":64,"max_context_utf8_bytes":524288,"max_model_attempts":2,"max_context_rebuilds":1,"output_limit_action":"suspend","output_limit_max_retries":null,"transport_action":"suspend","unavailable_action":"suspend","missing_usage_policy":"stop","missing_usage_estimate_input_tokens":null,"missing_usage_estimate_output_tokens":null},"http":{"connect_timeout_ms":10000,"request_timeout_ms":120000,"max_response_bytes":8388608},"dispatch_capacity":8,"execution_lease_duration_ms":30000});
+    let schema_version = 4;
+    let memory_namespace = format!("desktop-memory-{setup_id}");
+    let memory_owner = format!("desktop-user-{setup_id}");
+    let mut value = json!({"schema_version":schema_version,"configuration_revision":revision,"setup_id":setup_id,"database_file":"garive-desktop.db","host":{"max_command_bytes":65536,"event_batch_size":64,"event_poll_interval_ms":100},"execution":{"profile_id":input.profile_id,"credential_ref":credential_ref,"endpoint":input.endpoint_override,"model_target_id":input.model_target_id,"model_id":input.model_id,"deployment_id":input.deployment_id,"recovery_policy_revision":"desktop-recovery-1","max_output_tokens":8192,"max_context_items":64,"max_context_utf8_bytes":524288,"max_model_attempts":2,"max_context_rebuilds":1,"output_limit_action":"suspend","output_limit_max_retries":null,"transport_action":"suspend","unavailable_action":"suspend","missing_usage_policy":"stop","missing_usage_estimate_input_tokens":null,"missing_usage_estimate_output_tokens":null},"memory":{"namespace_id":memory_namespace,"scope_owner_id":memory_owner,"retriever_revision":garive_runtime::USER_DECLARED_PUSH_REVISION,"source_policy_revision":garive_runtime::USER_DECLARED_PUSH_REVISION,"max_results":16,"max_total_bytes":65536,"max_repository_records":4096,"max_repository_facts":65536,"max_document_bytes":262144,"max_content_bytes":131072,"max_id_bytes":128},"http":{"connect_timeout_ms":10000,"request_timeout_ms":120000,"max_response_bytes":8388608},"dispatch_capacity":8,"execution_lease_duration_ms":30000});
     value
         .as_object_mut()
         .ok_or(DesktopSetupError::PersistenceFailed)?

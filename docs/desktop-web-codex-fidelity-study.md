@@ -306,6 +306,59 @@ context back into the Composer. At 720 px the sheet remains 620 px wide; at
 document overflow. This improves desktop density without weakening Workspace
 authority or pretending the Web client owns the native picker capability.
 
+### O. Secondary-surface continuity audit
+
+Search, Agents and Settings had drifted into three unrelated page grammars.
+Search placed a large tinted rectangle behind an otherwise small empty state;
+Agents and Settings used product-marketing eyebrows above their task titles;
+their first content baselines therefore started at different heights. None of
+those decorations communicated Runtime state, authority or a next action.
+
+The three surfaces now share a quiet desktop-document entry: the direct title
+starts at the 74 px baseline in the 800 px reference viewport, optional
+description follows once, and structural content begins with one separator.
+Search keeps its field/filter region as the only semantic control surface, but
+its zero-result state and dark results canvas are transparent. Agents and
+Settings no longer render `Installed locally` or `Desktop` as marketing
+eyebrows; definition count and settings categories remain where they carry
+meaning. Browser verification at 1280, 720 and 480 px found zero document or
+main-content horizontal overflow on all three screens. This audit applies the
+desktop grammar inferred from the supplied Codex workbench references; those
+references do not depict these exact secondary screens.
+
+### P. Goal-first running rail audit
+
+The reference running Composer leads with the goal being pursued and keeps
+operational controls at the edge. Garive's equivalent geometry already matched
+the reference, but its visible copy said only `Working on your task` followed
+by the latest tool label. That made implementation activity more prominent than
+the user's outcome and repeated the same tool fact available in Environment.
+
+The 32 px rail now leads with `Pursuing goal`, projects the latest admitted user
+request as a single ellipsized line, and keeps only the current public Activity
+state plus the details action at the edge. Exact tool labels remain available
+to assistive technology and in the Environment drill-in; no timer is invented
+because the current Host projection does not expose a trusted elapsed-time
+fact. With Environment open at the reference viewport, the rail remains x=353,
+544 px wide and free of internal overflow. At 720 and 480 px the Composer is
+546 and 432 px wide respectively, with zero rail or document overflow.
+
+### Q. Quiet titlebar disclosure audit
+
+Opening Environment previously left a prominent blue focus outline around the
+titlebar toggle in pointer-driven screenshots and also applied a persistent
+selected background. The panel itself already communicates the open state, so
+the duplicate emphasis made one utility action compete with document identity.
+
+The toggle now exposes the real `aria-expanded` and `aria-controls` relationship
+without an `active` class. Pointer release removes incidental button focus; once
+the pointer leaves, the open toggle has a fully transparent background while
+Environment remains visible. Keyboard focus still renders the shared 2 px
+focus-visible outline. At 720 and 480 px the 224 px panel remains present with
+the same expanded semantics and zero document overflow. This follows the
+reference titlebar's quiet utility-action hierarchy without hiding state from
+assistive technology.
+
 ## Gate 1 — Codex fidelity
 
 This gate passes only when both Desktop and Web show:

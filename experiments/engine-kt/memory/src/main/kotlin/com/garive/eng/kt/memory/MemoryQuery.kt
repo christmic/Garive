@@ -151,7 +151,7 @@ public fun retrieveMemory(
         if (!seen.add(key)) return failure(MemoryErrorCode.INVALID_MEMORY)
         val record = byIdentity[key] ?: return failure(MemoryErrorCode.CORRUPT_MEMORY_STATE)
         if (record.namespaceId != query.namespaceId || record.scope !in query.allowedScopes ||
-            record.status != MemoryStatus.ACTIVE || record.validFromPosition > query.throughPosition ||
+            record.status != MemoryStatus.ACTIVE ||
             record.expiresAtUtc?.let { Instant.parse(it) <= Instant.parse(query.asOfUtc) } == true ||
             record.sensitivity == MemorySensitivity.RESTRICTED && !query.includeRestricted
         ) return@forEach
@@ -162,7 +162,6 @@ public fun retrieveMemory(
     }
     eligible.sortWith(
         compareByDescending<Pair<MemoryRecord, MemoryScore>> { it.second.relevanceBasisPoints }
-            .thenByDescending { it.first.validFromPosition }
             .thenBy { it.first.recordId }
             .thenBy { it.first.revisionId },
     )

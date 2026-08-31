@@ -187,6 +187,9 @@ Localization and 200% text zoom may grow rows and must never clip content.
 The unified Desktop/Web window bar is 34px at the supplied 1280px reference
 size. The file tab shares that row, its location toolbar is 30px including its
 separator, and the first rendered heading begins after a 4px document inset.
+Disclosure buttons in the window bar use `aria-expanded` and `aria-controls`;
+the visible panel is the opened-state feedback, so the button does not retain a
+selected fill or pointer focus ring. Keyboard focus remains explicitly visible.
 The document retains a left-aligned 46rem measure rather than recentring inside
 the pane. Opening Environment uses a bounded top-right fade/scale; file contents use a 4px lateral reveal after the
 grid track exists. Both animations are removed by reduced-motion preference.
@@ -240,6 +243,19 @@ definition ID. Loading, empty and unavailable catalogues remain distinct.
 Wide windows use a continuous 224px list/detail split with one structural
 separator; below 760px the catalogue becomes a horizontal strip above the
 detail surface. Rounded full-height dashboard cards are forbidden.
+
+Secondary surfaces use one desktop-document entry grammar. Search, Agents and
+Settings begin with the direct task title on the same vertical work axis;
+descriptive copy is optional and appears once. Marketing eyebrows such as
+platform labels, install provenance or product slogans are forbidden above
+page titles. Facts such as definition count stay adjacent to the content they
+qualify instead of becoming decoration.
+
+An empty state remains on the continuous canvas unless a card represents a
+real semantic boundary, such as a control group, permission boundary or
+independently navigable object. Empty-state glyph, title and consequence copy
+must not acquire a tinted panel, independent radius or shadow merely to occupy
+space. The same rule applies in light and dark themes and at narrow widths.
 
 ## Component grammar
 

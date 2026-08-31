@@ -17,6 +17,11 @@ the OS credential-store service `com.garive.desktop`. Missing configuration
 reports `not_configured`; invalid present configuration aborts startup with a
 stable code. Frontend input and process environment never supply configuration.
 
+Current setup writes schema v4. It persists only non-secret Memory binding and
+bound values; the fact-backed repository remains in SQLite. Agent v2 snapshot
+admission, the v4 binding and commit-before-model retrieval must all agree.
+Legacy v1–v3 configurations retain Agent v1 behavior without implicit Memory.
+
 The exact schema and failure rules are specified in
 `../../spec/design/desktop-system-configuration.md`.
 
