@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
+import { Children, isValidElement, useCallback, useEffect, useMemo, useReducer, useRef, useState,
+  type ReactNode } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import Markdown from "react-markdown";
@@ -312,12 +313,16 @@ export function App({ client = "desktop", webCapabilities, createProductPort,
       if (visualTestMode === "running") {
         dispatch({ type: "session_loaded", timeline: {
           api_version: "v1", session_id: "visual-running", scanned_through_position: 9,
-          observed_max_position: 9, has_more: false, items: [{ turn_id: "running-turn",
-            started_position: 3, latest_position: 9, state: "running",
+          observed_max_position: 9, has_more: false, items: [{ turn_id: "completed-turn",
+            started_position: 1, latest_position: 5, state: "completed",
+            user_text: "Audit the Runtime boundary before implementation",
+            completion_text: "## Runtime boundary\n\nThe client owns the work surface; the Runtime owns durable execution.\n\n```text\nSession → Turn → admitted Activity → committed result\n```\n\n### Verified constraints\n\n- Workspace authority is explicit.\n- Live output never replaces the committed result.\n- Recovery preserves the next safe action.",
+            content_truncated: false, activities: [] }, { turn_id: "running-turn",
+            started_position: 6, latest_position: 9, state: "running",
             user_text: "Compare the launch research and prepare a decision memo",
             content_truncated: false, activities: [{ api_version: "v1",
               activity_id: "read-research", kind: "tool", label_key: "agent.activity.read_file",
-              state: "completed", source_position: 6, terminal: true }, { api_version: "v1",
+              state: "completed", source_position: 7, terminal: true }, { api_version: "v1",
               activity_id: "draft-memo", kind: "tool", label_key: "agent.activity.write_file",
               state: "running", source_position: 9, terminal: false }] }],
         } });
@@ -873,15 +878,44 @@ function Timeline({ state, dispatch, t }: { state: WorkState; dispatch: WorkDisp
   return <div className="timeline">{state.messages.map((message) => message.role === "user"
     ? <article className="message user-message" key={message.id}><div>{message.text}</div></article>
     : <article className="message assistant-message" key={message.id}><div><div className="result-markdown"><Markdown skipHtml remarkPlugins={[remarkGfm]}
-      components={{ a: ({ children }) => <span className="safe-link">{children}</span> }}>{message.text || terminalCopy(message.terminal, t)}</Markdown></div>
+      components={{ a: ({ children }) => <span className="safe-link">{children}</span>,
+        pre: ({ children }) => <MarkdownCodeBlock t={t}>{children}</MarkdownCodeBlock> }}>{message.text || terminalCopy(message.terminal, t)}</Markdown></div>
       <div className="result-meta"><span className="result-terminal"><Icon name={message.terminal === "completed" ? "check" : "warning"} />{terminalCopy(message.terminal, t)}</span><div className="result-actions"><button type="button" disabled={!message.text} aria-label={t("timeline.export")} title={t("timeline.export")} onClick={() => downloadMarkdown(message.id, message.text)}><Icon name="download" /></button><button type="button" aria-label={t(copiedId === message.id ? "timeline.copied" : "timeline.copy")} title={t(copiedId === message.id ? "timeline.copied" : "timeline.copy")} onClick={() => void copyResult(message.id, message.text)}><Icon name={copiedId === message.id ? "check" : "copy"} /></button>{state.artifacts.some((artifact) => artifact.turn_id === message.id) && <button type="button" aria-label={t("timeline.openArtifacts")} title={t("timeline.openArtifacts")} onClick={() => dispatch({ type: "inspector_selected", tab: "artifacts" })}><Icon name="file" /></button>}</div></div></div></article>)}
     {state.livePreview && <article className="message assistant-message live-answer" aria-label={t("timeline.liveAnswer")}>
       {state.livePreview.available && state.livePreview.text
-        ? <div className="result-markdown"><Markdown skipHtml remarkPlugins={[remarkGfm]}>{state.livePreview.text}</Markdown></div>
+        ? <div className="result-markdown"><Markdown skipHtml remarkPlugins={[remarkGfm]}
+          components={{ pre: ({ children }) => <MarkdownCodeBlock t={t}>{children}</MarkdownCodeBlock> }}>{state.livePreview.text}</Markdown></div>
         : <p><span className="live-pulse"><span /></span>{livePhaseCopy(state.livePreview.labelKey, t)}</p>}
     </article>}
     <p className="sr-only" aria-live="polite" aria-atomic="true">{announcement}</p>
   </div>;
+}
+
+function MarkdownCodeBlock({ children, t }: { children?: ReactNode; t: (key: MessageKey) => string }) {
+  const [copied, setCopied] = useState(false);
+  const code = markdownNodeText(children).replace(/\n$/, "");
+  const child = Children.toArray(children).find((node) => isValidElement(node));
+  const className = isValidElement<{ className?: string }>(child) ? child.props.className : undefined;
+  const language = className?.match(/(?:^|\s)language-([^\s]+)/)?.[1] ?? t("timeline.plainText");
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(code);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1_500);
+    } catch { setCopied(false); }
+  };
+  return <div className="code-block" role="region" aria-label={t("timeline.codeBlock")}>
+    <header><span>{language}</span><button type="button" aria-label={t(copied
+      ? "timeline.codeCopied" : "timeline.copyCode")} title={t(copied
+        ? "timeline.codeCopied" : "timeline.copyCode")} onClick={() => void copy()}><Icon name={copied
+          ? "check" : "copy"} /></button></header><pre>{children}</pre></div>;
+}
+
+function markdownNodeText(node: ReactNode): string {
+  if (typeof node === "string" || typeof node === "number") return String(node);
+  if (Array.isArray(node)) return node.map(markdownNodeText).join("");
+  if (isValidElement<{ children?: ReactNode }>(node)) return markdownNodeText(node.props.children);
+  return "";
 }
 
 function livePhaseCopy(key: string | undefined, t: (key: MessageKey) => string): string {

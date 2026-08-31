@@ -125,6 +125,7 @@ than a general “more polished” direction:
 | narrow thread title | one line in the split pane | wrapped to three lines | preserve one-line orientation and elide before status/actions |
 | terminal actions | quiet glyphs at the content edge | wide `Export .md` and `Copy` labels | 30 px icon controls with persistent accessible names |
 | composer | approximately 545 px wide, one-line input start and one circular stop action | 490 px wide, two-line empty input, duplicate text stop plus spinner and a visible disclaimer | 40 rem measure, one-row start, 32 px actions and one truthful stop control |
+| fenced output | bounded code card with a language header and copy action | undifferentiated bordered `pre` block | labeled code workbench, exact-source copy and persistent accessible feedback |
 | Environment | named floating surface | Activity/Artifacts tabs inside a small card | one Environment heading and a dismiss action; evidence rows only |
 | file chrome | selected file tab plus a second location/action row | generic Inspector tabs plus an expanded artifact card | one selected file tab, breadcrumb row, source/render action and independent scroll |
 | source inspection | available beside rendered document | no source presentation | reversible Rendered/Source switch over the same immutable preview bytes |

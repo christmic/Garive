@@ -7,6 +7,8 @@ const commands: string[] = [];
 let storedPending: unknown = null;
 let configured = true;
 let artifactItems: unknown[] = [];
+let completedText = "Durable product answer";
+let clipboardWrite = vi.fn(async (_text: string) => undefined);
 
 vi.mock("@tauri-apps/api/event", () => ({ listen: vi.fn(async () => () => undefined) }));
 vi.mock("@tauri-apps/api/app", () => ({ getVersion: vi.fn(async () => "0.1.0") }));
@@ -37,7 +39,7 @@ vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn(async (command: string, a
       execution_id: "execution-1", committed_position: 4 };
     case "get_session_events": return { events: [{ api_version: "v1", session_id: "session-1",
       position: 6, event: "turn.completed", turn_id: "turn-1", execution_id: "execution-1",
-      text: "Durable product answer" }], scanned_through_position: 6, observed_max_position: 6 };
+      text: completedText }], scanned_through_position: 6, observed_max_position: 6 };
     case "list_artifacts": return { api_version: "v1", session_id: "session-1", items: artifactItems,
       scanned_through_position: 6, observed_max_position: 6, has_more: false };
     case "get_artifact_preview": return { schema_version: 1, artifact_id: "artifact-1",
@@ -56,6 +58,10 @@ afterEach(cleanup);
 describe("Desktop product experience", () => {
   beforeEach(() => {
     commands.length = 0; storedPending = null; configured = true; artifactItems = [];
+    completedText = "Durable product answer";
+    clipboardWrite = vi.fn(async (_text: string) => undefined);
+    Object.defineProperty(navigator, "clipboard", { configurable: true,
+      value: { writeText: clipboardWrite } });
     Object.defineProperty(globalThis, "crypto", { configurable: true, value: webcrypto });
     Object.defineProperty(window, "matchMedia", { configurable: true, value: vi.fn(() => ({
       matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn(),
@@ -227,6 +233,22 @@ describe("Desktop product experience", () => {
     expect(screen.getByLabelText("Artifact source").textContent).toContain("Immutable source.");
     fireEvent.click(screen.getByRole("button", { name: "Rendered" }));
     expect(await screen.findByRole("heading", { name: "Verified memo" })).toBeTruthy();
+  });
+
+  it("renders fenced output as a labeled copyable workbench block", async () => {
+    completedText = "```rust\nfn main() { println!(\"verified\"); }\n```";
+    const view = render(<App />);
+    await waitFor(() => expect(view.container.querySelector(".suggestion-grid button")).not.toBeNull());
+    fireEvent.click(view.container.querySelector<HTMLButtonElement>(".suggestion-grid button")!);
+    await waitFor(() => expect(screen.getByRole<HTMLButtonElement>("button", { name: "Send work" }).disabled).toBe(false));
+    fireEvent.click(screen.getByRole("button", { name: "Send work" }));
+
+    const block = await screen.findByRole("region", { name: "Code block" });
+    expect(block.textContent).toContain("rust");
+    expect(block.textContent).toContain("println!");
+    fireEvent.click(screen.getByRole("button", { name: "Copy code" }));
+    await waitFor(() => expect(clipboardWrite).toHaveBeenCalledWith("fn main() { println!(\"verified\"); }"));
+    expect(screen.getByRole("button", { name: "Code copied" })).toBeTruthy();
   });
 
   it("renders progressive work from admitted Activity instead of invented stages", () => {
