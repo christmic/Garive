@@ -1448,6 +1448,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "garive-adapter-browser-attached"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "garive-adapter-browser-cdp"
 version = "0.1.0"
 dependencies = [

@@ -13,6 +13,7 @@ members = [
     "adapters/openai-responses",
     "adapters/anthropic-messages",
     "adapters/browser-cdp",
+    "adapters/browser-attached",
     "bench",
     "clients/host-rs",
     "cli",
