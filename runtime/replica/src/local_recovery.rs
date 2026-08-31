@@ -47,13 +47,35 @@ impl LocalRecoveryError {
     }
 }
 
+/// Bounded result from one startup recovery scan.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct LocalRecoveryReport {
+    /// Replacement or resumed Executions that still require worker dispatch.
+    pub dispatches: Vec<CommittedTurn>,
+    /// Number of recoverable Turns inspected by this scan.
+    pub processed_turns: usize,
+    /// Whether the explicit Turn bound stopped discovery before exhaustion.
+    pub has_more: bool,
+}
+
 /// Applies C6 recovery to every local Session and returns replacement dispatches.
 pub fn recover_local_dispatches(
     ledger: &mut SqliteLedger,
     max_recoveries: u64,
     recorded_at: &str,
 ) -> Result<Vec<CommittedTurn>, LocalRecoveryError> {
-    recover_local_dispatches_inner(ledger, max_recoveries, recorded_at, None)
+    recover_local_dispatches_inner(ledger, max_recoveries, usize::MAX, recorded_at, None)
+        .map(|report| report.dispatches)
+}
+
+/// Applies at most `max_turns` model-only recovery decisions in one scan.
+pub fn recover_local_dispatches_bounded(
+    ledger: &mut SqliteLedger,
+    max_recoveries: u64,
+    max_turns: usize,
+    recorded_at: &str,
+) -> Result<LocalRecoveryReport, LocalRecoveryError> {
+    recover_local_dispatches_inner(ledger, max_recoveries, max_turns, recorded_at, None)
 }
 
 /// Applies startup recovery including Prepared-v3 broker continuation.
@@ -70,6 +92,29 @@ pub fn recover_local_dispatches_with_f0(
     recover_local_dispatches_inner(
         ledger,
         max_recoveries,
+        usize::MAX,
+        recorded_at,
+        Some((factory, max_arguments_bytes)),
+    )
+    .map(|report| report.dispatches)
+}
+
+/// Applies at most `max_turns` F0-aware recovery decisions in one scan.
+pub fn recover_local_dispatches_with_f0_bounded(
+    ledger: &mut SqliteLedger,
+    max_recoveries: u64,
+    max_turns: usize,
+    recorded_at: &str,
+    factory: &dyn LocalGovernedExecutionFactory,
+    max_arguments_bytes: usize,
+) -> Result<LocalRecoveryReport, LocalRecoveryError> {
+    if max_arguments_bytes == 0 {
+        return Err(LocalRecoveryError::InvalidConfiguration);
+    }
+    recover_local_dispatches_inner(
+        ledger,
+        max_recoveries,
+        max_turns,
         recorded_at,
         Some((factory, max_arguments_bytes)),
     )
@@ -78,21 +123,31 @@ pub fn recover_local_dispatches_with_f0(
 fn recover_local_dispatches_inner(
     ledger: &mut SqliteLedger,
     max_recoveries: u64,
+    max_turns: usize,
     recorded_at: &str,
     f0: Option<(&dyn LocalGovernedExecutionFactory, usize)>,
-) -> Result<Vec<CommittedTurn>, LocalRecoveryError> {
-    if max_recoveries == 0 || !canonical_utc(recorded_at) {
+) -> Result<LocalRecoveryReport, LocalRecoveryError> {
+    if max_recoveries == 0 || max_turns == 0 || !canonical_utc(recorded_at) {
         return Err(LocalRecoveryError::InvalidConfiguration);
     }
     let sessions = ledger
         .list_sessions()
         .map_err(|_| LocalRecoveryError::DurabilityUnavailable)?;
     let mut output = Vec::new();
+    let mut processed_turns = 0;
     for session_id in sessions {
         let turns = ledger
             .list_recoverable_turns(&session_id)
             .map_err(|_| LocalRecoveryError::DurabilityUnavailable)?;
         for turn_id in turns {
+            if processed_turns == max_turns {
+                return Ok(LocalRecoveryReport {
+                    dispatches: output,
+                    processed_turns,
+                    has_more: true,
+                });
+            }
+            processed_turns += 1;
             loop {
                 let snapshot = ledger
                     .load_turn(&turn_id)
@@ -192,7 +247,11 @@ fn recover_local_dispatches_inner(
             }
         }
     }
-    Ok(output)
+    Ok(LocalRecoveryReport {
+        dispatches: output,
+        processed_turns,
+        has_more: false,
+    })
 }
 
 enum PendingKnowledgeRecovery {

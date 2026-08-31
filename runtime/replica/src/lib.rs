@@ -156,7 +156,8 @@ pub use local_memory::{
     LOCAL_MEMORY_CONTRACT_VERSION, USER_DECLARED_PUSH_REVISION,
 };
 pub use local_recovery::{
-    recover_local_dispatches, recover_local_dispatches_with_f0, LocalRecoveryError,
+    recover_local_dispatches, recover_local_dispatches_bounded, recover_local_dispatches_with_f0,
+    recover_local_dispatches_with_f0_bounded, LocalRecoveryError, LocalRecoveryReport,
 };
 pub use local_worker::{
     local_dispatch_queue, LocalCapabilityPreparationFactory, LocalCapabilityPreparationInput,
