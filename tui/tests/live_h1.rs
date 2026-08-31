@@ -81,6 +81,56 @@ fn shipping_tui_boots_and_restores_a_real_pty() {
 }
 
 #[test]
+fn session_picker_loads_and_selects_a_deduplicated_typed_host_page() {
+    let (address, stop, page_seen, selected_seen, server) = paginated_session_host();
+    let temporary = tempfile::tempdir().unwrap();
+    let transcript = temporary.path().join("session-pagination.log");
+    let status = Command::new("expect")
+        .env("TERM", "xterm-256color")
+        .env("GARIVE_TUI_BIN", env!("CARGO_BIN_EXE_garive-tui"))
+        .env("GARIVE_TUI_HOST", format!("http://{address}/"))
+        .env("GARIVE_TUI_LOG", &transcript)
+        .env("GARIVE_TUI_STATE", temporary.path().join("state"))
+        .args(["-c", r#"
+            set timeout 8
+            encoding system utf-8
+            log_file -noappend $env(GARIVE_TUI_LOG)
+            spawn -noecho /bin/sh -c {stty rows 24 columns 100; exec "$GARIVE_TUI_BIN" --host "$GARIVE_TUI_HOST" --state-dir "$GARIVE_TUI_STATE" --theme mono --mouse off}
+            fconfigure $spawn_id -encoding utf-8
+            expect -exact "\033\[6n"
+            send "\033\[1;1R"
+            expect "first page session"
+            expect "Agent"
+            send "\023"
+            expect "Switch Session"
+            expect "Session 1"
+            send "\033\[B"
+            expect "Session 2"
+            send "\033\[B"
+            send "\r"
+            expect "Session 2 · Online · Ready"
+            send "\021"
+            expect "Garive?"
+            send "\r"
+            expect eof
+        "#])
+        .status()
+        .unwrap();
+    stop.store(true, Ordering::Relaxed);
+    server.join().unwrap();
+
+    assert!(status.success());
+    assert!(page_seen.load(Ordering::Relaxed));
+    assert!(selected_seen.load(Ordering::Relaxed));
+    let text = fs::read_to_string(transcript).unwrap();
+    assert!(text.contains("Agent"));
+    assert!(text.contains("Session 2"));
+    assert!(!text.contains("Session 3"));
+    assert!(!text.contains("definition-internal-pagination-secret"));
+    assert!(text.contains("\x1b[?1049l"));
+}
+
+#[test]
 fn mouse_command_reconfigures_the_current_full_screen_pty_and_persists_auto() {
     let (address, server) = empty_host();
     let temporary = tempfile::tempdir().unwrap();
@@ -1183,6 +1233,135 @@ fn empty_host() -> (SocketAddr, thread::JoinHandle<()>) {
         }
     });
     (address, server)
+}
+
+fn paginated_session_host() -> (
+    SocketAddr,
+    Arc<AtomicBool>,
+    Arc<AtomicBool>,
+    Arc<AtomicBool>,
+    thread::JoinHandle<()>,
+) {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    listener.set_nonblocking(true).unwrap();
+    let address = listener.local_addr().unwrap();
+    let stop = Arc::new(AtomicBool::new(false));
+    let page_seen = Arc::new(AtomicBool::new(false));
+    let selected_seen = Arc::new(AtomicBool::new(false));
+    let server_stop = Arc::clone(&stop);
+    let server_page_seen = Arc::clone(&page_seen);
+    let server_selected_seen = Arc::clone(&selected_seen);
+    let first = paginated_summary("session-page-a", "turn-page-a");
+    let second = paginated_summary("session-page-b", "turn-page-b");
+    let server = thread::spawn(move || {
+        while !server_stop.load(Ordering::Relaxed) {
+            let (mut socket, _) = match listener.accept() {
+                Ok(value) => value,
+                Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                    thread::sleep(std::time::Duration::from_millis(10));
+                    continue;
+                }
+                Err(error) => panic!("pagination host accept failed: {error}"),
+            };
+            socket.set_nonblocking(false).unwrap();
+            let mut bytes = [0; 8_192];
+            let read = socket.read(&mut bytes).unwrap();
+            let request = String::from_utf8_lossy(&bytes[..read]);
+            if request.contains("/events?") || request.contains("/live ") {
+                let _ = socket.write_all(b"HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");
+                continue;
+            }
+            let body = if request.contains("GET /v1/agent-definitions ") {
+                json!({
+                    "api_version": "v1",
+                    "definitions": [{
+                        "api_version": "v1",
+                        "definition_id": "definition-internal-pagination-secret",
+                        "definition_revision": "revision-internal",
+                        "capabilities": []
+                    }]
+                })
+                .to_string()
+            } else if request.contains("GET /v1/sessions?limit=100&before=cursor-page-two ") {
+                server_page_seen.store(true, Ordering::Relaxed);
+                json!({
+                    "api_version": "v1",
+                    "sessions": [first.clone(), second.clone()],
+                    "next_before": null
+                })
+                .to_string()
+            } else if request.contains("GET /v1/sessions?limit=100 ") {
+                json!({
+                    "api_version": "v1",
+                    "sessions": [first.clone()],
+                    "next_before": "cursor-page-two"
+                })
+                .to_string()
+            } else if request.contains("GET /v1/sessions/session-page-b ") {
+                server_selected_seen.store(true, Ordering::Relaxed);
+                json!({"api_version":"v1","session":second.clone(),"observed_max_position":2})
+                    .to_string()
+            } else if request.contains("GET /v1/sessions/session-page-a ") {
+                json!({"api_version":"v1","session":first.clone(),"observed_max_position":2})
+                    .to_string()
+            } else if request.contains("/sessions/session-page-b/timeline?") {
+                paginated_timeline(
+                    "session-page-b",
+                    "turn-page-b",
+                    "selected older page",
+                    "older page answer",
+                )
+            } else if request.contains("/sessions/session-page-a/timeline?") {
+                paginated_timeline(
+                    "session-page-a",
+                    "turn-page-a",
+                    "first page session",
+                    "first page answer",
+                )
+            } else {
+                panic!("unexpected pagination request: {request}")
+            };
+            let _ = socket.write_all(json_response(&body).as_bytes());
+        }
+    });
+    (address, stop, page_seen, selected_seen, server)
+}
+
+fn paginated_summary(session: &str, turn: &str) -> serde_json::Value {
+    json!({
+        "api_version": "v1",
+        "session_id": session,
+        "agent_instance_id": format!("agent-{session}"),
+        "definition_id": "definition-internal-pagination-secret",
+        "definition_revision": "revision-internal",
+        "opened_at": "2026-09-01T00:00:00Z",
+        "latest_position": 2,
+        "latest_turn_id": turn,
+        "latest_turn_state": "completed",
+        "turn_count": 1
+    })
+}
+
+fn paginated_timeline(session: &str, turn: &str, prompt: &str, answer: &str) -> String {
+    json!({
+        "api_version": "v1",
+        "session_id": session,
+        "items": [{
+            "turn_id": turn,
+            "started_position": 1,
+            "latest_position": 2,
+            "state": "completed",
+            "user_text": prompt,
+            "completion_text": answer,
+            "suspension": null,
+            "content_truncated": false,
+            "activities": []
+        }],
+        "scanned_through_position": 2,
+        "observed_max_position": 2,
+        "has_more": false
+    })
+    .to_string()
 }
 
 fn timeline_host() -> (
