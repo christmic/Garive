@@ -3,13 +3,13 @@
   "database_file": "garive-desktop.db",
   "installed_agent": {
     "definition_id": "definition-main",
-    "definition_revision": "revision-1",
-    "snapshot_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "definition_revision": "desktop.agent.v1",
+    "snapshot_digest": "0f656a4ea6c795c8fdc53c3912daf0695d4143453c8437fec8cde5ff5fdccb3a",
     "agent_instance_namespace": "desktop-main",
-    "max_iterations": 2,
-    "max_input_tokens": 64,
-    "max_output_tokens": 16,
-    "deadline_budget_ms": 2000
+    "max_iterations": 12,
+    "max_input_tokens": 131072,
+    "max_output_tokens": 8192,
+    "deadline_budget_ms": 600000
   },
   "host": {
     "max_command_bytes": 4096,
@@ -24,7 +24,7 @@
     "model_id": "fixture-model",
     "deployment_id": "desktop-deployment",
     "recovery_policy_revision": "recovery-1",
-    "max_output_tokens": 16,
+    "max_output_tokens": 8192,
     "max_context_items": 8,
     "max_context_utf8_bytes": 2048,
     "max_model_attempts": 1,

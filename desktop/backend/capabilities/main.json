@@ -53,6 +53,7 @@
     "allow-cancel-product-turn",
     "allow-continue-product-turn",
     "allow-continue-product-approval",
-    "allow-get-session-events"
+    "allow-get-session-events",
+    "allow-follow-live-output"
   ]
 }
