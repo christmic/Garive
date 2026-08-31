@@ -44,6 +44,14 @@ impl ProcessIsolationBackend for RecordingBackend {
         self.result.lock().unwrap().clone()
     }
 
+    fn acknowledge_terminal(
+        &self,
+        _invocation_id: &ToolInvocationId,
+        _dispatch_attempt_id: &str,
+    ) -> Result<(), ProcessBackendError> {
+        Ok(())
+    }
+
     fn terminate_or_prove_absent(
         &self,
         invocation_id: &ToolInvocationId,

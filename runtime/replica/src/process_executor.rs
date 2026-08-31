@@ -103,6 +103,13 @@ pub trait ProcessIsolationBackend: Send + Sync {
         request: ProcessExecutionRequest,
     ) -> Result<ProcessExecutionResult, ProcessBackendError>;
 
+    /// Releases one stopped backend job after its receipt became durable.
+    fn acknowledge_terminal(
+        &self,
+        invocation_id: &ToolInvocationId,
+        dispatch_attempt_id: &str,
+    ) -> Result<(), ProcessBackendError>;
+
     /// Idempotently terminates or proves absence of the exact backend job.
     fn terminate_or_prove_absent(
         &self,
@@ -208,6 +215,22 @@ impl ExecutorPort for BuiltinProcessExecutor {
         }
         self.backend
             .terminate_or_prove_absent(request.invocation_id, request.dispatch_attempt_id)
+            .map_err(|_| ExecutorDispatchError::ExecutorStateUnknown)
+    }
+
+    fn acknowledge_receipt(
+        &mut self,
+        invocation_id: &ToolInvocationId,
+        receipt: &EffectReceipt,
+    ) -> Result<(), ExecutorDispatchError> {
+        if receipt.invocation_id != *invocation_id
+            || receipt.executor_id != T1_PROCESS_EXECUTOR_ID
+            || receipt.executor_revision != self.revision
+        {
+            return Err(ExecutorDispatchError::ReceiptInvalid);
+        }
+        self.backend
+            .acknowledge_terminal(invocation_id, &dispatch_id(invocation_id))
             .map_err(|_| ExecutorDispatchError::ExecutorStateUnknown)
     }
 }

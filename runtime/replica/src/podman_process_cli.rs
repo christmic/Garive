@@ -87,15 +87,21 @@ impl<'a> PodmanCli<'a> {
                 break (status, false);
             }
             if Instant::now() >= deadline {
-                timeout_cleanup()?;
+                if timeout_cleanup().is_err() {
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    let _ = stdout.join();
+                    let _ = stderr.join();
+                    return Err(());
+                }
                 break (child.wait().map_err(|_| ())?, true);
             }
             thread::sleep(POLL_INTERVAL);
         };
         let output = CommandOutput {
             status,
-            stdout: stdout.join().map_err(|_| ())?,
-            stderr: stderr.join().map_err(|_| ())?,
+            stdout: stdout.join().map_err(|_| ())??,
+            stderr: stderr.join().map_err(|_| ())??,
             truncated: truncated.load(Ordering::Acquire),
         };
         Ok(if timed_out {
@@ -120,14 +126,15 @@ fn drain(
     mut reader: impl Read + Send + 'static,
     remaining: Arc<AtomicUsize>,
     truncated: Arc<AtomicBool>,
-) -> thread::JoinHandle<Vec<u8>> {
+) -> thread::JoinHandle<Result<Vec<u8>, ()>> {
     thread::spawn(move || {
         let mut kept = Vec::new();
         let mut buffer = [0_u8; 8192];
         loop {
             let count = match reader.read(&mut buffer) {
-                Ok(0) | Err(_) => break,
+                Ok(0) => break,
                 Ok(count) => count,
+                Err(_) => return Err(()),
             };
             let admitted = remaining
                 .fetch_update(Ordering::AcqRel, Ordering::Acquire, |value| {
@@ -140,7 +147,7 @@ fn drain(
                 truncated.store(true, Ordering::Release);
             }
         }
-        kept
+        Ok(kept)
     })
 }
 

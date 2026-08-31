@@ -2,9 +2,22 @@
 
 use std::{
     fs,
-    path::{Path, PathBuf},
+    path::{Component, Path, PathBuf},
+    time::Duration,
 };
 
+use garive_tools::ToolInvocationId;
+use serde::Deserialize;
+use sha2::{Digest, Sha256};
+
+use crate::{
+    podman_process_artifact::EnvironmentArtifact,
+    podman_process_cli::{AttachCompletion, PodmanCli},
+    ProcessBackendError, ProcessExecutionRequest, ProcessExecutionResult, ProcessExit,
+    ProcessIsolationBackend, ProcessWorkspaceMode,
+};
+
+const CONTAINER_WORKSPACE: &str = "/workspace";
 const IMAGE_DIGEST_PREFIX: &str = "sha256:";
 
 /// Immutable Podman boundary supplied explicitly by Runtime construction.
@@ -15,6 +28,315 @@ pub struct PodmanProcessConfig {
     image: String,
     workspace_root: PathBuf,
     recovery_root: PathBuf,
+}
+
+/// Concrete process boundary backed by an explicitly selected Podman service.
+pub struct PodmanProcessBackend {
+    config: PodmanProcessConfig,
+}
+
+impl PodmanProcessBackend {
+    /// Constructs the backend without consulting environment or Podman defaults.
+    pub const fn new(config: PodmanProcessConfig) -> Self {
+        Self { config }
+    }
+
+    fn cli(&self) -> PodmanCli<'_> {
+        PodmanCli::new(&self.config.podman_executable, &self.config.socket_uri)
+    }
+
+    fn name(&self, invocation: &ToolInvocationId, attempt: &str) -> String {
+        let digest = format!(
+            "{:x}",
+            Sha256::digest(format!("{}\0{attempt}", invocation.as_str()).as_bytes())
+        );
+        format!("garive-process-{}", &digest[..32])
+    }
+
+    fn exists(&self, name: &str) -> Result<bool, ProcessBackendError> {
+        let output = self
+            .cli()
+            .output(&["container".into(), "exists".into(), name.into()])
+            .map_err(|()| ProcessBackendError::StateUnknown)?;
+        match output.status.code() {
+            Some(0) => Ok(true),
+            Some(1) => Ok(false),
+            _ => Err(ProcessBackendError::StateUnknown),
+        }
+    }
+
+    fn inspect(&self, name: &str) -> Result<ContainerState, ProcessBackendError> {
+        self.prove_ownership(name)?;
+        let output = self
+            .cli()
+            .output(&[
+                "inspect".into(),
+                "--format".into(),
+                "{{json .State}}".into(),
+                name.into(),
+            ])
+            .map_err(|()| ProcessBackendError::StateUnknown)?;
+        if !output.status.success() || output.truncated || !output.stderr.is_empty() {
+            return Err(ProcessBackendError::StateUnknown);
+        }
+        let state: ContainerState = serde_json::from_slice(&output.stdout)
+            .map_err(|_| ProcessBackendError::StateUnknown)?;
+        if state.error.is_empty() {
+            Ok(state)
+        } else {
+            Err(ProcessBackendError::StateUnknown)
+        }
+    }
+
+    fn prove_ownership(&self, name: &str) -> Result<(), ProcessBackendError> {
+        let output = self
+            .cli()
+            .output(&[
+                "inspect".into(),
+                "--format".into(),
+                "{{index .Config.Labels \"io.garive.runtime.owner\"}}".into(),
+                name.into(),
+            ])
+            .map_err(|()| ProcessBackendError::StateUnknown)?;
+        if output.status.success()
+            && !output.truncated
+            && output.stderr.is_empty()
+            && String::from_utf8(output.stdout).is_ok_and(|value| value.trim() == name)
+        {
+            Ok(())
+        } else {
+            Err(ProcessBackendError::StateUnknown)
+        }
+    }
+
+    fn kill_and_prove(&self, name: &str) -> Result<(), ProcessBackendError> {
+        if !self.exists(name)? {
+            return Ok(());
+        }
+        let state = self.inspect(name)?;
+        if state.running {
+            let output = self
+                .cli()
+                .output(&["kill".into(), "--signal".into(), "KILL".into(), name.into()])
+                .map_err(|()| ProcessBackendError::StateUnknown)?;
+            if !output.status.success() {
+                return Err(ProcessBackendError::StateUnknown);
+            }
+        }
+        let state = self.inspect(name)?;
+        if state.running || state.pid != 0 {
+            return Err(ProcessBackendError::StateUnknown);
+        }
+        Ok(())
+    }
+
+    fn remove(&self, name: &str) -> Result<(), ProcessBackendError> {
+        if self.exists(name)? {
+            self.prove_ownership(name)?;
+            let output = self
+                .cli()
+                .output(&["rm".into(), name.into()])
+                .map_err(|()| ProcessBackendError::StateUnknown)?;
+            if !output.status.success() {
+                return Err(ProcessBackendError::StateUnknown);
+            }
+        }
+        if self.exists(name)? {
+            return Err(ProcessBackendError::StateUnknown);
+        }
+        Ok(())
+    }
+}
+
+impl ProcessIsolationBackend for PodmanProcessBackend {
+    fn preflight(&self, request: &ProcessExecutionRequest) -> Result<(), String> {
+        validate_request(request)
+    }
+
+    fn execute(
+        &self,
+        request: ProcessExecutionRequest,
+    ) -> Result<ProcessExecutionResult, ProcessBackendError> {
+        validate_request(&request).map_err(|_| ProcessBackendError::Unavailable)?;
+        let name = self.name(&request.invocation_id, &request.dispatch_attempt_id);
+        if self.exists(&name)? {
+            return Err(ProcessBackendError::StateUnknown);
+        }
+        let artifact =
+            EnvironmentArtifact::create(&self.config.recovery_root, &name, &request.environment)
+                .map_err(|()| ProcessBackendError::StateUnknown)?;
+        let create = create_arguments(&self.config, &request, &name, artifact.path())?;
+        let created = self
+            .cli()
+            .output(&create)
+            .map_err(|()| ProcessBackendError::StateUnknown)?;
+        artifact
+            .remove()
+            .map_err(|()| ProcessBackendError::StateUnknown)?;
+        if !created.status.success() {
+            return if self.exists(&name)? {
+                Err(ProcessBackendError::StateUnknown)
+            } else {
+                Err(ProcessBackendError::Unavailable)
+            };
+        }
+        let start = ["start".into(), "--attach".into(), name.clone()];
+        let completion = self.cli().attach(
+            &start,
+            usize::try_from(request.max_output_bytes).unwrap_or(usize::MAX),
+            Duration::from_millis(request.timeout_ms),
+            || self.kill_and_prove(&name).map_err(|_| ()),
+        );
+        let completion = completion.map_err(|()| ProcessBackendError::StateUnknown)?;
+        let state = self.inspect(&name)?;
+        if state.running || state.pid != 0 {
+            return Err(ProcessBackendError::StateUnknown);
+        }
+        let (output, exit) = match completion {
+            AttachCompletion::Exited(output) => (output, ProcessExit::Code(state.exit_code)),
+            AttachCompletion::TimedOut(output) => (output, ProcessExit::Timeout),
+        };
+        Ok(ProcessExecutionResult {
+            exit,
+            stdout: output.stdout,
+            stderr: output.stderr,
+            truncated: output.truncated,
+            process_tree_terminated: true,
+        })
+    }
+
+    fn acknowledge_terminal(
+        &self,
+        invocation_id: &ToolInvocationId,
+        dispatch_attempt_id: &str,
+    ) -> Result<(), ProcessBackendError> {
+        self.remove(&self.name(invocation_id, dispatch_attempt_id))
+    }
+
+    fn terminate_or_prove_absent(
+        &self,
+        invocation_id: &ToolInvocationId,
+        dispatch_attempt_id: &str,
+    ) -> Result<(), ProcessBackendError> {
+        let name = self.name(invocation_id, dispatch_attempt_id);
+        EnvironmentArtifact::remove_if_present(&self.config.recovery_root, &name)
+            .map_err(|()| ProcessBackendError::StateUnknown)?;
+        self.kill_and_prove(&name)?;
+        self.remove(&name)
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "PascalCase")]
+struct ContainerState {
+    running: bool,
+    pid: i64,
+    exit_code: i32,
+    #[serde(default)]
+    error: String,
+}
+
+fn validate_request(request: &ProcessExecutionRequest) -> Result<(), String> {
+    if request.argv.is_empty()
+        || request.argv.len() > 256
+        || !request.executable.is_absolute()
+        || request.max_output_bytes == 0
+        || request.max_output_bytes > 1_048_576
+        || request.timeout_ms == 0
+        || request.timeout_ms > 300_000
+        || request.max_processes == 0
+        || request.max_open_files == 0
+        || request
+            .argv
+            .iter()
+            .any(|value| value.is_empty() || has_nul(value))
+        || request.environment.iter().any(|(key, value)| {
+            !valid_environment_key(key) || has_nul(value) || value.contains(['\n', '\r'])
+        })
+    {
+        return Err("invalid Podman process request".into());
+    }
+    container_working_directory(&request.working_directory).map(|_| ())
+}
+
+fn create_arguments(
+    config: &PodmanProcessConfig,
+    request: &ProcessExecutionRequest,
+    name: &str,
+    environment_file: &Path,
+) -> Result<Vec<String>, ProcessBackendError> {
+    let mode = match request.workspace_mode {
+        ProcessWorkspaceMode::Read => "true",
+        ProcessWorkspaceMode::Write => "false",
+    };
+    let mount = format!(
+        "type=bind,source={},destination={CONTAINER_WORKSPACE},ro={mode}",
+        config.workspace_root.display()
+    );
+    let mut values = vec![
+        "create".into(),
+        "--name".into(),
+        name.into(),
+        "--label".into(),
+        format!("io.garive.runtime.owner={name}"),
+        "--pull=never".into(),
+        "--network=none".into(),
+        "--read-only".into(),
+        "--cap-drop=all".into(),
+        "--security-opt=no-new-privileges".into(),
+        "--pids-limit".into(),
+        request.max_processes.to_string(),
+        "--ulimit".into(),
+        format!("nofile={0}:{0}", request.max_open_files),
+        "--workdir".into(),
+        container_working_directory(&request.working_directory)
+            .map_err(|_| ProcessBackendError::Unavailable)?,
+        "--mount".into(),
+        mount,
+        "--tmpfs".into(),
+        "/tmp:rw,nosuid,nodev,noexec,size=67108864".into(),
+        "--env-file".into(),
+        environment_file
+            .to_str()
+            .ok_or(ProcessBackendError::Unavailable)?
+            .into(),
+        config.image.clone(),
+        request
+            .executable
+            .to_str()
+            .ok_or(ProcessBackendError::Unavailable)?
+            .into(),
+    ];
+    values.extend(request.argv.iter().skip(1).cloned());
+    Ok(values)
+}
+
+fn container_working_directory(value: &str) -> Result<String, String> {
+    let relative = Path::new(value);
+    if relative.is_absolute()
+        || relative
+            .components()
+            .any(|part| !matches!(part, Component::Normal(_) | Component::CurDir))
+    {
+        return Err("invalid process working directory".into());
+    }
+    Ok(if value == "." {
+        CONTAINER_WORKSPACE.into()
+    } else {
+        format!("{CONTAINER_WORKSPACE}/{value}")
+    })
+}
+
+fn valid_environment_key(value: &str) -> bool {
+    let mut bytes = value.bytes();
+    bytes
+        .next()
+        .is_some_and(|byte| byte == b'_' || byte.is_ascii_alphabetic())
+        && bytes.all(|byte| byte == b'_' || byte.is_ascii_alphanumeric())
+}
+
+fn has_nul(value: &str) -> bool {
+    value.as_bytes().contains(&0)
 }
 
 impl PodmanProcessConfig {
@@ -37,7 +359,11 @@ impl PodmanProcessConfig {
             || !value.socket_uri.starts_with("unix:///")
             || value.socket_uri.as_bytes().contains(&0)
             || !digest_pinned_image(&value.image)
-            || value.workspace_root.to_string_lossy().contains(',')
+            || value
+                .workspace_root
+                .to_str()
+                .is_none_or(|path| path.contains(','))
+            || value.recovery_root.to_str().is_none()
         {
             return Err("invalid Podman process configuration".into());
         }

@@ -37,7 +37,11 @@ mod plan_carry_forward;
 mod plan_recovery;
 mod plan_runtime;
 #[cfg(unix)]
+mod podman_process_artifact;
+#[cfg(unix)]
 mod podman_process_backend;
+#[cfg(unix)]
+mod podman_process_cli;
 mod process_capability;
 mod process_executor;
 mod runtime_turn;
@@ -186,7 +190,7 @@ pub use plan_runtime::{
     PlanRuntimeTransition, PlanStepExecutionStart, PlannedPlanCommand,
 };
 #[cfg(unix)]
-pub use podman_process_backend::PodmanProcessConfig;
+pub use podman_process_backend::{PodmanProcessBackend, PodmanProcessConfig};
 pub use process_capability::{ProcessExecutable, ProcessLane, ProcessLaneRegistry};
 pub use process_executor::{
     BuiltinProcessExecutor, ProcessBackendError, ProcessExecutionRequest, ProcessExecutionResult,
