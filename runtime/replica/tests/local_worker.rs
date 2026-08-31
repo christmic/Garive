@@ -313,7 +313,7 @@ impl LocalGovernedExecutionFactory for GovernedFactory {
             },
             authority: Box::new(Approve),
             executor: Box::new(CompleteEffect),
-            f0: Some(LocalF0Governance {
+            f0: LocalF0Governance {
                 preparation: Box::new(WritePreparation(
                     ToolCatalog::new([governed_definition()]).unwrap(),
                 )),
@@ -326,7 +326,7 @@ impl LocalGovernedExecutionFactory for GovernedFactory {
                     plan_reference: None,
                     effective_policy_revision: "desktop-test-1".into(),
                 },
-            }),
+            },
         })
     }
 }

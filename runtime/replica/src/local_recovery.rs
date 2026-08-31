@@ -197,10 +197,7 @@ fn resume_f0(
     let mut governed = factory
         .create(&committed)
         .map_err(|_| LocalRecoveryError::F0RecoveryFailed)?;
-    let mut f0 = governed
-        .f0
-        .take()
-        .ok_or(LocalRecoveryError::F0GovernanceRequired)?;
+    let mut f0 = governed.f0;
     let recovered = recover_f0_prepared_with_port(
         snapshot,
         pending.as_str(),

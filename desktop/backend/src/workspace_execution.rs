@@ -9,12 +9,18 @@ use garive_core::AgentToolCapabilities;
 use garive_ledger::CanonicalPayload;
 use garive_runtime::{
     AuthorityDecision, AuthorityFuture, AuthorityPort, AuthorityRequest, CommittedTurn,
-    ExecutorDispatch, ExecutorDispatchError, ExecutorFuture, ExecutorPort, LocalGovernedExecution,
-    LocalGovernedExecutionFactory, LocalWorkerError, PreparedExecution, SqliteLedger,
+    ExecutorDispatch, ExecutorDispatchError, ExecutorFuture, ExecutorPort, LocalF0Governance,
+    LocalGovernedExecution, LocalGovernedExecutionFactory, LocalWorkerError, PreparedExecution,
+    SafetyDecisionV1, SafetyDisposition, SafetyEvaluation, SafetyFuture, SafetyInteraction,
+    SafetyPort, SandboxAdmission, SandboxAdmissionPort, SandboxAdmissionRequest, SandboxBindingV1,
+    SqliteLedger,
 };
 use garive_tools::{
-    EffectReceipt, ExecutionCapability, ExecutionFact, ExecutionRequirements, InteractionKind,
-    ReceiptId, ReplayClass, TerminalClassification, ToolDefinition,
+    AccessMode, AccessNamespace, AccessPolicyEntry, EffectReceipt, ExecutionCapability,
+    ExecutionFact, ExecutionRequirements, InteractionKind, InvocationAccessSet, PreparationError,
+    PreparedToolCall, ReceiptId, ReplayClass, ResourceAccess, SandboxControl,
+    SandboxRequirementsV1, TerminalClassification, ToolAccessPolicyV1, ToolAccessResolver,
+    ToolCatalog, ToolDefinition, ToolIntent,
 };
 use serde::Deserialize;
 use serde_json::{json, Value};
@@ -64,11 +70,21 @@ impl LocalGovernedExecutionFactory for DesktopWorkspaceExecutionFactory {
             .read_facts(&committed.session_id, 0, committed.committed_position, None)
             .map_err(|_| LocalWorkerError::DurabilityUnavailable)?;
         let snapshot = ExecutionAuthoritySnapshot::from_facts(&facts)?;
-        let definition = write_definition(&snapshot)?;
+        let access_policy = write_access_policy(&snapshot)?;
+        let sandbox_requirements = write_sandbox_requirements()?;
+        let definition = write_definition(
+            &snapshot,
+            access_policy.clone(),
+            sandbox_requirements.clone(),
+        )?;
         let tool_revision = definition.revision().to_owned();
+        let preparation = WorkspacePreparation(
+            ToolCatalog::new([definition.clone()])
+                .map_err(|_| LocalWorkerError::InvalidComposition)?,
+        );
         Ok(LocalGovernedExecution {
             capabilities: AgentToolCapabilities {
-                definitions: vec![definition],
+                definitions: vec![definition.clone()],
             },
             authority: Box::new(WorkspaceAuthority {
                 workspaces: self.workspaces.clone(),
@@ -79,10 +95,150 @@ impl LocalGovernedExecutionFactory for DesktopWorkspaceExecutionFactory {
             executor: Box::new(WorkspaceExecutor {
                 workspaces: self.workspaces.clone(),
                 owner_window: self.owner_window.clone(),
-                attachments: snapshot.attachments,
-                tool_revision,
+                attachments: snapshot.attachments.clone(),
+                tool_revision: tool_revision.clone(),
             }),
-            f0: None,
+            f0: LocalF0Governance {
+                preparation: Box::new(preparation),
+                recovery_content: Box::new(NoWorkspaceRecoveryContent),
+                safety: Box::new(WorkspaceSafety {
+                    snapshot: snapshot.clone(),
+                    requirements: definition.requirements().clone(),
+                    policy_revision: tool_revision.clone(),
+                }),
+                sandbox: Box::new(WorkspaceSandbox {
+                    access_policy,
+                    enforcement: sandbox_requirements,
+                    executor_revision: tool_revision.clone(),
+                    policy_revision: tool_revision.clone(),
+                }),
+                context: garive_runtime::F0GovernanceContext {
+                    actor_authority_reference: format!("desktop-window:{}", self.owner_window),
+                    goal_reference: None,
+                    plan_reference: None,
+                    effective_policy_revision: tool_revision,
+                },
+            },
+        })
+    }
+}
+
+struct WorkspacePreparation(ToolCatalog);
+
+impl garive_core::ToolPreparationPort for WorkspacePreparation {
+    fn prepare(&self, intent: &ToolIntent) -> Result<PreparedToolCall, PreparationError> {
+        self.0.prepare_v3(intent, &WorkspaceAccessResolver)
+    }
+}
+
+struct WorkspaceAccessResolver;
+
+impl ToolAccessResolver for WorkspaceAccessResolver {
+    fn revision(&self) -> &str {
+        "desktop.workspace.write-access.v1"
+    }
+
+    fn resolve(&self, arguments: &Value) -> Result<InvocationAccessSet, PreparationError> {
+        let workspace = arguments["workspace_id"].as_str().unwrap_or_default();
+        let artifact = arguments["artifact_name"].as_str().unwrap_or_default();
+        InvocationAccessSet::new([ResourceAccess::new(
+            AccessNamespace::Filesystem,
+            format!("{workspace}/{artifact}"),
+            AccessMode::Write,
+        )?])
+    }
+}
+
+struct NoWorkspaceRecoveryContent;
+
+impl garive_runtime::F0RecoveryContentPort for NoWorkspaceRecoveryContent {
+    fn resolve(&mut self, _: &str) -> Result<String, garive_runtime::F0RecoveryError> {
+        Err(garive_runtime::F0RecoveryError::ContentUnavailable)
+    }
+}
+
+struct WorkspaceSafety {
+    snapshot: ExecutionAuthoritySnapshot,
+    requirements: ExecutionRequirements,
+    policy_revision: String,
+}
+
+impl SafetyPort for WorkspaceSafety {
+    fn decide<'a>(&'a mut self, request: &'a garive_runtime::SafetyRequestV1) -> SafetyFuture<'a> {
+        Box::pin(async move {
+            let prepared = request.prepared_digest();
+            let disposition = if self.snapshot.denied_digests.contains(prepared) {
+                SafetyDisposition::Deny
+            } else if self.snapshot.approved_digests.contains(prepared) {
+                SafetyDisposition::Allow
+            } else {
+                SafetyDisposition::InteractionRequired
+            };
+            let constraints = (disposition == SafetyDisposition::Allow)
+                .then(|| hex_digest(format!("{}:{prepared}", self.policy_revision).as_bytes()));
+            let safe_code = match disposition {
+                SafetyDisposition::Allow => None,
+                SafetyDisposition::Deny => Some("safety_denied".into()),
+                SafetyDisposition::InteractionRequired => {
+                    Some("safety_interaction_required".into())
+                }
+            };
+            Ok(SafetyEvaluation {
+                decision: SafetyDecisionV1::new(
+                    format!("workspace-safety-{}", request.request_id()),
+                    disposition,
+                    request.invocation_id().clone(),
+                    prepared,
+                    constraints,
+                    self.policy_revision.clone(),
+                    safe_code,
+                )
+                .map_err(|_| garive_runtime::GovernedRuntimePortError::InvalidBinding)?,
+                granted_requirements: (disposition == SafetyDisposition::Allow)
+                    .then(|| self.requirements.clone()),
+                interaction: (disposition == SafetyDisposition::InteractionRequired).then(|| {
+                    SafetyInteraction {
+                        kind: InteractionKind::Approval,
+                        prompt: json!({"schema_version":1,"title_key":"workspace.write.approval.title","message_text":"Create one new file in the attached Workspace.","action_label_key":"approval.allow_once","cancel_label_key":"approval.deny"}),
+                        response_schema: json!({"type":"boolean"}),
+                        expiry_code: "turn_deadline".into(),
+                    }
+                }),
+            })
+        })
+    }
+}
+
+struct WorkspaceSandbox {
+    access_policy: ToolAccessPolicyV1,
+    enforcement: SandboxRequirementsV1,
+    executor_revision: String,
+    policy_revision: String,
+}
+
+impl SandboxAdmissionPort for WorkspaceSandbox {
+    fn admit(
+        &mut self,
+        _: SandboxAdmissionRequest<'_>,
+    ) -> Result<SandboxAdmission, garive_runtime::GovernedRuntimePortError> {
+        let nonce = Uuid::new_v4();
+        Ok(SandboxAdmission {
+            binding: SandboxBindingV1::new(
+                format!("workspace-binding-{nonce}"),
+                "desktop-workspace-set",
+                "desktop.workspace.atomic-create",
+                self.executor_revision.clone(),
+                self.policy_revision.clone(),
+                self.access_policy.clone(),
+                self.enforcement.clone(),
+            )
+            .map_err(|_| garive_runtime::GovernedRuntimePortError::InvalidBinding)?,
+            effective_limits_digest: self
+                .enforcement
+                .digest()
+                .map_err(|_| garive_runtime::GovernedRuntimePortError::InvalidBinding)?,
+            preflight_id: format!("workspace-preflight-{nonce}"),
+            dispatch_attempt_id: format!("workspace-dispatch-{nonce}"),
         })
     }
 }
@@ -423,6 +579,8 @@ fn arguments(value: &str) -> Result<WriteArguments, String> {
 
 fn write_definition(
     snapshot: &ExecutionAuthoritySnapshot,
+    access_policy: ToolAccessPolicyV1,
+    sandbox_requirements: SandboxRequirementsV1,
 ) -> Result<ToolDefinition, LocalWorkerError> {
     let writable = snapshot
         .attachments
@@ -446,7 +604,7 @@ fn write_definition(
             .join("|")
             .as_bytes(),
     );
-    ToolDefinition::new(
+    ToolDefinition::new_v3(
         "write_file",
         format!("{WRITE_TOOL_REVISION}.{}", &revision_digest[..16]),
         "Create one new approved artifact at the root of an attached writable Workspace.",
@@ -463,6 +621,45 @@ fn write_definition(
         ExecutionRequirements::new([ExecutionCapability::FilesystemWrite], 5_000, 4_096)
             .map_err(|_| LocalWorkerError::InvalidComposition)?,
         ReplayClass::NeverReplay,
+        access_policy,
+        "desktop.workspace.write-access.v1",
+        sandbox_requirements,
+    )
+    .map_err(|_| LocalWorkerError::InvalidComposition)
+}
+
+fn write_access_policy(
+    snapshot: &ExecutionAuthoritySnapshot,
+) -> Result<ToolAccessPolicyV1, LocalWorkerError> {
+    let roots = snapshot
+        .attachments
+        .values()
+        .filter(|attachment| attachment.access == "read_write")
+        .map(|attachment| AccessPolicyEntry::new(&attachment.workspace_id, [AccessMode::Write]))
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|_| LocalWorkerError::InvalidComposition)?;
+    ToolAccessPolicyV1::new(
+        "desktop.workspace.write-policy.v1",
+        roots,
+        [],
+        [],
+        [],
+        1,
+        4_096,
+    )
+    .map_err(|_| LocalWorkerError::InvalidComposition)
+}
+
+fn write_sandbox_requirements() -> Result<SandboxRequirementsV1, LocalWorkerError> {
+    SandboxRequirementsV1::new(
+        [ExecutionCapability::FilesystemWrite],
+        [
+            SandboxControl::FilesystemScope,
+            SandboxControl::SymlinkContainment,
+            SandboxControl::ResourceLimits,
+        ],
+        None,
+        8,
     )
     .map_err(|_| LocalWorkerError::InvalidComposition)
 }

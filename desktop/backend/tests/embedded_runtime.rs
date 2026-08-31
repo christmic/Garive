@@ -731,4 +731,30 @@ async fn approved_workspace_write_commits_receipt_and_creates_an_atomic_artifact
         .unwrap();
     assert_eq!(artifact.position, completed_position + 1);
     assert!(artifact.payload.as_json().contains("artifact-"));
+
+    let started = facts
+        .iter()
+        .find(|fact| fact.kind.as_str() == "effect.started")
+        .unwrap();
+    let invocation = started.tool_invocation_id.as_ref().unwrap();
+    let governed_chain = facts
+        .iter()
+        .filter(|fact| fact.tool_invocation_id.as_ref() == Some(invocation))
+        .map(|fact| fact.kind.as_str())
+        .collect::<Vec<_>>();
+    assert_eq!(
+        governed_chain,
+        [
+            "effect.prepared",
+            "safety.decided",
+            "effect.authorized",
+            "sandbox.bound",
+            "sandbox.preflighted",
+            "effect.started",
+            "effect.receipt",
+            "effect.completed",
+            "artifact.committed",
+            "effect.observation",
+        ]
+    );
 }

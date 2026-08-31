@@ -207,7 +207,7 @@ impl LocalGovernedExecutionFactory for RecoveryFactory {
                 prepares: 0,
                 dispatches: 0,
             }),
-            f0: Some(LocalF0Governance {
+            f0: LocalF0Governance {
                 preparation: Box::new(RecoveryPreparation),
                 recovery_content: Box::new(NoReferencedContent),
                 safety: Box::new(RecoverySafety(self.0)),
@@ -218,7 +218,7 @@ impl LocalGovernedExecutionFactory for RecoveryFactory {
                     plan_reference: None,
                     effective_policy_revision: "policy-1".into(),
                 },
-            }),
+            },
         })
     }
 }
