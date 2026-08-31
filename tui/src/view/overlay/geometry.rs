@@ -82,6 +82,7 @@ fn desired_width(overlay: Overlay) -> u16 {
         Overlay::CommandPalette => 74,
         Overlay::Help => 72,
         Overlay::TurnNavigator => 72,
+        Overlay::Inspector => 62,
         Overlay::SessionPicker
         | Overlay::PromptHistory
         | Overlay::Suspension
@@ -110,6 +111,11 @@ fn desired_height(model: &AppModel, overlay: Overlay, popup_width: u16) -> u16 {
         Overlay::TurnNavigator => u16::try_from(model.matching_landmark_indices().len())
             .unwrap_or(u16::MAX)
             .saturating_add(7)
+            .clamp(8, 18),
+        Overlay::Inspector => u16::try_from(model.inspector_projection().entries.len())
+            .unwrap_or(u16::MAX)
+            .saturating_mul(2)
+            .saturating_add(3)
             .clamp(8, 18),
         Overlay::Suspension => 12,
         Overlay::UnknownCommand
@@ -161,6 +167,9 @@ pub(in crate::view) fn selection_at(
     row: u16,
 ) -> Option<usize> {
     let geometry = overlay_geometry(model, overlay, area);
+    if overlay == Overlay::Inspector {
+        return super::super::inspector::selection_at(model, geometry.popup, column, row);
+    }
     let (start, end) = geometry.window?;
     let first_row = geometry.inner.y.saturating_add(1);
     if column < geometry.inner.x
@@ -199,6 +208,7 @@ fn list_count_and_selection(model: &AppModel, overlay: Overlay) -> Option<(usize
             model.matching_landmark_indices().len(),
             model.turn_selection,
         )),
+        Overlay::Inspector => None,
         _ => None,
     }
 }

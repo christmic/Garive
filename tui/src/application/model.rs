@@ -29,6 +29,7 @@ pub(crate) enum FocusTarget {
     Conversation,
     #[default]
     Composer,
+    Inspector,
     Overlay,
 }
 
@@ -39,6 +40,7 @@ pub(crate) enum Overlay {
     SessionPicker,
     TurnNavigator,
     PromptHistory,
+    Inspector,
     Suspension,
     UnknownCommand,
     ErrorDetails,
@@ -243,6 +245,12 @@ pub(crate) struct ConversationLandmark {
     pub(crate) prompt_preview: String,
 }
 
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub(crate) struct PendingRecoveryProjection {
+    pub(crate) current_session: bool,
+    pub(crate) other_session: bool,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct ViewportState {
     pub(crate) follow_latest: bool,
@@ -290,7 +298,7 @@ pub(crate) struct AppModel {
     pub(crate) command_suggestion_selection: usize,
     pub(crate) command_suggestion_dismissed: Option<String>,
     pub(crate) has_pending_command: bool,
-    pub(crate) pending_recovery_required: bool,
+    pub(crate) pending_recovery: PendingRecoveryProjection,
     pub(crate) composer_is_frozen: bool,
     pub(crate) session_selection: usize,
     pub(crate) selected_session: Option<String>,

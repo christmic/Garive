@@ -4,7 +4,7 @@ use ratatui::layout::{Constraint, Layout, Rect};
 
 use crate::application::AppModel;
 
-use super::{composer, primitives::centered_column};
+use super::{composer, inspector, primitives::centered_column};
 
 const STANDARD_TRANSCRIPT_WIDTH: u16 = 96;
 
@@ -14,11 +14,26 @@ pub(super) struct FrameLayout {
     pub(super) transcript: Rect,
     pub(super) composer: Rect,
     pub(super) hint: Rect,
+    pub(super) inspector: Option<Rect>,
 }
 
 impl FrameLayout {
     pub(super) fn resolve(model: &AppModel, area: Rect) -> Self {
-        let content = if area.width >= 80 {
+        let inspector = model
+            .inspector
+            .open
+            .then(|| inspector::wide_area(area))
+            .flatten();
+        let content = if let Some(inspector) = inspector {
+            let combined_width = area.width.min(129);
+            let x = area.x + area.width.saturating_sub(combined_width) / 2;
+            Rect::new(
+                x,
+                area.y,
+                inspector.x.saturating_sub(x).saturating_sub(1),
+                area.height,
+            )
+        } else if area.width >= 80 {
             centered_column(area, STANDARD_TRANSCRIPT_WIDTH)
         } else {
             area
@@ -49,6 +64,7 @@ impl FrameLayout {
             transcript: rows[0],
             composer: rows[1],
             hint: rows[2],
+            inspector,
         }
     }
 }

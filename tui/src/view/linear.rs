@@ -22,6 +22,7 @@ pub(crate) fn overlay_text(model: &AppModel) -> String {
         Overlay::SessionPicker => session_picker(model),
         Overlay::TurnNavigator => turn_navigator(model),
         Overlay::PromptHistory => prompt_history(model),
+        Overlay::Inspector => super::inspector::linear_text(model),
         Overlay::Suspension => {
             let copy = suspension_copy(model.suspension.as_ref());
             let message = copy.message.unwrap_or_default();

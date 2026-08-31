@@ -16,6 +16,7 @@ mod composer;
 mod context_line;
 mod conversation;
 mod footer;
+mod inspector;
 mod layout;
 mod linear;
 mod live_answer;
@@ -76,6 +77,9 @@ pub(crate) fn render_cached_with_motion(
     let frame = FrameLayout::resolve(model, area);
     context_line::render(model, theme, motion, frame.context, buffer);
     render_conversation(model, theme, motion, frame.transcript, buffer, cache);
+    if let Some(area) = frame.inspector {
+        inspector::render(model, theme, area, buffer, false);
+    }
     composer::render(model, palette(theme), frame.composer, buffer);
     render_footer(model, theme, frame.hint, buffer);
     command_suggestions::render(model, frame.composer, palette(theme), buffer);

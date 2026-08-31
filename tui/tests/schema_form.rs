@@ -43,3 +43,20 @@ fn structured_inputs_require_the_declared_json_shape() {
         Err("unsupported_schema")
     );
 }
+
+#[test]
+fn response_schema_support_is_explicit_and_rejects_missing_or_unknown_types() {
+    for schema in [
+        r#"{"type":"string"}"#,
+        r#"{"type":"boolean"}"#,
+        r#"{"type":"integer"}"#,
+        r#"{"type":"number"}"#,
+        r#"{"type":"object"}"#,
+        r#"{"type":"array"}"#,
+    ] {
+        assert!(schema_form::supports_response_schema(schema), "{schema}");
+    }
+    for schema in [r#"{}"#, r#"{"type":"null"}"#, "not-json"] {
+        assert!(!schema_form::supports_response_schema(schema), "{schema}");
+    }
+}

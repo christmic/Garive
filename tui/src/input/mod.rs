@@ -13,4 +13,4 @@ pub(crate) use editor::EditorState;
 pub(crate) use history::{HistoryDraft, HistoryRecall, PromptHistoryBrowser};
 pub(crate) use keymap::{help_hints, resolve_shortcut, ShortcutIntent};
 pub(crate) use mouse_gesture::{ComposerClick, ComposerClickTracker};
-pub(crate) use schema_form::{describe_schema, parse_schema_input};
+pub(crate) use schema_form::{describe_schema, parse_schema_input, supports_response_schema};

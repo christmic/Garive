@@ -13,7 +13,7 @@ use crate::{
 };
 
 use super::{
-    palette,
+    inspector, palette,
     presentation::{action_overlay_copy, suspension_copy, HELP_NOTES},
     primitives::{key_hints, truncate_display},
     safe_text,
@@ -39,6 +39,16 @@ pub(super) fn render_overlay(
 ) {
     let colors = palette(theme);
     let geometry = overlay_geometry(model, overlay, area);
+    let popup = geometry.popup;
+    buffer.set_style(area, colors.modal_backdrop);
+    let halo = modal_halo(popup, area);
+    Clear.render(halo, buffer);
+    buffer.set_style(halo, colors.modal_backdrop);
+    Clear.render(popup, buffer);
+    if overlay == Overlay::Inspector {
+        inspector::render(model, theme, popup, buffer, true);
+        return;
+    }
     let spec = overlay_spec(
         model,
         overlay,
@@ -46,12 +56,6 @@ pub(super) fn render_overlay(
         geometry.window,
         geometry.inner.width,
     );
-    let popup = geometry.popup;
-    buffer.set_style(area, colors.modal_backdrop);
-    let halo = modal_halo(popup, area);
-    Clear.render(halo, buffer);
-    buffer.set_style(halo, colors.modal_backdrop);
-    Clear.render(popup, buffer);
     let block = Block::default()
         .title(Line::styled(spec.title, colors.title))
         .borders(Borders::ALL)
@@ -113,6 +117,7 @@ fn overlay_spec(
             title: " Prompt history ".into(),
             content: history_text(model, colors, window.unwrap_or((0, 0))),
         },
+        Overlay::Inspector => unreachable!("Inspector owns its composite renderer"),
         Overlay::Suspension => OverlaySpec {
             title: " Action required ".into(),
             content: suspension_text(model, colors),
@@ -147,6 +152,7 @@ fn selection_row(
             model.matching_landmark_indices().len(),
         ),
         Overlay::PromptHistory => (model.history_selection, model.matching_history().count()),
+        Overlay::Inspector => return None,
         _ => return None,
     };
     if selection >= count {

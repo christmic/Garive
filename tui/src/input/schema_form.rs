@@ -1,5 +1,15 @@
 use serde_json::Value;
 
+pub(crate) fn supports_response_schema(schema_json: &str) -> bool {
+    let Ok(schema) = serde_json::from_str::<Value>(schema_json) else {
+        return false;
+    };
+    matches!(
+        schema.get("type").and_then(Value::as_str),
+        Some("string" | "boolean" | "integer" | "number" | "object" | "array")
+    )
+}
+
 pub(crate) fn parse_schema_input(schema_json: &str, input: &str) -> Result<Value, &'static str> {
     let schema: Value = serde_json::from_str(schema_json).map_err(|_| "unsupported_schema")?;
     let kind = schema

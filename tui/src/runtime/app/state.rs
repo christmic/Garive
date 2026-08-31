@@ -105,9 +105,15 @@ impl RuntimeState {
             ));
         }
         model.has_pending_command = !restored.pending.is_empty();
-        model.pending_recovery_required = !pending_recovery.is_empty();
+        model.pending_recovery.current_session = restored.pending.iter().any(|pending| {
+            pending_recovery.contains(&pending.command_id) && pending.session_id.is_none()
+        });
+        model.pending_recovery.other_session = restored.pending.iter().any(|pending| {
+            pending_recovery.contains(&pending.command_id) && pending.session_id.is_some()
+        });
         model.composer_is_frozen =
             pending_freezes_composer(&restored.pending, model.selected_session.as_deref());
+        model.inspector.open = restored.preferences.activity_inspector;
         let persisted_preferences = restored.preferences.clone();
         Self {
             config,
@@ -308,6 +314,7 @@ impl RuntimeState {
         self.preferences.theme = self.config.theme;
         self.preferences.mouse = self.config.mouse;
         self.preferences.reduced_motion = self.config.reduced_motion;
+        self.preferences.activity_inspector = self.model.inspector.open;
         if let Err(error) = self
             .store
             .save_preferences_merged(&mut self.preferences, &mut self.persisted_preferences)
@@ -357,7 +364,15 @@ impl RuntimeState {
 
     fn sync_pending_projection(&mut self) {
         self.model.has_pending_command = !self.pending.is_empty();
-        self.model.pending_recovery_required = !self.pending_recovery.is_empty();
+        let selected = self.model.selected_session.as_deref();
+        self.model.pending_recovery.current_session = self.pending.iter().any(|pending| {
+            self.pending_recovery.contains(&pending.command_id)
+                && pending.session_id.as_deref() == selected
+        });
+        self.model.pending_recovery.other_session = self.pending.iter().any(|pending| {
+            self.pending_recovery.contains(&pending.command_id)
+                && pending.session_id.as_deref() != selected
+        });
         self.model.composer_is_frozen =
             pending_freezes_composer(&self.pending, self.model.selected_session.as_deref());
     }

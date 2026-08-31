@@ -1,6 +1,7 @@
 //! Pure, privacy-bounded projection for the optional Inspector component.
 
 use super::{AppModel, ConnectionState, ExecutionState, TimelineTone};
+use crate::input::supports_response_schema;
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub(crate) enum InspectorVariant {
@@ -8,6 +9,16 @@ pub(crate) enum InspectorVariant {
     Recovery,
     #[default]
     Details,
+}
+
+impl InspectorVariant {
+    pub(crate) fn label(self) -> &'static str {
+        match self {
+            Self::Activity => "Activity",
+            Self::Recovery => "Recovery",
+            Self::Details => "Details",
+        }
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -79,6 +90,29 @@ impl AppModel {
             .first()
             .map(|entry| entry.key.clone());
     }
+
+    pub(crate) fn inspector_selection(&self) -> usize {
+        let projection = self.inspector_projection();
+        self.inspector
+            .selected_key
+            .as_deref()
+            .and_then(|key| projection.entries.iter().position(|entry| entry.key == key))
+            .unwrap_or(0)
+    }
+}
+
+impl InspectorProjection {
+    pub(crate) fn window(&self, selected: usize, capacity: usize) -> (usize, usize) {
+        if self.entries.is_empty() || capacity == 0 {
+            return (0, 0);
+        }
+        let selected = selected.min(self.entries.len() - 1);
+        let start = selected
+            .saturating_add(1)
+            .saturating_sub(capacity)
+            .min(self.entries.len().saturating_sub(capacity));
+        (start, (start + capacity).min(self.entries.len()))
+    }
 }
 
 fn activity_entries(model: &AppModel) -> Vec<InspectorEntry> {
@@ -101,7 +135,7 @@ fn activity_entries(model: &AppModel) -> Vec<InspectorEntry> {
 
 fn recovery_entries(model: &AppModel) -> Vec<InspectorEntry> {
     let mut entries = Vec::with_capacity(4);
-    if model.pending_recovery_required {
+    if model.pending_recovery.current_session {
         entries.push(entry(
             "recovery:pending",
             "Command result unknown",
@@ -110,11 +144,24 @@ fn recovery_entries(model: &AppModel) -> Vec<InspectorEntry> {
             InspectorActivation::RetryPending,
         ));
     }
+    if model.pending_recovery.other_session {
+        entries.push(entry(
+            "recovery:other-session",
+            "Another Session needs review",
+            "Switch Sessions to review its durable command result.",
+            InspectorTone::Warning,
+            InspectorActivation::None,
+        ));
+    }
     if let Some(suspension) = model.suspension.as_ref() {
         let activation = if matches!(
             suspension.kind.as_str(),
             "approval_required" | "external_input_required"
-        ) {
+        ) && suspension
+            .response_schema_json
+            .as_deref()
+            .is_some_and(supports_response_schema)
+        {
             InspectorActivation::Suspension
         } else {
             InspectorActivation::None
