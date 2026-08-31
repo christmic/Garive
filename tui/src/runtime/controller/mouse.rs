@@ -328,6 +328,48 @@ mod tests {
     }
 
     #[test]
+    fn compact_history_mouse_never_maps_action_or_grapheme_continuation_rows() {
+        let model = AppModel {
+            overlay: Some(Overlay::PromptHistory),
+            terminal_size: TerminalSize {
+                width: 40,
+                height: 8,
+            },
+            prompt_history: vec![
+                "first".into(),
+                format!("{} CJK提示", "👨‍👩‍👧‍👦界".repeat(20)),
+                "third".into(),
+            ],
+            history_selection: 1,
+            ..Default::default()
+        };
+        let rows_for_selected = (0..8)
+            .filter(|row| {
+                (0..40).any(|column| {
+                    route(
+                        &model,
+                        mouse(MouseEventKind::Down(MouseButton::Left), column, *row),
+                    ) == Some(MouseAction::OverlayActivate(1))
+                })
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(rows_for_selected.len(), 1);
+        let activated = (0..8)
+            .flat_map(|row| (0..40).map(move |column| (column, row)))
+            .filter_map(|(column, row)| {
+                match route(
+                    &model,
+                    mouse(MouseEventKind::Down(MouseButton::Left), column, row),
+                ) {
+                    Some(MouseAction::OverlayActivate(index)) => Some(index),
+                    _ => None,
+                }
+            })
+            .collect::<std::collections::BTreeSet<_>>();
+        assert_eq!(activated, [1].into_iter().collect());
+    }
+
+    #[test]
     fn turn_navigator_mouse_uses_its_filtered_visible_window() {
         let model = AppModel {
             overlay: Some(Overlay::TurnNavigator),

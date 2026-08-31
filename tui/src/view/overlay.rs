@@ -22,6 +22,7 @@ use super::{
 };
 
 pub(super) mod command_palette;
+pub(super) mod filtered_list;
 pub(super) mod geometry;
 
 use geometry::{overlay_geometry, overlay_padding};
@@ -69,11 +70,14 @@ pub(super) fn render_overlay(
         .border_style(colors.overlay_border)
         .padding(overlay_padding(overlay));
     let inner = geometry.inner;
-    Paragraph::new(spec.content)
+    let paragraph = Paragraph::new(spec.content)
         .block(block)
-        .style(colors.normal)
-        .wrap(Wrap { trim: false })
-        .render(popup, buffer);
+        .style(colors.normal);
+    if matches!(overlay, Overlay::SessionPicker | Overlay::PromptHistory) {
+        paragraph.render(popup, buffer);
+    } else {
+        paragraph.wrap(Wrap { trim: false }).render(popup, buffer);
+    }
     if let Some(row) = selection_row(model, overlay, geometry.window) {
         if row < inner.height {
             buffer.set_style(
@@ -111,7 +115,13 @@ fn overlay_spec(
         },
         Overlay::SessionPicker => OverlaySpec {
             title: " Switch session ".into(),
-            content: session_picker_text(model, colors, window.unwrap_or((0, 0))),
+            content: session_picker_text(
+                model,
+                colors,
+                window.unwrap_or((0, 0)),
+                content_width,
+                content_height,
+            ),
         },
         Overlay::TurnNavigator => OverlaySpec {
             title: " Jump to a Turn ".into(),
@@ -119,7 +129,13 @@ fn overlay_spec(
         },
         Overlay::PromptHistory => OverlaySpec {
             title: " Prompt history ".into(),
-            content: history_text(model, colors, window.unwrap_or((0, 0))),
+            content: history_text(
+                model,
+                colors,
+                window.unwrap_or((0, 0)),
+                content_width,
+                content_height,
+            ),
         },
         Overlay::Inspector => unreachable!("Inspector owns its composite renderer"),
         Overlay::Suspension => {
@@ -222,6 +238,8 @@ fn session_picker_text(
     model: &AppModel,
     colors: Palette,
     (start, end): (usize, usize),
+    content_width: u16,
+    content_height: u16,
 ) -> Text<'static> {
     let mut rows = vec![search_line("Filter", &model.session_filter, colors)];
     let matches = model.matching_sessions().collect::<Vec<_>>();
@@ -236,20 +254,23 @@ fn session_picker_text(
                     .position(|item| item.session_id == session.session_id)
                     .map(|index| index + 1)
                     .unwrap_or(start + offset + 1);
-                picker_line(
+                let line = picker_line(
                     session,
                     ordinal,
                     start + offset == model.session_selection,
                     colors,
-                )
+                );
+                truncate_line(line, usize::from(content_width))
             })
             .collect::<Vec<_>>(),
     );
     if rows.len() == 1 {
         rows.push(Line::styled("  No matching Sessions", colors.muted));
     }
-    rows.push(Line::default());
-    rows.push(if model.sessions_loading {
+    pad_for_action(&mut rows, content_height);
+    rows.push(if content_width < 50 {
+        key_hints(&[("Enter", "open"), ("Esc", "close")], colors)
+    } else if model.sessions_loading {
         Line::styled("Loading older Sessions…", colors.muted)
     } else if model.sessions_next_before.is_some() {
         key_hints(
@@ -270,7 +291,13 @@ fn session_picker_text(
     Text::from(rows)
 }
 
-fn history_text(model: &AppModel, colors: Palette, (start, end): (usize, usize)) -> Text<'static> {
+fn history_text(
+    model: &AppModel,
+    colors: Palette,
+    (start, end): (usize, usize),
+    content_width: u16,
+    content_height: u16,
+) -> Text<'static> {
     let mut rows = vec![search_line("Search", &model.history_filter, colors)];
     let matches = model.matching_history().collect::<Vec<_>>();
     rows.extend(
@@ -284,7 +311,10 @@ fn history_text(model: &AppModel, colors: Palette, (start, end): (usize, usize))
                     " "
                 };
                 let first = text.lines().next().unwrap_or_default();
-                let preview = first.chars().take(46).collect::<String>();
+                let preview = truncate_display(
+                    &safe_text(first),
+                    usize::from(content_width).saturating_sub(2),
+                );
                 Line::from(vec![
                     Span::styled(format!("{marker} "), colors.selected),
                     Span::styled(preview, colors.normal),
@@ -295,12 +325,35 @@ fn history_text(model: &AppModel, colors: Palette, (start, end): (usize, usize))
     if rows.len() == 1 {
         rows.push(Line::styled("  No local prompt history", colors.muted));
     }
-    rows.push(Line::default());
-    rows.push(key_hints(
-        &[("↑/↓", "select"), ("Enter", "restore"), ("Esc", "close")],
-        colors,
-    ));
+    pad_for_action(&mut rows, content_height);
+    rows.push(if content_width < 50 {
+        key_hints(&[("Enter", "restore"), ("Esc", "close")], colors)
+    } else {
+        key_hints(
+            &[("↑/↓", "select"), ("Enter", "restore"), ("Esc", "close")],
+            colors,
+        )
+    });
     Text::from(rows)
+}
+
+fn pad_for_action(rows: &mut Vec<Line<'static>>, content_height: u16) {
+    let action_index = usize::from(content_height.saturating_sub(1));
+    rows.resize_with(action_index.max(rows.len()), Line::default);
+}
+
+fn truncate_line(line: Line<'static>, width: usize) -> Line<'static> {
+    let mut remaining = width;
+    let mut spans = Vec::new();
+    for span in line.spans {
+        if remaining == 0 {
+            break;
+        }
+        let content = truncate_display(span.content.as_ref(), remaining);
+        remaining = remaining.saturating_sub(content.width());
+        spans.push(Span::styled(content, span.style));
+    }
+    Line::from(spans)
 }
 
 fn decision_sheet_spec(

@@ -700,6 +700,57 @@ fn session_picker_filter_and_selection_share_one_visible_result_set() {
 }
 
 #[test]
+fn unicode_filtered_lists_keep_visual_mouse_and_linear_selection_in_lockstep() {
+    let mut model = AppModel {
+        overlay: Some(Overlay::PromptHistory),
+        terminal_size: application::TerminalSize {
+            width: 40,
+            height: 8,
+        },
+        prompt_history: vec![
+            "first".into(),
+            format!("{} CJK提示 e\u{301}", "👨‍👩‍👧‍👦界".repeat(20)),
+            "third".into(),
+        ],
+        history_selection: 1,
+        ..Default::default()
+    };
+
+    let visual = frame(&model, 40, 8);
+    assert!(visual.contains('›'), "{visual}");
+    assert!(visual.contains("Enter restore"));
+    assert!(visual.contains("Esc close"), "{visual}");
+    let hit_rows = (0..8)
+        .filter(|row| (0..40).any(|column| view::overlay_hit_test(&model, column, *row) == Some(1)))
+        .collect::<Vec<_>>();
+    assert_eq!(
+        hit_rows.len(),
+        1,
+        "a grapheme-rich item must own exactly one hit row"
+    );
+    let linear = view::linear_overlay(&model);
+    assert!(linear.contains("> 2. 👨‍👩‍👧‍👦界"));
+
+    model.overlay = Some(Overlay::SessionPicker);
+    model.sessions = vec![
+        session("session-0", "other"),
+        session("session-1", &"会话🦀".repeat(20)),
+    ];
+    model.session_selection = 1;
+    let sessions = frame(&model, 40, 8);
+    assert!(sessions.contains("› Session 2"), "{sessions}");
+    assert!(sessions.contains("Enter open"));
+    let hit_rows = (0..8)
+        .filter(|row| (0..40).any(|column| view::overlay_hit_test(&model, column, *row) == Some(1)))
+        .collect::<Vec<_>>();
+    assert_eq!(
+        hit_rows.len(),
+        1,
+        "a wide session label must not wrap its hit target"
+    );
+}
+
+#[test]
 fn agent_markdown_is_structured_and_terminal_safe() {
     let mut model = AppModel {
         boot: BootState::Ready,
