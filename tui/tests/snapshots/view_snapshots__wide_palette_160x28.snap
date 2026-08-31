@@ -12,16 +12,16 @@ expression: "frame(&wide, Theme::Light, 160, 28)"
                                     • Ver  │    /inspect          Open Inspector                                    │
                                     • Shi  │    /status           Connection details                                │
                                     cargo  │    /edit-prompt      Edit draft externally                             │
-                                           │    /retry            unavailable · no pending command                  │
+                                           │    /retry            unavailable · no unknown command                  │
                                            │    /reconnect        Resume event stream                               │
                                            │    /cancel           Cancel running turn                               │
                                            │    /theme system     Follow terminal theme                             │
                                            │    /theme dark       Use dark theme                                    │
                                            │    /theme light      Use light theme                                   │
                                            │    /theme mono       Use mono theme                                    │
-                                           │    /mouse on         Enable mouse capture next launch                  │
-                                           │    /mouse off        Disable mouse capture next launch                 │
-                                           │    /copy last        Copy last completion                              │
+                                           │    /mouse auto       Use automatic mouse capture now                   │
+                                           │    /mouse on         Enable mouse capture now                          │
+                                           │    /mouse off        Disable mouse capture now                         │
                                            │    ↑/↓ select   Enter run   Esc close                                  │
                                            │                                                                        │
                                            ╰────────────────────────────────────────────────────────────────────────╯

@@ -777,7 +777,7 @@ fn screen_reader_mode_is_linear_and_has_no_cursor_addressing() {
             send "\020"
             must_expect "Command palette." 26
             send "retry"
-            must_expect "> 1. /retry: Retry unknown command. Unavailable: no pending command" 27
+            must_expect "> 1. /retry: Retry unknown command. Unavailable: no unknown command" 27
             send "\177\177\177\177\177"
             send "keyboard"
             must_expect "Filter: keyboard." 28
@@ -799,7 +799,7 @@ fn screen_reader_mode_is_linear_and_has_no_cursor_addressing() {
         let text = String::from_utf8_lossy(&output);
         assert!(text.contains("Connection online"));
         assert!(text.contains("Command palette."));
-        assert!(text.contains("Unavailable: no pending command"));
+        assert!(text.contains("Unavailable: no unknown command"));
         assert!(text.contains("Filter: keyboard."));
         assert!(text.contains("No function keys are required."));
         assert!(!text.contains("\x1b[6n"));

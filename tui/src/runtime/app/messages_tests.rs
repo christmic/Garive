@@ -225,6 +225,35 @@ async fn exact_start_response_consumes_only_its_owner() {
     assert_eq!(state.model.execution, ExecutionState::Following);
 }
 
+#[tokio::test]
+async fn replay_claim_is_single_owner_until_the_mutation_result() {
+    let owner = pending(PendingKind::StartTurn, "retry", Some("session-a"), None);
+    let mut state = runtime(vec![owner.clone()]);
+    state.model.selected_session = Some("session-a".into());
+    assert!(state.begin_exact_retry(&owner.command_id));
+
+    assert!(replay_queued_for_session(&mut state, "session-a"));
+    assert!(state.exact_retry_was_replayed());
+    assert!(state.exact_retry_in_progress());
+
+    assert!(!replay_queued_for_session(&mut state, "session-a"));
+    assert!(state.exact_retry_was_replayed());
+    assert_eq!(state.pending, vec![owner]);
+
+    handle_host(
+        HostMessage::TurnAccepted {
+            command_id: "retry".into(),
+            session_id: "session-a".into(),
+            submitted_text: "hello".into(),
+            response: turn_response("session-a", "turn-new", "execution-new"),
+        },
+        &mut state,
+    );
+
+    assert!(!state.exact_retry_in_progress());
+    assert!(state.pending.is_empty());
+}
+
 fn runtime(pending: Vec<PendingCommand>) -> RuntimeState {
     let config = parse_launch_config(["garive-tui", "--host", "http://127.0.0.1:1", "--ephemeral"])
         .expect("test launch config is valid");

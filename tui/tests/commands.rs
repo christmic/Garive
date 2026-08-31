@@ -104,7 +104,7 @@ fn palette_requirements_explain_every_contextual_command() {
     let empty = CommandContext::default();
     let cases = [
         ("/new", "no Agent is installed"),
-        ("/retry", "no pending command"),
+        ("/retry", "no unknown command"),
         ("/cancel", "no Turn is running"),
         ("/copy last", "no completion is visible"),
         ("/copy selection", "no composer text is selected"),
@@ -122,7 +122,7 @@ fn palette_requirements_explain_every_contextual_command() {
 
     let ready = CommandContext {
         has_installed_agent: true,
-        has_pending_command: true,
+        has_recoverable_command: true,
         has_running_turn: true,
         has_visible_completion: true,
         has_selected_session: true,

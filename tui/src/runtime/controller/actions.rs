@@ -238,8 +238,17 @@ pub(super) fn cancel(state: &mut RuntimeState) {
 }
 
 pub(super) fn retry_pending(state: &mut RuntimeState) {
-    let Some(pending) = state.pending_for_context().cloned() else {
-        state.model.notice = Some("No recoverable pending command is loaded.".into());
+    if state.exact_retry_in_progress() {
+        state.model.notice = Some("An exact retry is already in progress.".into());
+        state.model.overlay = Some(Overlay::ErrorDetails);
+        return;
+    }
+    let Some(pending) = state.recoverable_pending_for_context().cloned() else {
+        state.model.notice = Some(if state.pending_for_context().is_some() {
+            "The pending command is still in flight; exact retry is unavailable.".into()
+        } else {
+            "No recoverable pending command is loaded.".into()
+        });
         state.model.overlay = Some(Overlay::ErrorDetails);
         return;
     };
@@ -249,7 +258,11 @@ pub(super) fn retry_pending(state: &mut RuntimeState) {
         state.model.overlay = Some(Overlay::ErrorDetails);
         return;
     }
-    state.retry_after_refresh = Some(pending.command_id.clone());
+    if !state.begin_exact_retry(&pending.command_id) {
+        state.model.notice = Some("Exact retry ownership could not be acquired.".into());
+        state.model.overlay = Some(Overlay::ErrorDetails);
+        return;
+    }
     let _ = state.store.record_diagnostic(DiagnosticEvent::RetryQueued);
     state.model.overlay = None;
     state.model.notice = Some("Refreshing Host truth before exact retry…".into());
@@ -259,6 +272,10 @@ pub(super) fn retry_pending(state: &mut RuntimeState) {
         host::bootstrap(state.client.clone(), state.sender.clone());
     }
 }
+
+#[cfg(test)]
+#[path = "actions_tests.rs"]
+mod tests;
 
 pub(in crate::runtime) fn replay_pending(state: &mut RuntimeState, pending: PendingCommand) {
     let _ = state.store.record_diagnostic(DiagnosticEvent::RetrySent);

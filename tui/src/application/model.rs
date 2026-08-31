@@ -345,7 +345,7 @@ impl AppModel {
     pub(crate) fn command_context(&self) -> CommandContext {
         CommandContext {
             has_installed_agent: !self.definitions.is_empty(),
-            has_pending_command: self.has_pending_command,
+            has_recoverable_command: self.pending_recovery.current_session,
             has_running_turn: self.execution == ExecutionState::Following,
             has_visible_completion: self
                 .turn_blocks

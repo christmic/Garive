@@ -26,7 +26,10 @@ use super::super::{
 
 mod mutations;
 mod pending;
+mod retry;
 mod shutdown;
+#[cfg(test)]
+mod test_support;
 
 #[cfg(test)]
 pub(super) use pending::pending_command_projection;
@@ -60,13 +63,24 @@ pub(in crate::runtime) struct RuntimeState {
     follow_sequence: u64,
     pub(in crate::runtime) force_redraw: bool,
     pub(in crate::runtime) last_empty_ctrl_c: Option<Instant>,
-    pub(in crate::runtime) retry_after_refresh: Option<String>,
+    exact_retry_owner: Option<ExactRetryOwner>,
     pub(in crate::runtime) render_cache: view::RenderCache,
     pub(in crate::runtime) bell_requested: bool,
     pub(in crate::runtime) composer_mouse_selecting: bool,
     pub(in crate::runtime) composer_clicks: ComposerClickTracker,
     pub(in crate::runtime) external_editor_request: Option<EditorRequest>,
     terminal_reconfiguration: Option<TerminalReconfiguration>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum ExactRetryPhase {
+    Refreshing,
+    Replayed,
+}
+
+struct ExactRetryOwner {
+    command_id: String,
+    phase: ExactRetryPhase,
 }
 
 pub(super) struct BackgroundFollow {
@@ -162,7 +176,7 @@ impl RuntimeState {
             follow_sequence: 0,
             force_redraw: false,
             last_empty_ctrl_c: None,
-            retry_after_refresh: None,
+            exact_retry_owner: None,
             render_cache: view::RenderCache::default(),
             bell_requested: false,
             composer_mouse_selecting: false,

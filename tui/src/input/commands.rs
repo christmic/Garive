@@ -18,7 +18,7 @@ pub(crate) const COMMAND_PALETTE: &[CommandSpec] = &[
     CommandSpec::new(
         "/retry",
         "Retry unknown command",
-        CommandRequirement::PendingCommand,
+        CommandRequirement::RecoverableCommand,
     ),
     CommandSpec::new(
         "/reconnect",
@@ -79,7 +79,7 @@ pub(crate) const COMMAND_PALETTE: &[CommandSpec] = &[
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub(crate) struct CommandContext {
     pub(crate) has_installed_agent: bool,
-    pub(crate) has_pending_command: bool,
+    pub(crate) has_recoverable_command: bool,
     pub(crate) has_running_turn: bool,
     pub(crate) has_visible_completion: bool,
     pub(crate) has_selected_session: bool,
@@ -125,8 +125,8 @@ impl CommandSpec {
             CommandRequirement::InstalledAgent if !context.has_installed_agent => {
                 Some("no Agent is installed")
             }
-            CommandRequirement::PendingCommand if !context.has_pending_command => {
-                Some("no pending command")
+            CommandRequirement::RecoverableCommand if !context.has_recoverable_command => {
+                Some("no unknown command")
             }
             CommandRequirement::RunningTurn if !context.has_running_turn => {
                 Some("no Turn is running")
@@ -155,7 +155,7 @@ impl CommandSpec {
 enum CommandRequirement {
     Always,
     InstalledAgent,
-    PendingCommand,
+    RecoverableCommand,
     RunningTurn,
     VisibleCompletion,
     SelectedSession,

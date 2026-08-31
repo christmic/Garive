@@ -310,7 +310,7 @@ pub(super) fn handle_host(message: HostMessage, state: &mut RuntimeState) {
                 HostOperation::Snapshot { request_id } => *request_id == state.snapshot_request,
                 _ => false,
             };
-            if refresh_failed && state.retry_after_refresh.take().is_some() {
+            if refresh_failed && state.cancel_exact_retry_refresh() {
                 state.model.notice =
                     Some("Fresh Host truth could not be loaded; exact retry was not sent.".into());
             }
@@ -396,38 +396,20 @@ fn refresh_after_unmatched_mutation(state: &mut RuntimeState) {
 #[path = "messages_tests.rs"]
 mod tests;
 
-fn replay_queued_create(state: &mut RuntimeState) {
-    let Some(command_id) = state.retry_after_refresh.clone() else {
-        return;
-    };
-    let Some(pending) = state
-        .pending
-        .iter()
-        .find(|pending| {
-            pending.command_id == command_id && pending.kind == PendingKind::CreateSession
-        })
-        .cloned()
+fn replay_queued_create(state: &mut RuntimeState) -> bool {
+    let Some(pending) =
+        state.claim_exact_retry_after_refresh(None, Some(PendingKind::CreateSession))
     else {
-        return;
+        return false;
     };
-    state.retry_after_refresh = None;
     replay_pending(state, pending);
+    true
 }
 
-fn replay_queued_for_session(state: &mut RuntimeState, session_id: &str) {
-    let Some(command_id) = state.retry_after_refresh.clone() else {
-        return;
+fn replay_queued_for_session(state: &mut RuntimeState, session_id: &str) -> bool {
+    let Some(pending) = state.claim_exact_retry_after_refresh(Some(session_id), None) else {
+        return false;
     };
-    let Some(pending) = state
-        .pending
-        .iter()
-        .find(|pending| {
-            pending.command_id == command_id && pending.session_id.as_deref() == Some(session_id)
-        })
-        .cloned()
-    else {
-        return;
-    };
-    state.retry_after_refresh = None;
     replay_pending(state, pending);
+    true
 }

@@ -324,6 +324,7 @@ impl RuntimeState {
             return;
         }
         self.pending_recovery.remove(&command_id);
+        self.clear_exact_retry_owner(&command_id);
         self.pending.remove(index);
         self.sync_pending_projection();
         self.model.overlay = None;
@@ -353,6 +354,7 @@ impl RuntimeState {
             return;
         }
         self.pending_recovery.remove(command_id);
+        self.clear_exact_retry_owner(command_id);
         #[cfg(feature = "test-hooks")]
         self.crash_if(crate::args::TestCrashHook::PendingRemoved);
         if !self.config.no_prompt_history
@@ -413,6 +415,7 @@ impl RuntimeState {
         command_id: &str,
         code: HostClientErrorCode,
     ) {
+        self.clear_exact_retry_owner(command_id);
         let pending_index = self
             .pending
             .iter()
