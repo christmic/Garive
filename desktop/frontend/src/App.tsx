@@ -1264,8 +1264,8 @@ function AgentsScreen({ definitions, sessions, defaultDefinitionId, loading, t }
   const sessionCount = selected ? sessions.filter((session) =>
     session.definitionId === selected.definitionId).length : 0;
   return <section className="content-page agents-page">
-    <header className="agents-heading"><div><p className="eyebrow">{t("agents.eyebrow")}</p>
-      <h1>{t("agents.title")}</h1><p>{t("agents.description")}</p></div>
+    <header className="agents-heading"><div><h1>{t("agents.title")}</h1>
+      <p>{t("agents.description")}</p></div>
       <span>{definitions.length} {t("agents.installed")}</span></header>
     {selected ? <div className="agents-workbench"><nav className="agents-navigation"
       aria-label={t("agents.listAria")}>{definitions.map((definition) => {
@@ -1399,8 +1399,7 @@ function SettingsScreen({ capabilities, preferences, setPreferences, update, run
   const activeSection = navigation.some(([candidate]) => candidate === section)
     ? section : "general";
   return <section className="content-page settings-page">
-    <header className="settings-heading"><p className="eyebrow">{t("settings.eyebrow")}</p>
-      <h1>{t("settings.title")}</h1></header>
+    <header className="settings-heading"><h1>{t("settings.title")}</h1></header>
     <div className="settings-workbench">
       <nav className="settings-navigation" aria-label={t("settings.sections")}>
         {navigation.map(([value, label]) => <button type="button" key={value}

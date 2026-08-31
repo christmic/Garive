@@ -306,6 +306,26 @@ context back into the Composer. At 720 px the sheet remains 620 px wide; at
 document overflow. This improves desktop density without weakening Workspace
 authority or pretending the Web client owns the native picker capability.
 
+### O. Secondary-surface continuity audit
+
+Search, Agents and Settings had drifted into three unrelated page grammars.
+Search placed a large tinted rectangle behind an otherwise small empty state;
+Agents and Settings used product-marketing eyebrows above their task titles;
+their first content baselines therefore started at different heights. None of
+those decorations communicated Runtime state, authority or a next action.
+
+The three surfaces now share a quiet desktop-document entry: the direct title
+starts at the 74 px baseline in the 800 px reference viewport, optional
+description follows once, and structural content begins with one separator.
+Search keeps its field/filter region as the only semantic control surface, but
+its zero-result state and dark results canvas are transparent. Agents and
+Settings no longer render `Installed locally` or `Desktop` as marketing
+eyebrows; definition count and settings categories remain where they carry
+meaning. Browser verification at 1280, 720 and 480 px found zero document or
+main-content horizontal overflow on all three screens. This audit applies the
+desktop grammar inferred from the supplied Codex workbench references; those
+references do not depict these exact secondary screens.
+
 ## Gate 1 — Codex fidelity
 
 This gate passes only when both Desktop and Web show:

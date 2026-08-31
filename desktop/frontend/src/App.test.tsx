@@ -128,12 +128,15 @@ describe("Desktop product experience", () => {
     expect(screen.getByRole("group", { name: "Filter durable work" })).toBeTruthy();
     expect(view.container.querySelector(".search-toolbar")).not.toBeNull();
     expect(view.container.querySelector(".search-result-heading")?.textContent).toContain("Recents");
+    expect(view.container.querySelector(".search-empty")).not.toBeNull();
+    expect(view.container.querySelector(".search-results")?.classList.contains("card")).toBe(false);
   });
 
   it("projects the real installed Agent catalogue into a progressive desktop workbench", async () => {
     const view = render(<App />);
     fireEvent.click(await screen.findByRole("button", { name: "Agents" }));
     expect(await screen.findByRole("heading", { name: "Your Agents" })).toBeTruthy();
+    expect(screen.queryByText("Installed locally")).toBeNull();
     expect(await screen.findByRole("navigation", { name: "Installed Agents" })).toBeTruthy();
     expect(screen.getByRole("heading", { name: "definition-main" })).toBeTruthy();
     expect(screen.getByText("revision-1")).toBeTruthy();
@@ -189,6 +192,7 @@ describe("Desktop product experience", () => {
     expect(screen.getByRole("button", { name: "New work" })).toBe(document.activeElement);
     fireEvent.click(screen.getByRole("button", { name: "Settings" }));
     expect(await screen.findByRole("heading", { name: "Settings" })).toBeTruthy();
+    expect(screen.queryByText("Desktop", { exact: true })).toBeNull();
     expect(dialog.isConnected).toBe(false);
 
     fireEvent.keyDown(window, { key: "k", metaKey: true });

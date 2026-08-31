@@ -241,6 +241,19 @@ Wide windows use a continuous 224px list/detail split with one structural
 separator; below 760px the catalogue becomes a horizontal strip above the
 detail surface. Rounded full-height dashboard cards are forbidden.
 
+Secondary surfaces use one desktop-document entry grammar. Search, Agents and
+Settings begin with the direct task title on the same vertical work axis;
+descriptive copy is optional and appears once. Marketing eyebrows such as
+platform labels, install provenance or product slogans are forbidden above
+page titles. Facts such as definition count stay adjacent to the content they
+qualify instead of becoming decoration.
+
+An empty state remains on the continuous canvas unless a card represents a
+real semantic boundary, such as a control group, permission boundary or
+independently navigable object. Empty-state glyph, title and consequence copy
+must not acquire a tinted panel, independent radius or shadow merely to occupy
+space. The same rule applies in light and dark themes and at narrow widths.
+
 ## Component grammar
 
 | Component | Required states | Invariants |
