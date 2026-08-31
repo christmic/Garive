@@ -1,4 +1,4 @@
-use std::{net::SocketAddr, sync::Arc};
+use std::{net::SocketAddr, sync::Arc, time::Duration};
 
 use futures::StreamExt;
 use garive_core::{AgentEvent, AgentEventKind, EventSink, ExecutionId, SessionId, TurnId};
@@ -155,4 +155,129 @@ async fn live_route_streams_real_ephemeral_events_without_sse_cursor() {
     follow.abort();
     shutdown_tx.send(()).unwrap();
     task.await.unwrap().unwrap();
+}
+
+#[tokio::test]
+async fn cancelling_live_follow_releases_the_runtime_subscriber_slot() {
+    let directory = tempfile::tempdir().unwrap();
+    let database = directory.path().join("subscriber-release.sqlite3");
+    let hub = LiveOutputHub::new(LiveOutputLimits {
+        max_active_executions: 1,
+        max_preview_bytes: 1_024,
+        max_event_bytes: 64,
+        broadcast_capacity: 16,
+        max_subscribers_per_session: 1,
+    })
+    .unwrap();
+    let host = LiveHost::new_with_live_output(
+        &database,
+        InstalledAgent {
+            definition_id: "definition-main".into(),
+            definition_revision: "revision-1".into(),
+            snapshot_digest: "a".repeat(64),
+            agent_instance_namespace: "local-main".into(),
+            public_capabilities: Vec::new(),
+            runtime_limits: EffectiveRuntimeLimits {
+                max_iterations: 2,
+                max_input_tokens: Some(20),
+                max_output_tokens: Some(20),
+                deadline_budget_ms: Some(1_000),
+            },
+            public_activity_catalogue: None,
+        },
+        LiveHostLimits {
+            max_command_bytes: 4_096,
+            event_batch_size: 64,
+            event_poll_interval_ms: 10,
+            activity: None,
+        },
+        Arc::new(Clock),
+        Arc::new(Dispatcher),
+        hub.clone(),
+    )
+    .unwrap();
+    let session = host
+        .create_session("create-subscriber-release", "definition-main")
+        .unwrap();
+    let turn = host
+        .start_turn("start-subscriber-release", &session.session_id, "hello")
+        .unwrap();
+    let mut sink = hub.event_sink();
+    sink.emit(event(
+        &session.session_id,
+        &turn.turn_id,
+        &turn.execution_id,
+        AgentEventKind::ModelStream(ModelStreamEvent::TextDelta {
+            output_index: 0,
+            delta: "retained preview".into(),
+        }),
+    ))
+    .unwrap();
+
+    let server = LiveHostServer::bind(host, "127.0.0.1:0".parse::<SocketAddr>().unwrap())
+        .await
+        .unwrap();
+    let address = server.local_addr();
+    let (shutdown_tx, shutdown_rx) = oneshot::channel();
+    let server_task = tokio::spawn(server.serve(async move {
+        let _ = shutdown_rx.await;
+    }));
+    let client = LiveHostClient::new(
+        format!("http://{address}/").as_str(),
+        ClientLimits {
+            max_command_bytes: 4_096,
+            max_event_bytes: 32_768,
+            max_events: 64,
+            follow_deadline_ms: 5_000,
+        },
+    )
+    .unwrap();
+
+    let (first_sender, mut first_receiver) = tokio::sync::mpsc::channel(1);
+    let first_session = session.session_id.clone();
+    let first_client = client.clone();
+    let first = tokio::spawn(async move {
+        first_client
+            .follow_live_output(&first_session, first_sender)
+            .await
+    });
+    let first_snapshot = first_receiver.recv().await.unwrap();
+    assert!(matches!(
+        first_snapshot.kind,
+        LiveOutputEventKind::Snapshot { ref text, .. } if text == "retained preview"
+    ));
+    first.abort();
+    assert!(first.await.unwrap_err().is_cancelled());
+
+    let mut replacement = None;
+    for _ in 0..20 {
+        let (sender, mut receiver) = tokio::sync::mpsc::channel(1);
+        let followed_session = session.session_id.clone();
+        let followed_client = client.clone();
+        let follow = tokio::spawn(async move {
+            followed_client
+                .follow_live_output(&followed_session, sender)
+                .await
+        });
+        if let Ok(Some(snapshot)) =
+            tokio::time::timeout(Duration::from_millis(100), receiver.recv()).await
+        {
+            replacement = Some((snapshot, follow));
+            break;
+        }
+        follow.abort();
+        let _ = follow.await;
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    let (snapshot, replacement_follow) = replacement.expect("subscriber slot must be released");
+    assert!(matches!(
+        snapshot.kind,
+        LiveOutputEventKind::Snapshot { ref text, .. } if text == "retained preview"
+    ));
+    assert_eq!(snapshot.stream_id, first_snapshot.stream_id);
+    replacement_follow.abort();
+    let _ = replacement_follow.await;
+
+    shutdown_tx.send(()).unwrap();
+    server_task.await.unwrap().unwrap();
 }
