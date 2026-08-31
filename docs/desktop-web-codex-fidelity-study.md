@@ -122,9 +122,11 @@ than a general “more polished” direction:
 
 | Surface | Reference evidence | Rejected Garive baseline | Required shared behavior |
 |---|---|---|---|
+| window/file chrome | 34 px unified window/tab row, 30 px location row, first document heading at y≈69 | 42 px window row + 38 px location row + 28 px inset placed the first heading at y=108 | 34 px window row, 30 px location row, 4 px document inset and left-aligned 46 rem measure |
+| rail hierarchy | one selected task under compact global routes | Work and its current task selected together; Agents/Memory isolated beneath a generic Library label | one selected route, real global destinations together, durable tasks below |
 | narrow thread title | one line in the split pane | wrapped to three lines | preserve one-line orientation and elide before status/actions |
 | terminal actions | quiet glyphs at the content edge | wide `Export .md` and `Copy` labels | 30 px icon controls with persistent accessible names |
-| composer | approximately 545 px wide, one-line input start and one circular stop action | 490 px wide, two-line empty input, duplicate text stop plus spinner and a visible disclaimer | 40 rem measure, one-row start, 32 px actions and one truthful stop control |
+| composer | approximately 545 px wide, one-line input start and one circular stop action | 490 px wide, two-line empty input, duplicate text stop plus spinner and a visible disclaimer | 39 rem / 546 px measure at the 14 px root, one-row start, 32 px actions and one truthful stop control |
 | fenced output | bounded code card with a language header and copy action | undifferentiated bordered `pre` block | labeled code workbench, exact-source copy and persistent accessible feedback |
 | split workbench geometry | conversation, Composer and file divider share one bounded column; document starts 24 px after its edge | 352 px grid column whose child painted at 586 px, sending the 538 px Composer 210 px beneath the file surface; document added a second centered 40 px inset | explicit zero-min grid track, clipped conversation surface, 352 px default/320–520 px persisted separator and one 24 px document inset |
 | Environment | named floating surface | Activity/Artifacts tabs inside a small card | one Environment heading and a dismiss action; evidence rows only |
@@ -142,7 +144,7 @@ This gate passes only when both Desktop and Web show:
 - neutral layered surfaces with no decorative gradient;
 - a 240–275 px comfortable rail, 30–36 px rows and quiet selected surfaces;
 - a 46 px title bar with one-line orientation and low-chrome actions;
-- a 40 rem default reading measure and clear user/agent turn rhythm;
+- a 39 rem reference reading measure and clear user/agent turn rhythm;
 - an elevated compact composer with a 14 px input and 36 px actions;
 - semantic navigation groups in sentence case;
 - Environment as a compact dismissible overlay and artifacts/files as a true

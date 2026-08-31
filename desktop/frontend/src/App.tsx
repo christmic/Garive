@@ -590,17 +590,24 @@ export function App({ client = "desktop", webCapabilities, createProductPort,
           <Icon name="plus" /><span>{t("nav.newWork")}</span><kbd>⌘N</kbd>
         </button>
         <nav className="nav-stack">
-          <NavItem icon="work" label={t("nav.work")} selected={screen === "work"} onClick={() => setScreen("work")} />
+          <NavItem icon="work" label={t("nav.work")}
+            selected={screen === "work" && state.messages.length === 0}
+            onClick={() => setScreen("work")} />
           <NavItem icon="search" label={t("nav.search")} selected={screen === "search"}
             disabled={!state.capabilities?.durable_navigation} hint={t("shell.searchHint")}
             onClick={() => setScreen("search")} />
+          <NavItem icon="agent" label={t("nav.agents")} selected={screen === "agents"}
+            onClick={() => setScreen("agents")} />
+          <NavItem icon="memory" label={t("shell.memory")} disabled
+            hint={t("shell.requiresMemory")} soon={t("shell.soon")} />
         </nav>
         <div className="sidebar-section">
           <div className="section-label"><span>{t("nav.recents")}</span>{taskSummary.attention > 0
             ? <span className="attention-count" aria-label={`${taskSummary.attention} ${t("tasks.attention")}`}>{taskSummary.attention}</span>
             : !state.capabilities?.durable_navigation && <span className="beta-tag">{t("shell.live")}</span>}</div>
           {orderedRecents.length > 0 ? orderedRecents.slice(0, 6).map((recent) => (
-            <button className={recent.session_id === state.sessionId ? "recent-item selected" : "recent-item"}
+            <button className={screen === "work" && state.messages.length > 0
+              && recent.session_id === state.sessionId ? "recent-item selected" : "recent-item"}
               type="button" key={recent.session_id} onClick={() => void openRecent(recent.session_id)}>
               <span>{recent.session_id === state.sessionId && state.messages.length ? title : recentTitles[recent.session_id] || recentLabel(recent)}</span>
               <small><TaskStateDot task={recent} />{taskStateCopy(recent, t)}</small>
@@ -611,11 +618,6 @@ export function App({ client = "desktop", webCapabilities, createProductPort,
                 : terminalCopy(state.messages.at(-1)?.terminal, t)}</small>
             </button>
           ) : <p className="sidebar-empty">{t("shell.recentsEmpty")}</p>}
-        </div>
-        <div className="sidebar-section library">
-          <div className="section-label">{t("nav.library")}</div>
-          <NavItem icon="agent" label={t("nav.agents")} selected={screen === "agents"} onClick={() => setScreen("agents")} />
-          <NavItem icon="memory" label={t("shell.memory")} disabled hint={t("shell.requiresMemory")} soon={t("shell.soon")} />
         </div>
         <div className="sidebar-footer">
           <NavItem icon="settings" label={t("nav.settings")} selected={screen === "settings"} onClick={() => setScreen("settings")} />

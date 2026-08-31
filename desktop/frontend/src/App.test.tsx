@@ -179,6 +179,11 @@ describe("Desktop product experience", () => {
     expect(composer.getAttribute("aria-describedby")).toBe("composer-commit-note");
     expect(screen.getByRole("button", { name: "Add context" }).textContent).toBe("");
     expect(document.querySelector("#composer-commit-note")?.classList.contains("sr-only")).toBe(true);
+    expect(view.container.querySelectorAll(".nav-item.selected, .recent-item.selected")).toHaveLength(1);
+    expect(view.container.querySelector(".nav-item.selected")?.textContent).toContain("Work");
+    expect(view.container.querySelector(".nav-stack")?.textContent).toContain("Agents");
+    expect(view.container.querySelector(".nav-stack")?.textContent).toContain("Memory");
+    expect(view.container.querySelector(".sidebar-section.library")).toBeNull();
   });
 
   it("collapses and restores the native navigation without discarding work", async () => {
@@ -226,6 +231,8 @@ describe("Desktop product experience", () => {
     fireEvent.click(screen.getByRole("button", { name: "Send work" }));
 
     fireEvent.click(await screen.findByRole("button", { name: "Open deliverables" }));
+    expect(view.container.querySelectorAll(".nav-item.selected, .recent-item.selected")).toHaveLength(1);
+    expect(view.container.querySelector(".recent-item.selected")).not.toBeNull();
     expect(await screen.findByRole("heading", { name: "Deliverables" })).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Preview" }));
     expect(await screen.findByRole("tab", { name: "memo.md" })).toBeTruthy();
