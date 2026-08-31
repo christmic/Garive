@@ -1,17 +1,17 @@
 ---
 source: tui/tests/view_snapshots.rs
+assertion_line: 96
 expression: "frame(&help, Theme::Dark, 100, 24)"
 ---
   GARIVE  research-age  /  Session session-alph                               ● online  ·  running
 
  Sessions 2                │ Conversation · ● live
                            │  ╭─ YOU #2
- ▌ research-age · 123456   │  │  Summarize the release plan.
-   ✓ completed╭ Keyboard guide ──────────────────────────────────────────────────────╮
-              │                                                                      │
-   research-ag│    Enter send   Ctrl+J new line                                      │
-   ● running  │    Ctrl+N new Session   Ctrl+S open Sessions                         │
-              │    Ctrl+P open commands   Ctrl+R open prompt history                 │
+ ▌ research-  ╭ Keyboard guide ──────────────────────────────────────────────────────╮
+   ✓ complet  │                                                                      │
+              │    Enter send   Ctrl+J new line                                      │
+   research-  │    Ctrl+N new Session   Ctrl+S open Sessions                         │
+   ● running  │    Ctrl+P open commands   Ctrl+R open prompt history                 │
               │    Esc cancel the running Turn   Ctrl+Q ask to quit                  │
               │                                                                      │
               │  Durable truth comes from the local Garive Host.                     │
@@ -20,6 +20,7 @@ expression: "frame(&help, Theme::Dark, 100, 24)"
               │  manually.                                                           │
               │                                                                      │
               ╰──────────────────────────────────────────────────────────────────────╯
+                           │
                            │
                            │────────────────────────────────────────────────────────────────────────
                            │╔ Compose ═════════════════════════════════════════════════════════════╗

@@ -2,7 +2,7 @@ use ratatui::{
     buffer::Buffer,
     layout::Rect,
     text::{Line, Span, Text},
-    widgets::{Block, BorderType, Borders, Clear, Padding, Paragraph, Widget, Wrap},
+    widgets::{Block, BorderType, Borders, Clear, Paragraph, Widget, Wrap},
 };
 
 use crate::{
@@ -14,7 +14,7 @@ use crate::{
 use super::{
     palette,
     presentation::{action_overlay_copy, suspension_copy, HELP_HINTS, HELP_NOTES},
-    primitives::key_hints,
+    primitives::{key_hints, truncate_display},
     safe_text,
     session::picker_line,
     style::Palette,
@@ -22,7 +22,7 @@ use super::{
 
 pub(super) mod geometry;
 
-use geometry::overlay_geometry;
+use geometry::{overlay_geometry, overlay_padding};
 
 struct OverlaySpec {
     title: String,
@@ -38,16 +38,25 @@ pub(super) fn render_overlay(
 ) {
     let colors = palette(theme);
     let geometry = overlay_geometry(model, overlay, area);
-    let spec = overlay_spec(model, overlay, colors, geometry.window);
+    let spec = overlay_spec(
+        model,
+        overlay,
+        colors,
+        geometry.window,
+        geometry.inner.width,
+    );
     let popup = geometry.popup;
     buffer.set_style(area, colors.modal_backdrop);
+    let halo = modal_halo(popup, area);
+    Clear.render(halo, buffer);
+    buffer.set_style(halo, colors.modal_backdrop);
     Clear.render(popup, buffer);
     let block = Block::default()
         .title(Line::styled(spec.title, colors.title))
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
         .border_style(colors.overlay_border)
-        .padding(Padding::new(2, 2, 1, 1));
+        .padding(overlay_padding(overlay));
     let inner = geometry.inner;
     Paragraph::new(spec.content)
         .block(block)
@@ -64,16 +73,28 @@ pub(super) fn render_overlay(
     }
 }
 
+fn modal_halo(popup: Rect, area: Rect) -> Rect {
+    let x = popup.x.saturating_sub(2).max(area.x);
+    let right = popup.right().saturating_add(2).min(area.right());
+    Rect::new(
+        x,
+        popup.y.max(area.y),
+        right.saturating_sub(x),
+        popup.bottom().min(area.bottom()).saturating_sub(popup.y),
+    )
+}
+
 fn overlay_spec(
     model: &AppModel,
     overlay: Overlay,
     colors: Palette,
     window: Option<(usize, usize)>,
+    content_width: u16,
 ) -> OverlaySpec {
     match overlay {
         Overlay::CommandPalette => OverlaySpec {
             title: " Command palette ".into(),
-            content: palette_text(model, colors, window.unwrap_or((0, 0))),
+            content: palette_text(model, colors, window.unwrap_or((0, 0)), content_width),
         },
         Overlay::Help => OverlaySpec {
             title: " Keyboard guide ".into(),
@@ -196,7 +217,12 @@ fn history_text(model: &AppModel, colors: Palette, (start, end): (usize, usize))
     Text::from(rows)
 }
 
-fn palette_text(model: &AppModel, colors: Palette, (start, end): (usize, usize)) -> Text<'static> {
+fn palette_text(
+    model: &AppModel,
+    colors: Palette,
+    (start, end): (usize, usize),
+    content_width: u16,
+) -> Text<'static> {
     let mut rows = vec![search_line("Search", &model.command_filter, colors)];
     let matches = model.matching_command_indices();
     rows.extend(
@@ -210,14 +236,24 @@ fn palette_text(model: &AppModel, colors: Palette, (start, end): (usize, usize))
                 } else {
                     " "
                 };
-                let disabled = command
+                let reason = command
                     .unavailable_reason(model.command_context())
-                    .map_or_else(String::new, |reason| format!("  · {reason}"));
+                    .map(|reason| format!("unavailable · {reason}"));
+                let detail = truncate_display(
+                    reason.as_deref().unwrap_or(command.help),
+                    usize::from(content_width).saturating_sub(20),
+                );
                 Line::from(vec![
                     Span::styled(format!("{marker} "), colors.selected),
-                    Span::styled(format!("{:<12} ", command.input), colors.accent),
-                    Span::styled(command.help.to_owned(), colors.normal),
-                    Span::styled(disabled, colors.muted),
+                    Span::styled(format!("{:<18}", command.input), colors.accent),
+                    Span::styled(
+                        detail,
+                        if reason.is_some() {
+                            colors.warning
+                        } else {
+                            colors.normal
+                        },
+                    ),
                 ])
             })
             .collect::<Vec<_>>(),
@@ -225,7 +261,6 @@ fn palette_text(model: &AppModel, colors: Palette, (start, end): (usize, usize))
     if rows.len() == 1 {
         rows.push(Line::styled("  No matching commands", colors.muted));
     }
-    rows.push(Line::default());
     rows.push(key_hints(
         &[("↑/↓", "select"), ("Enter", "run"), ("Esc", "close")],
         colors,

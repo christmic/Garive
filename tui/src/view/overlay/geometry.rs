@@ -25,22 +25,59 @@ pub(super) fn overlay_geometry(model: &AppModel, overlay: Overlay, area: Rect) -
     let desired_width = desired_width(overlay);
     let popup_width = desired_width.min(area.width.saturating_sub(4));
     let desired_height = desired_height(model, overlay, popup_width);
+    let modal_area = modal_area(area);
     let popup = centered_popup(
-        area,
+        modal_area,
         popup_width,
-        desired_height.min(area.height.saturating_sub(2)),
+        desired_height.min(modal_area.height),
     );
     let inner = Block::default()
         .borders(Borders::ALL)
-        .padding(Padding::new(2, 2, 1, 1))
+        .padding(overlay_padding(overlay))
         .inner(popup);
     let window = list_count_and_selection(model, overlay).map(|(count, selected)| {
-        selection_window(count, selected, usize::from(popup.height.saturating_sub(7)))
+        let fixed_rows = if overlay == Overlay::CommandPalette {
+            2
+        } else {
+            3
+        };
+        selection_window(
+            count,
+            selected,
+            usize::from(inner.height.saturating_sub(fixed_rows)),
+        )
     });
     OverlayGeometry {
         popup,
         inner,
         window,
+    }
+}
+
+fn modal_area(area: Rect) -> Rect {
+    let top = if area.height >= 16 { 2 } else { 1 }.min(area.height);
+    let remaining = area.height.saturating_sub(top);
+    let desired_bottom = if area.height >= 20 {
+        5
+    } else if area.height >= 10 {
+        3
+    } else {
+        1
+    };
+    let bottom = desired_bottom.min(remaining.saturating_sub(1));
+    Rect::new(
+        area.x,
+        area.y.saturating_add(top),
+        area.width,
+        remaining.saturating_sub(bottom),
+    )
+}
+
+pub(super) fn overlay_padding(overlay: Overlay) -> Padding {
+    if overlay == Overlay::CommandPalette {
+        Padding::new(2, 2, 0, 1)
+    } else {
+        Padding::new(2, 2, 1, 1)
     }
 }
 
@@ -62,8 +99,8 @@ fn desired_height(model: &AppModel, overlay: Overlay, popup_width: u16) -> u16 {
     match overlay {
         Overlay::CommandPalette => u16::try_from(COMMAND_PALETTE.len())
             .unwrap_or(u16::MAX)
-            .saturating_add(7)
-            .clamp(12, 22),
+            .saturating_add(5)
+            .clamp(10, 21),
         Overlay::Help => 13,
         Overlay::SessionPicker => u16::try_from(model.matching_sessions().count())
             .unwrap_or(u16::MAX)

@@ -4,13 +4,15 @@ use ratatui::{
     text::{Line, Span},
     widgets::{Block, BorderType, Borders, Clear, Padding, Paragraph, Widget},
 };
-use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::UnicodeWidthStr;
 
 use crate::{
     application::AppModel,
     input::COMMAND_PALETTE,
-    view::{primitives::selection_window, style::Palette},
+    view::{
+        primitives::{selection_window, truncate_display},
+        style::Palette,
+    },
 };
 
 const MAX_VISIBLE_ROWS: usize = 5;
@@ -133,28 +135,6 @@ fn inner_area(area: Rect) -> Rect {
         area.width.saturating_sub(4),
         area.height.saturating_sub(2),
     )
-}
-
-fn truncate_display(value: &str, width: usize) -> String {
-    if width == 0 {
-        return String::new();
-    }
-    if UnicodeWidthStr::width(value) <= width {
-        return value.to_owned();
-    }
-    let content_width = width.saturating_sub(1);
-    let mut used = 0;
-    let mut result = String::new();
-    for grapheme in value.graphemes(true) {
-        let grapheme_width = UnicodeWidthStr::width(grapheme);
-        if used + grapheme_width > content_width {
-            break;
-        }
-        result.push_str(grapheme);
-        used += grapheme_width;
-    }
-    result.push('…');
-    result
 }
 
 #[cfg(test)]

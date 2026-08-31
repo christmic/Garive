@@ -3,6 +3,8 @@ use ratatui::{
     style::Style,
     text::{Line, Span},
 };
+use unicode_segmentation::UnicodeSegmentation;
+use unicode_width::UnicodeWidthStr;
 
 use super::style::Palette;
 
@@ -51,4 +53,26 @@ pub(super) fn selection_window(total: usize, selected: usize, capacity: usize) -
         .saturating_sub(capacity)
         .min(total.saturating_sub(capacity));
     (start, (start + capacity).min(total))
+}
+
+pub(super) fn truncate_display(value: &str, width: usize) -> String {
+    if width == 0 {
+        return String::new();
+    }
+    if UnicodeWidthStr::width(value) <= width {
+        return value.to_owned();
+    }
+    let content_width = width.saturating_sub(1);
+    let mut used = 0;
+    let mut result = String::new();
+    for grapheme in value.graphemes(true) {
+        let grapheme_width = UnicodeWidthStr::width(grapheme);
+        if used + grapheme_width > content_width {
+            break;
+        }
+        result.push_str(grapheme);
+        used += grapheme_width;
+    }
+    result.push('…');
+    result
 }

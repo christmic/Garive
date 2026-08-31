@@ -1,5 +1,6 @@
 ---
 source: tui/tests/view_snapshots.rs
+assertion_line: 103
 expression: "frame(&recovery, Theme::Dark, 100, 24)"
 ---
   GARIVE  research-age  /  Session session-alph                               ● online  ·  running
@@ -8,16 +9,16 @@ expression: "frame(&recovery, Theme::Dark, 100, 24)"
                            │  ╭─ YOU #2
  ▌ research-age · 123456   │  │  Summarize the release plan.
    ✓ completed  ·  3 turns │  ╰─
-                           │
-   research-age · 987654   │    ✓  Agent action · completed
-   ● running  ·  1 ╭ Command result unknown ────────────────────────────────────╮
-                   │                                                            │
-                   │  A prior command has an unknown durable outcome. Review    │
+                   ╭ Command result unknown ────────────────────────────────────╮
+   research-age ·  │                                                            │
+   ● running  ·    │  A prior command has an unknown durable outcome. Review    │
                    │  Host truth before retrying.                               │
                    │                                                            │
                    │    Enter exact retry   A abandon local record              │
                    │                                                            │
                    ╰────────────────────────────────────────────────────────────╯
+                           │
+                           │
                            │
                            │
                            │

@@ -246,7 +246,7 @@ mod tests {
             overlay: Some(Overlay::CommandPalette),
             terminal_size: TerminalSize {
                 width: 100,
-                height: 12,
+                height: 24,
             },
             command_selection: 11,
             ..Default::default()
@@ -258,7 +258,7 @@ mod tests {
         assert_eq!(
             route(
                 &model,
-                mouse(MouseEventKind::Down(MouseButton::Left), 50, 6)
+                mouse(MouseEventKind::Down(MouseButton::Left), 50, 15)
             ),
             Some(MouseAction::OverlayActivate(11))
         );
