@@ -335,24 +335,21 @@ fn existing_knowledge_request(
     let snapshot = ledger
         .load_turn(&input.committed.turn_id)
         .map_err(|_| LocalWorkerError::KnowledgePreparationFailed)?;
-    let matches = snapshot
-        .facts
-        .iter()
-        .filter(|fact| {
-            fact.execution_id.as_ref() == Some(&input.committed.execution_id)
-                && fact.kind.as_str() == "knowledge.requested"
-        })
-        .filter_map(|fact| {
-            serde_json::from_str::<serde_json::Value>(fact.payload.as_json())
-                .ok()
-                .filter(|payload| {
-                    payload
-                        .get("request_id")
-                        .and_then(serde_json::Value::as_str)
-                        == Some(request_id)
-                })
-        })
-        .collect::<Vec<_>>();
+    let mut matches = Vec::new();
+    for fact in snapshot.facts.iter().filter(|fact| {
+        fact.execution_id.as_ref() == Some(&input.committed.execution_id)
+            && fact.kind.as_str() == "knowledge.requested"
+    }) {
+        let payload = serde_json::from_str::<serde_json::Value>(fact.payload.as_json())
+            .map_err(|_| LocalWorkerError::KnowledgePreparationFailed)?;
+        if payload
+            .get("request_id")
+            .and_then(serde_json::Value::as_str)
+            == Some(request_id)
+        {
+            matches.push(payload);
+        }
+    }
     let ([] | [_]) = matches.as_slice() else {
         return Err(LocalWorkerError::KnowledgePreparationFailed);
     };
