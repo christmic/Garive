@@ -627,7 +627,8 @@ fn run_expect(
             expect "answer after continuation"
             send "cancel this turn\r"
             expect "Online · Running"
-            send "\003"
+            send "\033"
+            after 100
             expect "cancel this turn"
             set attempts 0
             while {![file exists $env(GARIVE_CANCEL_STOPPED)]} {
