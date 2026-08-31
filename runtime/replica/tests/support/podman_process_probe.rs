@@ -12,7 +12,7 @@ fn main() {
         .try_into()
         .expect("usage: probe MODE PODMAN SOCKET IMAGE WORKSPACE RECOVERY");
     let backend = PodmanProcessBackend::new(
-        PodmanProcessConfig::new(podman, socket, image, workspace, recovery).unwrap(),
+        PodmanProcessConfig::new(podman, socket, image, workspace, recovery, 5_000).unwrap(),
     );
     if mode == "recover-long" {
         recover_twice(&backend, "crash");

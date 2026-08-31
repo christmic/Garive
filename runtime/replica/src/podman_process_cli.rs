@@ -18,6 +18,7 @@ const POLL_INTERVAL: Duration = Duration::from_millis(10);
 pub(crate) struct PodmanCli<'a> {
     executable: &'a Path,
     socket_uri: &'a str,
+    control_timeout: Duration,
 }
 
 pub(crate) struct CommandOutput {
@@ -33,26 +34,28 @@ pub(crate) enum AttachCompletion {
 }
 
 impl<'a> PodmanCli<'a> {
-    pub(crate) const fn new(executable: &'a Path, socket_uri: &'a str) -> Self {
+    pub(crate) const fn new(
+        executable: &'a Path,
+        socket_uri: &'a str,
+        control_timeout: Duration,
+    ) -> Self {
         Self {
             executable,
             socket_uri,
+            control_timeout,
         }
     }
 
     pub(crate) fn output(&self, arguments: &[String]) -> Result<CommandOutput, ()> {
-        let mut command = self.command();
-        command.args(arguments);
-        let output = command.output().map_err(|_| ())?;
-        let mut remaining = CONTROL_OUTPUT_BOUND;
-        let stdout = take_bounded(output.stdout, &mut remaining);
-        let stderr = take_bounded(output.stderr, &mut remaining);
-        Ok(CommandOutput {
-            status: output.status,
-            truncated: stdout.1 || stderr.1,
-            stdout: stdout.0,
-            stderr: stderr.0,
-        })
+        match self.attach(
+            arguments,
+            CONTROL_OUTPUT_BOUND,
+            self.control_timeout,
+            || Ok(()),
+        )? {
+            AttachCompletion::Exited(output) => Ok(output),
+            AttachCompletion::TimedOut(_) => Err(()),
+        }
     }
 
     pub(crate) fn attach(
@@ -94,6 +97,7 @@ impl<'a> PodmanCli<'a> {
                     let _ = stderr.join();
                     return Err(());
                 }
+                child.kill().map_err(|_| ())?;
                 break (child.wait().map_err(|_| ())?, true);
             }
             thread::sleep(POLL_INTERVAL);
@@ -151,10 +155,21 @@ fn drain(
     })
 }
 
-fn take_bounded(mut bytes: Vec<u8>, remaining: &mut usize) -> (Vec<u8>, bool) {
-    let admitted = bytes.len().min(*remaining);
-    let truncated = admitted < bytes.len();
-    bytes.truncate(admitted);
-    *remaining -= admitted;
-    (bytes, truncated)
+#[cfg(test)]
+mod tests {
+    use std::{path::Path, time::Duration};
+
+    use super::PodmanCli;
+
+    #[test]
+    fn control_timeout_kills_a_flooding_cli_without_pipe_deadlock() {
+        let cli = PodmanCli::new(
+            Path::new("/usr/bin/yes"),
+            "unix:///ignored",
+            Duration::from_millis(20),
+        );
+        let started = std::time::Instant::now();
+        assert!(cli.output(&[]).is_err());
+        assert!(started.elapsed() < Duration::from_secs(2));
+    }
 }

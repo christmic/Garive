@@ -266,10 +266,14 @@ reconciliation.
 The first production backend uses an explicitly constructed Podman boundary.
 Runtime supplies an absolute Podman executable, an explicit Unix socket URI, a
 lowercase digest-pinned image reference, canonical workspace/recovery roots
-and all limits. The backend never reads Podman defaults or process environment,
-never pulls an image, and launches the configured executable directly without
-a shell. Preflight proves the service and exact local image are available and
-rejects a working-directory symlink that resolves outside the workspace.
+and all limits, including a non-zero bounded control-command timeout. The
+backend never reads Podman defaults or process environment, never pulls an
+image, and launches the configured executable directly without a shell. Every
+create/inspect/kill/remove/preflight CLI has bounded aggregate output and wall
+time; timeout kills that CLI and yields unavailable/uncertain state instead of
+blocking Runtime startup. Preflight proves the service and exact local image
+are available and rejects a working-directory symlink that resolves outside
+the workspace.
 
 Each dispatch owns a deterministic, content-free container name and ownership
 label derived from invocation plus dispatch attempt. The container has no

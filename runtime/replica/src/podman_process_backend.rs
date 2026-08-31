@@ -28,6 +28,7 @@ pub struct PodmanProcessConfig {
     image: String,
     workspace_root: PathBuf,
     recovery_root: PathBuf,
+    control_timeout_ms: u64,
 }
 
 /// Concrete process boundary backed by an explicitly selected Podman service.
@@ -42,7 +43,11 @@ impl PodmanProcessBackend {
     }
 
     fn cli(&self) -> PodmanCli<'_> {
-        PodmanCli::new(&self.config.podman_executable, &self.config.socket_uri)
+        PodmanCli::new(
+            &self.config.podman_executable,
+            &self.config.socket_uri,
+            Duration::from_millis(self.config.control_timeout_ms),
+        )
     }
 
     fn name(&self, invocation: &ToolInvocationId, attempt: &str) -> String {
@@ -386,6 +391,7 @@ impl PodmanProcessConfig {
         image: impl Into<String>,
         workspace_root: impl Into<PathBuf>,
         recovery_root: impl Into<PathBuf>,
+        control_timeout_ms: u64,
     ) -> Result<Self, String> {
         let value = Self {
             podman_executable: podman_executable.into(),
@@ -393,6 +399,7 @@ impl PodmanProcessConfig {
             image: image.into(),
             workspace_root: canonical_directory(workspace_root.into())?,
             recovery_root: canonical_private_directory(recovery_root.into())?,
+            control_timeout_ms,
         };
         if !value.podman_executable.is_absolute()
             || !value.socket_uri.starts_with("unix:///")
@@ -403,6 +410,8 @@ impl PodmanProcessConfig {
                 .to_str()
                 .is_none_or(|path| path.contains(','))
             || value.recovery_root.to_str().is_none()
+            || value.control_timeout_ms == 0
+            || value.control_timeout_ms > 30_000
         {
             return Err("invalid Podman process configuration".into());
         }
@@ -432,6 +441,11 @@ impl PodmanProcessConfig {
     /// Returns the canonical Runtime-private recovery root.
     pub fn recovery_root(&self) -> &Path {
         &self.recovery_root
+    }
+
+    /// Returns the explicit bound applied to every Podman control command.
+    pub const fn control_timeout_ms(&self) -> u64 {
+        self.control_timeout_ms
     }
 }
 
@@ -506,6 +520,7 @@ mod tests {
             IMAGE,
             &workspace,
             &recovery,
+            5_000,
         )
         .unwrap();
         assert_eq!(config.podman_executable(), Path::new("/opt/podman"));
@@ -519,6 +534,16 @@ mod tests {
             "docker.io/library/alpine:latest",
             temporary.path(),
             recovery,
+            5_000,
+        )
+        .is_err());
+        assert!(PodmanProcessConfig::new(
+            "/opt/podman",
+            "unix:///private/tmp/podman.sock",
+            IMAGE,
+            temporary.path(),
+            temporary.path().join("recovery-timeout"),
+            0,
         )
         .is_err());
         assert!(PodmanProcessConfig::new(
@@ -527,6 +552,7 @@ mod tests {
             IMAGE.to_uppercase(),
             temporary.path(),
             temporary.path().join("recovery-uppercase"),
+            5_000,
         )
         .is_err());
     }
