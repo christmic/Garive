@@ -69,6 +69,9 @@ async fn typed_client_binds_version_target_session_and_bounded_ax_tree() {
         )
         .await;
         assert_eq!(frames["method"], "Page.getFrameTree");
+        let owner = reply(&mut socket, json!({"backendNodeId":84})).await;
+        assert_eq!(owner["method"], "DOM.getFrameOwner");
+        assert_eq!(owner["params"]["frameId"], "frame-2");
         let history = reply(
             &mut socket,
             json!({"currentIndex":1,"entries":[
@@ -112,6 +115,13 @@ async fn typed_client_binds_version_target_session_and_bounded_ax_tree() {
     assert_eq!(frames.frames.len(), 3);
     assert_eq!(frames.frames[1].parent_id.as_deref(), Some("frame-1"));
     assert_eq!(frames.frames[2].security_origin, "https://other.test:443");
+    assert_eq!(
+        client
+            .frame_owner_backend_node(&session, "frame-2")
+            .await
+            .expect("frame owner"),
+        84
+    );
     let history = client
         .current_history_entry(&session)
         .await

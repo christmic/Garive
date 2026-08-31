@@ -427,6 +427,29 @@ impl CdpClient {
         parse_frame_tree(&result)
     }
 
+    /// Resolves one exact child frame to its embedding backend DOM node.
+    pub async fn frame_owner_backend_node(
+        &mut self,
+        session_id: &str,
+        frame_id: &str,
+    ) -> Result<u64, CdpTransportError> {
+        validate_id(session_id)?;
+        validate_id(frame_id)?;
+        let result = self
+            .transport
+            .call(
+                "DOM.getFrameOwner",
+                json!({"frameId":frame_id}),
+                Some(session_id.into()),
+            )
+            .await?;
+        result
+            .get("backendNodeId")
+            .and_then(Value::as_u64)
+            .filter(|identity| *identity > 0)
+            .ok_or_else(protocol)
+    }
+
     /// Moves to one exact history entry and proves it became current.
     pub async fn navigate_to_history_entry(
         &mut self,
