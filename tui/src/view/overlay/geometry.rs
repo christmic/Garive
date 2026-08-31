@@ -101,7 +101,7 @@ fn desired_height(model: &AppModel, overlay: Overlay, popup_width: u16) -> u16 {
             .unwrap_or(u16::MAX)
             .saturating_add(5)
             .clamp(10, 21),
-        Overlay::Help => 13,
+        Overlay::Help => 14,
         Overlay::SessionPicker => u16::try_from(model.matching_sessions().count())
             .unwrap_or(u16::MAX)
             .saturating_add(7)

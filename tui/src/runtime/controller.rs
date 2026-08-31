@@ -114,7 +114,21 @@ fn handle_key_inner(key: KeyEvent, state: &mut RuntimeState) {
                 if state.composer_is_frozen() {
                     state.explain_frozen_composer();
                 } else {
-                    state.model.composer.redo();
+                    let _ = state.model.composer.yank();
+                }
+            }
+            KeyCode::Char('u') => {
+                if state.composer_is_frozen() {
+                    state.explain_frozen_composer();
+                } else {
+                    state.model.composer.kill_to_logical_line_start();
+                }
+            }
+            KeyCode::Char('k') => {
+                if state.composer_is_frozen() {
+                    state.explain_frozen_composer();
+                } else {
+                    state.model.composer.kill_to_logical_line_end();
                 }
             }
             _ => {}
@@ -123,6 +137,14 @@ fn handle_key_inner(key: KeyEvent, state: &mut RuntimeState) {
     }
     if key.modifiers.contains(KeyModifiers::ALT) && key.code == KeyCode::Char('c') {
         copy_composer_selection(state, false);
+        return;
+    }
+    if key.modifiers.contains(KeyModifiers::ALT) && key.code == KeyCode::Char('z') {
+        if state.composer_is_frozen() {
+            state.explain_frozen_composer();
+        } else {
+            state.model.composer.redo();
+        }
         return;
     }
     if handle_command_suggestion_key(key, state) {

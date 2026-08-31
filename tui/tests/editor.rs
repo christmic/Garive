@@ -166,3 +166,50 @@ fn multi_click_selection_uses_unicode_word_classes_and_logical_lines() {
     assert!(editor.select_logical_line_at(3));
     assert_eq!(editor.selected_byte_range(), Some((0, 13)));
 }
+
+#[test]
+fn logical_line_kill_and_yank_are_grapheme_safe_and_separate_from_undo() {
+    let mut editor = EditorState::new(128);
+    editor.replace("one 界\ntwo").unwrap();
+    editor.place_cursor(5, false);
+
+    assert!(editor.kill_to_logical_line_end());
+    assert_eq!(editor.text(), "one 界two");
+    assert!(editor.yank().unwrap());
+    assert_eq!(editor.text(), "one 界\ntwo");
+    assert!(editor.undo());
+    assert_eq!(editor.text(), "one 界two");
+    assert!(editor.yank().unwrap());
+    assert_eq!(editor.text(), "one 界\ntwo");
+
+    editor.place_cursor(6, false);
+    assert!(editor.kill_to_logical_line_start());
+    assert_eq!(editor.text(), "one 界two");
+    assert!(editor.yank().unwrap());
+    assert_eq!(editor.text(), "one 界\ntwo");
+
+    editor.move_document_end(false);
+    assert!(editor.kill_to_logical_line_start());
+    assert_eq!(editor.text(), "one 界\n");
+    assert!(editor.yank().unwrap());
+    assert_eq!(editor.text(), "one 界\ntwo");
+}
+
+#[test]
+fn selection_kill_yank_and_session_privacy_boundary_are_exact() {
+    let mut editor = EditorState::new(128);
+    editor.replace("alpha 界 beta").unwrap();
+    editor.move_left(true);
+    editor.move_left(true);
+    editor.move_left(true);
+    editor.move_left(true);
+
+    assert!(editor.kill_to_logical_line_end());
+    assert_eq!(editor.text(), "alpha 界 ");
+    assert!(editor.yank().unwrap());
+    assert_eq!(editor.text(), "alpha 界 beta");
+
+    editor.clear_private_edit_buffer();
+    assert!(!editor.yank().unwrap());
+    assert_eq!(editor.text(), "alpha 界 beta");
+}

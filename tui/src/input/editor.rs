@@ -1,5 +1,10 @@
 use unicode_segmentation::UnicodeSegmentation;
 
+#[path = "kill_buffer.rs"]
+mod kill_buffer;
+
+use kill_buffer::KillBuffer;
+
 const MAX_UNDO_OPERATIONS: usize = 100;
 const MAX_UNDO_BYTES: usize = 256 * 1_024;
 
@@ -21,6 +26,7 @@ pub(crate) struct EditorState {
     cursor_grapheme: usize,
     selection_anchor: Option<usize>,
     preferred_display_column: Option<usize>,
+    kill_buffer: KillBuffer,
     undo: Vec<Snapshot>,
     redo: Vec<Snapshot>,
     max_bytes: usize,
@@ -45,6 +51,7 @@ impl EditorState {
             cursor_grapheme: 0,
             selection_anchor: None,
             preferred_display_column: None,
+            kill_buffer: KillBuffer::default(),
             undo: Vec::new(),
             redo: Vec::new(),
             max_bytes,

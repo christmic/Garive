@@ -51,6 +51,16 @@ pub(crate) const HELP_HINTS: &[InteractionHint] = &[
         action: "open prompt history",
     },
     InteractionHint {
+        visual_key: "Ctrl+U/K",
+        spoken_key: "Control U or Control K",
+        action: "kill to line edge",
+    },
+    InteractionHint {
+        visual_key: "Ctrl+Y",
+        spoken_key: "Control Y",
+        action: "yank killed text",
+    },
+    InteractionHint {
         visual_key: "Esc",
         spoken_key: "Escape",
         action: "cancel the running Turn",
