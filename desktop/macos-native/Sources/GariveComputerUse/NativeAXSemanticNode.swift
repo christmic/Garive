@@ -6,6 +6,8 @@ public struct NativeAXSemanticNode: Equatable, Sendable {
         case press
         /// Replace the node's native value.
         case setValue = "set_value"
+        /// Insert native keyboard text into an exact focused text node.
+        case typeText = "type_text"
     }
 
     /// Sensitivity attached to an exposed or redacted value.

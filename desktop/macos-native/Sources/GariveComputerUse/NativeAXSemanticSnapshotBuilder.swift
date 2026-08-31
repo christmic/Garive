@@ -1,4 +1,5 @@
 private let secureTextFieldSubrole = "AXSecureTextField"
+private let nativeTextRoles: Set<String> = ["AXTextArea", "AXTextField"]
 
 enum NativeAXSemanticSnapshotBuilder {
     final class Element {
@@ -101,6 +102,9 @@ enum NativeAXSemanticSnapshotBuilder {
             var actions: [NativeAXSemanticNode.SupportedAction] = []
             if element.pressSupported { actions.append(.press) }
             if element.valueSettable, !secure { actions.append(.setValue) }
+            if element.valueSettable, !secure, nativeTextRoles.contains(element.role) {
+                actions.append(.typeText)
+            }
             nodes.append(NativeAXSemanticNode(
                 nodeIndex: nodeIndex,
                 parentIndex: item.parentIndex,

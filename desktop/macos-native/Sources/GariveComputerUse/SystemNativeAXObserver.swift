@@ -3,12 +3,14 @@ import ApplicationServices
 /// Prompt-free native Accessibility window enumeration and observation.
 public final class SystemNativeAXObserver {
     private let access: any NativeAXAccessing
+    private let keyboard: any NativeKeyboardDispatching
     private let permissionState: () -> NativePermissionState
     private let isCurrent: (NativeApplicationInstanceIdentity) throws -> Bool
 
     /// Creates an observer bound to one explicit application signing policy.
     public init(applicationVerifier: NativeApplicationIdentityVerifier) {
         access = SystemNativeAXAccess()
+        keyboard = SystemNativeKeyboardDispatcher()
         permissionState = {
             SystemNativePermissionInspector().inspect().accessibility
         }
@@ -17,10 +19,12 @@ public final class SystemNativeAXObserver {
 
     init(
         access: any NativeAXAccessing,
+        keyboard: any NativeKeyboardDispatching = SystemNativeKeyboardDispatcher(),
         permissionState: @escaping () -> NativePermissionState,
         isCurrent: @escaping (NativeApplicationInstanceIdentity) throws -> Bool
     ) {
         self.access = access
+        self.keyboard = keyboard
         self.permissionState = permissionState
         self.isCurrent = isCurrent
     }
@@ -76,7 +80,31 @@ public final class SystemNativeAXObserver {
         observation: NativeAXObservationBinding
     ) throws -> NativeAXObservationBinding {
         let nodeIndex = try validate(action: action, observation: observation)
-        let fresh = try revalidateForAction(observation, nodeIndex: nodeIndex)
+        let usesKeyboard: Bool
+        switch action {
+        case .typeText, .pressKey: usesKeyboard = true
+        case .press, .setValue: usesKeyboard = false
+        }
+        let fresh = try revalidateForAction(
+            observation,
+            nodeIndex: nodeIndex,
+            requireFocusedWindow: usesKeyboard
+        )
+        let keyboardDispatch: (() -> Void)?
+        switch action {
+        case let .typeText(_, text):
+            keyboardDispatch = try keyboard.prepareTypeText(
+                text,
+                processIdentifier: observation.window.applicationIdentity.processIdentifier
+            )
+        case let .pressKey(key):
+            keyboardDispatch = try keyboard.preparePressKey(
+                key,
+                processIdentifier: observation.window.applicationIdentity.processIdentifier
+            )
+        case .press, .setValue:
+            keyboardDispatch = nil
+        }
         guard observation.consume() else {
             throw NativeAXActionFailure.snapshotStale
         }
@@ -85,6 +113,8 @@ public final class SystemNativeAXObserver {
             try access.performPress(on: fresh)
         case let .setValue(_, value):
             try access.setValue(value, on: fresh)
+        case .typeText, .pressKey:
+            keyboardDispatch?()
         }
         do {
             return try observe(window: observation.window, bounds: observation.bounds)
@@ -129,7 +159,7 @@ public final class SystemNativeAXObserver {
             throw NativeAXActionFailure.targetChanged
         }
         let nodeIndex: Int
-        let requiredAction: NativeAXSemanticNode.SupportedAction
+        let requiredAction: NativeAXSemanticNode.SupportedAction?
         switch action {
         case let .press(index):
             nodeIndex = index
@@ -142,6 +172,21 @@ public final class SystemNativeAXObserver {
             }
             nodeIndex = index
             requiredAction = .setValue
+        case let .typeText(index, text):
+            guard !text.isEmpty,
+                  text.unicodeScalars.count <= 32_768,
+                  text.utf8.count <= 131_072
+            else {
+                throw NativeAXActionFailure.invalidAction
+            }
+            nodeIndex = index
+            requiredAction = .typeText
+        case .pressKey:
+            guard let focusedNodeIndex = observation.snapshot.focusedNodeIndex else {
+                throw NativeAXActionFailure.focusChanged
+            }
+            nodeIndex = focusedNodeIndex
+            requiredAction = nil
         }
         guard observation.snapshot.nodes.indices.contains(nodeIndex),
               observation.elements.indices.contains(nodeIndex)
@@ -152,7 +197,13 @@ public final class SystemNativeAXObserver {
         if case .setValue = action, node.valueSensitivity == .protected {
             throw NativeAXActionFailure.sensitiveActionRequired
         }
-        guard node.supportedActions.contains(requiredAction) else {
+        if case .typeText = action, node.valueSensitivity == .protected {
+            throw NativeAXActionFailure.sensitiveActionRequired
+        }
+        if case .typeText = action, node.focused != true {
+            throw NativeAXActionFailure.focusChanged
+        }
+        guard requiredAction.map(node.supportedActions.contains) ?? true else {
             throw NativeAXActionFailure.actionUnsupported
         }
         return nodeIndex
@@ -160,7 +211,8 @@ public final class SystemNativeAXObserver {
 
     private func revalidateForAction(
         _ observation: NativeAXObservationBinding,
-        nodeIndex: Int
+        nodeIndex: Int,
+        requireFocusedWindow: Bool
     ) throws -> AXUIElement {
         guard permissionState() == .granted else {
             throw NativeAXActionFailure.permissionRevoked
@@ -168,6 +220,9 @@ public final class SystemNativeAXObserver {
         do {
             try requireCurrent(observation.window.applicationIdentity)
             try requireWindow(observation.window)
+            if requireFocusedWindow {
+                try requireKeyboardFocus(observation.window)
+            }
             let read = try access.semanticElement(
                 root: observation.window.element,
                 bounds: observation.bounds
@@ -191,6 +246,9 @@ public final class SystemNativeAXObserver {
             }
             try requireCurrent(observation.window.applicationIdentity)
             try requireWindow(observation.window)
+            if requireFocusedWindow {
+                try requireKeyboardFocus(observation.window)
+            }
             return read.elements[nodeIndex]
         } catch let failure as NativeAXActionFailure {
             throw failure
@@ -204,6 +262,20 @@ public final class SystemNativeAXObserver {
             throw NativeAXActionFailure.snapshotStale
         } catch {
             throw NativeAXActionFailure.targetChanged
+        }
+    }
+
+    private func requireKeyboardFocus(_ binding: NativeAXWindowBinding) throws {
+        guard try access.isFrontmostApplication(
+            processIdentifier: binding.applicationIdentity.processIdentifier
+        ) else {
+            throw NativeAXActionFailure.focusChanged
+        }
+        let focused = try access.focusedWindow(
+            processIdentifier: binding.applicationIdentity.processIdentifier
+        )
+        guard let focused, access.isSameElement(focused, binding.element) else {
+            throw NativeAXActionFailure.focusChanged
         }
     }
 }

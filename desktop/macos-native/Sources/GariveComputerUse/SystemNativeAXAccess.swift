@@ -7,6 +7,22 @@ final class SystemNativeAXAccess: NativeAXAccessing {
         return try elements(attribute: kAXWindowsAttribute, of: application)
     }
 
+    func focusedWindow(processIdentifier: Int32) throws -> AXUIElement? {
+        let application = AXUIElementCreateApplication(processIdentifier)
+        guard let result = try value(attribute: kAXFocusedWindowAttribute, of: application) else {
+            return nil
+        }
+        guard CFGetTypeID(result as CFTypeRef) == AXUIElementGetTypeID() else {
+            throw NativeAXObservationFailure.invalidNativeData
+        }
+        return unsafeDowncast(result as AnyObject, to: AXUIElement.self)
+    }
+
+    func isFrontmostApplication(processIdentifier: Int32) throws -> Bool {
+        let application = AXUIElementCreateApplication(processIdentifier)
+        return try boolean(attribute: kAXFrontmostAttribute, of: application) == true
+    }
+
     func isSameElement(_ left: AXUIElement, _ right: AXUIElement) -> Bool {
         CFEqual(left, right)
     }

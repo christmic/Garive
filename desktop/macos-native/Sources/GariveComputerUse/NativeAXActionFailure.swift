@@ -10,6 +10,8 @@ public enum NativeAXActionFailure: Error, Equatable, Sendable {
     case snapshotStale
     /// Snapshot-local node no longer maps to the same AX object.
     case nodeStale
+    /// The exact admitted window or snapshot-local node no longer owns focus.
+    case focusChanged
     /// The node did not advertise the requested portable action.
     case actionUnsupported
     /// Native policy withholds actions on a protected value.

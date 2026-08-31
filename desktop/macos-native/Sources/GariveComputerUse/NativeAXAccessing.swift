@@ -2,6 +2,8 @@ import ApplicationServices
 
 protocol NativeAXAccessing: AnyObject {
     func windows(processIdentifier: Int32) throws -> [AXUIElement]
+    func focusedWindow(processIdentifier: Int32) throws -> AXUIElement?
+    func isFrontmostApplication(processIdentifier: Int32) throws -> Bool
     func isSameElement(_ left: AXUIElement, _ right: AXUIElement) -> Bool
     func semanticElement(
         root: AXUIElement,
