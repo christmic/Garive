@@ -25,4 +25,3 @@ expression: "frame(&recovery, Theme::Dark, 100, 24)"
   ╭──────────────────────────────────────────────────────────────────────────────────────────────╮
   │ Ask a follow-up…                                                                             │
   ╰──────────────────────────────────────────────────────────────────────────────────────────────╯
-   ● A prior command has an unknown durable outcome. Review Host truth before retrying.
