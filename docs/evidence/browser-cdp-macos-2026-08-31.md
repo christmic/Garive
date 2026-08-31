@@ -52,11 +52,12 @@ proved a click preflight returns `browser_frame_opaque`. A native password
 canary is absent from the observation, its public fields are redacted, and its
 action set is empty. The same gate opens an explicitly allowed same-origin
 popup, proves that it remains pending rather than silently joining the admitted
-page set, denies and closes a cross-origin popup, restores the exact parent
-target after Chrome changes foreground focus, and then completes the remaining
-parent-page actions. After hardening the launch gate to wait for both complete
-`DevToolsActivePort` lines, it passed three consecutive runs in 1.35, 0.75 and
-0.68 seconds;
+page set, then supplies a second explicit CDP connection, admits that exact
+popup under an unrelated Runtime page identity and observes `Popup ready`
+through its independent page port. It denies and closes a cross-origin popup,
+restores the exact parent target after Chrome changes foreground focus, and
+then completes the remaining parent-page actions. The final gate passed eight
+consecutive runs (1.07, 0.83, 0.70, 0.69, 0.67, 0.71, 0.71 and 0.71 seconds);
 strict Runtime test-target Clippy and warning-free Rustdoc also passed.
 
 ```sh
@@ -87,6 +88,17 @@ Allowed pages remain pending until separate page admission; denied pages are
 closed by exact identity, and the admitted parent is explicitly reactivated.
 Attached mode does not enable browser-level target discovery.
 
+Popup admission exposes only a Runtime-owned opaque admission identity. The
+private target/session binding is absent from Debug output and governed
+receipts, and the assigned `BrowserPageId` is structurally independent of the
+CDP target id. Explicit reject closes the exact target. Explicit admit attaches
+it through the separately supplied connection and accepts origin only after two
+identical samples agree on current history, main-frame URL and loader. The gate
+also freezes the admitted top-level origin, rejects a post-attach redirect to a
+disallowed origin, and proves uncertain popup cleanup poisons the parent page
+port. The adapter models both bounded Chrome pre-navigation history states seen
+in practice; other malformed history remains fail-closed.
+
 Native select uses
 `DOM.resolveNode`, one fixed `Runtime.callFunctionOn` declaration with the option
 as a structured argument, and `Runtime.releaseObject`. It rejects non-native,
@@ -96,7 +108,7 @@ into the receipt digest. Typed `DOM.getFrameOwner` binds child frame identities
 to their embedding backend nodes. Runtime reads AX subtrees only for same-origin
 frames with a fully admitted ancestor chain and collapses a cross-origin owner
 to one nameless, valueless and actionless opaque node. The ordinary adapter
-suite passes 15 tests and the focused Runtime mapping/port suites pass 20 tests
+suite passes 15 tests and the focused Runtime mapping/port suites pass 22 tests
 under strict Clippy.
 
 The baseline now covers one navigation redirect, one form, open shadow DOM and
@@ -109,8 +121,7 @@ port gate now binds initial observation, governed navigation, native select,
 click, focused Enter activation, settled scroll, receipts and fresh
 observation/revision evidence, including same-origin/cross-origin iframe
 isolation, protected-field redaction, popup pending admission, popup origin
-denial and parent-focus restoration. Popup attachment into a separately
-admitted Runtime page session, real-browser history actions, downloads,
-attached-session extension/native-messaging evidence, attachment loss and
-durable Started/crash fault injection remain open. This is not a complete
-Browser Use claim.
+denial, independent popup admission/observation and parent-focus restoration.
+Real-browser history actions, downloads, attached-session
+extension/native-messaging evidence, attachment loss and durable Started/crash
+fault injection remain open. This is not a complete Browser Use claim.

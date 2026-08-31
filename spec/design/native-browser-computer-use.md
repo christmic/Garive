@@ -168,9 +168,32 @@ at most 32 pending pages. A requested canonical origin must appear in that
 action's explicit `allowed_navigation_origins`; navigation itself supplies no
 popup authority. A matching page becomes `pending` only: it is not observable
 or actionable until Runtime separately attaches it, assigns session-local
-identities and completes normal page admission. A denied, inconsistent or
-over-bound page is closed by exact target identity. Any close failure is
-`native_action_uncertain`.
+identities and completes normal page admission. Pending discovery returns an
+opaque Runtime admission identity; CDP target and attached-session identities
+remain private and must not appear in Debug output or governed receipts. The
+pending entry remains owned by Runtime until an explicit admit or reject
+decision. A denied, inconsistent or over-bound page is closed by exact target
+identity. Any close failure is `native_action_uncertain` and poisons the parent
+page port: no later observation, preflight or dispatch may reuse it.
+
+`BrowserPageId` is a Runtime identity. It must not equal, encode or be derived
+from a CDP `targetId`. A private `CdpPageBinding` maps that identity to the
+exact target and attached session. Admission requires a separately supplied,
+explicitly configured CDP connection, attaches the exact pending target and
+creates an independent page port inside the same `BrowserSessionId`; it never
+discovers connection parameters from environment or ambient browser state.
+Before acceptance, Runtime must observe two identical bounded samples whose
+current-history entry, main-frame URL and loader identity agree, then prove the
+canonical origin equals the queued requested origin. Chrome's pre-navigation
+history transitions are not page evidence: only the empty `(-1, [])` state or
+the observed single-entry state with empty URL and user-typed URL may be
+temporarily retried. Any other malformed history fails closed.
+
+The admitted port freezes its current top-level origin. Every later observation
+must agree with it; successful governed navigation/history actions replace it
+only with their revalidated committed origin. Post-attach mismatch closes the
+exact pending target and rejects admission. Cleanup uncertainty poisons the
+parent port rather than guessing whether the popup remains live.
 
 Popup creation may change the browser foreground target. After auditing all
 attributable pages, Runtime restores the exact admitted parent target before a
