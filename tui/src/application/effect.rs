@@ -1,6 +1,8 @@
 use std::collections::BTreeMap;
 
-use garive_host_client::{AgentDefinitionSummary, HostClientErrorCode, SessionSummary};
+use garive_host_client::{
+    AgentDefinitionSummary, HostClientErrorCode, SessionSummary, SessionView, TurnTimelineItem,
+};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 
@@ -29,12 +31,24 @@ impl Default for AppGeneration {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub(crate) struct EffectContext {
     pub(crate) effect_id: EffectId,
     pub(crate) issued_generation: AppGeneration,
     pub(crate) session_id: Option<String>,
     pub(crate) request_digest: Option<String>,
+}
+
+impl std::fmt::Debug for EffectContext {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("EffectContext")
+            .field("effect_id", &self.effect_id)
+            .field("issued_generation", &self.issued_generation)
+            .field("has_session", &self.session_id.is_some())
+            .field("has_request_digest", &self.request_digest.is_some())
+            .finish()
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -83,6 +97,28 @@ pub(crate) struct SessionPageOwner {
     pub(crate) request: SessionPageRequest,
 }
 
+#[derive(Clone, Eq, PartialEq)]
+pub(crate) struct SnapshotRequest {
+    pub(crate) session_id: String,
+}
+
+impl std::fmt::Debug for SnapshotRequest {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("SnapshotRequest")
+            .field("has_session", &!self.session_id.is_empty())
+            .finish()
+    }
+}
+
+#[derive(Clone, Eq, PartialEq)]
+pub(crate) struct SnapshotRead {
+    pub(crate) request: SnapshotRequest,
+    pub(crate) view: SessionView,
+    pub(crate) items: Vec<TurnTimelineItem>,
+    pub(crate) follow_position: u64,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) enum EffectKind {
     Exit,
@@ -90,6 +126,10 @@ pub(crate) enum EffectKind {
     LoadDefinitions,
     LoadSessionPage {
         request: SessionPageRequest,
+    },
+    #[allow(dead_code)]
+    LoadSnapshot {
+        request: SnapshotRequest,
     },
     #[allow(dead_code)]
     PersistPending {
@@ -125,6 +165,7 @@ impl EffectKind {
             Self::Exit => EffectTag::Exit,
             Self::LoadDefinitions => EffectTag::LoadDefinitions,
             Self::LoadSessionPage { .. } => EffectTag::LoadSessionPage,
+            Self::LoadSnapshot { .. } => EffectTag::LoadSnapshot,
             Self::PersistPending { .. } => EffectTag::PersistPending,
             Self::StartTurn { .. } => EffectTag::StartTurn,
             Self::CreateSession { .. } => EffectTag::CreateSession,
@@ -190,6 +231,7 @@ pub(crate) enum HostReadResponse {
         sessions: Vec<SessionSummary>,
         next_before: Option<String>,
     },
+    Snapshot(Box<SnapshotRead>),
 }
 
 impl std::fmt::Debug for HostReadResponse {
@@ -209,6 +251,12 @@ impl std::fmt::Debug for HostReadResponse {
                 .field("count", &sessions.len())
                 .field("has_next", &next_before.is_some())
                 .finish(),
+            Self::Snapshot(snapshot) => formatter
+                .debug_struct("Snapshot")
+                .field("request", &snapshot.request)
+                .field("count", &snapshot.items.len())
+                .field("follow_position", &snapshot.follow_position)
+                .finish(),
         }
     }
 }
@@ -223,6 +271,7 @@ pub(crate) enum EffectTag {
     Exit,
     LoadDefinitions,
     LoadSessionPage,
+    LoadSnapshot,
     PersistPending,
     StartTurn,
     CreateSession,

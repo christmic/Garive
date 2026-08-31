@@ -17,7 +17,7 @@ use std::{future::Future, pin::Pin};
 use application::{
     reduce, AppAction, AppEffect, AppEffectOutcome, AppEffectResult, AppGeneration, AppModel,
     EffectFailure, EffectKind, EffectTracker, HostReadFailure, HostReadResponse,
-    SessionPagePurpose, SessionPageRequest,
+    SessionPagePurpose, SessionPageRequest, SnapshotRequest,
 };
 use garive_host_client::{AgentDefinitionSummary, HostClientErrorCode, SessionSummary};
 use host::{HostReadFuture, HostReadPort};
@@ -64,6 +64,60 @@ impl HostReadPort for FakeHostReadPort {
             }
         })
     }
+
+    fn load_snapshot(&self, request: SnapshotRequest) -> HostReadFuture {
+        let mode = self.0;
+        Box::pin(async move {
+            match mode {
+                Mode::Success => Err(HostReadFailure {
+                    code: HostClientErrorCode::InvalidEvent,
+                }),
+                Mode::Failure => Err(HostReadFailure {
+                    code: HostClientErrorCode::TransportFailure,
+                }),
+                Mode::Panic => panic!("injected Host snapshot panic: {request:?}"),
+            }
+        })
+    }
+}
+
+#[tokio::test]
+async fn snapshot_runner_preserves_exact_redacted_request_and_failure_identity() {
+    let request = SnapshotRequest {
+        session_id: "private-snapshot-session".into(),
+    };
+    let effect = EffectTracker::default()
+        .issue(
+            EffectKind::LoadSnapshot {
+                request: request.clone(),
+            },
+            Some(request.session_id.clone()),
+            Some("snapshot-request-digest".into()),
+        )
+        .expect("snapshot effect identity");
+    let failure = execute(effect, Mode::Success).await;
+    assert!(matches!(
+        failure.outcome,
+        AppEffectOutcome::HostRead(Err(HostReadFailure {
+            code: HostClientErrorCode::InvalidEvent
+        }))
+    ));
+    let debug = format!("{failure:?}");
+    assert!(!debug.contains("private-snapshot-session"));
+
+    let panic_effect = EffectTracker::default()
+        .issue(
+            EffectKind::LoadSnapshot {
+                request: request.clone(),
+            },
+            Some(request.session_id.clone()),
+            Some("snapshot-request-digest".into()),
+        )
+        .expect("snapshot effect identity");
+    assert_eq!(
+        execute(panic_effect, Mode::Panic).await.outcome,
+        AppEffectOutcome::Failed(EffectFailure::Internal)
+    );
 }
 
 #[tokio::test]

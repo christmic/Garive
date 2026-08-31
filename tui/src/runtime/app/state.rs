@@ -236,7 +236,8 @@ impl RuntimeState {
                     debug_assert!(self.model.quit_requested);
                 }
                 crate::application::EffectTag::LoadDefinitions
-                | crate::application::EffectTag::LoadSessionPage => {
+                | crate::application::EffectTag::LoadSessionPage
+                | crate::application::EffectTag::LoadSnapshot => {
                     self.host_effects.submit(effect);
                 }
                 crate::application::EffectTag::PersistPending => self.effects.submit(effect),

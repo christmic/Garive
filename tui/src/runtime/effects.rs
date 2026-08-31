@@ -43,9 +43,9 @@ async fn execute<P: PersistencePort>(effect: AppEffect, persistence: P) -> AppEf
     let kind = effect.kind.tag();
     let outcome = match effect.kind {
         EffectKind::Exit => AppEffectOutcome::Completed,
-        EffectKind::LoadDefinitions | EffectKind::LoadSessionPage { .. } => {
-            AppEffectOutcome::Failed(EffectFailure::Internal)
-        }
+        EffectKind::LoadDefinitions
+        | EffectKind::LoadSessionPage { .. }
+        | EffectKind::LoadSnapshot { .. } => AppEffectOutcome::Failed(EffectFailure::Internal),
         EffectKind::PersistPending { draft } => {
             AppEffectOutcome::PendingPersisted(persistence.persist_pending(draft).await)
         }

@@ -43,6 +43,9 @@ async fn execute<H: HostReadPort>(effect: AppEffect, host: H) -> AppEffectResult
         EffectKind::LoadSessionPage { request } => {
             AppEffectOutcome::HostRead(host.load_session_page(request).await)
         }
+        EffectKind::LoadSnapshot { request } => {
+            AppEffectOutcome::HostRead(host.load_snapshot(request).await)
+        }
         _ => AppEffectOutcome::Failed(EffectFailure::Internal),
     };
     AppEffectResult {
