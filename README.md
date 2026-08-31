@@ -44,6 +44,8 @@ production credential resolution/deployment and the Go gateway remain
 explicitly gated.
 See `spec/design/core-agent-plan.md` and
 `spec/design/agent-platform-delivery.md` for the work graph and evidence rules.
+See `docs/deployment-from-source.md` for the new-machine build, configuration,
+launch, verification, migration, and release-boundary runbook.
 
 ## Meta
 
