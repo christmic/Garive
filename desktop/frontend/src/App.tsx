@@ -701,6 +701,7 @@ function WorkSurface({ state, composer, submit, startSuggestion, dispatch, conte
   const conversation = useRef<HTMLDivElement>(null);
   const [followingTail, setFollowingTail] = useState(true);
   const [newOutputBelow, setNewOutputBelow] = useState(false);
+  const pendingTailFrame = useRef<number | undefined>(undefined);
   const tailRevision = `${state.messages.length}:${state.messages.at(-1)?.text.length ?? 0}:${state.livePreview?.sequence ?? -1}:${state.phase}`;
   const previousTailRevision = useRef(tailRevision);
 
@@ -710,16 +711,28 @@ function WorkSurface({ state, composer, submit, startSuggestion, dispatch, conte
     const element = conversation.current;
     if (!element) return;
     if (!followingTail) { setNewOutputBelow(true); return; }
-    requestAnimationFrame(() => {
+    const frame = requestAnimationFrame(() => {
+      pendingTailFrame.current = undefined;
       element.scrollTop = element.scrollHeight;
       setNewOutputBelow(false);
     });
+    pendingTailFrame.current = frame;
+    return () => {
+      if (pendingTailFrame.current === frame) {
+        cancelAnimationFrame(frame);
+        pendingTailFrame.current = undefined;
+      }
+    };
   }, [followingTail, tailRevision]);
 
   const readScrollPosition = () => {
     const element = conversation.current;
     if (!element) return;
     const attached = isNearConversationTail(element);
+    if (!attached && pendingTailFrame.current !== undefined) {
+      cancelAnimationFrame(pendingTailFrame.current);
+      pendingTailFrame.current = undefined;
+    }
     setFollowingTail(attached);
     if (attached) setNewOutputBelow(false);
   };
@@ -799,7 +812,8 @@ function WorkSurface({ state, composer, submit, startSuggestion, dispatch, conte
             <button type="button" disabled={state.phase === "submitting"} onClick={removeContext}
               aria-label={t("context.remove")}><Icon name="close" /></button>
           </span>)}</div>}
-        <textarea ref={composer} value={state.draft} disabled={state.phase === "submitting" || blockedSuspension}
+        <textarea ref={composer} rows={1} value={state.draft} disabled={state.phase === "submitting" || blockedSuspension}
+          aria-describedby="composer-commit-note"
           aria-label={t(needsInput ? "work.composer.continue" : "work.composer.describe")}
           placeholder={t(blockedSuspension ? "work.composer.governed" : needsInput ? "work.composer.continuePlaceholder" : "work.composer.describePlaceholder")}
           onChange={(event) => dispatch({ type: "draft_changed", value: event.target.value })}
@@ -808,23 +822,25 @@ function WorkSurface({ state, composer, submit, startSuggestion, dispatch, conte
             event.preventDefault(); void submit();
           } }} />
         <div className="composer-toolbar">
-          <div className="composer-tools"><button type="button"
+          <div className="composer-tools"><button className="composer-context-button" type="button"
             disabled={!state.capabilities?.workspaces || state.phase === "submitting" || Boolean(suspension)}
+            aria-label={t(state.capabilities?.workspaces ? "work.composer.addContext" : "work.composer.noWorkspaces")}
             title={t(state.capabilities?.workspaces ? "work.composer.chooseFiles" : "work.composer.noWorkspaces")}
-            onClick={() => void openContext()}><Icon name="paperclip" /><span>{t("work.composer.addContext")}</span></button>
+            onClick={() => void openContext()}><Icon name="plus" /></button>
             {context?.grant.access === "enumerate" && <button type="button" disabled={state.phase === "submitting"}
               onClick={() => void authorizeOutputs()}><Icon name="shield" /><span>{t("work.composer.allowOutputs")}</span></button>}
             <span className="access-pill"><Icon name="shield" />{needsInput ? t("work.composer.resume")
               : context?.grant.access === "read_write" ? t("work.composer.outputEnabled")
                 : context ? `${context.entries.length} ${t(context.entries.length === 1 ? "workspace.file" : "workspace.filesPlural")}` : t("work.composer.localText")}</span></div>
-          {state.phase === "submitting" && !reconnecting && <button className="secondary-button" type="button"
-            onClick={() => void cancelTurn()}>{t("work.composer.requestStop")}</button>}
-          <button className="send-button" type="button" disabled={!canSubmit(state)} aria-label={t("work.composer.send")} onClick={() => void submit()}>
-            {state.phase === "submitting" ? <span className="spinner" /> : <Icon name="send" />}
-          </button>
+          {state.phase === "submitting" && !reconnecting
+            ? <button className="composer-stop-button" type="button" aria-label={t("work.composer.requestStop")}
+              title={t("work.composer.requestStop")} onClick={() => void cancelTurn()}><Icon name="stop" /></button>
+            : <button className="send-button" type="button" disabled={!canSubmit(state)} aria-label={t("work.composer.send")} onClick={() => void submit()}>
+              {state.phase === "submitting" ? <span className="spinner" /> : <Icon name="send" />}
+            </button>}
         </div>
       </div>
-      <p className="composer-note">{t("work.composer.commitNote")}</p>
+      <p id="composer-commit-note" className="composer-note sr-only">{t("work.composer.commitNote")}</p>
     </div>
   </section>;
 }

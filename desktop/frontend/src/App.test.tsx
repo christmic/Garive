@@ -168,6 +168,11 @@ describe("Desktop product experience", () => {
     await screen.findByText("What should we accomplish?");
     expect(view.container.querySelector(".new-work-surface")).not.toBeNull();
     expect(view.container.querySelector(".brand-mark, .hero-mark, .message-mark")).toBeNull();
+    const composer = screen.getByRole("textbox", { name: "Describe the outcome you want" });
+    expect(composer.getAttribute("rows")).toBe("1");
+    expect(composer.getAttribute("aria-describedby")).toBe("composer-commit-note");
+    expect(screen.getByRole("button", { name: "Add context" }).textContent).toBe("");
+    expect(document.querySelector("#composer-commit-note")?.classList.contains("sr-only")).toBe(true);
   });
 
   it("collapses and restores the native navigation without discarding work", async () => {
