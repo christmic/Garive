@@ -114,6 +114,28 @@ pub(crate) fn composer_hit_test(
     composer::selection_at(model, frame.composer, column, row, clamp)
 }
 
+pub(crate) fn inspector_hit_test(model: &AppModel, column: u16, row: u16) -> Option<usize> {
+    let area = inspector::wide_area(Rect::new(
+        0,
+        0,
+        model.terminal_size.width,
+        model.terminal_size.height,
+    ))?;
+    inspector::selection_at(model, area, column, row)
+}
+
+pub(crate) fn inspector_contains(model: &AppModel, column: u16, row: u16) -> bool {
+    inspector::wide_area(Rect::new(
+        0,
+        0,
+        model.terminal_size.width,
+        model.terminal_size.height,
+    ))
+    .is_some_and(|area| {
+        column >= area.x && column < area.right() && row >= area.y && row < area.bottom()
+    })
+}
+
 pub(crate) fn composer_vertical_target(model: &AppModel, direction: i8) -> (usize, usize) {
     let full = Rect::new(0, 0, model.terminal_size.width, model.terminal_size.height);
     let frame = FrameLayout::resolve(model, full);

@@ -34,6 +34,23 @@ pub(super) fn handle(key: KeyEvent, state: &mut RuntimeState) -> bool {
         KeyCode::Esc if overlay != Overlay::UnknownCommand => {
             state.dispatch(AppAction::OverlayClosed)
         }
+        KeyCode::Up if overlay == Overlay::Inspector => {
+            super::inspector::move_selection(state, true)
+        }
+        KeyCode::Down if overlay == Overlay::Inspector => {
+            super::inspector::move_selection(state, false)
+        }
+        KeyCode::Home if overlay == Overlay::Inspector => super::inspector::select_index(state, 0),
+        KeyCode::End if overlay == Overlay::Inspector => {
+            let last = state
+                .model
+                .inspector_projection()
+                .entries
+                .len()
+                .saturating_sub(1);
+            super::inspector::select_index(state, last);
+        }
+        KeyCode::Enter if overlay == Overlay::Inspector => super::inspector::activate(state),
         KeyCode::Up if overlay == Overlay::SessionPicker => {
             state.model.session_selection = state.model.session_selection.saturating_sub(1)
         }

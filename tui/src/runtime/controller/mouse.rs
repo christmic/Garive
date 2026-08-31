@@ -3,7 +3,10 @@ use crossterm::event::{MouseButton, MouseEvent, MouseEventKind};
 use crate::{
     application::{AppAction, AppModel, FocusTarget, Overlay},
     input::ComposerClick,
-    view::{command_suggestion_hit_test, composer_hit_test, overlay_contains, overlay_hit_test},
+    view::{
+        command_suggestion_hit_test, composer_hit_test, inspector_contains, inspector_hit_test,
+        overlay_contains, overlay_hit_test,
+    },
 };
 
 use super::{
@@ -17,6 +20,9 @@ enum MouseAction {
     ConversationScroll { backwards: bool },
     OverlayMove { backwards: bool },
     OverlayActivate(usize),
+    InspectorMove { backwards: bool },
+    InspectorActivate(usize),
+    Consume,
     SuggestionMove { backwards: bool },
     SuggestionActivate(usize),
     ComposerPlace(usize),
@@ -61,6 +67,16 @@ pub(super) fn handle(mouse: MouseEvent, state: &mut RuntimeState) {
         }
         MouseAction::OverlayMove { backwards } => move_overlay_selection(state, backwards),
         MouseAction::OverlayActivate(index) => activate_overlay_selection(state, index),
+        MouseAction::InspectorMove { backwards } => {
+            state.dispatch(AppAction::FocusChanged(FocusTarget::Inspector));
+            super::inspector::move_selection(state, backwards);
+        }
+        MouseAction::InspectorActivate(index) => {
+            state.dispatch(AppAction::FocusChanged(FocusTarget::Inspector));
+            super::inspector::select_index(state, index);
+            super::inspector::activate(state);
+        }
+        MouseAction::Consume => {}
         MouseAction::SuggestionMove { backwards } => {
             let count = state.model.matching_command_suggestion_indices().len();
             state.model.command_suggestion_selection =
@@ -105,6 +121,19 @@ fn route(model: &AppModel, mouse: MouseEvent) -> Option<MouseAction> {
                 overlay_hit_test(model, mouse.column, mouse.row).map(MouseAction::OverlayActivate)
             }
             _ => None,
+        };
+    }
+    if model.inspector.open && inspector_contains(model, mouse.column, mouse.row) {
+        return match mouse.kind {
+            MouseEventKind::ScrollUp => Some(MouseAction::InspectorMove { backwards: true }),
+            MouseEventKind::ScrollDown => Some(MouseAction::InspectorMove { backwards: false }),
+            MouseEventKind::Down(MouseButton::Left) => {
+                inspector_hit_test(model, mouse.column, mouse.row)
+                    .map_or(Some(MouseAction::Consume), |index| {
+                        Some(MouseAction::InspectorActivate(index))
+                    })
+            }
+            _ => Some(MouseAction::Consume),
         };
     }
     let suggestion = command_suggestion_hit_test(model, mouse.column, mouse.row);
@@ -168,6 +197,7 @@ fn move_overlay_selection(state: &mut RuntimeState, backwards: bool) {
             state.model.turn_selection =
                 moved_selection(state.model.turn_selection, count, backwards);
         }
+        Overlay::Inspector => super::inspector::move_selection(state, backwards),
         _ => {}
     }
 }
@@ -197,6 +227,10 @@ fn activate_overlay_selection(state: &mut RuntimeState, index: usize) {
         Some(Overlay::TurnNavigator) => {
             state.model.turn_selection = index;
             select_landmark(state);
+        }
+        Some(Overlay::Inspector) => {
+            super::inspector::select_index(state, index);
+            super::inspector::activate(state);
         }
         _ => {}
     }
@@ -309,9 +343,45 @@ mod tests {
         assert_eq!(
             route(
                 &model,
-                mouse(MouseEventKind::Down(MouseButton::Left), 5, 22)
+                mouse(MouseEventKind::Down(MouseButton::Left), 5, 21)
             ),
             Some(MouseAction::ComposerPlace(1))
+        );
+    }
+
+    #[test]
+    fn wide_inspector_entries_activate_but_border_and_padding_are_inert() {
+        let mut model = AppModel {
+            terminal_size: TerminalSize {
+                width: 129,
+                height: 24,
+            },
+            ..Default::default()
+        };
+        model.inspector.open = true;
+
+        assert_eq!(
+            route(
+                &model,
+                mouse(MouseEventKind::Down(MouseButton::Left), 99, 1)
+            ),
+            Some(MouseAction::InspectorActivate(0))
+        );
+        for (column, row) in [(97, 0), (98, 1)] {
+            assert_eq!(
+                route(
+                    &model,
+                    mouse(MouseEventKind::Down(MouseButton::Left), column, row)
+                ),
+                Some(MouseAction::Consume)
+            );
+        }
+        assert_eq!(
+            route(
+                &model,
+                mouse(MouseEventKind::Down(MouseButton::Left), 96, 1)
+            ),
+            None
         );
     }
 

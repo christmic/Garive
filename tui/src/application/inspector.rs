@@ -1,6 +1,6 @@
 //! Pure, privacy-bounded projection for the optional Inspector component.
 
-use super::{AppModel, ConnectionState, ExecutionState, TimelineTone};
+use super::{AppModel, ConnectionState, ExecutionState, FocusTarget, Overlay, TimelineTone};
 use crate::input::supports_response_schema;
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -53,6 +53,8 @@ pub(crate) struct InspectorState {
     pub(crate) open: bool,
     pub(crate) variant: InspectorVariant,
     pub(crate) selected_key: Option<String>,
+    pub(crate) return_focus: FocusTarget,
+    pub(crate) focus_owned: bool,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -98,6 +100,70 @@ impl AppModel {
             .as_deref()
             .and_then(|key| projection.entries.iter().position(|entry| entry.key == key))
             .unwrap_or(0)
+    }
+
+    pub(crate) fn select_inspector_index(&mut self, index: usize) {
+        self.inspector.selected_key = self
+            .inspector_projection()
+            .entries
+            .get(index)
+            .map(|entry| entry.key.clone());
+    }
+
+    pub(crate) fn open_inspector(&mut self, variant: InspectorVariant) {
+        if matches!(
+            self.focus,
+            FocusTarget::Composer | FocusTarget::Conversation
+        ) {
+            self.inspector.return_focus = self.focus;
+        }
+        self.inspector.open = true;
+        self.inspector.focus_owned = true;
+        self.select_inspector_variant(variant);
+        self.reconcile_inspector_surface();
+    }
+
+    pub(crate) fn close_inspector(&mut self) {
+        self.inspector.open = false;
+        self.inspector.selected_key = None;
+        self.inspector.focus_owned = false;
+        if self.overlay == Some(Overlay::Inspector) {
+            self.overlay = None;
+        }
+        if matches!(self.focus, FocusTarget::Inspector | FocusTarget::Overlay) {
+            self.focus = self.inspector.return_focus;
+        }
+    }
+
+    pub(crate) fn reconcile_inspector_surface(&mut self) {
+        if !self.inspector.open {
+            return;
+        }
+        match self.terminal_size.width {
+            120.. => {
+                if self.overlay == Some(Overlay::Inspector) {
+                    self.overlay = None;
+                }
+                if self.overlay.is_none() && self.inspector.focus_owned {
+                    self.focus = FocusTarget::Inspector;
+                }
+            }
+            40..=119 => {
+                if self.overlay.is_none() || self.overlay == Some(Overlay::Inspector) {
+                    self.inspector.focus_owned = true;
+                    self.overlay = Some(Overlay::Inspector);
+                    self.focus = FocusTarget::Overlay;
+                }
+            }
+            _ => {
+                if self.overlay == Some(Overlay::Inspector) {
+                    self.overlay = None;
+                }
+                if matches!(self.focus, FocusTarget::Inspector | FocusTarget::Overlay) {
+                    self.focus = self.inspector.return_focus;
+                }
+            }
+        }
     }
 }
 

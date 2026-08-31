@@ -6,6 +6,7 @@ use crate::application::{AppAction, ExecutionState, FocusTarget, Overlay, Termin
 use crate::input::{resolve_shortcut, HistoryDraft, HistoryRecall, ShortcutIntent};
 
 mod actions;
+mod inspector;
 mod mouse;
 mod navigation;
 mod overlay;
@@ -110,6 +111,9 @@ fn handle_key_inner(key: KeyEvent, state: &mut RuntimeState) {
         ) {
             return;
         }
+    }
+    if state.model.focus == FocusTarget::Inspector && inspector::handle_key(key, state) {
+        return;
     }
     if state.composer_is_frozen()
         && matches!(

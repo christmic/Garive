@@ -30,6 +30,7 @@ pub(crate) fn reduce(model: &mut AppModel, action: AppAction) -> Vec<AppEffect> 
         }
         AppAction::TerminalResized(size) => {
             model.terminal_size = size;
+            model.reconcile_inspector_surface();
             Vec::new()
         }
         AppAction::TerminalFocusChanged(focused) => {
@@ -41,11 +42,14 @@ pub(crate) fn reduce(model: &mut AppModel, action: AppAction) -> Vec<AppEffect> 
         }
         AppAction::FocusChanged(focus) if model.overlay.is_none() => {
             model.focus = focus;
+            if model.inspector.open {
+                model.inspector.focus_owned = focus == FocusTarget::Inspector;
+            }
             Vec::new()
         }
         AppAction::FocusChanged(_) => Vec::new(),
         AppAction::OverlayOpened(overlay) => {
-            if model.overlay.is_none() {
+            if model.overlay.is_none() || model.overlay == Some(Overlay::Inspector) {
                 model.prior_focus = model.focus;
                 model.focus = FocusTarget::Overlay;
                 model.overlay = Some(overlay);
@@ -54,11 +58,14 @@ pub(crate) fn reduce(model: &mut AppModel, action: AppAction) -> Vec<AppEffect> 
         }
         AppAction::OverlayClosed => {
             if !model.overlay.is_some_and(Overlay::is_blocking) {
-                if model.overlay == Some(Overlay::TurnNavigator) {
+                if model.overlay == Some(Overlay::Inspector) {
+                    model.close_inspector();
+                } else if model.overlay == Some(Overlay::TurnNavigator) {
                     model.close_turn_navigator();
                 } else {
                     model.overlay = None;
                     model.focus = model.prior_focus;
+                    model.reconcile_inspector_surface();
                 }
             }
             Vec::new()

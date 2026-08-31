@@ -10,7 +10,7 @@ mod input;
 
 use application::{
     reduce, AppAction, AppModel, BootState, ConnectionState, ConversationLandmark, FocusTarget,
-    Overlay, TerminalSize, TimelineItem, TimelineRole,
+    InspectorVariant, Overlay, TerminalSize, TimelineItem, TimelineRole,
 };
 
 #[test]
@@ -123,6 +123,53 @@ fn every_terminal_size_is_representable_without_underflow() {
             size.width >= 20 && size.height >= 8
         );
     }
+}
+
+#[test]
+fn inspector_restores_its_surface_and_selection_across_resize_and_overlay_stack() {
+    let mut model = AppModel {
+        terminal_size: TerminalSize {
+            width: 120,
+            height: 24,
+        },
+        ..Default::default()
+    };
+    model.open_inspector(InspectorVariant::Details);
+    model.select_inspector_index(2);
+    let selected = model.inspector.selected_key.clone();
+
+    reduce(
+        &mut model,
+        AppAction::TerminalResized(TerminalSize {
+            width: 39,
+            height: 24,
+        }),
+    );
+    assert_eq!(model.overlay, None);
+    reduce(
+        &mut model,
+        AppAction::TerminalResized(TerminalSize {
+            width: 119,
+            height: 24,
+        }),
+    );
+    assert_eq!(
+        (model.overlay, model.focus),
+        (Some(Overlay::Inspector), FocusTarget::Overlay)
+    );
+
+    reduce(&mut model, AppAction::OverlayOpened(Overlay::Help));
+    reduce(&mut model, AppAction::OverlayClosed);
+    assert_eq!(model.overlay, Some(Overlay::Inspector));
+    reduce(
+        &mut model,
+        AppAction::TerminalResized(TerminalSize {
+            width: 120,
+            height: 24,
+        }),
+    );
+    assert_eq!((model.overlay, model.focus), (None, FocusTarget::Inspector));
+    assert_eq!(model.inspector.selected_key, selected);
 }
 
 #[test]
