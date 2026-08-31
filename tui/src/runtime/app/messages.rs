@@ -14,6 +14,12 @@ use super::{
     RuntimeState,
 };
 
+mod correlation;
+
+use correlation::{
+    contains_pending, matches_session_created, matches_turn_accepted, unique_pending,
+};
+
 pub(super) fn handle_host(message: HostMessage, state: &mut RuntimeState) {
     match message {
         HostMessage::Bootstrapped {
@@ -104,7 +110,14 @@ pub(super) fn handle_host(message: HostMessage, state: &mut RuntimeState) {
             command_id,
             response,
         } => {
+            if !matches_session_created(&state.pending, &command_id) {
+                refresh_after_unmatched_mutation(state);
+                return;
+            }
             state.finish_pending(&command_id, "");
+            if contains_pending(&state.pending, &command_id) {
+                return;
+            }
             let session_id = response.session_id;
             state.load(session_id.clone());
             if let Some(text) = state.queued_prompt.take() {
@@ -122,11 +135,22 @@ pub(super) fn handle_host(message: HostMessage, state: &mut RuntimeState) {
             submitted_text,
             response,
         } => {
-            let started_turn = state.pending.iter().any(|pending| {
-                pending.command_id == command_id && pending.kind == PendingKind::StartTurn
-            });
+            let Some(kind) = matches_turn_accepted(
+                &state.pending,
+                &command_id,
+                &session_id,
+                &submitted_text,
+                &response.session_id,
+                &response.turn_id,
+            ) else {
+                refresh_after_unmatched_mutation(state);
+                return;
+            };
             state.finish_pending(&command_id, &submitted_text);
-            if started_turn && !submitted_text.is_empty() {
+            if contains_pending(&state.pending, &command_id) {
+                return;
+            }
+            if kind == PendingKind::StartTurn && !submitted_text.is_empty() {
                 state.model.composer.clear();
                 state.model.prompt_history_browser.reset();
             }
@@ -275,6 +299,12 @@ pub(super) fn handle_host(message: HostMessage, state: &mut RuntimeState) {
             ));
         }
         HostMessage::Failed { operation, error } => {
+            if let HostOperation::Mutation { command_id } = &operation {
+                if unique_pending(&state.pending, command_id).is_none() {
+                    refresh_after_unmatched_mutation(state);
+                    return;
+                }
+            }
             let refresh_failed = match &operation {
                 HostOperation::Bootstrap => true,
                 HostOperation::Snapshot { request_id } => *request_id == state.snapshot_request,
@@ -344,6 +374,27 @@ pub(super) fn handle_host(message: HostMessage, state: &mut RuntimeState) {
         }
     }
 }
+
+fn refresh_after_unmatched_mutation(state: &mut RuntimeState) {
+    let _ = state.store.record_diagnostic(DiagnosticEvent::HostFailure {
+        safe_code: HostClientErrorCode::InvalidEvent.wire_name(),
+    });
+    state.model.notice =
+        Some("Ignored an unmatched Host response; refreshing durable truth.".into());
+    if state.model.connection == ConnectionState::Connecting {
+        return;
+    }
+    if let Some(session_id) = state.model.selected_session.clone() {
+        state.load(session_id);
+    } else {
+        state.model.connection = ConnectionState::Connecting;
+        host::bootstrap(state.client.clone(), state.sender.clone());
+    }
+}
+
+#[cfg(test)]
+#[path = "messages_tests.rs"]
+mod tests;
 
 fn replay_queued_create(state: &mut RuntimeState) {
     let Some(command_id) = state.retry_after_refresh.clone() else {
