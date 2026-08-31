@@ -425,6 +425,33 @@ measures x=558 for the pane divider, x=583 for document content, y=68 for h1,
 overflow. The same tree remains the Web implementation; only native window
 insets differ.
 
+### U. Installed Codex dark workbench and thread-density audit
+
+A real dark Garive fixture was rendered at the supplied reference width for
+both split-file and running-with-Environment states. Its structural geometry is
+now within the reference: 546 px ordinary conversation/Composer axis, 224 px
+Environment, x=558 file divider and a split Composer that starts at x=216 and
+reaches the divider at 342 px wide. The split visual fixture now combines a
+committed artifact with a real running follow-up, exercising the 97 px goal
+rail/Composer rather than comparing an easier terminal state to the supplied
+running reference.
+
+The installed Electron theme establishes `#181818` canvas, `#dfdfdf` primary
+text, 70% white secondary text, 50% white tertiary text, 8%/4%/16% border
+levels and a 3% white dark Composer surface with the previously audited 20%
+inset. Garive now uses those source values for the canvas, text hierarchy and
+Composer while retaining the observed native sidebar material from the user
+reference. Computed output is `rgb(24,24,24)`, `rgb(223,223,223)`, exact 70% and
+50% text alpha, and 3% Composer surface alpha.
+
+The same bundle shows that Electron conversation Markdown, not only file
+Markdown, resolves through the 13 px/1.625 root. Garive's assistant output was
+still 14 px/1.72 with 24/18 px headings, creating a web-article rhythm beside
+the newly aligned file. Assistant Markdown now shares the resource-backed
+13 px body, formulaic 19.5/16.25/14.625 px headings, paragraph/list spacing and
+16.25 px fenced-block rhythm. User work prompts keep the separately observed
+14 px message scale and 70%/22 px bubble geometry.
+
 ## Gate 1 — Codex fidelity
 
 This gate passes only when both Desktop and Web show:

@@ -663,12 +663,21 @@ kbd { font-size: var(--text-2xs); }
 .message { margin-bottom: 30px; }
 .user-message > div { max-width: 70%; padding: 10px 14px; border: 0; border-radius: 22px; corner-shape: round; background: var(--surface-subtle); font-size: var(--text-md); line-height: 1.55; }
 .assistant-message { display: block; }
-.result-markdown { font-size: var(--text-md); line-height: 1.72; }
-.result-markdown h1 { font-size: 24px; }
-.result-markdown h2 { font-size: 18px; }
-.result-markdown h3 { font-size: var(--text-md); }
+.result-markdown { font-size: var(--document-font-size); line-height: var(--document-leading); }
+.result-markdown h1, .result-markdown h2, .result-markdown h3,
+.result-markdown h4 { font-weight: 600; letter-spacing: 0; }
+.result-markdown h1 { margin: 0 0 calc(var(--document-space) * 2); font-size: calc(var(--document-font-size) * 1.5); line-height: calc(var(--document-space) * 8); }
+.result-markdown h2 { margin: calc(var(--document-space) * 4) 0 var(--document-space); font-size: calc(var(--document-font-size) * 1.25); line-height: calc(var(--document-space) * 7); }
+.result-markdown h3 { margin: calc(var(--document-space) * 4) 0 var(--document-space); font-size: calc(var(--document-font-size) * 1.125); line-height: calc(var(--document-space) * 7); }
+.result-markdown h4 { margin: calc(var(--document-space) * 4) 0 0; font-size: var(--document-font-size); line-height: calc(var(--document-space) * 6); }
+.result-markdown p { margin: 0 0 var(--document-space); }
+.assistant-message .result-markdown p { font-size: inherit; line-height: inherit; white-space: normal; }
+.result-markdown > p:not(:first-child) { margin-top: calc(var(--document-space) * 2); }
+.result-markdown > p + p { margin-block: calc(var(--document-space) * 4); }
+.result-markdown ul, .result-markdown ol { margin: 0; padding-inline-start: calc(var(--document-font-size) * var(--document-leading)); }
+.result-markdown li { padding-inline-start: calc(var(--document-space) * 1.5); }
 .result-markdown code { font-size: var(--text-xs); }
-.code-block { margin: 14px 0 18px; overflow: hidden; border: 1px solid var(--border-subtle); border-radius: var(--radius-card); background: var(--surface-subtle); }
+.code-block { margin: calc(var(--document-space) * 5) 0; overflow: hidden; border: 1px solid var(--border-subtle); border-radius: var(--radius-card); background: var(--surface-subtle); }
 .code-block > header { display: flex; align-items: center; justify-content: space-between; min-height: 32px; padding: 0 7px 0 11px; border-bottom: 1px solid var(--border-subtle); color: var(--text-tertiary); background: var(--surface-raised); font-size: var(--text-2xs); }
 .code-block > header button { display: grid; place-items: center; width: 32px; height: 32px; padding: 0; border: 0; border-radius: 7px; color: var(--text-tertiary); background: transparent; }
 .code-block > header button:hover { color: var(--text-primary); background: var(--surface-hover); }
@@ -701,7 +710,7 @@ kbd { font-size: var(--text-2xs); }
 @media (prefers-reduced-motion: reduce) { .live-pulse > span, .live-answer .result-markdown::after { animation: none; } }
 
 .composer-wrap { padding: 24px 24px 8px; background: linear-gradient(transparent, var(--surface-canvas) 24%, var(--surface-canvas)); }
-.composer { width: min(39rem, 100%); border: 0; border-radius: var(--radius-composer); background: var(--surface-raised); box-shadow: var(--shadow-composer); }
+.composer { width: min(39rem, 100%); border: 0; border-radius: var(--radius-composer); background: var(--surface-composer); box-shadow: var(--shadow-composer); }
 .composer.busy { opacity: 1; }
 .composer:focus-within { box-shadow: var(--shadow-composer); }
 .composer textarea { min-height: 30px; max-height: 168px; padding: 6px 14px 0; font-size: var(--text-md); line-height: 1.5; }
@@ -949,7 +958,7 @@ html[data-client="desktop"] .navigation-collapsed .topbar { padding-left: 70px; 
 
 @media (min-width: 1121px) {
   .app-shell:has(.workspace-panel) .timeline { width: calc(100% - 20px); }
-  .app-shell:has(.workspace-panel) .composer-wrap { padding-inline: 10px; }
+  .app-shell:has(.workspace-panel) .composer-wrap { padding-left: 10px; padding-right: 0; }
 }
 
 @media (max-width: 760px) {

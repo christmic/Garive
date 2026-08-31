@@ -151,12 +151,20 @@ shadows or rounded outer cards.
 
 ### File-document typography
 
-Rendered Markdown inside the output layer uses the installed Codex desktop
-density as the Gate 1 baseline: 13 px body, 1.625 leading and a 3.25 px rhythm.
+Rendered Markdown in the conversation and output layers uses the installed
+Codex desktop density as the Gate 1 baseline: 13 px body, 1.625 leading and a
+3.25 px rhythm.
 Heading scales are 1.5×, 1.25× and 1.125× for h1–h3. The first heading begins
 4 px below the 30 px file toolbar and 24 px from the pane edge. Lists, quotes,
 tables and code align to the same reading edge; they do not introduce a nested
 card measure.
+
+Assistant Markdown uses the same body, leading, heading ratios and block rhythm
+as the file document. Its measure and ownership differ, not its typography.
+User prompts remain bounded work-prompt surfaces and use their independently
+observed 14 px message text; navigation and Composer controls retain the shared
+UI type scale. This prevents the thread from drifting into a looser web-article
+system while the adjacent file uses compact desktop typography.
 
 Code in a rendered file remains part of the document canvas. Its language sits
 at the upper trailing edge, exact-source Copy appears on hover or keyboard
