@@ -8,6 +8,14 @@ use crate::input::help_hints;
 
 const LIST_CAPACITY: usize = 10;
 
+pub(crate) fn composer_status(model: &AppModel) -> &'static str {
+    if model.composer_is_frozen {
+        "Composer locked. Draft retained. Editing is unavailable until durable command truth."
+    } else {
+        "Composer ready. Editing is available."
+    }
+}
+
 pub(crate) fn overlay_text(model: &AppModel) -> String {
     let Some(overlay) = model.overlay else {
         return String::new();

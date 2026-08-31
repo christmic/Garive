@@ -306,6 +306,7 @@ fn schedule_cancel_terminal(database: PathBuf, turn: CommittedTurn, usage: Usage
                 .iter()
                 .any(|fact| fact.kind.as_str() == "turn.cancel_requested")
             {
+                thread::sleep(Duration::from_millis(500));
                 let version = ledger
                     .session_watermark(&turn.session_id)
                     .unwrap()
@@ -456,6 +457,8 @@ async fn shipping_tui_round_trips_through_production_sqlite_runtime() {
         assert!(first.contains("\x1b]0;Garive · Workspace · Connecting · Ready\x07"));
         assert!(first.contains("· Online · Running\x07"));
         assert!(first.contains("\x1b]0;Garive\x07"));
+        assert!(first.contains("retained draftX"));
+        assert!(!first.contains("BLOCKED"));
 
         let durable_deadline = tokio::time::Instant::now() + Duration::from_secs(8);
         let sessions = loop {
@@ -627,7 +630,12 @@ fn run_expect(
             expect "answer after continuation"
             send "cancel this turn\r"
             expect "Online · Running"
+            send "retained draft"
+            expect "retained draft"
             send "\033"
+            expect "Draft locked"
+            send "BLOCKED"
+            send -- "\033\[<0;5;22M\033\[<32;8;22M\033\[<0;8;22m"
             after 100
             expect "cancel this turn"
             set attempts 0
@@ -638,6 +646,8 @@ fn run_expect(
             }
             send "\014"
             expect "stopped"
+            send "X"
+            expect "retained draftX"
             send "\016"
             after 1500
             send "\014"

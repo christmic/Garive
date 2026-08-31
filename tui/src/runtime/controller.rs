@@ -350,7 +350,10 @@ fn browse_prompt_history(state: &mut RuntimeState, direction: i8) -> bool {
 }
 
 fn handle_command_suggestion_key(key: KeyEvent, state: &mut RuntimeState) -> bool {
-    if state.config.screen_reader || !state.model.command_suggestions_active() {
+    if state.config.screen_reader
+        || state.composer_is_frozen()
+        || !state.model.command_suggestions_active()
+    {
         return false;
     }
     let count = state.model.matching_command_suggestion_indices().len();
@@ -381,6 +384,10 @@ fn handle_command_suggestion_key(key: KeyEvent, state: &mut RuntimeState) -> boo
 }
 
 pub(super) fn accept_command_suggestion(state: &mut RuntimeState) {
+    if state.composer_is_frozen() {
+        state.explain_frozen_composer();
+        return;
+    }
     let matches = state.model.matching_command_suggestion_indices();
     let Some(index) = matches
         .get(state.model.command_suggestion_selection)

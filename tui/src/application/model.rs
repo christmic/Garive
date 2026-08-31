@@ -89,7 +89,9 @@ pub(crate) enum BootPartState {
     Idle,
     Loading(EffectContext),
     Ready,
-    Failed { safe_code: &'static str },
+    Failed {
+        safe_code: &'static str,
+    },
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]

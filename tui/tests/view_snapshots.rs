@@ -180,6 +180,14 @@ fn responsive_product_frames_match_reviewed_snapshots() {
 }
 
 #[test]
+fn frozen_composer_theme_and_width_matrix_matches_reviewed_snapshot() {
+    insta::assert_snapshot!(
+        "frozen_composer_theme_width_matrix",
+        frozen_composer_matrix()
+    );
+}
+
+#[test]
 fn live_answer_states_match_reviewed_theme_snapshots() {
     insta::assert_snapshot!(
         "live_answer_states_dark",
@@ -345,6 +353,37 @@ fn product_model() -> AppModel {
     }
     model.composer.replace("Ask a follow-up…").unwrap();
     model
+}
+
+fn frozen_composer_matrix() -> String {
+    let mut model = product_model();
+    model.execution = ExecutionState::Idle;
+    model.composer_is_frozen = true;
+    model.composer.replace("Retained pending draft").unwrap();
+    let mut sections = Vec::new();
+    for theme in [Theme::Dark, Theme::Light, Theme::Mono] {
+        for width in [40, 100] {
+            let area = Rect::new(0, 0, width, 12);
+            let mut buffer = Buffer::empty(area);
+            let cursor = view::render_cached(
+                &model,
+                theme,
+                area,
+                &mut buffer,
+                &mut view::RenderCache::default(),
+            );
+            let border = (0..area.height)
+                .flat_map(|y| (0..area.width).map(move |x| (x, y)))
+                .find(|&(x, y)| buffer[(x, y)].symbol() == "╭")
+                .expect("frozen composer border");
+            sections.push(format!(
+                "theme={theme:?} width={width} border={:?} cursor={cursor:?}\n{}",
+                buffer[border].style(),
+                frame(&model, theme, width, 12)
+            ));
+        }
+    }
+    sections.join("\n\n")
 }
 
 fn activity_stack_model() -> AppModel {

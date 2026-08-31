@@ -1,7 +1,7 @@
 use garive_host_client::HostClientErrorCode;
 
 use crate::{
-    application::{AppAction, BootPartState, ConnectionState, ExecutionState, Overlay},
+    application::{AppAction, BootState, ConnectionState, ExecutionState, Overlay},
     persistence::{DiagnosticEvent, PendingKind},
 };
 
@@ -347,22 +347,26 @@ fn replay_queued_create(state: &mut RuntimeState) -> bool {
 }
 
 pub(super) fn apply_boot_completion(state: &mut RuntimeState) {
-    if matches!(state.model.boot_sessions, BootPartState::Ready) {
-        let selected = state
-            .config
-            .session
-            .clone()
-            .or_else(|| state.preferences.selected_session_id.clone())
-            .or_else(|| {
-                state
-                    .model
-                    .sessions
-                    .first()
-                    .map(|item| item.session_id.clone())
-            });
-        if let Some(id) = selected {
-            state.load(id);
-        }
+    if !matches!(
+        state.model.boot,
+        BootState::Ready | BootState::NotConfigured
+    ) {
+        return;
+    }
+    let selected = state
+        .config
+        .session
+        .clone()
+        .or_else(|| state.preferences.selected_session_id.clone())
+        .or_else(|| {
+            state
+                .model
+                .sessions
+                .first()
+                .map(|item| item.session_id.clone())
+        });
+    if let Some(id) = selected {
+        state.load(id);
     }
     replay_queued_create(state);
 }

@@ -30,6 +30,9 @@ enum MouseAction {
 }
 
 pub(super) fn handle(mouse: MouseEvent, state: &mut RuntimeState) {
+    if state.composer_is_frozen() {
+        state.composer_mouse_selecting = false;
+    }
     if state.composer_mouse_selecting {
         match mouse.kind {
             MouseEventKind::Drag(MouseButton::Left) | MouseEventKind::Up(MouseButton::Left) => {

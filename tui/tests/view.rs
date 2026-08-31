@@ -366,6 +366,62 @@ fn only_the_composer_owns_the_terminal_cursor() {
         &mut view::RenderCache::default(),
     )
     .is_none());
+
+    model.focus = FocusTarget::Composer;
+    model.composer_is_frozen = true;
+    let mut buffer = Buffer::empty(area);
+    assert!(view::render_cached(
+        &model,
+        Theme::Dark,
+        area,
+        &mut buffer,
+        &mut view::RenderCache::default(),
+    )
+    .is_none());
+}
+
+#[test]
+fn frozen_composer_is_read_only_in_visual_cursor_and_pointer_surfaces() {
+    let mut model = AppModel {
+        composer_is_frozen: true,
+        focus: FocusTarget::Composer,
+        terminal_size: application::TerminalSize {
+            width: 100,
+            height: 24,
+        },
+        ..Default::default()
+    };
+    model.composer.replace("/theme ").unwrap();
+
+    let rendered = frame(&model, 100, 24);
+    assert!(rendered.contains("Draft locked"));
+    assert!(rendered.contains("read only"));
+    assert!(rendered.contains("Waiting for durable command truth"));
+    assert!(!rendered.contains("Commands"));
+    assert_eq!(view::composer_hit_test(&model, 4, 21, false), None);
+    assert_eq!(view::command_suggestion_hit_test(&model, 4, 18), None);
+
+    model.composer.clear();
+    let empty = frame(&model, 40, 12);
+    assert!(empty.contains("Draft retained"));
+    assert!(!empty.contains("/ for commands"));
+}
+
+#[test]
+fn screen_reader_names_frozen_composer_without_editing_affordance() {
+    let mut model = AppModel {
+        composer_is_frozen: true,
+        ..Default::default()
+    };
+    assert_eq!(
+        view::linear_composer_status(&model),
+        "Composer locked. Draft retained. Editing is unavailable until durable command truth."
+    );
+    model.composer_is_frozen = false;
+    assert_eq!(
+        view::linear_composer_status(&model),
+        "Composer ready. Editing is available."
+    );
 }
 
 #[test]

@@ -48,6 +48,7 @@ pub(super) async fn run(
     let mut emitted = BTreeMap::new();
     let mut last_status = String::new();
     let mut last_overlay = String::new();
+    let mut last_composer = String::new();
     write_linear("Garive. Connecting to durable workspace.")?;
     loop {
         state.advance_graceful_quit();
@@ -94,7 +95,13 @@ pub(super) async fn run(
         if std::mem::take(&mut state.bell_requested) {
             write_linear_bell()?;
         }
-        emit_linear_changes(&state, &mut emitted, &mut last_status, &mut last_overlay)?;
+        emit_linear_changes(
+            &state,
+            &mut emitted,
+            &mut last_status,
+            &mut last_overlay,
+            &mut last_composer,
+        )?;
         if state.model.quit_requested {
             break;
         }
@@ -132,6 +139,7 @@ fn emit_linear_changes(
     emitted: &mut BTreeMap<String, String>,
     last_status: &mut String,
     last_overlay: &mut String,
+    last_composer: &mut String,
 ) -> Result<(), TuiError> {
     let status = format!(
         "Connection {}. Turn {}.",
@@ -158,6 +166,11 @@ fn emit_linear_changes(
             write_linear(&overlay)?;
         }
         *last_overlay = overlay;
+    }
+    let composer = crate::view::linear_composer_status(&state.model);
+    if *last_composer != composer {
+        write_linear(composer)?;
+        *last_composer = composer.into();
     }
     Ok(())
 }

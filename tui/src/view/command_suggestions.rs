@@ -86,7 +86,7 @@ pub(super) fn render(model: &AppModel, composer: Rect, colors: Palette, buffer: 
 }
 
 pub(super) fn area(model: &AppModel, composer: Rect) -> Option<Rect> {
-    if !model.command_suggestions_active() {
+    if model.composer_is_frozen || !model.command_suggestions_active() {
         return None;
     }
     let rows = model

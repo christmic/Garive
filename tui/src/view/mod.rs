@@ -36,6 +36,7 @@ use conversation::render_conversation;
 pub(crate) use conversation::RenderCache;
 use footer::render_footer;
 use layout::FrameLayout;
+pub(crate) use linear::composer_status as linear_composer_status;
 pub(crate) use linear::{overlay_text as linear_overlay, safe as linear_safe};
 pub(crate) use motion::{status_motion_enabled, MotionFrame};
 use overlay::render_overlay;
@@ -110,6 +111,9 @@ pub(crate) fn composer_hit_test(
     row: u16,
     clamp: bool,
 ) -> Option<usize> {
+    if model.composer_is_frozen {
+        return None;
+    }
     let full = Rect::new(0, 0, model.terminal_size.width, model.terminal_size.height);
     let frame = FrameLayout::resolve(model, full);
     composer::selection_at(model, frame.composer, column, row, clamp)
