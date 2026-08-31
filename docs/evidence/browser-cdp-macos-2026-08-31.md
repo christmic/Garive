@@ -33,7 +33,7 @@ cargo test -p garive-adapter-browser-cdp --test managed_chromium -- --ignored --
 ```
 
 Latest result: 1 passed, 0 failed, 0.79 seconds. The ordinary adapter suite also
-passed 15 tests; strict all-target Clippy and Rustdoc passed.
+passed 16 tests; strict all-target Clippy and Rustdoc passed.
 
 The Runtime-owned concrete-port gate independently launched a fresh managed
 Chrome profile, created and attached one blank target, bootstrapped it to an
@@ -56,8 +56,14 @@ page set, then supplies a second explicit CDP connection, admits that exact
 popup under an unrelated Runtime page identity and observes `Popup ready`
 through its independent page port. It denies and closes a cross-origin popup,
 restores the exact parent target after Chrome changes foreground focus, and
-then completes the remaining parent-page actions. The final gate passed eight
-consecutive runs (1.07, 0.83, 0.70, 0.69, 0.67, 0.71, 0.71 and 0.71 seconds);
+then completes the remaining parent-page actions. Finally it configures native
+browser-wide download denial with no path, navigates to a canary attachment,
+accepts Chrome's exact `isDownload=true` plus `net::ERR_ABORTED` terminal,
+proves history and frames did not change, returns trustworthy
+`native_action_unsupported`, observes the original page again, and finds no
+canary file in the bounded temporary profile walk. The popup journey passed
+eight consecutive runs; the extended download journey then passed five
+consecutive runs (0.87, 0.76, 0.76, 0.74 and 0.74 seconds);
 strict Runtime test-target Clippy and warning-free Rustdoc also passed.
 
 ```sh
@@ -88,6 +94,14 @@ Allowed pages remain pending until separate page admission; denied pages are
 closed by exact identity, and the admitted parent is explicitly reactivated.
 Attached mode does not enable browser-level target discovery.
 
+Before its first Managed observation, the port sends the exact browser-level
+`Browser.setDownloadBehavior` request with `deny`, no path and disabled events.
+The adapter treats a download as a closed navigation outcome and does not wait
+for page-load events that Chrome does not emit. Runtime requires the native
+policy plus unchanged top-level history and frame evidence before returning a
+trustworthy unsupported receipt. Attached mode does not apply a global personal
+browser policy and therefore cannot make this claim.
+
 Popup admission exposes only a Runtime-owned opaque admission identity. The
 private target/session binding is absent from Debug output and governed
 receipts, and the assigned `BrowserPageId` is structurally independent of the
@@ -108,7 +122,7 @@ into the receipt digest. Typed `DOM.getFrameOwner` binds child frame identities
 to their embedding backend nodes. Runtime reads AX subtrees only for same-origin
 frames with a fully admitted ancestor chain and collapses a cross-origin owner
 to one nameless, valueless and actionless opaque node. The ordinary adapter
-suite passes 15 tests and the focused Runtime mapping/port suites pass 22 tests
+suite passes 16 tests and the focused Runtime mapping/port suites pass 23 tests
 under strict Clippy.
 
 The baseline now covers one navigation redirect, one form, open shadow DOM and
@@ -122,6 +136,7 @@ click, focused Enter activation, settled scroll, receipts and fresh
 observation/revision evidence, including same-origin/cross-origin iframe
 isolation, protected-field redaction, popup pending admission, popup origin
 denial, independent popup admission/observation and parent-focus restoration.
-Real-browser history actions, downloads, attached-session
+It also covers native Managed download denial without accepting a path or
+persisting the canary. Real-browser history actions, attached-session
 extension/native-messaging evidence, attachment loss and durable Started/crash
 fault injection remain open. This is not a complete Browser Use claim.

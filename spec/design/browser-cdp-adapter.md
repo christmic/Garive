@@ -172,8 +172,9 @@ success/failed/uncertain binding invalidation. A second managed-Chrome gate
 passes initial observation, same-origin redirected navigation, completed
 receipt, target-revision rotation, fresh semantic observation, focused Enter
 activation and effect-aware viewport scroll through the concrete Runtime port
-itself. This baseline does not satisfy the remaining frame/action/fault matrix
-by itself.
+itself. The same gate now proves Managed download denial, an unchanged page and
+no canary in the temporary profile. Attached extension/native-messaging,
+attachment-loss/crash recovery and the remaining fault matrix stay open.
 
 ## Meta
 
