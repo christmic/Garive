@@ -15,8 +15,9 @@ use std::{
 
 use garive_browser_cdp::{CdpAdapterConfig, CdpClient, CdpLimits, CdpTransport, CdpWaitUntil};
 use garive_runtime::{
-    BrowserPageId, BrowserSessionId, CdpNativeAdapterPort, NativeActionCommandV1, NativeActionId,
-    NativeAdapterPort, NativeObservationBounds, NativeTarget,
+    BrowserPageId, BrowserSessionId, CdpBrowserSessionMode, CdpNativeAdapterPort,
+    NativeActionCommandV1, NativeActionId, NativeAdapterPort, NativeObservationBounds,
+    NativeTarget,
 };
 use serde_json::json;
 
@@ -105,9 +106,14 @@ fn serve(stream: &mut TcpStream, address: SocketAddr, cross_origin: Option<Socke
             "200 OK",
             "Content-Type: text/html; charset=utf-8\r\n".into(),
             format!(
-                r#"<!doctype html><title>Runtime port fixture</title><body style="height:4000px" onscroll="document.querySelector('main').setAttribute('aria-label','Scrolled')"><main><label>Account <input aria-label="Account name"></label><label>Vault <input type="password" aria-label="Vault password" value="GARIVE_PASSWORD_CANARY_DO_NOT_LEAK"></label><label>Mode <select aria-label="Execution mode" onchange="this.setAttribute('aria-label','Execution mode '+this.value)"><option value="safe">Safe</option><option value="stable">Stable</option></select></label><button data-count="0" onclick="this.dataset.count=String(Number(this.dataset.count)+1);this.setAttribute('aria-label','Submitted '+this.dataset.count)">Submit form</button><iframe src="/same-frame"></iframe><iframe src="http://{}/cross-frame"></iframe></main></body>"#,
+                r#"<!doctype html><title>Runtime port fixture</title><body style="height:4000px" onscroll="document.querySelector('main').setAttribute('aria-label','Scrolled')"><main><label>Account <input aria-label="Account name"></label><label>Vault <input type="password" aria-label="Vault password" value="GARIVE_PASSWORD_CANARY_DO_NOT_LEAK"></label><label>Mode <select aria-label="Execution mode" onchange="this.setAttribute('aria-label','Execution mode '+this.value)"><option value="safe">Safe</option><option value="stable">Stable</option></select></label><button data-count="0" onclick="this.dataset.count=String(Number(this.dataset.count)+1);this.setAttribute('aria-label','Submitted '+this.dataset.count)">Submit form</button><button aria-label="Open allowed popup" onclick="window.open('/popup','allowed-child')">Allowed popup</button><button aria-label="Open denied popup" onclick="window.open('http://{0}/cross-popup','denied-child')">Denied popup</button><iframe src="/same-frame"></iframe><iframe src="http://{0}/cross-frame"></iframe></main></body>"#,
                 cross_origin.expect("cross-origin fixture")
             ),
+        ),
+        "/popup" => (
+            "200 OK",
+            "Content-Type: text/html; charset=utf-8\r\n".into(),
+            "<!doctype html><title>Pending popup</title>".into(),
         ),
         "/same-frame" => (
             "200 OK",
@@ -123,6 +129,11 @@ fn serve(stream: &mut TcpStream, address: SocketAddr, cross_origin: Option<Socke
             "200 OK",
             "Content-Type: text/html; charset=utf-8\r\n".into(),
             "<button aria-label=\"Cross origin secret\">Secret</button>".into(),
+        ),
+        "/cross-popup" => (
+            "200 OK",
+            "Content-Type: text/html; charset=utf-8\r\n".into(),
+            "<!doctype html><title>Denied popup</title>".into(),
         ),
         _ => ("204 No Content", String::new(), String::new()),
     };
@@ -202,8 +213,9 @@ async fn managed_chrome_runs_through_the_governed_runtime_port() {
         .await
         .expect("managed HTTP seed");
     let target = target(&page_id);
-    let mut port = CdpNativeAdapterPort::new(
+    let mut port = CdpNativeAdapterPort::new_with_mode(
         target.clone(),
+        CdpBrowserSessionMode::Managed,
         cdp_session_id,
         "revision-initial",
         "managed-runtime-port",
@@ -303,7 +315,77 @@ async fn managed_chrome_runs_through_the_governed_runtime_port() {
         Err(garive_runtime::NativeProtocolError::BrowserFrameOpaque)
     );
 
-    let mode = after
+    let allowed_popup = after
+        .nodes
+        .iter()
+        .find(|node| node.name.as_deref() == Some("Open allowed popup"))
+        .expect("allowed popup")
+        .node_ref
+        .clone();
+    let popup_command = NativeActionCommandV1 {
+        action_id: NativeActionId::new("managed-popup-allowed").expect("action"),
+        target: target.clone(),
+        expected_snapshot_id: after.snapshot_id.clone(),
+        target_revision: after.target_revision.clone(),
+        prepared_input: json!({
+            "action":"click",
+            "node_ref":allowed_popup.as_str(),
+            "allowed_navigation_origins":[page_server.origin()]
+        }),
+    };
+    let popup_binding = port
+        .preflight_action(&popup_command)
+        .expect("popup preflight");
+    let popup_receipt = port
+        .dispatch_action(&popup_command, &popup_binding)
+        .await
+        .expect("popup receipt");
+    assert_eq!(popup_receipt.terminal_classification, "completed");
+    let pending_popup = port.take_pending_popup().expect("pending popup");
+    assert_eq!(pending_popup.requested_origin, page_server.origin());
+    assert!(pending_popup.user_gesture);
+    assert!(port.take_pending_popup().is_none());
+    let after_popup = port
+        .observe(&target, Some(&after.snapshot_id), bounds)
+        .await
+        .expect("post-popup observation");
+    let denied_popup = after_popup
+        .nodes
+        .iter()
+        .find(|node| node.name.as_deref() == Some("Open denied popup"))
+        .expect("denied popup")
+        .node_ref
+        .clone();
+    let denied_command = NativeActionCommandV1 {
+        action_id: NativeActionId::new("managed-popup-denied").expect("action"),
+        target: target.clone(),
+        expected_snapshot_id: after_popup.snapshot_id.clone(),
+        target_revision: after_popup.target_revision.clone(),
+        prepared_input: json!({
+            "action":"click",
+            "node_ref":denied_popup.as_str(),
+            "allowed_navigation_origins":[]
+        }),
+    };
+    let denied_binding = port
+        .preflight_action(&denied_command)
+        .expect("denied popup preflight");
+    let denied_receipt = port
+        .dispatch_action(&denied_command, &denied_binding)
+        .await
+        .expect("denied popup receipt");
+    assert_eq!(denied_receipt.terminal_classification, "failed");
+    assert_eq!(
+        denied_receipt.failure_code.as_deref(),
+        Some("browser_origin_denied")
+    );
+    assert!(port.take_pending_popup().is_none());
+    let after_denied = port
+        .observe(&target, Some(&after_popup.snapshot_id), bounds)
+        .await
+        .expect("post-denial observation");
+
+    let mode = after_denied
         .nodes
         .iter()
         .find(|node| node.name.as_deref() == Some("Execution mode"))
@@ -313,8 +395,8 @@ async fn managed_chrome_runs_through_the_governed_runtime_port() {
     let select = NativeActionCommandV1 {
         action_id: NativeActionId::new("managed-select").expect("action"),
         target: target.clone(),
-        expected_snapshot_id: after.snapshot_id.clone(),
-        target_revision: after.target_revision.clone(),
+        expected_snapshot_id: after_denied.snapshot_id.clone(),
+        target_revision: after_denied.target_revision.clone(),
         prepared_input: json!({
             "action":"select_option",
             "node_ref":mode.as_str(),
@@ -329,7 +411,7 @@ async fn managed_chrome_runs_through_the_governed_runtime_port() {
         .expect("select receipt");
     assert_eq!(select_receipt.terminal_classification, "completed");
     let after_select = port
-        .observe(&target, Some(&after.snapshot_id), bounds)
+        .observe(&target, Some(&after_denied.snapshot_id), bounds)
         .await
         .expect("post-select observation");
     assert!(after_select
