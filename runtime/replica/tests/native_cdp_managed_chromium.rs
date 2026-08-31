@@ -172,14 +172,18 @@ fn launch_chrome(profile: &std::path::Path) -> ManagedBrowser {
 fn endpoint(profile: &std::path::Path) -> String {
     let active_port = profile.join("DevToolsActivePort");
     let deadline = Instant::now() + Duration::from_secs(10);
-    while !active_port.is_file() && Instant::now() < deadline {
+    loop {
+        if let Ok(active) = fs::read_to_string(&active_port) {
+            let mut lines = active.lines();
+            if let (Some(port), Some(path)) = (lines.next(), lines.next()) {
+                if !port.is_empty() && !path.is_empty() {
+                    return format!("ws://127.0.0.1:{port}{path}");
+                }
+            }
+        }
+        assert!(Instant::now() < deadline, "complete DevToolsActivePort");
         thread::sleep(Duration::from_millis(25));
     }
-    let active = fs::read_to_string(active_port).expect("DevToolsActivePort");
-    let mut lines = active.lines();
-    let port = lines.next().expect("port");
-    let path = lines.next().expect("browser capability path");
-    format!("ws://127.0.0.1:{port}{path}")
 }
 
 fn target(page_id: &str) -> NativeTarget {

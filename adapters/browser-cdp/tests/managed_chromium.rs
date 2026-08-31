@@ -150,13 +150,18 @@ async fn managed_chrome_version_target_attach_and_ax_tree() {
     let _browser = ManagedBrowser(child);
     let active_port = profile.path().join("DevToolsActivePort");
     let deadline = Instant::now() + Duration::from_secs(10);
-    while !active_port.is_file() && Instant::now() < deadline {
+    let (port, path) = loop {
+        if let Ok(active) = fs::read_to_string(&active_port) {
+            let mut lines = active.lines();
+            if let (Some(port), Some(path)) = (lines.next(), lines.next()) {
+                if !port.is_empty() && !path.is_empty() {
+                    break (port.to_owned(), path.to_owned());
+                }
+            }
+        }
+        assert!(Instant::now() < deadline, "complete DevToolsActivePort");
         thread::sleep(Duration::from_millis(25));
-    }
-    let active = fs::read_to_string(active_port).expect("DevToolsActivePort");
-    let mut lines = active.lines();
-    let port = lines.next().expect("port");
-    let path = lines.next().expect("browser capability path");
+    };
     let config = CdpAdapterConfig::new(
         format!("ws://127.0.0.1:{port}{path}"),
         CdpLimits::new(4 * 1_024 * 1_024, 1, 1_024, 10_000).expect("limits"),
