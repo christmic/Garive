@@ -237,6 +237,50 @@ and 143 unique committed Turns in 1,800.080 seconds. TUI RSS peaked and ended at
 passing the 100 MiB absolute and 20 MiB window-growth gates. The raw report is
 stored in `docs/evidence/tui-release-churn-2026-08-31.json`.
 
+## Current v2 evidence checkpoint
+
+Master `5d1babef` integrates the current TUI evidence without converting an
+automated terminal transcript into physical-window proof:
+
+- Typed application effects are production paths, not scaffolding. Commits
+  `1b6a4046`, `face1b02`, and `b852a4d5` route create, start, cancel, and
+  continue through persist-before-send effects; `1619eeb4`, `cdc8a2f7`, and `36f34f05` route
+  bootstrap, snapshot, and Session-page reads through exact correlated
+  results. [`application_reducer.rs`](../../tui/tests/application_reducer.rs),
+  [`effect_runner.rs`](../../tui/tests/effect_runner.rs), and
+  [`host_effect_runner.rs`](../../tui/tests/host_effect_runner.rs) reject stale,
+  foreign, duplicated, malformed, and panic outcomes.
+- H4 is verified from ephemeral receipt through durable takeover.
+  [`production_runtime.rs`](../../tui/tests/production_runtime.rs) observes two
+  distinct live frames before the SQLite answer; commit `ff1f26bb` extends
+  [`live_h4_recovery.rs`](../../tui/tests/live_h4_recovery.rs) across detached
+  follow and screen-reader mode, where deltas are silent and the durable final
+  answer is announced once. [`live_answer_projection.rs`](../../tui/tests/live_answer_projection.rs)
+  binds generation fencing, coalescing, unseen counts, and atomic replacement.
+- Full-screen and linear modes share typed session pagination and prioritize
+  local input/cancellation ahead of Host traffic (`2e533c44` and
+  [`architecture.rs`](../../tui/tests/architecture.rs)). Subscription owners
+  cancel on replacement and reject stale generation/cursor traffic
+  (`83d2a341`, `b6eb2541`).
+- Component evidence covers compact reachability, safe public identity,
+  connection recovery truth, and accent hierarchy. The containing commits are
+  `db5b2de6`, `d7af6a4f`, `60021509`, `65e1d8d4`, and `c843bae5`; the direct
+  tests are [`overlay_accessibility.rs`](../../tui/tests/overlay_accessibility.rs),
+  [`identity_labels.rs`](../../tui/tests/identity_labels.rs),
+  [`connection_truth.rs`](../../tui/tests/connection_truth.rs), and
+  [`accent_hierarchy.rs`](../../tui/tests/accent_hierarchy.rs).
+
+The streaming cadence and durable-boundary choices remain grounded in the
+local Codex/Claude Code/Qoder audit, including explicit Adopt/Adapt/Reject
+decisions, at
+[`tui-competitive-evidence-2026-09-01.md`](../source-audit/tui-competitive-evidence-2026-09-01.md).
+Remaining product evidence is deliberately narrower than the implemented
+feature set: execute physical Apple Terminal and one iTerm2-class terminal on
+macOS, bind candidate screenshots, and record the manual interaction/accessibility
+review. Linux x86_64 native terminal/tmux/`TERM=dumb` and Windows MSVC,
+ACL/ConPTY/restore remain later platform gates. Existing cross-builds do not
+close those native rows.
+
 ## Compatibility matrix
 
 | Platform | Build gate | Native/PTY gate |
@@ -569,5 +613,5 @@ The TUI is complete only when:
 ## Meta
 
 - Owner: `@christmic`
-- Last reviewed: 2026-08-30
+- Last reviewed: 2026-09-01
 - Status: accepted

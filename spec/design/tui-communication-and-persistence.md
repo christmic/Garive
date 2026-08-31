@@ -11,11 +11,11 @@ Engineers implementing `clients/host-rs`, `tui/src/host.rs`,
 
 ## Why
 
-The current Rust Host client supports H1 mutations and blocks until one Turn
-terminal. It has no H2 queries, H3 activity value, incremental event API,
-canonical JSON continuation, or local pending-command recovery. A competitive
-TUI must remain responsive and truthful across disconnect, timeout, restart,
-and duplicate replay without becoming another Session database.
+The Rust Host client and resident TUI now implement H1/H2/H3 plus H4's
+separate ephemeral stream and exact local pending-command recovery. This
+contract prevents those implemented paths from collapsing durable cursor truth,
+loss-tolerant live preview, or local retry identity into a second Session
+database.
 
 ## Host port
 
@@ -53,6 +53,20 @@ stream generation plus contiguous sequence values. Snapshot, gap, overflow,
 and durable convergence follow
 [`host-live-output-v1.md`](host-live-output-v1.md); H1 backpressure rules below
 do not falsely make H4 lossless.
+
+At master `5d1babef`, H4 admission is executable rather than prospective.
+[`live_h4_recovery.rs`](../../tui/tests/live_h4_recovery.rs) drives the shipping
+TUI through disconnect, unavailable preview, snapshot recovery, detached
+follow, and final SQLite takeover; its screen-reader run suppresses intermediate
+deltas and announces the durable final answer once.
+[`production_runtime.rs`](../../tui/tests/production_runtime.rs) requires two
+distinct live frames before durable completion, while
+[`live_answer_projection.rs`](../../tui/tests/live_answer_projection.rs) binds
+generation/sequence fencing, frame coalescing, detached unseen counts, and
+atomic takeover. Commits `a973274d`, `98e17709`, `ff1f26bb`, `83d2a341`, and
+`b6eb2541` are the containing evidence. These tests close H4 protocol and
+automated PTY behavior; they do not substitute for a physical macOS window or
+screenshot.
 
 ## Launch configuration
 
@@ -445,5 +459,5 @@ signal number.
 ## Meta
 
 - Owner: `@christmic`
-- Last reviewed: 2026-08-30
+- Last reviewed: 2026-09-01
 - Status: accepted
