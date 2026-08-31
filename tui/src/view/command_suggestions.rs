@@ -61,7 +61,14 @@ pub(super) fn render(model: &AppModel, composer: Rect, colors: Palette, buffer: 
                     colors.muted
                 },
             ),
-            Span::styled(command.input, colors.accent),
+            Span::styled(
+                command.input,
+                if selected {
+                    colors.selected
+                } else {
+                    colors.normal
+                },
+            ),
             Span::styled(if detail.is_empty() { "" } else { "  " }, colors.muted),
             Span::styled(
                 detail,

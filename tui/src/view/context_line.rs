@@ -12,7 +12,7 @@ use crate::{
     Theme,
 };
 
-use super::{motion::status_motion, palette, short_id, MotionFrame};
+use super::{agent_label, motion::status_motion, palette, MotionFrame};
 
 pub(super) fn render(
     model: &AppModel,
@@ -40,18 +40,14 @@ pub(super) fn render(
         (Some(_), Some((index, _))) => format!("Session {}", index + 1),
         (Some(_), None) => "Current session".into(),
     };
-    let definition = selected
-        .map(|(_, session)| short_id(&session.definition_id))
-        .or_else(|| {
-            model
-                .definitions
-                .first()
-                .map(|item| short_id(&item.definition_id))
-        })
-        .unwrap_or("Garive");
+    let agent = if selected.is_some() || !model.definitions.is_empty() {
+        agent_label()
+    } else {
+        "Garive"
+    };
     let mut identity = vec![Span::styled(session, colors.normal)];
     if area.width >= 80 {
-        identity.push(Span::styled(format!("  ·  {definition}"), colors.muted));
+        identity.push(Span::styled(format!("  ·  {agent}"), colors.muted));
     }
     Line::from(identity).render(cells[0], buffer);
 

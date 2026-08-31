@@ -22,13 +22,19 @@ fn session_label(model: &AppModel) -> String {
         .unwrap_or_else(|| "Session active".into())
 }
 
-fn connection_label(state: ConnectionState) -> &'static str {
+fn connection_label(state: ConnectionState) -> String {
     match state {
-        ConnectionState::Connecting => "Connecting",
-        ConnectionState::Online => "Online",
-        ConnectionState::Disconnected { .. } => "Disconnected",
-        ConnectionState::Reconnecting { .. } => "Reconnecting",
-        ConnectionState::Unavailable { .. } => "Unavailable",
+        ConnectionState::Connecting => "Connecting".into(),
+        ConnectionState::Online => "Online".into(),
+        ConnectionState::Disconnected { attempt } => format!(
+            "Disconnected {attempt}/{}",
+            ConnectionState::reconnect_attempt_limit()
+        ),
+        ConnectionState::Reconnecting { attempt } => format!(
+            "Reconnecting {attempt}/{}",
+            ConnectionState::reconnect_attempt_limit()
+        ),
+        ConnectionState::Unavailable { .. } => "Unavailable".into(),
     }
 }
 

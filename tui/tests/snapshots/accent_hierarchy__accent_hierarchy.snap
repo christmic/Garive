@@ -1,0 +1,18 @@
+---
+source: tui/tests/accent_hierarchy.rs
+expression: "evidence.join(\"\\n\\n\")"
+---
+Dark
+  suggestions plain=fg=Rgb(232, 235, 242) bg=Reset modifier=NONE selected=fg=Rgb(72, 202, 228) bg=Rgb(40, 55, 68) modifier=BOLD
+  palette     plain=fg=Rgb(232, 235, 242) bg=Reset modifier=NONE selected=fg=Rgb(72, 202, 228) bg=Rgb(40, 55, 68) modifier=BOLD
+  navigator   plain=fg=Rgb(126, 134, 151) bg=Reset modifier=NONE selected=fg=Rgb(232, 235, 242) bg=Rgb(40, 55, 68) modifier=BOLD
+
+Light
+  suggestions plain=fg=Black bg=Reset modifier=NONE selected=fg=Blue bg=Rgb(214, 229, 255) modifier=BOLD
+  palette     plain=fg=Black bg=Reset modifier=NONE selected=fg=Blue bg=Rgb(214, 229, 255) modifier=BOLD
+  navigator   plain=fg=DarkGray bg=Reset modifier=NONE selected=fg=Black bg=Rgb(214, 229, 255) modifier=BOLD
+
+Mono
+  suggestions plain=fg=Reset bg=Reset modifier=NONE selected=fg=Reset bg=Reset modifier=BOLD | REVERSED
+  palette     plain=fg=Reset bg=Reset modifier=NONE selected=fg=Reset bg=Reset modifier=BOLD | REVERSED
+  navigator   plain=fg=DarkGray bg=Reset modifier=NONE selected=fg=Reset bg=Reset modifier=BOLD | REVERSED

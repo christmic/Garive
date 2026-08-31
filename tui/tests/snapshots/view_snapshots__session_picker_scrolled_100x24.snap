@@ -2,20 +2,20 @@
 source: tui/tests/view_snapshots.rs
 expression: "frame(&sessions, Theme::Mono, 100, 24)"
 ---
-  Session 12  ·  research-age                                                        Agent running
+  Session 12  ·  Agent                                                               Agent running
 
     You            ╭ Switch session ────────────────────────────────────────────╮
       Summarize t  │                                                            │
       ✓  Agent ac  │  Filter  type to search                                    │
-    ◆ Garive       │    Session 4 · research-age   ● running                    │
-      ## Release   │    Session 5 · research-age   ● running                    │
-      • Verify th  │    Session 6 · research-age   ● running                    │
-      • Ship with  │    Session 7 · research-age   ● running                    │
-      cargo test   │    Session 8 · research-age   ● running                    │
-                   │    Session 9 · research-age   ● running                    │
-                   │    Session 10 · research-age   ● running                   │
-                   │    Session 11 · research-age   ● running                   │
-                   │  › Session 12 · research-age   ● running                   │
+    ◆ Garive       │    Session 4 · Agent   ● running                           │
+      ## Release   │    Session 5 · Agent   ● running                           │
+      • Verify th  │    Session 6 · Agent   ● running                           │
+      • Ship with  │    Session 7 · Agent   ● running                           │
+      cargo test   │    Session 8 · Agent   ● running                           │
+                   │    Session 9 · Agent   ● running                           │
+                   │    Session 10 · Agent   ● running                          │
+                   │    Session 11 · Agent   ● running                          │
+                   │  › Session 12 · Agent   ● running                          │
                    │                                                            │
                    │    ↑/↓ select   Enter open   Esc close                     │
                    │                                                            │

@@ -616,7 +616,8 @@ fn linear_overlays_share_filtered_results_and_selection_windows() {
     ];
     model.session_selection = 0;
     let sessions = view::linear_overlay(&model);
-    assert!(sessions.contains("> 1. Session 2, needle-agent"));
+    assert!(sessions.contains("> 1. Session 2, Agent"));
+    assert!(!sessions.contains("Session 2, needle-agent"));
     assert!(!sessions.contains("000001"));
     assert!(!sessions.contains("other-agent"));
 }
@@ -684,7 +685,8 @@ fn session_picker_filter_and_selection_share_one_visible_result_set() {
         ..Default::default()
     };
     let filtered = frame(&model, 80, 24);
-    assert!(filtered.contains("needle-agent"));
+    assert!(filtered.contains("Agent"));
+    assert!(!filtered.contains("Session 2 · needle-agent"));
     assert!(filtered.contains("Session 2"));
     assert!(!filtered.contains("000001"));
     assert!(!filtered.contains("000000"));
@@ -695,7 +697,8 @@ fn session_picker_filter_and_selection_share_one_visible_result_set() {
         .collect();
     model.session_selection = 11;
     let scrolled = frame(&model, 80, 24);
-    assert!(scrolled.contains("› Session 12 · agent-000011"));
+    assert!(scrolled.contains("› Session 12 · Agent"));
+    assert!(!scrolled.contains("agent-000011"));
     assert!(!scrolled.contains("agent-000000"));
 }
 

@@ -60,8 +60,9 @@ fn linear_projection_names_the_same_selection_and_actions() {
 
     let inspector = recovery_inspector();
     let spoken = view::linear_overlay(&inspector);
-    assert!(spoken.contains("> 3. Connection interrupted. Reload durable Session truth"));
-    assert!(spoken.contains("Enter to reconnect"));
+    assert!(spoken.contains("> 3. Reconnecting · attempt 3/5. Updates remain paused"));
+    assert!(spoken.contains("/status for details"));
+    assert!(!spoken.contains("Enter to reconnect"));
     assert!(spoken.contains("Escape to close"));
 
     let suspension = suspension();
@@ -91,7 +92,7 @@ fn surfaces() -> Vec<Surface> {
         (
             "RECOVERY INSPECTOR",
             recovery_inspector(),
-            &["› ! Connection interrupted", "Enter reconnect", "Esc close"],
+            &["› ! Reconnecting · attempt 3/5", "Esc close"],
         ),
         (
             "DECISION SHEET",

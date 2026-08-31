@@ -263,8 +263,8 @@ pub(super) fn safe_text(value: &str) -> String {
         .collect()
 }
 
-fn short_id(value: &str) -> &str {
-    value.get(..12).unwrap_or(value)
+const fn agent_label() -> &'static str {
+    "Agent"
 }
 fn empty_title(value: BootState) -> &'static str {
     match value {

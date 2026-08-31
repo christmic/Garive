@@ -70,7 +70,8 @@ fn connection_recovery_outranks_running_and_navigation_is_last() {
         focus: FocusTarget::Conversation,
         ..Default::default()
     };
-    assert!(hint(&model).contains("Ctrl+P reconnect safely"));
+    assert!(hint(&model).contains("/reconnect resume events"));
+    assert!(hint(&model).contains("Updates paused · attempt 2/5"));
 
     model.connection = application::ConnectionState::Online;
     model.execution = ExecutionState::Idle;

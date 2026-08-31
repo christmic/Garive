@@ -16,10 +16,10 @@ RECOVERY INSPECTOR
   ╭ Inspector · Recovery ────────────╮
   │   ! Another Session needs review │
   │     Switch Sessions to review i… │
-  │ › ! Connection interrupted       │
-  │     Reload durable Session trut… │
+  │ › ! Reconnecting · attempt 3/5   │
+  │     Updates remain paused. Wait… │
   │                                  │
-  │ Enter reconnect · Esc close      │
+  │ ↑↓ select · Esc close            │
   ╰──────────────────────────────────╯
 
 DECISION SHEET
