@@ -116,6 +116,11 @@ fn serve(stream: &mut TcpStream, address: SocketAddr, cross_origin: Option<Socke
             "<!doctype html><title>Pending popup</title><main aria-label=\"Popup ready\">Ready</main>"
                 .into(),
         ),
+        "/download" => (
+            "200 OK",
+            "Content-Type: application/octet-stream\r\nContent-Disposition: attachment; filename=garive-download-canary.bin\r\n".into(),
+            "GARIVE_DOWNLOAD_CANARY_MUST_NOT_PERSIST".into(),
+        ),
         "/same-frame" => (
             "200 OK",
             "Content-Type: text/html; charset=utf-8\r\n".into(),
@@ -192,6 +197,31 @@ fn browser_target(page_id: &str) -> NativeTarget {
         session_id: BrowserSessionId::new("managed-chrome").expect("browser session"),
         page_id: BrowserPageId::new(page_id).expect("page"),
     }
+}
+
+fn profile_contains(profile: &std::path::Path, file_name: &str) -> bool {
+    let mut pending = vec![profile.to_path_buf()];
+    for _ in 0..10_000 {
+        let Some(path) = pending.pop() else {
+            return false;
+        };
+        let Ok(metadata) = fs::symlink_metadata(&path) else {
+            continue;
+        };
+        if metadata.file_type().is_symlink() {
+            continue;
+        }
+        if metadata.is_file() && path.file_name().and_then(|name| name.to_str()) == Some(file_name)
+        {
+            return true;
+        }
+        if metadata.is_dir() {
+            if let Ok(entries) = fs::read_dir(path) {
+                pending.extend(entries.filter_map(Result::ok).map(|entry| entry.path()));
+            }
+        }
+    }
+    panic!("managed profile traversal exceeded its evidence bound");
 }
 
 #[tokio::test]
@@ -531,4 +561,43 @@ async fn managed_chrome_runs_through_the_governed_runtime_port() {
         .nodes
         .iter()
         .any(|node| node.name.as_deref() == Some("Scrolled")));
+
+    let download = NativeActionCommandV1 {
+        action_id: NativeActionId::new("managed-download-denied").expect("action"),
+        target: target.clone(),
+        expected_snapshot_id: after_scroll.snapshot_id.clone(),
+        target_revision: after_scroll.target_revision.clone(),
+        prepared_input: json!({
+            "destination_url":format!("{}/download", page_server.origin()),
+            "destination_origin":page_server.origin(),
+            "wait_until":"load",
+            "timeout_ms":10_000,
+            "max_nodes":bounds.max_nodes,
+            "max_text_bytes":bounds.max_text_bytes
+        }),
+    };
+    let download_binding = port
+        .preflight_action(&download)
+        .expect("download preflight");
+    let download_receipt = port
+        .dispatch_action(&download, &download_binding)
+        .await
+        .expect("download denial receipt");
+    assert_eq!(download_receipt.terminal_classification, "failed");
+    assert_eq!(
+        download_receipt.failure_code.as_deref(),
+        Some("native_action_unsupported")
+    );
+    let after_download = port
+        .observe(&target, Some(&after_scroll.snapshot_id), bounds)
+        .await
+        .expect("page remains observable after denied download");
+    assert!(after_download
+        .nodes
+        .iter()
+        .any(|node| node.name.as_deref() == Some("Scrolled")));
+    assert!(!profile_contains(
+        profile.path(),
+        "garive-download-canary.bin"
+    ));
 }

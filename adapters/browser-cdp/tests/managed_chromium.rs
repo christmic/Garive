@@ -14,7 +14,7 @@ use std::{
 };
 
 use garive_adapter_browser_cdp::{
-    CdpAdapterConfig, CdpClient, CdpLimits, CdpTransport, CdpWaitUntil,
+    CdpAdapterConfig, CdpClient, CdpLimits, CdpNavigationOutcome, CdpTransport, CdpWaitUntil,
 };
 
 const CHROME: &str = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
@@ -180,7 +180,12 @@ async fn managed_chrome_version_target_attach_and_ax_tree() {
         .navigate(&session, &page_server.start_url(), CdpWaitUntil::Load)
         .await
         .expect("redirected navigation");
-    assert_eq!(navigation.final_url, page_server.final_url());
+    assert_eq!(
+        navigation.outcome,
+        CdpNavigationOutcome::Page {
+            final_url: page_server.final_url()
+        }
+    );
     let tree = client
         .full_ax_tree(&session, None, 64, 10_000, 1_048_576)
         .await

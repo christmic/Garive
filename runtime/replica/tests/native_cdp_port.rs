@@ -100,6 +100,13 @@ async fn classify_password_input(
 async fn enable_managed_popups(
     socket: &mut tokio_tungstenite::WebSocketStream<tokio::net::TcpStream>,
 ) {
+    let policy = reply(socket, json!({})).await;
+    assert_eq!(policy["method"], "Browser.setDownloadBehavior");
+    assert_eq!(
+        policy["params"],
+        json!({"behavior":"deny","eventsEnabled":false})
+    );
+    assert!(policy.get("sessionId").is_none());
     let page = reply(socket, json!({})).await;
     assert_eq!(page["method"], "Page.enable");
     assert_eq!(page["sessionId"], "cdp-session");
@@ -1537,6 +1544,88 @@ async fn navigation_revalidates_committed_origin_and_rotates_target_revision() {
         .expect("after navigation");
     assert_ne!(after.target_revision, before.target_revision);
     assert_eq!(after.nodes[0].name.as_deref(), Some("Final"));
+    server.await.expect("server");
+}
+
+#[tokio::test]
+async fn managed_download_requires_native_deny_and_unchanged_page_evidence() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.expect("listener");
+    let address = listener.local_addr().expect("address");
+    let server = tokio::spawn(async move {
+        let (stream, _) = listener.accept().await.expect("accept");
+        let mut socket = accept_async(stream).await.expect("websocket");
+        enable_managed_popups(&mut socket).await;
+        assert_eq!(
+            reply(&mut socket, json!({})).await["method"],
+            "Accessibility.enable"
+        );
+        frames(&mut socket, "https://fixture.test:443").await;
+        reply(
+            &mut socket,
+            json!({"nodes":[{"nodeId":"root","ignored":false,"role":{"value":"RootWebArea"},"name":{"value":"Original page"}}]}),
+        )
+        .await;
+        reply(&mut socket, history(1, "https://fixture.test:443/form")).await;
+        frames(&mut socket, "https://fixture.test:443").await;
+        frames(&mut socket, "https://fixture.test:443").await;
+        reply(&mut socket, history(1, "https://fixture.test:443/form")).await;
+        assert_eq!(reply(&mut socket, json!({})).await["method"], "Page.enable");
+        let navigate = reply(
+            &mut socket,
+            json!({"frameId":"frame-main","loaderId":"loader-download","isDownload":true,"errorText":"net::ERR_ABORTED"}),
+        )
+        .await;
+        assert_eq!(navigate["method"], "Page.navigate");
+        reply(&mut socket, history(1, "https://fixture.test:443/form")).await;
+        frames(&mut socket, "https://fixture.test:443").await;
+    });
+    let config = CdpAdapterConfig::new(
+        format!("ws://{address}/devtools/browser/capability"),
+        CdpLimits::new(64 * 1_024, 1, 32, 2_000).expect("limits"),
+    )
+    .expect("config");
+    let client = CdpClient::new(CdpTransport::connect(&config).await.expect("transport"));
+    let mut port = CdpNativeAdapterPort::new_with_mode(
+        page_binding(),
+        CdpBrowserSessionMode::Managed,
+        "revision-1",
+        "run-download",
+        64,
+        client,
+    )
+    .expect("port");
+    let bounds = NativeObservationBounds {
+        max_nodes: 16,
+        max_text_bytes: 4_096,
+    };
+    let observation = port
+        .observe(&target(), None, bounds)
+        .await
+        .expect("observation");
+    let command = NativeActionCommandV1 {
+        action_id: NativeActionId::new("managed-download").expect("action"),
+        target: target(),
+        expected_snapshot_id: observation.snapshot_id,
+        target_revision: observation.target_revision,
+        prepared_input: json!({
+            "destination_url":"https://fixture.test:443/download",
+            "destination_origin":"https://fixture.test:443",
+            "wait_until":"load",
+            "timeout_ms":1_000,
+            "max_nodes":bounds.max_nodes,
+            "max_text_bytes":bounds.max_text_bytes
+        }),
+    };
+    let binding = port.preflight_action(&command).expect("preflight");
+    let receipt = port
+        .dispatch_action(&command, &binding)
+        .await
+        .expect("trustworthy denial");
+    assert_eq!(receipt.terminal_classification, "failed");
+    assert_eq!(
+        receipt.failure_code.as_deref(),
+        Some("native_action_unsupported")
+    );
     server.await.expect("server");
 }
 

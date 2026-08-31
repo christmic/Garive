@@ -10,8 +10,15 @@ fn command_allows_only_the_frozen_method_subset() {
         Some("target-session-1".into())
     )
     .is_ok());
+    assert!(CdpCommand::new(
+        2,
+        "Browser.setDownloadBehavior",
+        json!({"behavior":"deny","eventsEnabled":false}),
+        None
+    )
+    .is_ok());
     assert_eq!(
-        CdpCommand::new(2, "Runtime.evaluate", json!({}), None),
+        CdpCommand::new(3, "Runtime.evaluate", json!({}), None),
         Err(CdpProtocolError::InvalidMessage)
     );
 }
