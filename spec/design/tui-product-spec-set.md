@@ -47,6 +47,7 @@ Existing dependency contracts remain single sources of truth:
 | Rust client reduction | [`live-host-clients.md`](live-host-clients.md) |
 | Agent/Session/timeline/suspension reads | [`host-read-model-v1.md`](host-read-model-v1.md) |
 | redacted activity | [`host-agent-activity-v1.md`](host-agent-activity-v1.md) |
+| ephemeral progressive output | [`host-live-output-v1.md`](host-live-output-v1.md) |
 | shared product semantics | [`client-product-experience.md`](client-product-experience.md) |
 
 If this set conflicts with a Host wire field or durable invariant, the Host
@@ -61,6 +62,8 @@ The delivered TUI must:
 - discover Agents, navigate/create/reopen Sessions, and submit multiple Turns;
 - render durable conversation, typed public activity, suspension, and terminal
   state without exposing internal facts;
+- render real admitted intermediate answer events progressively, then converge
+  atomically on the durable completed answer;
 - provide a Unicode-safe multiline editor, prompt history, command palette,
   contextual help, responsive layout, themes, mouse option, and accessible
   linear screen-reader mode;
@@ -112,7 +115,7 @@ capabilities.
 | 4 | T3 | TUI library architecture and terminal runtime | pure reducer/effects, supervised loop, idempotent restore, launch/PTTY tests |
 | 5 | T4 | editor, commands, responsive renderer | Unicode properties, parser matrix, semantic snapshots, safe Markdown/control filtering |
 | 6 | T5 | local persistence and exact retry | atomic/locked files, permission/fault/crash matrices, process-kill replay |
-| 7 | T6 | live navigation/conversation/activity/suspension | multi-Session/multi-turn real Runtime flows and reconnect/backpressure |
+| 7 | T6 | live navigation/conversation/activity/suspension/output | multi-Session/multi-turn real Runtime flows, ephemeral H4 output, durable convergence and reconnect/backpressure |
 | 8 | T7 | competitive quality closeout | repeated PTY E2E, measured baseline, compatibility evidence, full repository gates |
 
 Every commit stays within the repository small-batch limit and leaves its

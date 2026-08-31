@@ -32,6 +32,7 @@ HostPort {
   cancel_turn(command) -> TurnCommandResponse
   continue_turn(command) -> TurnCommandResponse
   follow_events(session_id, after_position, sink, cancellation) -> FollowEnd
+  follow_live_output(session_id, sink, cancellation) -> LiveFollowEnd
 }
 ```
 
@@ -45,6 +46,13 @@ only when cancelled or the stream ends/fails. It does not reduce a whole Turn
 into one blocking result. It retains H1 rules: exact `api_version = "v1"`,
 requested Session, non-zero increasing positions, legal gaps, identical replay,
 unknown event preservation, and no terminal at EOF.
+
+`follow_live_output` implements H4's separately named ephemeral channel. It has
+no durable cursor, never mutates `observed_position`, and validates one active
+stream generation plus contiguous sequence values. Snapshot, gap, overflow,
+and durable convergence follow
+[`host-live-output-v1.md`](host-live-output-v1.md); H1 backpressure rules below
+do not falsely make H4 lossless.
 
 ## Launch configuration
 
@@ -162,6 +170,12 @@ The event loop processes at most 64 Host events per iteration before yielding
 to terminal input and cancellation. Multiple events may coalesce into one
 redraw, but every durable transition reaches the reducer in order. Content is
 bounded by Host limits before it enters the channel.
+
+H4 uses its own 256-value bounded channel. Rapid adjacent text deltas may
+coalesce exactly. If the adapter or application falls behind, it clears the
+partial preview and reconnects for a current in-memory snapshot; it never drops
+an unknown prefix and continues rendering a suffix. H4 processing shares the
+64-message event-loop budget without delaying terminal input.
 
 A selected Session has one follow task. Up to four background Sessions with a
 running or action-required Turn may retain follows; least-recently-visible idle

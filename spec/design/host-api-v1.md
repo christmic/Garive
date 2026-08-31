@@ -157,6 +157,11 @@ H1 does **not** claim replayable token deltas. The retired fake-shell
 an accepted persistence/backpressure/redaction contract; it cannot reuse
 ephemeral callbacks while claiming durable positions.
 
+That separate slice is now specified by
+[`host-live-output-v1.md`](host-live-output-v1.md). H4 uses a distinct endpoint,
+no SSE ID, and no durable cursor. H1 remains unchanged and authoritative for
+reconnect and terminal convergence.
+
 ## Execution and recovery boundary
 
 The Host command layer never invokes a model before the start transaction
