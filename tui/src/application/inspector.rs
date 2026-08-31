@@ -3,6 +3,12 @@
 use super::{AppModel, ConnectionState, ExecutionState, FocusTarget, Overlay, TimelineTone};
 use crate::input::supports_response_schema;
 
+impl ConnectionState {
+    pub(crate) const fn reconnect_attempt_limit() -> u32 {
+        5
+    }
+}
+
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub(crate) enum InspectorVariant {
     Activity,
@@ -241,19 +247,30 @@ fn recovery_entries(model: &AppModel) -> Vec<InspectorEntry> {
         ));
     }
     match model.connection {
-        ConnectionState::Disconnected { .. } | ConnectionState::Reconnecting { .. } => {
-            entries.push(entry(
-                "recovery:connection",
-                "Connection interrupted",
-                "Reload durable Session truth and resume events.",
-                InspectorTone::Warning,
-                InspectorActivation::Reconnect,
-            ));
-        }
+        ConnectionState::Disconnected { attempt } => entries.push(entry(
+            "recovery:connection",
+            format!(
+                "Updates paused · attempt {attempt}/{}",
+                ConnectionState::reconnect_attempt_limit()
+            ),
+            "Durable Turn state may be newer. Enter to resume events safely.",
+            InspectorTone::Warning,
+            InspectorActivation::Reconnect,
+        )),
+        ConnectionState::Reconnecting { attempt } => entries.push(entry(
+            "recovery:connection",
+            format!(
+                "Reconnecting · attempt {attempt}/{}",
+                ConnectionState::reconnect_attempt_limit()
+            ),
+            "Updates remain paused. Wait for this attempt, or use /status for details.",
+            InspectorTone::Warning,
+            InspectorActivation::None,
+        )),
         ConnectionState::Unavailable { .. } => entries.push(entry(
             "recovery:connection",
             "Host unavailable",
-            "Durable Session truth cannot be loaded yet.",
+            "Durable Session truth cannot be loaded. Enter to try /reconnect safely.",
             InspectorTone::Danger,
             InspectorActivation::Reconnect,
         )),
@@ -326,7 +343,7 @@ fn details_entries(model: &AppModel) -> Vec<InspectorEntry> {
 
 fn entry(
     key: &str,
-    label: &str,
+    label: impl Into<String>,
     detail: impl Into<String>,
     tone: InspectorTone,
     activation: InspectorActivation,
@@ -362,13 +379,21 @@ impl From<TimelineTone> for InspectorTone {
     }
 }
 
-fn connection_detail(value: ConnectionState) -> &'static str {
+fn connection_detail(value: ConnectionState) -> String {
     match value {
-        ConnectionState::Connecting => "Connecting",
-        ConnectionState::Online => "Online",
-        ConnectionState::Disconnected { .. } => "Disconnected; Turn state unknown",
-        ConnectionState::Reconnecting { .. } => "Reconnecting",
-        ConnectionState::Unavailable { .. } => "Unavailable",
+        ConnectionState::Connecting => "Connecting · loading durable Session truth".into(),
+        ConnectionState::Online => "Online · durable events current".into(),
+        ConnectionState::Disconnected { attempt } => format!(
+            "Disconnected · attempt {attempt}/{} · durable Turn state may be newer",
+            ConnectionState::reconnect_attempt_limit()
+        ),
+        ConnectionState::Reconnecting { attempt } => format!(
+            "Reconnecting · attempt {attempt}/{} · updates paused",
+            ConnectionState::reconnect_attempt_limit()
+        ),
+        ConnectionState::Unavailable { .. } => {
+            "Unavailable · durable Session truth cannot be loaded".into()
+        }
     }
 }
 

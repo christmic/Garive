@@ -18,7 +18,16 @@ pub(super) fn render_footer(model: &AppModel, theme: Theme, area: Rect, buffer: 
     }
     let colors = palette(theme);
     let hint = match project(model) {
-        Some(HintLine::Action { key, verb, .. }) => key_hints(&[(key, verb)], colors),
+        Some(HintLine::Action {
+            key, verb, detail, ..
+        }) => {
+            let mut line = key_hints(&[(key, verb)], colors);
+            if let Some(detail) = detail {
+                line.spans.push(Span::styled("  ·  ", colors.muted));
+                line.spans.push(Span::styled(detail, colors.muted));
+            }
+            line
+        }
         Some(HintLine::Status { text, tone, .. }) => Line::from(vec![
             Span::styled(" ● ", tone.style(colors)),
             Span::styled(text, colors.normal),
@@ -44,6 +53,7 @@ enum HintLine {
         priority: HintPriority,
         key: &'static str,
         verb: &'static str,
+        detail: Option<String>,
     },
     Status {
         priority: HintPriority,
@@ -90,6 +100,7 @@ fn project(model: &AppModel) -> Option<HintLine> {
             priority: HintPriority::Recovery,
             key: "Ctrl+P",
             verb: "open recovery actions",
+            detail: None,
         });
     } else if model.composer_is_frozen {
         candidates.push(HintLine::Status {
@@ -99,20 +110,29 @@ fn project(model: &AppModel) -> Option<HintLine> {
         });
     } else {
         match model.connection {
-            ConnectionState::Disconnected { .. } => candidates.push(HintLine::Action {
+            ConnectionState::Disconnected { attempt } => candidates.push(HintLine::Action {
                 priority: HintPriority::Recovery,
-                key: "Ctrl+P",
-                verb: "reconnect safely",
+                key: "/reconnect",
+                verb: "resume events",
+                detail: Some(format!(
+                    "Updates paused · attempt {attempt}/{}",
+                    ConnectionState::reconnect_attempt_limit()
+                )),
             }),
-            ConnectionState::Reconnecting { attempt } => candidates.push(HintLine::Status {
+            ConnectionState::Reconnecting { attempt } => candidates.push(HintLine::Action {
                 priority: HintPriority::Recovery,
-                text: format!("Reconnecting ({attempt}/5)…"),
-                tone: HintTone::Warning,
+                key: "/status",
+                verb: "view details",
+                detail: Some(format!(
+                    "Updates paused · attempt {attempt}/{}",
+                    ConnectionState::reconnect_attempt_limit()
+                )),
             }),
             ConnectionState::Unavailable { .. } => candidates.push(HintLine::Action {
                 priority: HintPriority::Recovery,
-                key: "Ctrl+P",
-                verb: "open recovery details",
+                key: "/reconnect",
+                verb: "try again safely",
+                detail: Some("Durable Session truth unavailable".into()),
             }),
             ConnectionState::Connecting | ConnectionState::Online => {}
         }
@@ -122,6 +142,7 @@ fn project(model: &AppModel) -> Option<HintLine> {
             priority: HintPriority::Cancellation,
             key: "Esc",
             verb: "cancel run",
+            detail: None,
         });
     }
     if model.composer.has_selection() {
@@ -129,6 +150,7 @@ fn project(model: &AppModel) -> Option<HintLine> {
             priority: HintPriority::Selection,
             key: "Alt+C",
             verb: "copy selection",
+            detail: None,
         });
     }
     if model.command_suggestions_active() && !model.composer_is_frozen {
@@ -136,6 +158,7 @@ fn project(model: &AppModel) -> Option<HintLine> {
             priority: HintPriority::Suggestion,
             key: "Tab",
             verb: "complete command",
+            detail: None,
         });
     }
     let bytes = model.composer.text().len();
@@ -164,11 +187,13 @@ fn project(model: &AppModel) -> Option<HintLine> {
             priority: HintPriority::Navigation,
             key: "End",
             verb: "follow latest",
+            detail: None,
         }),
         (FocusTarget::Conversation, true) => candidates.push(HintLine::Action {
             priority: HintPriority::Navigation,
             key: "PgUp",
             verb: "browse history",
+            detail: None,
         }),
         _ => {}
     }
