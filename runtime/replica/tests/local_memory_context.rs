@@ -14,6 +14,11 @@ use garive_config::{
 use garive_core::{
     MissingUsagePolicy, ModelRecoveryPolicy, OutputLimitAction, TerminalRecoveryAction,
 };
+use garive_knowledge::{
+    Citation, CitationScheme, ContentBinding as KnowledgeContent, KnowledgeEvidence,
+    KnowledgeFreshness, KnowledgeQueryMode, KnowledgeSourceDescriptor, KnowledgeSourceKind,
+    KnowledgeTrustClass,
+};
 use garive_llm::{
     InvokeOutcome, ModelCancellation, ModelCapability, ModelFuture, ModelInputContent, ModelItem,
     ModelObserver, ModelOutputKind, ModelOutputSettings, ModelPort, ModelRequest, ModelStopReason,
@@ -27,10 +32,12 @@ use garive_memory::{
 };
 use garive_runtime::{
     local_dispatch_queue, plan_classified_memory_write, CatalogueCapabilityPreparationFactory,
-    HostClock, LiveHost, LiveHostLimits, LocalExecutionAttempt, LocalExecutionPolicy,
-    LocalExecutionWorker, LocalMemorySystemBinding, LocalWorkerDisposition, LocalWorkerError,
-    MemoryControlAction, MemoryControlGrant, MemoryWriteContext, RuntimeAgentCatalogue,
-    RuntimeAgentInstallation, SqliteLedger, USER_DECLARED_PUSH_REVISION,
+    HostClock, KnowledgeConnector, KnowledgeConnectorFuture, KnowledgeConnectorOutcome, LiveHost,
+    LiveHostLimits, LocalExecutionAttempt, LocalExecutionPolicy, LocalExecutionWorker,
+    LocalKnowledgeSystemBinding, LocalMemorySystemBinding, LocalWorkerDisposition,
+    LocalWorkerError, MemoryControlAction, MemoryControlGrant, MemoryWriteContext,
+    RuntimeAgentCatalogue, RuntimeAgentInstallation, SqliteLedger, KEYWORD_CURRENT_INPUT_REVISION,
+    USER_DECLARED_PUSH_REVISION,
 };
 use tempfile::tempdir;
 
@@ -115,11 +122,68 @@ impl ModelPort for MemoryCheckingModel {
     }
 }
 
+struct KnowledgeCheckingModel;
+impl ModelPort for KnowledgeCheckingModel {
+    fn invoke<'a>(
+        &'a self,
+        request: &'a ModelRequest,
+        observer: &'a mut dyn ModelObserver,
+        _: &'a dyn ModelCancellation,
+    ) -> ModelFuture<'a> {
+        assert!(request.input_items.iter().any(|item| matches!(
+            item,
+            garive_llm::ModelInputItem::Message { content, .. }
+                if content.iter().any(|part| matches!(
+                    part,
+                    ModelInputContent::Text(text)
+                        if text.contains("garive.knowledge") && text.contains("grounded fact")
+                ))
+        )));
+        Box::pin(async move {
+            assert_eq!(
+                observer.observe(&ModelStreamEvent::OutputItemStarted {
+                    output_index: 0,
+                    kind: ModelOutputKind::Text,
+                }),
+                ObserverDecision::Continue
+            );
+            Ok(InvokeOutcome::Completed {
+                items: vec![ModelItem::Text { text: "ok".into() }],
+                usage: ModelUsage {
+                    input_tokens: TokenCount::Known(1),
+                    output_tokens: TokenCount::Known(1),
+                    cache_read_tokens: None,
+                    cache_write_tokens: None,
+                    source: UsageSource::ProviderReported,
+                },
+                stop_reason: ModelStopReason::EndTurn,
+            })
+        })
+    }
+}
+
+struct KnowledgeConnectorStub(AtomicUsize);
+impl KnowledgeConnector for KnowledgeConnectorStub {
+    fn retrieve<'a>(
+        &'a self,
+        _: &'a KnowledgeSourceDescriptor,
+        _: &'a garive_knowledge::KnowledgeRequest,
+    ) -> KnowledgeConnectorFuture<'a> {
+        self.0.fetch_add(1, Ordering::SeqCst);
+        Box::pin(async {
+            KnowledgeConnectorOutcome::Completed {
+                evidence: vec![knowledge_evidence()],
+                connector_order_stable: true,
+            }
+        })
+    }
+}
+
 #[tokio::test]
 async fn configured_empty_repository_commits_retrieval_before_model() {
     let directory = tempdir().unwrap();
     let database = directory.path().join("memory.db");
-    let installation = installation(true);
+    let installation = installation(true, false);
     let installed = installation.clone_installed_agent();
     let catalogue = Arc::new(RuntimeAgentCatalogue::new([installation]).unwrap());
     let binding = binding(DESCRIPTOR_DIGEST);
@@ -179,7 +243,7 @@ async fn required_binding_fails_closed_before_model_dispatch() {
     ] {
         let directory = tempdir().unwrap();
         let database = directory.path().join("memory.db");
-        let installation = installation(true);
+        let installation = installation(true, false);
         let installed = installation.clone_installed_agent();
         let catalogue = Arc::new(RuntimeAgentCatalogue::new([installation]).unwrap());
         let (dispatcher, mut queue) = local_dispatch_queue(1).unwrap();
@@ -209,7 +273,7 @@ async fn required_binding_fails_closed_before_model_dispatch() {
 async fn extra_binding_cannot_add_memory_to_snapshot() {
     let directory = tempdir().unwrap();
     let database = directory.path().join("memory.db");
-    let installation = installation(false);
+    let installation = installation(false, false);
     let installed = installation.clone_installed_agent();
     let catalogue = Arc::new(RuntimeAgentCatalogue::new([installation]).unwrap());
     let (dispatcher, mut queue) = local_dispatch_queue(1).unwrap();
@@ -246,7 +310,7 @@ async fn extra_binding_cannot_add_memory_to_snapshot() {
 async fn user_memory_written_in_one_session_reaches_another_sessions_model() {
     let directory = tempdir().unwrap();
     let database = directory.path().join("cross-session.db");
-    let installation = installation(true);
+    let installation = installation(true, false);
     let installed = installation.clone_installed_agent();
     let (discard_dispatcher, discard_queue) = local_dispatch_queue(1).unwrap();
     drop(discard_queue);
@@ -377,31 +441,119 @@ async fn user_memory_written_in_one_session_reaches_another_sessions_model() {
     assert!(retrieval < started);
 }
 
-fn installation(memory: bool) -> RuntimeAgentInstallation {
-    let descriptor = CapabilityDescriptor {
+#[tokio::test]
+async fn exact_knowledge_source_completes_before_model_and_missing_binding_fails() {
+    for with_binding in [false, true] {
+        let directory = tempdir().unwrap();
+        let database = directory.path().join("knowledge.db");
+        let installation = installation(false, true);
+        let installed = installation.clone_installed_agent();
+        let catalogue = Arc::new(RuntimeAgentCatalogue::new([installation]).unwrap());
+        let connector = Arc::new(KnowledgeConnectorStub(AtomicUsize::new(0)));
+        let mut factory = CatalogueCapabilityPreparationFactory::new(catalogue, None);
+        if with_binding {
+            factory = factory.with_knowledge(knowledge_binding(connector.clone()));
+        }
+        let (dispatcher, mut queue) = local_dispatch_queue(1).unwrap();
+        let host = LiveHost::new(
+            &database,
+            installed,
+            host_limits(),
+            Arc::new(Clock),
+            dispatcher,
+        )
+        .unwrap();
+        let session = host.create_session("create", "agent").unwrap();
+        let turn = host
+            .start_turn("start", &session.session_id, "lookup")
+            .unwrap();
+        let worker =
+            LocalExecutionWorker::new(&database, policy(), Arc::new(KnowledgeCheckingModel))
+                .unwrap()
+                .with_capability_preparation(Arc::new(factory));
+        if !with_binding {
+            assert_eq!(
+                queue.try_run_next(&worker, &attempt()).await,
+                Err(LocalWorkerError::CapabilityBindingMissing)
+            );
+            assert_eq!(connector.0.load(Ordering::SeqCst), 0);
+            continue;
+        }
+        queue.try_run_next(&worker, &attempt()).await.unwrap();
+        assert_eq!(connector.0.load(Ordering::SeqCst), 1);
+        let ledger = SqliteLedger::open(&database).unwrap();
+        let kinds = ledger
+            .load_turn(&garive_ledger::TurnId::try_from(turn.turn_id.as_str()).unwrap())
+            .unwrap()
+            .facts
+            .into_iter()
+            .map(|fact| fact.kind.as_str().to_owned())
+            .collect::<Vec<_>>();
+        let requested = kinds
+            .iter()
+            .position(|kind| kind == "knowledge.requested")
+            .unwrap();
+        let dispatched = kinds
+            .iter()
+            .position(|kind| kind == "knowledge.dispatched")
+            .unwrap();
+        let completed = kinds
+            .iter()
+            .position(|kind| kind == "knowledge.completed")
+            .unwrap();
+        let model = kinds
+            .iter()
+            .position(|kind| kind == "model.started")
+            .unwrap();
+        assert!(requested < dispatched && dispatched < completed && completed < model);
+    }
+}
+
+fn installation(memory: bool, knowledge: bool) -> RuntimeAgentInstallation {
+    let memory_descriptor = CapabilityDescriptor {
         kind: CapabilityKind::Memory,
         name: "memory.local".into(),
         exact_revision: "memory.local.v1".into(),
         contract_version: 1,
         descriptor_digest: DESCRIPTOR_DIGEST.into(),
     };
-    let capabilities = memory.then(|| {
+    let knowledge_descriptor = CapabilityDescriptor {
+        kind: CapabilityKind::Knowledge,
+        name: "knowledge.local".into(),
+        exact_revision: "knowledge.local.v1".into(),
+        contract_version: 1,
+        descriptor_digest: "f".repeat(64),
+    };
+    let mut capabilities = memory
+        .then(|| {
+            CapabilityReference::new(
+                CapabilityKind::Memory,
+                &memory_descriptor.name,
+                &memory_descriptor.exact_revision,
+                memory_descriptor.contract_version,
+                true,
+            )
+            .unwrap()
+        })
+        .into_iter()
+        .collect::<Vec<_>>();
+    capabilities.extend(knowledge.then(|| {
         CapabilityReference::new(
-            CapabilityKind::Memory,
-            &descriptor.name,
-            &descriptor.exact_revision,
-            descriptor.contract_version,
+            CapabilityKind::Knowledge,
+            &knowledge_descriptor.name,
+            &knowledge_descriptor.exact_revision,
+            knowledge_descriptor.contract_version,
             true,
         )
         .unwrap()
-    });
+    }));
     let limits = DefaultLimits::new(2, Some(100), Some(20), Some(1_000)).unwrap();
     let definition = AgentDefinition::new(
         "agent",
         "agent.v1",
         Vec::new(),
         Vec::new(),
-        capabilities.into_iter().collect(),
+        capabilities,
         GovernancePolicy::new("governance", "governance.v1", [], []).unwrap(),
         ContextPolicyReference::new("context", "context.v1").unwrap(),
         limits.clone(),
@@ -414,7 +566,11 @@ fn installation(memory: bool) -> RuntimeAgentInstallation {
             instructions: Vec::new(),
             model_roles: Vec::new(),
             tools: Vec::new(),
-            capability_descriptors: memory.then_some(descriptor).into_iter().collect(),
+            capability_descriptors: memory
+                .then_some(memory_descriptor)
+                .into_iter()
+                .chain(knowledge.then_some(knowledge_descriptor))
+                .collect(),
             governance_policies: vec![GovernancePolicyCandidate {
                 policy_id: "governance".into(),
                 exact_revision: "governance.v1".into(),
@@ -440,6 +596,61 @@ fn installation(memory: bool) -> RuntimeAgentInstallation {
     )
     .unwrap();
     RuntimeAgentInstallation::new(snapshot, "local-agent", Vec::new()).unwrap()
+}
+
+fn knowledge_source() -> KnowledgeSourceDescriptor {
+    KnowledgeSourceDescriptor::new(
+        "docs",
+        "docs.v1",
+        KnowledgeSourceKind::Documentation,
+        "product-docs",
+        KnowledgeTrustClass::Curated,
+        vec![KnowledgeQueryMode::Keyword],
+        "a".repeat(64),
+        CitationScheme::UriFragment,
+        "b".repeat(64),
+    )
+    .unwrap()
+}
+
+fn knowledge_binding(connector: Arc<KnowledgeConnectorStub>) -> LocalKnowledgeSystemBinding {
+    LocalKnowledgeSystemBinding::new(
+        "knowledge.local",
+        "knowledge.local.v1",
+        "f".repeat(64),
+        knowledge_source(),
+        KEYWORD_CURRENT_INPUT_REVISION,
+        4,
+        4_096,
+        1_000,
+        connector,
+    )
+    .unwrap()
+}
+
+fn knowledge_evidence() -> KnowledgeEvidence {
+    let content = KnowledgeContent::from_inline("grounded fact");
+    KnowledgeEvidence::new(
+        "evidence-1",
+        "docs",
+        "docs.v1",
+        None,
+        content.clone(),
+        13,
+        Citation::new(
+            CitationScheme::UriFragment,
+            "guide#fact",
+            Some("Guide".into()),
+            None,
+            content.digest(),
+        )
+        .unwrap(),
+        "2026-09-01T00:00:01Z",
+        KnowledgeFreshness::Fresh,
+        KnowledgeTrustClass::Curated,
+        10_000,
+    )
+    .unwrap()
 }
 
 fn binding(digest: &str) -> LocalMemorySystemBinding {
