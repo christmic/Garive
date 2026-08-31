@@ -5,9 +5,9 @@ use std::{
 
 use garive_core::{
     execute_agent_with_preparation, execute_model_only, AgentEvent, AgentEventKind,
-    AgentExecutionPorts, AgentToolCapabilities, AgentTurnRequest, CandidateKind, ClockPort,
-    ContextCandidate, ContextPort, ContextPurpose, EventSink, FactRef, PortFailure, Retention,
-    ToolPreparationPort, Visibility,
+    AgentExecutionPorts, AgentFailureReason, AgentOutcome, AgentToolCapabilities, AgentTurnRequest,
+    CandidateKind, ClockPort, ContextCandidate, ContextPort, ContextPurpose, EventSink, FactRef,
+    PortFailure, Retention, ToolPreparationPort, Visibility,
 };
 use garive_ledger::{
     CanonicalPayload, CommitResult, FactDraft, FactId, FactKind, LedgerError, SessionId, TurnId,
@@ -18,7 +18,10 @@ use garive_llm::{
 };
 use serde_json::json;
 
-use crate::{ExecutionLease, RuntimeCommandError, SqliteLedger, SqliteLedgerError};
+use crate::{
+    derive_runtime_recovery, select_runtime_recovery, ExecutionLease, RuntimeCommandError,
+    RuntimeRecoveryAction, SqliteLedger, SqliteLedgerError,
+};
 
 use super::encoding::digest;
 use super::{
@@ -235,6 +238,13 @@ fn finish_durable_execution(
     if let Some(failure) = coordinator.failure.take() {
         return Err(failure);
     }
+    if !coordinator.cancellation_requested && recoverable_f0_interruption(&coordinator, &report)? {
+        coordinator
+            .ledger
+            .release_execution_lease(&coordinator.lease)
+            .map_err(DurableExecutionError::Lease)?;
+        return Err(DurableExecutionError::RecoverableInterruption);
+    }
     let terminal = plan_core_terminal(
         &CoreTerminalContext {
             turn_id: config.model.turn_id.clone(),
@@ -255,6 +265,32 @@ fn finish_durable_execution(
         terminal_commit,
         publication,
     })
+}
+
+fn recoverable_f0_interruption(
+    coordinator: &CommitCoordinator<'_>,
+    report: &garive_core::ExecutionReport,
+) -> Result<bool, DurableExecutionError> {
+    if !matches!(
+        report.outcome,
+        AgentOutcome::Failed {
+            reason: AgentFailureReason::PortFailure
+        }
+    ) {
+        return Ok(false);
+    }
+    let snapshot = coordinator
+        .ledger
+        .load_turn(&coordinator.turn_id)
+        .map_err(DurableExecutionError::Ledger)?;
+    let recovery = derive_runtime_recovery(&snapshot, u64::MAX)
+        .map_err(|_| DurableExecutionError::Command(RuntimeCommandError::InvariantViolation))?;
+    Ok(matches!(
+        select_runtime_recovery(recovery),
+        RuntimeRecoveryAction::ReevaluateEffectSafety
+            | RuntimeRecoveryAction::ResumeEffectAdmission
+            | RuntimeRecoveryAction::RevalidateAndDispatchEffect
+    ))
 }
 
 /// Runs F0-governed Core after atomically committing one exact S0 activation.

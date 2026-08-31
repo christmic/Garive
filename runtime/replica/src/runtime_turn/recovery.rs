@@ -171,7 +171,10 @@ fn execution_position(
         .rfind(|fact| fact.kind.as_str().starts_with("execution."))
         .ok_or(RuntimeCommandError::CorruptLedger)?;
     match (turn_lifecycle.kind.as_str(), latest.kind.as_str()) {
-        ("turn.started", "execution.started") => Ok(ExecutionRecoveryPosition::Active),
+        (
+            "turn.started",
+            "execution.started" | "execution.iteration_started" | "execution.effect_batch_planned",
+        ) => Ok(ExecutionRecoveryPosition::Active),
         ("turn.suspended", "execution.suspended") => Ok(ExecutionRecoveryPosition::Suspended),
         (
             "turn.completed" | "turn.stopped" | "turn.failed",
