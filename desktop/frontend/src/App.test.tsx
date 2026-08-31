@@ -44,7 +44,8 @@ vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn(async (command: string, a
   }
 }) }));
 
-import { App } from "./App";
+import { App, TurnProgress } from "./App";
+import { createTranslator } from "./i18n";
 
 afterEach(cleanup);
 
@@ -156,5 +157,29 @@ describe("Desktop product experience", () => {
     fireEvent.keyDown(window, { key: "Escape" });
     expect(trigger.getAttribute("aria-expanded")).toBe("false");
     expect(screen.queryByRole("button", { name: "Close navigation" })).toBeNull();
+  });
+
+  it("keeps the new-task canvas quiet and free of decorative product marks", async () => {
+    const view = render(<App />);
+    await screen.findByText("What should we accomplish?");
+    expect(view.container.querySelector(".new-work-surface")).not.toBeNull();
+    expect(view.container.querySelector(".brand-mark, .hero-mark, .message-mark")).toBeNull();
+  });
+
+  it("renders progressive work from admitted Activity instead of invented stages", () => {
+    const open = vi.fn();
+    render(<TurnProgress t={createTranslator("en")} onOpen={open} activities={[{
+      api_version: "v1", activity_id: "read-1", kind: "tool",
+      label_key: "agent.activity.read_file", state: "completed", source_position: 4,
+      terminal: true,
+    }, { api_version: "v1", activity_id: "write-1", kind: "tool",
+      label_key: "agent.activity.write_file", state: "running", source_position: 7,
+      terminal: false,
+    }]} />);
+    expect(screen.getByText("Read scoped file")).toBeTruthy();
+    expect(screen.getByText("Write scoped file")).toBeTruthy();
+    expect(screen.getByText("Running")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Open activity" }));
+    expect(open).toHaveBeenCalledOnce();
   });
 });

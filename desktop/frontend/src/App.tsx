@@ -307,6 +307,20 @@ export function App({ client = "desktop", webCapabilities, createProductPort,
         dispatch({ type: "artifacts_loaded", page: visualArtifactPage });
         dispatch({ type: "inspector_selected", tab: "artifacts" });
       }
+      if (visualTestMode === "running") {
+        dispatch({ type: "session_loaded", timeline: {
+          api_version: "v1", session_id: "visual-running", scanned_through_position: 9,
+          observed_max_position: 9, has_more: false, items: [{ turn_id: "running-turn",
+            started_position: 3, latest_position: 9, state: "running",
+            user_text: "Compare the launch research and prepare a decision memo",
+            content_truncated: false, activities: [{ api_version: "v1",
+              activity_id: "read-research", kind: "tool", label_key: "agent.activity.read_file",
+              state: "completed", source_position: 6, terminal: true }, { api_version: "v1",
+              activity_id: "draft-memo", kind: "tool", label_key: "agent.activity.write_file",
+              state: "running", source_position: 9, terminal: false }] }],
+        } });
+        dispatch({ type: "submission_started" });
+      }
       return;
     }
     if (!desktop) {
@@ -546,7 +560,6 @@ export function App({ client = "desktop", webCapabilities, createProductPort,
           if ((event.target as HTMLElement).closest("button")) setNavigationOpen(false);
         }}>
         <div className="titlebar-drag" data-tauri-drag-region />
-        <div className="brand"><span className="brand-mark"><Icon name="sparkle" /></span><span>Garive</span></div>
         <button className="new-work" type="button" aria-label={t("nav.newWork")} onClick={beginNewWork}>
           <Icon name="plus" /><span>{t("nav.newWork")}</span><kbd>⌘N</kbd>
         </button>
@@ -595,7 +608,8 @@ export function App({ client = "desktop", webCapabilities, createProductPort,
             aria-label={t("shell.openNavigation")} aria-expanded={navigationOpen}
             aria-controls="primary-navigation" onClick={() => setNavigationOpen((open) => !open)}><Icon name="panel" /></button>
             <span>{screen === "work" ? title : screen === "search" ? t("nav.search") : screen === "agents" ? t("nav.agents") : t("nav.settings")}</span>
-            {screen === "work" && <span className="local-badge"><span />{t("shell.local")}</span>}
+            {screen === "work" && <span className={state.phase === "submitting" ? "local-badge working" : "local-badge"}>
+              <span />{t(state.phase === "submitting" ? "status.working" : "shell.local")}</span>}
             {visualTest && <span className="local-badge qa-badge">{t("shell.qaPreview")}</span>}
           </div>
           <div className="topbar-actions">
@@ -678,9 +692,10 @@ function WorkSurface({ state, composer, submit, startSuggestion, dispatch, conte
 
   const disconnected = state.execution === "disconnected";
   const reconnecting = state.execution === "reconnecting";
-  return <section className="work-surface">
+  return <section className={state.messages.length ? "work-surface" : "work-surface new-work-surface"}>
     <div className={state.messages.length ? "conversation" : "conversation empty-conversation"}>
-      {state.messages.length === 0 ? <Welcome onSelect={startSuggestion} t={t} /> : <Timeline state={state} t={t} />}
+      {state.messages.length === 0 ? <Welcome onSelect={startSuggestion} t={t} />
+        : <Timeline state={state} dispatch={dispatch} t={t} />}
     </div>
     {(state.error || disconnected || reconnecting) && <div className={disconnected || reconnecting
       ? "error-banner connection-banner" : "error-banner"} role={state.error ? "alert" : "status"}>
@@ -755,13 +770,14 @@ function Welcome({ onSelect, t }: { onSelect: (text: string) => void; t: (key: M
   const suggestions = [[t("work.suggestion.synthesize"), t("work.suggestion.synthesizeBody")],
     [t("work.suggestion.analyze"), t("work.suggestion.analyzeBody")],
     [t("work.suggestion.create"), t("work.suggestion.createBody")]] as const;
-  return <div className="welcome"><span className="hero-mark"><Icon name="sparkle" /></span><p className="eyebrow">{t("work.welcome.eyebrow")}</p>
-    <h1>{t("work.welcome.title")}</h1><p className="welcome-copy">{t("work.welcome.description")}</p>
+  return <div className="welcome"><h1>{t("work.welcome.title")}</h1>
+    <p className="welcome-copy">{t("work.welcome.description")}</p>
     <div className="suggestion-grid">{suggestions.map(([label, text]) => <button type="button" key={label} onClick={() => onSelect(text)}><span>{label}</span><p>{text}</p><Icon name="chevron" /></button>)}</div>
   </div>;
 }
 
-function Timeline({ state, t }: { state: WorkState; t: (key: MessageKey) => string }) {
+function Timeline({ state, dispatch, t }: { state: WorkState; dispatch: WorkDispatch;
+  t: (key: MessageKey) => string }) {
   const [copiedId, setCopiedId] = useState<string>();
   const copyResult = async (id: string, text: string) => {
     try {
@@ -777,12 +793,28 @@ function Timeline({ state, t }: { state: WorkState; t: (key: MessageKey) => stri
     : latest?.role === "assistant" ? `${t("timeline.turn")} ${terminalCopy(latest.terminal, t)}。` : "";
   return <div className="timeline">{state.messages.map((message) => message.role === "user"
     ? <article className="message user-message" key={message.id}><div>{message.text}</div></article>
-    : <article className="message assistant-message" key={message.id}><span className="message-mark"><Icon name="sparkle" /></span><div><div className="result-markdown"><Markdown skipHtml remarkPlugins={[remarkGfm]}
+    : <article className="message assistant-message" key={message.id}><div><div className="result-markdown"><Markdown skipHtml remarkPlugins={[remarkGfm]}
       components={{ a: ({ children }) => <span className="safe-link">{children}</span> }}>{message.text || terminalCopy(message.terminal, t)}</Markdown></div>
       <div className="result-meta"><span><Icon name={message.terminal === "completed" ? "check" : "warning"} />{terminalCopy(message.terminal, t)}</span><div className="result-actions"><button type="button" disabled={!message.text} onClick={() => downloadMarkdown(message.id, message.text)}>{t("timeline.export")}</button><button type="button" onClick={() => void copyResult(message.id, message.text)}>{t(copiedId === message.id ? "timeline.copied" : "timeline.copy")}</button></div></div></div></article>)}
-    {state.phase === "submitting" && <article className="message assistant-message working"><span className="message-mark"><Icon name="sparkle" /></span><div><p>{t("timeline.working")}</p><span className="working-line" /></div></article>}
+    {state.phase === "submitting" && <TurnProgress activities={state.activities}
+      onOpen={() => dispatch({ type: "inspector_selected", tab: "activity" })} t={t} />}
     <p className="sr-only" aria-live="polite" aria-atomic="true">{announcement}</p>
   </div>;
+}
+
+export function TurnProgress({ activities, onOpen, t }: { activities: WorkState["activities"];
+  onOpen: () => void; t: (key: MessageKey) => string }) {
+  const recent = activities.slice(-3);
+  return <article className="turn-progress" aria-label={t("timeline.progressTitle")}>
+    <div className="turn-progress-head"><span className="live-pulse"><span /></span><div>
+      <strong>{t("timeline.progressTitle")}</strong><p>{t("timeline.progressBody")}</p></div>
+      <button type="button" onClick={onOpen}>{t("timeline.openActivity")}<Icon name="chevron" /></button></div>
+    {recent.length > 0 && <div className="turn-progress-steps">{recent.map((activity) =>
+      <div className={activity.terminal ? "complete" : "active"} key={`${activity.kind}-${activity.activity_id}`}>
+        <span>{activity.terminal ? <Icon name="check" /> : <span className="spinner" />}</span>
+        <strong>{activityLabel(activity.label_key, t)}</strong><small>{activityState(activity.state, t)}</small>
+      </div>)}</div>}
+  </article>;
 }
 
 function Inspector({ state, dispatch, t }: { state: WorkState; dispatch: WorkDispatch; t: (key: MessageKey) => string }) {
