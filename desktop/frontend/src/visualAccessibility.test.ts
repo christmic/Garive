@@ -34,9 +34,12 @@ describe("Desktop visual accessibility contract", () => {
       "--surface-canvas: #212121", "--surface-sidebar: #181818"]) {
       expect(TOKENS).toContain(token);
     }
-    expect(CSS).toContain("grid-template-columns: 252px minmax(0, 1fr)");
-    expect(CSS).toContain("grid-template-columns: 252px minmax(460px, 1fr) 360px");
-    expect(CSS).toContain("grid-template-rows: 56px minmax(0, 1fr)");
+    expect(CSS).toContain("grid-template-columns: clamp(240px, 19vw, 275px) minmax(0, 1fr)");
+    expect(CSS).toContain(".app-shell:has(.workspace-panel)");
+    expect(CSS).toContain("minmax(390px, .82fr) minmax(500px, 1.18fr)");
+    expect(CSS).toContain("grid-template-rows: 46px minmax(0, 1fr)");
+    expect(CSS).toContain(".environment-panel { position: absolute");
+    expect(CSS).toContain("width: min(40rem, calc(100% - 48px))");
   });
 });
 

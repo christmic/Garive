@@ -707,6 +707,8 @@ function WorkSurface({ state, composer, submit, startSuggestion, dispatch, conte
         aria-label={t("error.dismiss")}><Icon name="close" /></button>}</div>}
     <div className="composer-wrap">
       <div className={state.phase === "submitting" ? "composer busy" : "composer"}>
+        {state.phase === "submitting" && <TurnProgress activities={state.activities}
+          onOpen={() => dispatch({ type: "inspector_selected", tab: "activity" })} t={t} />}
         {needsApproval && <div className="approval-card" role="alert" aria-live="assertive" aria-label={t("approval.aria")}>
           <span className="approval-icon"><Icon name="shield" /></span><div><strong>{approvalEffect
             ? `${activityLabel(approvalEffect.label_key, t)} · ` : `${t("approval.operationPrefix")} `}<bdi>{approvalWorkspace?.display_name ?? t("approval.attachedWorkspace")}</bdi>?</strong>
@@ -796,8 +798,6 @@ function Timeline({ state, dispatch, t }: { state: WorkState; dispatch: WorkDisp
     : <article className="message assistant-message" key={message.id}><div><div className="result-markdown"><Markdown skipHtml remarkPlugins={[remarkGfm]}
       components={{ a: ({ children }) => <span className="safe-link">{children}</span> }}>{message.text || terminalCopy(message.terminal, t)}</Markdown></div>
       <div className="result-meta"><span><Icon name={message.terminal === "completed" ? "check" : "warning"} />{terminalCopy(message.terminal, t)}</span><div className="result-actions"><button type="button" disabled={!message.text} onClick={() => downloadMarkdown(message.id, message.text)}>{t("timeline.export")}</button><button type="button" onClick={() => void copyResult(message.id, message.text)}>{t(copiedId === message.id ? "timeline.copied" : "timeline.copy")}</button></div></div></div></article>)}
-    {state.phase === "submitting" && <TurnProgress activities={state.activities}
-      onOpen={() => dispatch({ type: "inspector_selected", tab: "activity" })} t={t} />}
     <p className="sr-only" aria-live="polite" aria-atomic="true">{announcement}</p>
   </div>;
 }
@@ -818,14 +818,17 @@ export function TurnProgress({ activities, onOpen, t }: { activities: WorkState[
 }
 
 function Inspector({ state, dispatch, t }: { state: WorkState; dispatch: WorkDispatch; t: (key: MessageKey) => string }) {
-  return <aside className="inspector" aria-label={t("inspector.aria")}><header><div className="inspector-tabs" role="tablist" aria-label={t("inspector.views")}><button type="button" role="tab" aria-selected={state.inspectorTab === "activity"} className={state.inspectorTab === "activity" ? "active" : ""} onClick={() => dispatch({ type: "inspector_selected", tab: "activity" })}>{t("inspector.activity")}</button><button type="button" role="tab" aria-selected={state.inspectorTab === "artifacts"} className={state.inspectorTab === "artifacts" ? "active" : ""} onClick={() => dispatch({ type: "inspector_selected", tab: "artifacts" })}>{t("inspector.artifacts")}</button></div>
+  const mode = state.inspectorTab === "activity" ? "environment-panel" : "workspace-panel";
+  const [workspaceTitle, setWorkspaceTitle] = useState<string>();
+  return <aside className={`inspector ${mode}`} aria-label={t("inspector.aria")}><header><div className="inspector-tabs" role="tablist" aria-label={t("inspector.views")}><button type="button" role="tab" aria-selected={state.inspectorTab === "activity"} className={state.inspectorTab === "activity" ? "active" : ""} onClick={() => { setWorkspaceTitle(undefined); dispatch({ type: "inspector_selected", tab: "activity" }); }}>{t("inspector.activity")}</button><button type="button" role="tab" aria-selected={state.inspectorTab === "artifacts"} className={state.inspectorTab === "artifacts" ? "active" : ""} onClick={() => dispatch({ type: "inspector_selected", tab: "artifacts" })}>{workspaceTitle ?? t("inspector.artifacts")}</button></div>
     <button className="icon-button" type="button" aria-label={t("inspector.close")} onClick={() => dispatch({ type: "inspector_toggled" })}><Icon name="close" /></button></header>
     {state.inspectorTab === "activity" ? <div className="inspector-body" role="tabpanel"><CommittedActivity state={state} t={t} /></div>
-      : <div className="inspector-body" role="tabpanel"><ResultDeliverables state={state} t={t} /></div>}
+      : <div className="inspector-body" role="tabpanel"><ResultDeliverables state={state} t={t} onPreviewTitle={setWorkspaceTitle} /></div>}
   </aside>;
 }
 
-function ResultDeliverables({ state, t }: { state: WorkState; t: (key: MessageKey) => string }) {
+function ResultDeliverables({ state, t, onPreviewTitle }: { state: WorkState; t: (key: MessageKey) => string;
+  onPreviewTitle: (title?: string) => void }) {
   const [selected, setSelected] = useState<HostArtifact>();
   const [preview, setPreview] = useState<ArtifactPreview>();
   const [previewState, setPreviewState] = useState<"idle" | "loading" | "unavailable">("idle");
@@ -835,7 +838,7 @@ function ResultDeliverables({ state, t }: { state: WorkState; t: (key: MessageKe
     ArtifactExportReceipt>>>({});
   const results = state.messages.filter((message) => message.role === "assistant" && message.text);
   const openPreview = async (artifact: HostArtifact) => {
-    setSelected(artifact); setPreview(undefined); setPreviewState("loading");
+    setSelected(artifact); onPreviewTitle(artifact.display_name); setPreview(undefined); setPreviewState("loading");
     try {
       const content = visualTest ? visualArtifactPreview
         : await getArtifactPreview(state.sessionId ?? "", artifact);
@@ -891,10 +894,11 @@ function ResultDeliverables({ state, t }: { state: WorkState; t: (key: MessageKe
       </div>
     </article>; })}
     {selected && <section className="artifact-preview" aria-label={t("artifact.previewAria")}><header><div><span>{t("artifact.previewVerified")}</span><strong dir="auto">{selected.display_name}</strong></div><button type="button" aria-label={t("artifact.closePreview")}
-      onClick={() => { setSelected(undefined); setPreview(undefined); setPreviewState("idle"); }}><Icon name="close" /></button></header>
+      onClick={() => { setSelected(undefined); onPreviewTitle(undefined); setPreview(undefined); setPreviewState("idle"); }}><Icon name="close" /></button></header>
       {previewState === "loading" ? <div className="preview-state" role="status"><span className="spinner" />{t("artifact.verifying")}</div>
         : previewState === "unavailable" ? <div className="preview-state error" role="alert"><Icon name="warning" />{t("artifact.changed")}</div>
-          : preview && <pre>{preview.content_utf8}</pre>}
+          : preview && <div className="artifact-preview-content"><Markdown skipHtml remarkPlugins={[remarkGfm]}
+            components={{ a: ({ children }) => <span className="safe-link">{children}</span> }}>{preview.content_utf8}</Markdown></div>}
       <footer><Icon name="shield" />{t("artifact.digestPrefix")} {selected.revision}</footer>
     </section>}
     {results.length > 0 && <div className="deliverable-section-label">{t("artifact.snapshots")}</div>}
