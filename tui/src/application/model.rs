@@ -279,6 +279,7 @@ pub(crate) struct AppModel {
     pub(crate) command_suggestion_selection: usize,
     pub(crate) command_suggestion_dismissed: Option<String>,
     pub(crate) has_pending_command: bool,
+    pub(crate) composer_is_frozen: bool,
     pub(crate) session_selection: usize,
     pub(crate) navigation_selection: Option<String>,
     pub(crate) selected_session: Option<String>,
@@ -366,6 +367,7 @@ impl AppModel {
                 .any(|item| item.role == TimelineRole::Agent),
             has_selected_session: self.selected_session.is_some(),
             has_composer_selection: self.composer.has_selection(),
+            composer_is_editable: !self.composer_is_frozen,
         }
     }
 

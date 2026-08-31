@@ -7,7 +7,7 @@ pub(crate) const COMMAND_PALETTE: &[CommandSpec] = &[
     CommandSpec::new(
         "/edit-prompt",
         "Edit draft externally",
-        CommandRequirement::Always,
+        CommandRequirement::EditableComposer,
     ),
     CommandSpec::new(
         "/retry",
@@ -73,6 +73,7 @@ pub(crate) struct CommandContext {
     pub(crate) has_visible_completion: bool,
     pub(crate) has_selected_session: bool,
     pub(crate) has_composer_selection: bool,
+    pub(crate) composer_is_editable: bool,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -127,6 +128,9 @@ impl CommandSpec {
             CommandRequirement::ComposerSelection if !context.has_composer_selection => {
                 Some("no composer text is selected")
             }
+            CommandRequirement::EditableComposer if !context.composer_is_editable => {
+                Some("the draft is frozen")
+            }
             _ => None,
         }
     }
@@ -141,6 +145,7 @@ enum CommandRequirement {
     VisibleCompletion,
     SelectedSession,
     ComposerSelection,
+    EditableComposer,
 }
 
 pub(crate) fn command_matches(name: &str, help: &str, filter: &str) -> bool {

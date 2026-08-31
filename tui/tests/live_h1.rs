@@ -725,6 +725,13 @@ exit 7
             must_expect "\033\[6n" 40
             send "\033\[1;1R"
             must_expect "Garive" 41
+            send "\033\[Z"
+            after 100
+            send "\007"
+            after 200
+            if {[file exists $env(GARIVE_EDITOR_MODE)]} { exit 56 }
+            send "\t"
+            after 100
             send "seed"
             after 100
             send "\007"

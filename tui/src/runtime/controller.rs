@@ -232,7 +232,6 @@ fn handle_shortcut(intent: ShortcutIntent, state: &mut RuntimeState) -> bool {
         OpenSessions => open_session_picker(state),
         OpenCommands => open_command_palette(state),
         OpenHistory => open_prompt_history(state),
-        OpenExternalEditor => super::external_editor::request(state),
         Redraw if state.model.focus == FocusTarget::Conversation => state.force_redraw = true,
         DocumentStart if state.model.focus == FocusTarget::Conversation => {
             state.model.jump_to_oldest();
@@ -246,6 +245,7 @@ fn handle_shortcut(intent: ShortcutIntent, state: &mut RuntimeState) -> bool {
         intent if state.composer_is_frozen() && is_composer_shortcut(intent) => {
             state.explain_frozen_composer();
         }
+        OpenExternalEditor => super::external_editor::request(state),
         InsertNewline => {
             let _ = state.model.composer.insert("\n");
         }

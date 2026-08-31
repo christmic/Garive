@@ -91,6 +91,7 @@ fn palette_requirements_explain_every_contextual_command() {
         ("/copy last", "no completion is visible"),
         ("/copy selection", "no composer text is selected"),
         ("/copy session-id", "no Session is selected"),
+        ("/edit-prompt", "the draft is frozen"),
     ];
     for (input, expected) in cases {
         let command = COMMAND_PALETTE
@@ -107,6 +108,7 @@ fn palette_requirements_explain_every_contextual_command() {
         has_visible_completion: true,
         has_selected_session: true,
         has_composer_selection: true,
+        composer_is_editable: true,
     };
     assert!(COMMAND_PALETTE
         .iter()

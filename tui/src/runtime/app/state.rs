@@ -93,6 +93,8 @@ impl RuntimeState {
             ));
         }
         model.has_pending_command = !restored.pending.is_empty();
+        model.composer_is_frozen =
+            pending_freezes_composer(&restored.pending, model.selected_session.as_deref());
         let persisted_preferences = restored.preferences.clone();
         Self {
             config,
@@ -171,6 +173,7 @@ impl RuntimeState {
             self.model.composer.clear_private_edit_buffer();
         }
         self.model.selected_session = Some(session_id.clone());
+        self.sync_pending_projection();
         self.preferences.selected_session_id = Some(session_id.clone());
         let draft = self
             .preferences
@@ -303,7 +306,7 @@ impl RuntimeState {
             return false;
         }
         self.pending.push(pending);
-        self.model.has_pending_command = true;
+        self.sync_pending_projection();
         #[cfg(feature = "test-hooks")]
         self.crash_if(crate::args::TestCrashHook::PendingPersisted);
         true
@@ -317,8 +320,14 @@ impl RuntimeState {
             .or_else(|| self.pending.first())
     }
 
+    fn sync_pending_projection(&mut self) {
+        self.model.has_pending_command = !self.pending.is_empty();
+        self.model.composer_is_frozen =
+            pending_freezes_composer(&self.pending, self.model.selected_session.as_deref());
+    }
+
     pub(in crate::runtime) fn composer_is_frozen(&self) -> bool {
-        pending_freezes_composer(&self.pending, self.model.selected_session.as_deref())
+        self.model.composer_is_frozen
     }
 
     pub(in crate::runtime) fn explain_frozen_composer(&mut self) {
@@ -348,7 +357,7 @@ impl RuntimeState {
             return;
         }
         self.pending.remove(index);
-        self.model.has_pending_command = !self.pending.is_empty();
+        self.sync_pending_projection();
         self.model.overlay = None;
         if let Some(session) = self.model.selected_session.clone() {
             self.load(session);
@@ -403,7 +412,7 @@ impl RuntimeState {
             }
         }
         self.pending.remove(index);
-        self.model.has_pending_command = !self.pending.is_empty();
+        self.sync_pending_projection();
     }
 
     #[cfg(feature = "test-hooks")]
@@ -435,7 +444,7 @@ impl RuntimeState {
                 let pending = self.pending.remove(index);
                 let _ = self.store.remove_pending(pending.session_id.as_deref());
             }
-            self.model.has_pending_command = !self.pending.is_empty();
+            self.sync_pending_projection();
         } else if pending_index.is_some() {
             self.model.notice =
                 Some("The command outcome is unknown. Review /status or use exact /retry.".into());

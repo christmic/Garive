@@ -66,6 +66,10 @@ pub(super) fn request(state: &mut RuntimeState) {
     if state.external_editor_request.is_some() {
         return;
     }
+    if state.composer_is_frozen() {
+        state.explain_frozen_composer();
+        return;
+    }
     state.external_editor_request = Some(EditorRequest::new(
         state.model.selected_session.clone(),
         state.model.composer.text().to_owned(),
