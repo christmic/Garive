@@ -184,6 +184,12 @@ and exact document width without becoming a separate mobile visual language.
 
 Localization and 200% text zoom may grow rows and must never clip content.
 
+The multiline Composer uses a 20px fallback radius and a 25px
+`superellipse(1.5)` radius where supported. It has no physical border. Light
+depth is `0 0 0 1px / 4%`, `0 2px 8px / 4%` and `0 4px 80px 8px / 2.4%`;
+dark depth is one 20% white inset pixel. Composer depth is a dedicated token and
+must not inherit the stronger card or overlay shadow family.
+
 The unified Desktop/Web window bar is 34px at the supplied 1280px reference
 size. The file tab shares that row, its location toolbar is 30px including its
 separator, and the first rendered heading begins after a 4px document inset.

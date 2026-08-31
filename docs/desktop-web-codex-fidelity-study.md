@@ -375,6 +375,24 @@ resource-backed 70% bound and four continuous 22 px corners while retaining
 Garive's existing 14 px base text and outcome-first alignment. The extracted
 bundle is evidence only and is not redistributed in the repository.
 
+### S. Installed Codex Composer depth audit
+
+The same installed bundle exposes the full Composer surface contract. A
+multiline default Composer uses `radius-3xl`: 20 px fallback and 25 px when the
+Electron engine supports the bundle's `superellipse(1.5)` corner scale. The
+root explicitly forces `border: 0`. Light elevation is a 4% one-pixel ring, a
+4% 2×8 px lift and a 2.4% 4×80 px ambient shadow; dark elevation is only a 20%
+white one-pixel inset.
+
+Garive previously used a 16 px round corner, a 15% dark border and a 28% black
+18×50 px dark shadow. It now uses the resource-backed 20/25 px radius,
+superellipse where supported, zero physical border and independent Composer
+elevation tokens. Computed dark output is exactly a 25 px superellipse with a
+20% white inset; computed light output matches all three source shadow layers.
+New Work remains 64 px high, Running 97 px, and the 480 px governed-approval
+Composer remains fully visible at 272.7 px. All measured states have zero
+internal and document overflow.
+
 ## Gate 1 — Codex fidelity
 
 This gate passes only when both Desktop and Web show:
