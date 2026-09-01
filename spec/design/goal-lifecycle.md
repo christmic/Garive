@@ -179,6 +179,12 @@ Commands:
 - `Fail` requires Active or Suspended and a stable terminal reason;
 - `Cancel` requires any non-terminal state and authenticated actor authority.
 
+Create, Revise and Cancel are product-intent commands admitted through the
+Host authority. Activate, Suspend, Succeed and Fail are Runtime coordination
+commands derived from one verified ledger prefix; they are not generic public
+client mutations. Their cross-aggregate ordering and recovery rules are owned
+by [`goal-plan-runtime-coordination.md`](goal-plan-runtime-coordination.md).
+
 No-op transitions are invalid except exact command replay. Attempt and plan
 limits are checked before Activate; exceeding a hard bound transitions through
 an explicit Fail command, never silent cancellation.
