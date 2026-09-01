@@ -235,6 +235,28 @@ describe("Desktop product experience", () => {
     expect(view.container.querySelectorAll(".agent-card")).toHaveLength(0);
   });
 
+  it("navigates real application history through chrome, shortcuts, and forward branches", async () => {
+    render(<App />);
+    const back = await screen.findByRole<HTMLButtonElement>("button", { name: "Previous work" });
+    const forward = screen.getByRole<HTMLButtonElement>("button", { name: "Next work" });
+    expect(back.disabled).toBe(true); expect(forward.disabled).toBe(true);
+
+    fireEvent.click(screen.getByRole("button", { name: "Agents" }));
+    expect(await screen.findByRole("heading", { name: "Your Agents" })).toBeTruthy();
+    expect(back.disabled).toBe(false);
+    fireEvent.click(back);
+    await waitFor(() => expect(screen.queryByRole("heading", { name: "Your Agents" })).toBeNull());
+    expect(screen.getByRole("textbox")).toBeTruthy();
+    expect(forward.disabled).toBe(false);
+    fireEvent.keyDown(window, { key: "]", metaKey: true });
+    expect(await screen.findByRole("heading", { name: "Your Agents" })).toBeTruthy();
+    fireEvent.keyDown(window, { key: "[", metaKey: true });
+    await waitFor(() => expect(screen.queryByRole("heading", { name: "Your Agents" })).toBeNull());
+    expect(screen.getByRole("textbox")).toBeTruthy();
+    fireEvent.keyDown(window, { key: "]", ctrlKey: true });
+    expect(await screen.findByRole("heading", { name: "Your Agents" })).toBeTruthy();
+  });
+
   it("opens one truthful usage view without changing durable task state", async () => {
     render(<App usageBudget={{ source: "included_plan", state: "critical",
       scopeLabel: "Personal plan", periodLabel: "5-hour window", remainingPercent: 8,

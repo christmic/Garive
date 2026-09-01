@@ -1368,6 +1368,26 @@ those facts. The 1280×800 running fixture proves the compact source-shaped rail
 with one active Goal and `1 / 3 criteria`; the narrow fixture verifies the same
 facts without clipping the Composer controls.
 
+### XLVI. Window history is capability, not decorative chrome
+
+Installed Codex `26.825.51511` registers application commands
+`navigateBack` and `navigateForward` in `app-initial-B6Gk5KCN.js`. Their command
+menu labels are Back and Forward; their default bindings are
+`CmdOrCtrl+[` / `CmdOrCtrl+]` plus MouseBack / MouseForward. The same bundle
+renders the paired toolbar buttons from live `canGoBack` / `canGoForward`
+state. This proves that the arrows visible in the supplied desktop references
+are application navigation, not disabled window decoration.
+
+Garive now uses one pure, bounded navigation model for Desktop and Web. New
+Work, durable Session, Agents, and each Settings destination have explicit
+identities. A new destination truncates the forward branch, adjacent duplicate
+destinations are ignored, and only the latest 50 entries are retained. Applying
+history selects a real Product Session or restores the actual destination;
+history never manufactures transcript or execution state. Sidebar buttons,
+native Settings intent, command palette routes, `⌘[` / `⌘]`, and mouse history
+buttons all enter the same path. Unit tests lock branch, deduplication and bound
+semantics; the App test proves enabled states and Work ↔ Agents round trips.
+
 ## Gate 1 — Codex fidelity
 
 This gate passes only when both Desktop and Web show:

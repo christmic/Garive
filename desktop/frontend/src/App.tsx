@@ -38,6 +38,8 @@ import { conversationDistanceFromTail, conversationScrollDirectionForKey,
 import { visibleScrollEdges } from "./scrollEdges";
 import { nextDesktopZoom } from "./zoom";
 import { formatThreadMarkdown } from "./threadExport";
+import { canNavigate, createNavigationHistory, moveNavigation, pushNavigation,
+  type AppDestination, type SettingsDestination } from "./navigationHistory";
 import { useDesktopProduct } from "./app/useDesktopProduct";
 import type { ProductEffectPort } from "./app/ProductRuntime";
 import type { AppIntent, DefinitionItem, SessionItem } from "./state/controller";
@@ -48,7 +50,7 @@ import {
 
 type Screen = "work" | "agents" | "settings";
 type CommandMode = "commands" | "search";
-type SettingsSection = "general" | "usage" | "workspace" | "runtime" | "updates" | "privacy";
+type SettingsSection = SettingsDestination;
 type WorkDispatch = React.Dispatch<Parameters<typeof reduceWork>[1]>;
 interface SelectedContext {
   readonly grant: WorkspaceGrant;
@@ -185,6 +187,9 @@ export function App({ client = "desktop", webCapabilities, createProductPort,
   const [state, dispatch] = useReducer(reduceWork, initialWorkState);
   const [screen, setScreen] = useState<Screen>("work");
   const [settingsSection, setSettingsSection] = useState<SettingsSection>("general");
+  const initialHistory = useRef(createNavigationHistory());
+  const historyRef = useRef(initialHistory.current);
+  const [navigationHistory, setNavigationHistory] = useState(initialHistory.current);
   const [navigationOpen, setNavigationOpen] = useState(false);
   const [navigationCollapsed, setNavigationCollapsed] = useState(false);
   const [layoutDragging, setLayoutDragging] = useState(false);
@@ -355,12 +360,51 @@ export function App({ client = "desktop", webCapabilities, createProductPort,
       requestDigest: await semanticDigest({ kind: "create_session", definitionId }) });
   }, [product.current, product.dispatch, state.capabilities?.agent_definition_id]);
 
-  const beginNewWork = useCallback(() => {
+  const resetNewWork = useCallback(() => {
     dispatch({ type: "new_work" }); pendingDraft.current = ""; setQueuedSubmission(undefined);
     setSelectedContext(undefined); setScreen("work"); setNavigationOpen(false);
     void ensureProductSession();
     requestAnimationFrame(() => composer.current?.focus());
   }, [ensureProductSession]);
+
+  const applyDestination = useCallback((destination: AppDestination) => {
+    setNavigationOpen(false);
+    if (destination.kind === "new-work") { resetNewWork(); return; }
+    if (destination.kind === "agents") { setScreen("agents"); return; }
+    if (destination.kind === "settings") {
+      setSettingsSection(destination.section); setScreen("settings"); return;
+    }
+    setScreen("work"); setSelectedContext(undefined);
+    try { product.dispatch({ type: "select_session", sessionId: destination.sessionId }); }
+    catch (cause) { dispatch({ type: "submission_failed",
+      code: typeof cause === "string" ? cause : "projection_failure" }); }
+  }, [product.dispatch, resetNewWork]);
+
+  const recordDestination = useCallback((destination: AppDestination) => {
+    const next = pushNavigation(historyRef.current, destination);
+    historyRef.current = next; setNavigationHistory(next);
+  }, []);
+  const navigateHistory = useCallback((direction: -1 | 1) => {
+    const next = moveNavigation(historyRef.current, direction);
+    if (next === historyRef.current) return;
+    historyRef.current = next; setNavigationHistory(next);
+    applyDestination(next.entries[next.index]!);
+  }, [applyDestination]);
+  const beginNewWork = useCallback(() => {
+    recordDestination({ kind: "new-work" }); resetNewWork();
+  }, [recordDestination, resetNewWork]);
+  const openAgents = useCallback(() => {
+    recordDestination({ kind: "agents" }); setScreen("agents"); setNavigationOpen(false);
+  }, [recordDestination]);
+  const openSettings = useCallback((section: SettingsSection = "general") => {
+    recordDestination({ kind: "settings", section });
+    setSettingsSection(section); setScreen("settings"); setNavigationOpen(false);
+  }, [recordDestination]);
+  const showCurrentWork = useCallback(() => {
+    const sessionId = state.sessionId;
+    recordDestination(sessionId ? { kind: "session", sessionId } : { kind: "new-work" });
+    setScreen("work"); setNavigationOpen(false);
+  }, [recordDestination, state.sessionId]);
 
   const workDispatch = useCallback<WorkDispatch>((event) => {
     if (!visualTest && event.type === "draft_changed") {
@@ -508,9 +552,9 @@ export function App({ client = "desktop", webCapabilities, createProductPort,
       if (intent === "desktop.new-work") {
         beginNewWork();
       } else if (intent === "desktop.search") openCommandCenter("search");
-      else if (intent === "desktop.settings") { setSettingsSection("general"); setScreen("settings"); }
+      else if (intent === "desktop.settings") openSettings();
       else if (intent === "desktop.toggle-inspector") {
-        dispatch({ type: "inspector_toggled" }); setScreen("work");
+        dispatch({ type: "inspector_toggled" }); showCurrentWork();
       } else if (intent === "desktop.zoom-in" || intent === "desktop.zoom-out"
         || intent === "desktop.actual-size") {
         const next = nextDesktopZoom(desktopZoom.current, intent);
@@ -524,18 +568,20 @@ export function App({ client = "desktop", webCapabilities, createProductPort,
       else unlisten();
     }).catch(() => undefined);
     return () => { active = false; stop?.(); };
-  }, [beginNewWork, desktop, openCommandCenter]);
+  }, [beginNewWork, desktop, openCommandCenter, openSettings, showCurrentWork]);
 
   useEffect(() => {
     const shortcuts = (event: KeyboardEvent) => {
       if (event.key === "Escape" && navigationOpen) {
         event.preventDefault(); setNavigationOpen(false); return;
       }
-      if (!event.metaKey) return;
+      if (!event.metaKey && !event.ctrlKey) return;
       if (event.key.toLowerCase() === "n") {
         event.preventDefault(); beginNewWork();
       }
-      if (event.key === ",") { event.preventDefault(); setSettingsSection("general"); setScreen("settings"); }
+      if (event.key === ",") { event.preventDefault(); openSettings(); }
+      if (event.key === "[") { event.preventDefault(); navigateHistory(-1); }
+      if (event.key === "]") { event.preventDefault(); navigateHistory(1); }
       if (event.key.toLowerCase() === "k") { event.preventDefault(); openCommandCenter("commands"); }
       if (event.key.toLowerCase() === "f") { event.preventDefault(); openCommandCenter("search"); }
       if (event.shiftKey && event.key.toLowerCase() === "a") {
@@ -544,7 +590,16 @@ export function App({ client = "desktop", webCapabilities, createProductPort,
     };
     window.addEventListener("keydown", shortcuts);
     return () => window.removeEventListener("keydown", shortcuts);
-  }, [beginNewWork, navigationOpen, openCommandCenter]);
+  }, [beginNewWork, navigateHistory, navigationOpen, openCommandCenter, openSettings]);
+
+  useEffect(() => {
+    const mouseHistory = (event: MouseEvent) => {
+      if (event.button !== 3 && event.button !== 4) return;
+      event.preventDefault(); navigateHistory(event.button === 3 ? -1 : 1);
+    };
+    window.addEventListener("mouseup", mouseHistory);
+    return () => window.removeEventListener("mouseup", mouseHistory);
+  }, [navigateHistory]);
 
   const title = useMemo(() => {
     const first = state.messages.find((message) => message.role === "user")?.text;
@@ -676,13 +731,8 @@ export function App({ client = "desktop", webCapabilities, createProductPort,
   };
 
   const openRecent = async (sessionId: string) => {
-    setScreen("work");
-    setSelectedContext(undefined);
-    try {
-      product.dispatch({ type: "select_session", sessionId });
-    } catch (cause) {
-      dispatch({ type: "submission_failed", code: typeof cause === "string" ? cause : "projection_failure" });
-    }
+    recordDestination({ kind: "session", sessionId });
+    applyDestination({ kind: "session", sessionId });
   };
 
   const detachWorkspace = async (attachment: WorkspaceAttachment) => {
@@ -735,10 +785,14 @@ export function App({ client = "desktop", webCapabilities, createProductPort,
             className="sidebar-collapse icon-button" type="button"
             aria-label={t("shell.collapseNavigation")}
             onClick={() => setNavigationCollapsed(true)}><Icon name="panel" /></button></Tooltip>
-          <button className="history-button history-back" type="button" disabled
-            aria-label={t("shell.historyBack")}><Icon name="chevron" /></button>
-          <button className="history-button" type="button" disabled
-            aria-label={t("shell.historyForward")}><Icon name="chevron" /></button>
+          <Tooltip label={t("shell.historyBack")} shortcut="⌘["><button
+            className="history-button history-back" type="button"
+            disabled={!canNavigate(navigationHistory, -1)} onClick={() => navigateHistory(-1)}
+            aria-label={t("shell.historyBack")}><Icon name="chevron" /></button></Tooltip>
+          <Tooltip label={t("shell.historyForward")} shortcut="⌘]"><button
+            className="history-button" type="button"
+            disabled={!canNavigate(navigationHistory, 1)} onClick={() => navigateHistory(1)}
+            aria-label={t("shell.historyForward")}><Icon name="chevron" /></button></Tooltip>
         </div>
         <div className="sidebar-product-row">
           <DesktopMenu className="product-menu" label={t("shell.productMenu")}
@@ -747,12 +801,12 @@ export function App({ client = "desktop", webCapabilities, createProductPort,
               role="status"><Icon name="desktop" /><span><strong>{t("shell.local")}</strong>
                 <small>{t(state.capabilities?.configured ? "shell.runtimeReadyShort" : "shell.setupRequired")}</small></span>
               <span className="status-dot" aria-hidden="true" /></div>
-              <button type="button" role="menuitem" onClick={() => { close(); setSettingsSection("runtime"); setScreen("settings"); }}>
+              <button type="button" role="menuitem" onClick={() => { close(); openSettings("runtime"); }}>
                 <Icon name="desktop" /><span>{t("settings.runtime.title")}</span></button>
               {state.capabilities?.workspaces && <button type="button" role="menuitem"
-                onClick={() => { close(); setSettingsSection("workspace"); setScreen("settings"); }}>
+                onClick={() => { close(); openSettings("workspace"); }}>
                 <Icon name="folder" /><span>{t("settings.workspace.title")}</span></button>}
-              <button type="button" role="menuitem" onClick={() => { close(); setSettingsSection("general"); setScreen("settings"); }}>
+              <button type="button" role="menuitem" onClick={() => { close(); openSettings(); }}>
                 <Icon name="settings" /><span>{t("nav.settings")}</span><kbd>⌘,</kbd></button></>}
           </DesktopMenu>
           <Tooltip label={t("nav.search")} shortcut="⌘F" align="end"><button
@@ -766,9 +820,9 @@ export function App({ client = "desktop", webCapabilities, createProductPort,
         <nav className="nav-stack">
           <NavItem icon="work" label={t("nav.work")}
             selected={screen === "work" && state.messages.length === 0}
-            onClick={() => setScreen("work")} />
+            onClick={showCurrentWork} />
           <NavItem icon="agent" label={t("nav.agents")} selected={screen === "agents"}
-            onClick={() => setScreen("agents")} />
+            onClick={openAgents} />
           <NavItem icon="memory" label={t("shell.memory")} disabled
             hint={t("shell.requiresMemory")} soon={t("shell.soon")} />
         </nav>
@@ -792,7 +846,7 @@ export function App({ client = "desktop", webCapabilities, createProductPort,
             <div className="section-label" id="sidebar-recent-label"><span>{t("nav.recents")}</span>{!state.capabilities?.durable_navigation
               && <span className="beta-tag">{t("shell.live")}</span>}</div>
             {state.messages.length > 0 ? <button className="recent-item selected" type="button"
-              onClick={() => setScreen("work")}><span>{title}</span><small>{state.phase === "submitting"
+              onClick={showCurrentWork}><span>{title}</span><small>{state.phase === "submitting"
                 ? t("status.working") : terminalCopy(state.messages.at(-1)?.terminal, t)}
                 <CurrentTaskStateDot state={state} /></small></button>
               : <p className="sidebar-empty">{t("shell.recentsEmpty")}</p>}
@@ -804,7 +858,7 @@ export function App({ client = "desktop", webCapabilities, createProductPort,
             className={`host-identity ${state.capabilities?.configured ? "online" : "offline"}`}
             type="button" aria-label={`${t("settings.runtime.title")} · ${t(state.capabilities?.configured
               ? "shell.runtimeReadyShort" : "shell.setupRequired")}`}
-            onClick={() => { setSettingsSection("runtime"); setScreen("settings"); }}>
+            onClick={() => openSettings("runtime")}>
             <span className="host-identity-icon" aria-hidden="true"><Icon name="desktop" /></span>
             <span className="host-identity-copy"><strong>{t("shell.local")}</strong>
               <small>{state.capabilities?.configured ? t("shell.runtimeReadyShort") : t("shell.setupRequired")}</small></span>
@@ -812,7 +866,7 @@ export function App({ client = "desktop", webCapabilities, createProductPort,
           </button></Tooltip>
           <Tooltip label={t("nav.settings")} shortcut="⌘," side="top" align="end"><button
             className="sidebar-settings-button" type="button" aria-label={t("nav.settings")}
-            onClick={() => { setSettingsSection("general"); setScreen("settings"); }}>
+            onClick={() => openSettings()}>
             <Icon name="settings" /></button></Tooltip>
           <span className="sr-only" role="status" aria-live="polite">{t("shell.local")} · {t(state.capabilities?.configured
             ? "shell.runtimeReadyShort" : "shell.setupRequired")}</span>
@@ -859,14 +913,14 @@ export function App({ client = "desktop", webCapabilities, createProductPort,
                   dispatch({ type: "inspector_toggled" }); }}><Icon name="panel" />
                   <span>{t(state.inspectorOpen ? "work.menu.closeEnvironment" : "work.menu.openEnvironment")}</span><kbd>⌘⇧A</kbd></button>
                 <button type="button" role="menuitem" onClick={() => { close();
-                  setSettingsSection("general"); setScreen("settings"); }}><Icon name="settings" />
+                  openSettings(); }}><Icon name="settings" />
                   <span>{t("nav.settings")}</span><kbd>⌘,</kbd></button></>}
             </DesktopMenu>}
             {visualTest && <span className="local-badge qa-badge">{t("shell.qaPreview")}</span>}
           </div>
           <div className="topbar-actions">
             {visibleUsage && screen !== "settings" && <UsageBudgetTrigger value={visibleUsage} label={t("usage.trigger")}
-              onOpen={() => { setSettingsSection("usage"); setScreen("settings"); }} />}
+              onOpen={() => openSettings("usage")} />}
             {screen === "work" && state.messages.length > 0 && <Tooltip label={t("thread.exportAria")} align="end">
               <button className="topbar-text-action" type="button" aria-label={t("thread.exportAria")}
               onClick={() => downloadMarkdown(state.sessionId ?? "work", formatThreadMarkdown(title,
@@ -896,7 +950,7 @@ export function App({ client = "desktop", webCapabilities, createProductPort,
             : <SettingsScreen capabilities={state.capabilities} preferences={preferences}
               setPreferences={setPreferences} update={desktopUpdate} runUpdate={runUpdateAction}
               restartBlocked={state.phase === "submitting"} usage={visibleUsage}
-              section={settingsSection} onSectionChange={setSettingsSection} t={t} />}
+              section={settingsSection} onSectionChange={openSettings} t={t} />}
       </main>
       {screen === "work" && state.inspectorOpen && <Inspector state={state} dispatch={workDispatch}
         onAddContext={openContext} canAddContext={Boolean(state.capabilities?.workspaces)
@@ -915,8 +969,8 @@ export function App({ client = "desktop", webCapabilities, createProductPort,
     {commandOpen && <CommandCenter mode={commandMode} recents={orderedRecents} titles={recentTitles}
       onClose={closeCommandCenter} onNewWork={() => { setCommandOpen(false); beginNewWork(); }}
       onSearch={() => setCommandMode("search")}
-      onSettings={() => { setCommandOpen(false); setSettingsSection("general"); setScreen("settings"); }}
-      onToggleInspector={() => { setCommandOpen(false); setScreen("work");
+      onSettings={() => { setCommandOpen(false); openSettings(); }}
+      onToggleInspector={() => { setCommandOpen(false); showCurrentWork();
         dispatch({ type: "inspector_toggled" }); }}
       onOpen={(sessionId) => { setCommandOpen(false); void openRecent(sessionId); }} t={t} />}
   </div>;
