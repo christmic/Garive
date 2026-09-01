@@ -8,11 +8,11 @@ expression: "frame(&recovery, Theme::Dark, 100, 24)"
       ✓  Agent action · completed
     ◆ Garive
       ## Release plan
-      • Verify the Runtime
-      • Ship with  ╭ Command result unknown ────────────────────────────────────╮
-      cargo test   │                                                            │
+
+      • Verify th  ╭ Command result unknown ────────────────────────────────────╮
+      • Ship with  │                                                            │
                    │  ×  A prior command has an unknown durable outcome.        │
-                   │  Review Host truth before retrying.                        │
+      cargo test   │  Review Host truth before retrying.                        │
                    │                                                            │
                    │    Enter exact retry   A abandon local record              │
                    │                                                            │

@@ -8,11 +8,11 @@ Session 1  ·  Agent                                                       Agent
     ✓  Agent action · completed                                                         │                              │
   ◆ Garive                                                                              │                              │
     ## Release plan                                                                     │                              │
+                                                                                        │                              │
     • Verify the Runtime                                                                │                              │
     • Ship with evidence                                                                │                              │
+                                                                                        │                              │
     cargo test passes.                                                                  │                              │
-                                                                                        │                              │
-                                                                                        │                              │
                                                                                         │                              │
                                                                                         │                              │
                                                                                         │                              │

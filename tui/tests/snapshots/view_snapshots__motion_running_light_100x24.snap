@@ -8,11 +8,11 @@ expression: "motion_frame(&model, Theme::Light, 4, 100, 24)"
       ✓  Agent action · completed
     ◆ Garive
       ## Release plan
+
       • Verify the Runtime
       • Ship with evidence
+
       cargo test passes.
-
-
 
 
 
