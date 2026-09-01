@@ -236,6 +236,13 @@ durable final answer exactly once; the shipping production Runtime test proves
 the same file/SQLite/Host path survives restart without exposing internal
 definition identity.
 
+`System` theme is no longer a dark alias. Fullscreen startup now owns one
+100 ms paired terminal foreground/background query before the event reader,
+resolves every render/reflow path and later `/theme system` through the same
+process-local value, and deterministically falls back to dark. A shipping
+macOS PTY proves reverse-order light replies and emitted light-palette bytes;
+screen-reader mode emits no appearance query.
+
 This is not physical gallery closeout. Native macOS tests and real PTY
 transcripts are admitted, but Apple Terminal and iTerm2-class screenshots remain
 open while the macOS login session is locked. Linux and Windows native review

@@ -415,8 +415,11 @@ when the failed task owns terminal or event-loop integrity.
 3. enable raw mode;
 4. enter alternate screen unless `--screen-reader` selects linear mode;
 5. enable bracketed paste and focus events;
-6. hide the cursor only while a view supplies an explicit cursor position;
-7. clear and draw the first frame.
+6. in fullscreen mode, run the single bounded terminal-appearance probe while
+   raw input is exclusively owned and before Ratatui initialization;
+7. initialize Ratatui, start the sole terminal event reader, and draw the first
+   frame;
+8. hide the cursor only while a view supplies an explicit cursor position.
 
 Setup failure rolls back completed steps in reverse order. `restore` is
 idempotent and runs for normal return, launch error, signal shutdown, and panic
@@ -432,6 +435,8 @@ The same action can disable it without restarting.
 blocks are printed once, status changes use concise lines, interactive overlays
 become numbered prompts, mouse is disabled, and animations are disabled. It
 consumes the same application model and Host contract.
+It also skips OSC 10/11 appearance probing: linear output cannot leak a palette
+query into assistive text or compete with its input reader.
 Non-list action overlays additionally consume the same typed bindings in the
 terminal controller, fullscreen renderer, and linear renderer. The controller
 dispatches semantic intents (`Close`, `ConfirmQuit`, `AcceptEphemeral`,

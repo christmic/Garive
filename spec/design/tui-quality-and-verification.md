@@ -119,7 +119,7 @@ they reveal a new stable regression class.
 |---|---|
 | Width | `20`, `39`, `40`, `51`, `52`, `79`, `80`, `119`, `120`, `160`, `200` |
 | Height | `8`, `12`, `24`, `40`, `60` |
-| Theme | dark, light, mono |
+| Theme | system-dark reply, system-light reply, system timeout, dark, light, mono |
 | Capability | basic ANSI, 256 color, truecolor, no Unicode border, no OSC 8 |
 | State | loading, empty, idle, submitting, running, cancelling, disconnected, suspended, unknown command, completed, stopped, failed |
 | Overlay | command, help, Session, history, suspension, error, quit |
@@ -165,6 +165,11 @@ Each scenario launches `CARGO_BIN_EXE_garive-tui`, not a test-only entry point:
     ordinal, move selection without changing the viewport, press Escape and
     prove the original anchor; reopen, activate with Enter and prove the exact
     public Turn start, then reload the Session and prove stale results close.
+13. launch with `--theme system` in a macOS PTY, require the paired OSC 10/11
+    query before the Ratatui cursor query, return a light background in reverse
+    reply order, and assert light accent/text/surface bytes plus complete
+    restoration. Repeat without a reply and prove startup advances within the
+    bounded fallback window. Screen-reader launch must contain no OSC 10/11.
 
 Scenarios 1, 4, 9, and 10 run twice in the same verification job. Both runs
 must pass; a single selected success is not evidence.
@@ -589,6 +594,24 @@ snapshots must prove the 96-column answer measure remains unchanged at the
 `79/80` and `119/120` boundaries and that no rail metadata returns. The macOS
 shipping PTY must be rerun after those replacement assertions land; historical
 rail PTY transcripts cannot close the v2 gate.
+
+## Terminal-appearance evidence
+
+Implementation `b3102335`, integrated at `ba271f77`, adds the process-local
+terminal theme resolver and the Unix/macOS OSC 10/11 probe. Parser tests bind
+paired replies, BEL/ST termination, `rgb`/`rgba`, two-/four-digit components,
+reverse order, malformed input, light/dark resolution, and explicit-theme
+preservation. The shipping macOS Expect PTY returns foreground/background in
+reverse order and observes the light palette's blue accent, dark text, light
+surface, and alternate-screen restoration. The no-reply shipping PTY proves
+the 100 ms fallback remains compatible with existing startup and teardown.
+
+Follow-up `97fe6683`, integrated at `5dd7db4e`, closes Crossterm's independent
+`NO_COLOR` suppression: the same PTY retains `NO_COLOR=1` while explicit
+`--theme system` still emits the resolved light palette. Strict all-target,
+all-feature Clippy, 116 library tests, 68 reviewed visual snapshots, 62 visual
+consistency tests, architecture tests, and both focused shipping PTYs pass.
+Physical Apple Terminal and iTerm2-class screenshot admission remains open.
 
 ## Completion rule
 
