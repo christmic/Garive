@@ -329,6 +329,11 @@ must not inherit the stronger card or overlay shadow family.
 The unified Desktop/Web window bar is 34px at the supplied 1280px reference
 size. The file tab shares that row, its location toolbar is 30px including its
 separator, and the first rendered heading begins after a 4px document inset.
+An existing Work exposes one 24px title-proximate overflow action before the
+far-edge actions. It opens a compact desktop menu containing only real routes
+or commands; it is not a decorative ellipsis. The menu takes initial focus,
+closes on Escape or outside pointer input, and returns Escape focus to its
+trigger without changing the active Work.
 Disclosure buttons in the window bar use `aria-expanded` and `aria-controls`;
 the visible panel is the opened-state feedback, so the button does not retain a
 selected fill or pointer focus ring. Keyboard focus remains explicitly visible.

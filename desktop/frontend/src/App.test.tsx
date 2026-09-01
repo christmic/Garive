@@ -85,6 +85,11 @@ describe("Desktop product experience", () => {
     await waitFor(() => expect(commands, JSON.stringify(commands)).toContain("start_product_turn"));
     expect(await screen.findByText("Durable product answer")).toBeTruthy();
     expect(screen.getByRole("button", { name: "Export conversation as Markdown" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Work actions" }));
+    expect(screen.getByRole("menu", { name: "Work actions" })).toBeTruthy();
+    expect(screen.getByRole("menuitem", { name: /New work/ })).toBeTruthy();
+    fireEvent.click(screen.getByRole("menuitem", { name: /Open Environment/ }));
+    expect(screen.getByRole("button", { name: "Toggle inspector" }).getAttribute("aria-expanded")).toBe("true");
     expect(commands).toContain("create_product_session");
     expect(commands).toContain("start_product_turn");
     expect(commands).toContain("get_session_events");

@@ -110,6 +110,9 @@ describe("Desktop visual accessibility contract", () => {
     expect(CSS).toContain(".progress-state { color: var(--text-tertiary); font-size: var(--text-2xs); white-space: nowrap; }");
     expect(CSS).toContain(".topbar-actions .icon-button[aria-expanded=\"true\"] { color: var(--text-primary); background: transparent; }");
     expect(CSS).toContain(".topbar-text-action { display: flex; align-items: center; gap: 5px; height: 30px;");
+    expect(CSS).toContain(".work-menu-trigger { display: grid; place-items: center; width: 24px; height: 24px;");
+    expect(CSS).toContain(".work-action-menu { position: absolute; z-index: 12; top: 27px; left: -4px; width: 204px;");
+    expect(CSS).toContain("grid-template-columns: 18px minmax(0, 1fr) auto");
     expect(CSS).toContain(".user-message > div { max-width: 70%; padding: 10px 14px; border: 0; border-radius: 22px; corner-shape: round;");
     expect(CSS).toContain(".composer { width: min(39rem, 100%); border: 0; border-radius: var(--radius-composer);");
     expect(CSS).toContain("background: var(--surface-composer)");

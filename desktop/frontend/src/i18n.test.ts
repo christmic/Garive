@@ -30,6 +30,8 @@ describe("Desktop localization", () => {
     expect(t("agents.description")).toContain("新工作");
     expect(t("environment.runtime")).toBe("运行时");
     expect(t("environment.workspaces")).toBe("工作区");
+    expect(t("work.menu.actions")).toBe("工作操作");
+    expect(t("work.menu.openEnvironment")).toBe("打开环境");
   });
 
   it("preserves approval and Artifact trust semantics in Chinese", () => {

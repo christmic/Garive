@@ -605,6 +605,22 @@ fixture truthfully omits Workspaces and contracts to 224×214 px. Both preserve
 the same 34 px row rhythm and leave the conversation/Composer axis aligned with
 the supplied screenshots.
 
+### XVII. Title-proximate Work actions
+
+Both supplied references reserve a quiet ellipsis immediately after the active
+Work title. Garive previously omitted that desktop hierarchy entirely while
+placing every available action at the far edge. The shared title row now adds
+a 24px `Work actions` trigger only after a durable Turn exists. Its menu exposes
+real New work, Search, Environment and Settings commands with their existing
+keyboard shortcuts; unavailable Search is omitted rather than simulated.
+
+The menu is a 204×138px neutral overlay in the reference-sized split fixture,
+takes focus on open, closes on Escape or outside pointer input, and restores
+focus to its trigger. Real Browser measurement retains zero document overflow,
+and the same DOM is mounted by Desktop and Web. Export remains the truthful
+far-edge analogue to the unavailable cloud Share action instead of being
+duplicated inside the menu.
+
 ## Gate 1 — Codex fidelity
 
 This gate passes only when both Desktop and Web show:

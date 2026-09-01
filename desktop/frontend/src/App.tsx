@@ -139,6 +139,7 @@ export function App({ client = "desktop", webCapabilities, createProductPort,
   const [recents, setRecents] = useState<readonly RecentTask[]>([]);
   const [recentTitles, setRecentTitles] = useState<Readonly<Record<string, string>>>({});
   const [commandOpen, setCommandOpen] = useState(false);
+  const [workMenuOpen, setWorkMenuOpen] = useState(false);
   const [selectedContext, setSelectedContext] = useState<SelectedContext>();
   const [pickerGrant, setPickerGrant] = useState<WorkspaceGrant>();
   const [detachingWorkspaceId, setDetachingWorkspaceId] = useState<string>();
@@ -155,6 +156,8 @@ export function App({ client = "desktop", webCapabilities, createProductPort,
   const visibleUsage = usageBudget ?? (visualTestMode === "usage" ? visualUsageBudget : undefined);
   const composer = useRef<HTMLTextAreaElement>(null);
   const approvalAction = useRef<HTMLButtonElement>(null);
+  const workMenu = useRef<HTMLDivElement>(null);
+  const workMenuTrigger = useRef<HTMLButtonElement>(null);
   const desktopZoom = useRef(1);
   const pendingDraft = useRef("");
   const [queuedSubmission, setQueuedSubmission] = useState<string>();
@@ -185,6 +188,23 @@ export function App({ client = "desktop", webCapabilities, createProductPort,
     [preferences]);
   useEffect(() => { document.documentElement.lang = locale === "en-XA" ? "en-XA" : locale; },
     [locale]);
+  useEffect(() => {
+    if (!workMenuOpen) return;
+    const closeOutside = (event: PointerEvent) => {
+      if (!workMenu.current?.contains(event.target as Node)) setWorkMenuOpen(false);
+    };
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      event.preventDefault(); setWorkMenuOpen(false); workMenuTrigger.current?.focus();
+    };
+    document.addEventListener("pointerdown", closeOutside);
+    document.addEventListener("keydown", closeOnEscape);
+    requestAnimationFrame(() => workMenu.current?.querySelector<HTMLButtonElement>("[role=menuitem]")?.focus());
+    return () => {
+      document.removeEventListener("pointerdown", closeOutside);
+      document.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [workMenuOpen]);
   useEffect(() => {
     if (desktop && !visualTest) void setDesktopMenuLocale(locale).catch(() => undefined);
   }, [desktop, locale]);
@@ -684,6 +704,25 @@ export function App({ client = "desktop", webCapabilities, createProductPort,
             <span className="topbar-context-icon" aria-hidden="true"><Icon name={screen === "work" ? "folder"
               : screen === "agents" ? "agent" : screen === "settings" ? "settings" : "search"} /></span>
             <span className="topbar-title-copy">{screen === "work" ? title : screen === "search" ? t("nav.search") : screen === "agents" ? t("nav.agents") : t("nav.settings")}</span>
+            {screen === "work" && state.messages.length > 0 && <div className="work-menu" ref={workMenu}>
+              <button className="work-menu-trigger" type="button" ref={workMenuTrigger}
+                aria-label={t("work.menu.actions")} title={t("work.menu.actions")}
+                aria-haspopup="menu" aria-expanded={workMenuOpen}
+                onClick={() => setWorkMenuOpen((open) => !open)}><Icon name="more" /></button>
+              {workMenuOpen && <div className="work-action-menu" role="menu" aria-label={t("work.menu.actions")}>
+                <button type="button" role="menuitem" onClick={() => { setWorkMenuOpen(false); beginNewWork(); }}>
+                  <Icon name="plus" /><span>{t("nav.newWork")}</span><kbd>⌘N</kbd></button>
+                {state.capabilities?.durable_navigation && <button type="button" role="menuitem"
+                  onClick={() => { setWorkMenuOpen(false); setScreen("search"); }}>
+                  <Icon name="search" /><span>{t("nav.search")}</span><kbd>⌘F</kbd></button>}
+                <button type="button" role="menuitem" onClick={() => { setWorkMenuOpen(false);
+                  dispatch({ type: "inspector_toggled" }); }}><Icon name="panel" />
+                  <span>{t(state.inspectorOpen ? "work.menu.closeEnvironment" : "work.menu.openEnvironment")}</span><kbd>⌘⇧A</kbd></button>
+                <button type="button" role="menuitem" onClick={() => { setWorkMenuOpen(false);
+                  setSettingsSection("general"); setScreen("settings"); }}><Icon name="settings" />
+                  <span>{t("nav.settings")}</span><kbd>⌘,</kbd></button>
+              </div>}
+            </div>}
             {visualTest && <span className="local-badge qa-badge">{t("shell.qaPreview")}</span>}
           </div>
           <div className="topbar-actions">
