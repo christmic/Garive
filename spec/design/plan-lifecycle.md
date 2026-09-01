@@ -185,6 +185,36 @@ recovery transaction. Once a Kernel Execution or effect has started, recovery
 first classifies C6/C5 durable positions. Another worker cannot start merely
 because wall-clock lease time passed.
 
+### Bounded Step dispatch driver
+
+Plan dispatch is separate from Q0 recurring schedules. One Runtime tick makes
+at most one claim and one start decision:
+
+1. reconstruct Goal and every Plan at one Session watermark;
+2. select the unique authoritative Adopted/Running Plan and the first Ready
+   Step in Plan declaration order, subject to `max_parallel_ready`;
+3. commit `plan.step.claimed` before any model or execution dispatch;
+4. pass the exact claimed Step, Plan/Goal bindings and current prefix to a
+   constructed start-preparation port;
+5. validate the returned installed Agent binding, C6 start batch, frozen
+   execution snapshot, Sandbox profile digest and Safety decision identity;
+6. atomically commit C6 `turn.started + turn.input + execution.started` with
+   `plan.step.started`;
+7. only after a new commit, offer the derived `CommittedTurn` to the bounded
+   local dispatch queue.
+
+The preparation port cannot choose another Goal, Plan, Step, claim, lease,
+attempt, command or Session. It may only resolve the installed Agent/C6 and
+execution-posture values that are not owned by the portable Plan. Configuration
+is constructor input; no environment discovery occurs.
+
+A queue-admission failure cannot roll back the start transaction. Startup
+recovery re-discovers the durable open Execution. A crash after claim but
+before start leaves a fenced claim: the same exact command may resume it, or a
+later worker may expire it only with PL1's monotonic lease proof. A tick never
+silently steals a different worker's live claim or starts a second Execution
+for an already-started attempt.
+
 ## Replanning and carry-forward
 
 Replanning proposes revision `N + 1` with the same Plan ID and current Goal

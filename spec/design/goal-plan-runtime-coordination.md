@@ -111,6 +111,14 @@ Priority is fixed:
 Policy may deny a proposed edge but cannot reorder safety, recovery or
 terminal-evidence checks.
 
+`DispatchReadyStep` invokes PL1's bounded Step dispatch driver, not Q0 schedule
+recurrence and not the Local Worker's terminal reducer. The coordinator owns
+Ready-Step selection and fixed-prefix Goal/Plan authority; a constructed
+preparation port owns installed Agent and execution-posture resolution; C6/PL1
+planners validate the combined start before one atomic commit. Process-local
+queue admission happens afterward and is never the authority that a Step
+started.
+
 ## Plan and Goal binding
 
 The default local product requires one authoritative adopted Plan before Goal
