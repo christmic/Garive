@@ -26,8 +26,8 @@ use garive_plan::{
     PlanStepV1, StepState,
 };
 use garive_runtime::{
-    commit_goal_command, commit_plan_command, commit_plan_replacement, commit_planned_turn,
-    dispatch_plan_step_once, evaluate_goal_plan_once, get_turn,
+    advance_goal_plan_once, commit_goal_command, commit_plan_command, commit_plan_replacement,
+    commit_planned_turn, dispatch_plan_step_once, evaluate_goal_plan_once, get_turn,
     plan_activate_goal_from_authoritative_plan, plan_adopt_plan,
     plan_complete_owned_step_from_turn, plan_complete_plan, plan_continue_owned_plan_turn,
     plan_continue_turn, plan_core_terminal, plan_fail_owned_step_from_turn, plan_goal_transition,
@@ -37,13 +37,14 @@ use garive_runtime::{
     plan_suspend_owned_plan_from_turn, reconstruct_execution_work_binding, reconstruct_goal,
     reconstruct_plan, reconstruct_plan_graph, reconstruct_suspended_turn,
     verify_plan_carry_forward, ContinuationInput, ContinueTurnCommand, CoreTerminalContext,
-    EffectiveRuntimeLimits, GetTurnQuery, GoalCommandContext, GoalPlanCoordinationError,
-    GoalPlanDecision, GoalRuntimeError, GoalRuntimeTransition, InteractionInputRepresentation,
-    LocalExecutionAttempt, LocalExecutionPolicy, LocalExecutionWorker, LocalWorkerDisposition,
-    PlanCommandContext, PlanDispatchError, PlanDispatchOutcome, PlanDispatchTick, PlanRuntimeError,
-    PlanRuntimeState, PlanRuntimeTransition, PlanStepDispatchFactory, PlanStepDispatchInput,
-    PlanStepExecutionStart, PreparedPlanStepDispatch, RuntimeCommandId, SqliteLedger,
-    StartTurnCommand, TurnDispatchError, TurnDispatcher,
+    EffectiveRuntimeLimits, GetTurnQuery, GoalCommandContext, GoalPlanAdvanceOutcome,
+    GoalPlanCoordinationError, GoalPlanCoordinationTick, GoalPlanDecision, GoalRuntimeError,
+    GoalRuntimeTransition, InteractionInputRepresentation, LocalExecutionAttempt,
+    LocalExecutionPolicy, LocalExecutionWorker, LocalWorkerDisposition, PlanCommandContext,
+    PlanDispatchError, PlanDispatchOutcome, PlanDispatchTick, PlanRuntimeError, PlanRuntimeState,
+    PlanRuntimeTransition, PlanStepDispatchFactory, PlanStepDispatchInput, PlanStepExecutionStart,
+    PreparedPlanStepDispatch, RuntimeCommandId, SqliteLedger, StartTurnCommand, TurnDispatchError,
+    TurnDispatcher,
 };
 use serde_json::json;
 use sha2::{Digest, Sha256};
@@ -676,6 +677,36 @@ fn coordinator_selects_one_action_from_one_ledger_prefix() {
     );
     assert_eq!(dispatch.through_position, 5);
     assert_eq!(dispatch.session_version, 3);
+
+    let dispatcher = RecordingTurnDispatcher::default();
+    let mut factory = DispatchFactory { unavailable: false };
+    let outcome = advance_goal_plan_once(
+        &mut ledger,
+        &session,
+        "goal-1",
+        &GoalPlanCoordinationTick {
+            actor_reference: "coordinator:local".into(),
+            recorded_at: timestamp().into(),
+            dispatch: Some(dispatch_tick()),
+        },
+        &mut factory,
+        &dispatcher,
+    )
+    .unwrap();
+    assert!(matches!(
+        outcome,
+        GoalPlanAdvanceOutcome::Dispatch(PlanDispatchOutcome::Started {
+            dispatch_accepted: true,
+            ..
+        })
+    ));
+    assert_eq!(dispatcher.committed.lock().unwrap().len(), 1);
+    assert_eq!(
+        evaluate_goal_plan_once(&ledger, &session, "goal-1")
+            .unwrap()
+            .decision,
+        GoalPlanDecision::NoAction
+    );
 }
 
 #[tokio::test]

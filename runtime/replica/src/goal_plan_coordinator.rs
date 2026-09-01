@@ -3,8 +3,16 @@
 use garive_goal::GoalState;
 use garive_ledger::SessionId;
 use garive_plan::{PlanState, PlanStepId, StepState};
+use sha2::{Digest, Sha256};
 
-use crate::{reconstruct_goal, reconstruct_plan_graph, GoalPlanCoordinationError, SqliteLedger};
+use crate::{
+    commit_goal_command, commit_plan_command, dispatch_plan_step_once,
+    plan_activate_goal_from_authoritative_plan, plan_complete_authoritative_plan,
+    plan_fail_goal_from_failed_plan, plan_succeed_goal_from_completed_plan, reconstruct_goal,
+    reconstruct_plan_graph, GoalCommandContext, GoalPlanCoordinationError, GoalRuntimeError,
+    PlanCommandContext, PlanDispatchError, PlanDispatchOutcome, PlanDispatchTick, PlanRuntimeError,
+    PlanStepDispatchFactory, SqliteLedger, TurnDispatcher,
+};
 
 /// One bounded Runtime coordination decision over a verified Session prefix.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -74,6 +82,44 @@ pub struct GoalPlanCoordinationSnapshot {
     pub decision: GoalPlanDecision,
 }
 
+/// Explicit Runtime-owned metadata for one coordination attempt.
+pub struct GoalPlanCoordinationTick {
+    /// Stable internal coordinator identity.
+    pub actor_reference: String,
+    /// Canonical RFC 3339 observation time.
+    pub recorded_at: String,
+    /// Fenced worker tick, required only for `DispatchReadyStep`.
+    pub dispatch: Option<PlanDispatchTick>,
+}
+
+/// Result of advancing at most one coordination decision.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum GoalPlanAdvanceOutcome {
+    /// The fixed prefix requires no mutation.
+    NoAction,
+    /// A planning, admission, continuation or failure policy must decide next.
+    AwaitingPolicy(GoalPlanDecision),
+    /// One non-dispatch coordination command committed durably.
+    Committed(GoalPlanDecision),
+    /// The bounded Step dispatcher made its one allowed decision.
+    Dispatch(PlanDispatchOutcome),
+}
+
+/// Stable failures from one bounded coordination advance.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum GoalPlanCoordinatorError {
+    /// Runtime-owned metadata is malformed or incomplete.
+    InvalidTick,
+    /// Fixed-prefix evaluation failed closed.
+    Coordination(GoalPlanCoordinationError),
+    /// Goal command planning or durability failed.
+    Goal(GoalRuntimeError),
+    /// Plan command planning or durability failed.
+    Plan(PlanRuntimeError),
+    /// Bounded Step dispatch failed.
+    Dispatch(PlanDispatchError),
+}
+
 /// Evaluates one Goal lineage without mutating durable state.
 pub fn evaluate_goal_plan_once(
     ledger: &SqliteLedger,
@@ -113,6 +159,160 @@ pub fn evaluate_goal_plan_once(
         goal_definition_digest: goal_digest,
         decision,
     })
+}
+
+/// Evaluates and commits at most one policy-independent coordination action.
+pub fn advance_goal_plan_once(
+    ledger: &mut SqliteLedger,
+    session_id: &SessionId,
+    goal_id: &str,
+    tick: &GoalPlanCoordinationTick,
+    factory: &mut dyn PlanStepDispatchFactory,
+    dispatcher: &dyn TurnDispatcher,
+) -> Result<GoalPlanAdvanceOutcome, GoalPlanCoordinatorError> {
+    if tick.actor_reference.is_empty()
+        || chrono::DateTime::parse_from_rfc3339(&tick.recorded_at).is_err()
+    {
+        return Err(GoalPlanCoordinatorError::InvalidTick);
+    }
+    let snapshot = evaluate_goal_plan_once(ledger, session_id, goal_id)
+        .map_err(GoalPlanCoordinatorError::Coordination)?;
+    let decision = snapshot.decision.clone();
+    match &decision {
+        GoalPlanDecision::NoAction => Ok(GoalPlanAdvanceOutcome::NoAction),
+        GoalPlanDecision::ProposePlan | GoalPlanDecision::NeedsOperator { .. } => {
+            Ok(GoalPlanAdvanceOutcome::AwaitingPolicy(decision))
+        }
+        GoalPlanDecision::ActivateGoal { .. } => {
+            let context = goal_context(&snapshot, tick, "activate");
+            let planned = plan_activate_goal_from_authoritative_plan(
+                ledger,
+                session_id,
+                goal_id,
+                snapshot.session_version,
+                snapshot.goal_revision,
+                &context,
+            )
+            .map_err(GoalPlanCoordinatorError::Coordination)?;
+            commit_goal_command(
+                ledger,
+                session_id.clone(),
+                snapshot.session_version,
+                &planned,
+            )
+            .map_err(GoalPlanCoordinatorError::Goal)?;
+            Ok(GoalPlanAdvanceOutcome::Committed(decision))
+        }
+        GoalPlanDecision::DispatchReadyStep { .. } => {
+            let dispatch = tick
+                .dispatch
+                .as_ref()
+                .ok_or(GoalPlanCoordinatorError::InvalidTick)?;
+            dispatch_plan_step_once(ledger, session_id, goal_id, dispatch, factory, dispatcher)
+                .map(GoalPlanAdvanceOutcome::Dispatch)
+                .map_err(GoalPlanCoordinatorError::Dispatch)
+        }
+        GoalPlanDecision::CompletePlan { .. } => {
+            let context = plan_context(&snapshot, tick, "complete-plan");
+            let planned = plan_complete_authoritative_plan(
+                ledger,
+                session_id,
+                goal_id,
+                snapshot.session_version,
+                snapshot.goal_revision,
+                &context,
+            )
+            .map_err(GoalPlanCoordinatorError::Coordination)?
+            .ok_or(GoalPlanCoordinatorError::Coordination(
+                GoalPlanCoordinationError::CorruptState,
+            ))?;
+            commit_plan_command(
+                ledger,
+                session_id.clone(),
+                snapshot.session_version,
+                &planned,
+            )
+            .map_err(GoalPlanCoordinatorError::Plan)?;
+            Ok(GoalPlanAdvanceOutcome::Committed(decision))
+        }
+        GoalPlanDecision::SucceedGoal { .. } => {
+            let context = goal_context(&snapshot, tick, "succeed-goal");
+            let planned = plan_succeed_goal_from_completed_plan(
+                ledger,
+                session_id,
+                goal_id,
+                snapshot.session_version,
+                snapshot.goal_revision,
+                &context,
+            )
+            .map_err(GoalPlanCoordinatorError::Coordination)?;
+            commit_goal_command(
+                ledger,
+                session_id.clone(),
+                snapshot.session_version,
+                &planned,
+            )
+            .map_err(GoalPlanCoordinatorError::Goal)?;
+            Ok(GoalPlanAdvanceOutcome::Committed(decision))
+        }
+        GoalPlanDecision::FailGoal { .. } => {
+            let context = goal_context(&snapshot, tick, "fail-goal");
+            let planned = plan_fail_goal_from_failed_plan(
+                ledger,
+                session_id,
+                goal_id,
+                snapshot.session_version,
+                snapshot.goal_revision,
+                &context,
+            )
+            .map_err(GoalPlanCoordinatorError::Coordination)?;
+            commit_goal_command(
+                ledger,
+                session_id.clone(),
+                snapshot.session_version,
+                &planned,
+            )
+            .map_err(GoalPlanCoordinatorError::Goal)?;
+            Ok(GoalPlanAdvanceOutcome::Committed(decision))
+        }
+    }
+}
+
+fn goal_context(
+    snapshot: &GoalPlanCoordinationSnapshot,
+    tick: &GoalPlanCoordinationTick,
+    action: &str,
+) -> GoalCommandContext {
+    GoalCommandContext {
+        command_id: coordination_command_id(snapshot, action),
+        actor_reference: tick.actor_reference.clone(),
+        recorded_at: tick.recorded_at.clone(),
+    }
+}
+
+fn plan_context(
+    snapshot: &GoalPlanCoordinationSnapshot,
+    tick: &GoalPlanCoordinationTick,
+    action: &str,
+) -> PlanCommandContext {
+    PlanCommandContext {
+        command_id: coordination_command_id(snapshot, action),
+        actor_reference: tick.actor_reference.clone(),
+        recorded_at: tick.recorded_at.clone(),
+    }
+}
+
+fn coordination_command_id(snapshot: &GoalPlanCoordinationSnapshot, action: &str) -> String {
+    let source = format!(
+        "g2\0{}\0{}\0{}\0{}\0{}",
+        snapshot.goal_id,
+        snapshot.goal_revision,
+        snapshot.session_version,
+        snapshot.through_position,
+        action
+    );
+    let digest = format!("{:x}", Sha256::digest(source.as_bytes()));
+    format!("g2-{}", &digest[..32])
 }
 
 fn decide(

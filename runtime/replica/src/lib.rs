@@ -141,7 +141,9 @@ pub use goal_plan_coordination::{
     plan_suspend_owned_plan_from_turn, GoalPlanCoordinationError, PlannedGoalTurnCancellation,
 };
 pub use goal_plan_coordinator::{
-    evaluate_goal_plan_once, GoalPlanCoordinationSnapshot, GoalPlanDecision,
+    advance_goal_plan_once, evaluate_goal_plan_once, GoalPlanAdvanceOutcome,
+    GoalPlanCoordinationSnapshot, GoalPlanCoordinationTick, GoalPlanCoordinatorError,
+    GoalPlanDecision,
 };
 pub use goal_recovery::reconstruct_goal;
 pub use goal_runtime::{
