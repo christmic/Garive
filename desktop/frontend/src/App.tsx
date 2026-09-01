@@ -133,8 +133,9 @@ export interface AppProps {
   readonly usageBudget?: UsageBudgetSnapshot;
 }
 
-function DesktopMenu({ className, label, triggerClassName, trigger, children }: {
+function DesktopMenu({ className, label, shortcut, triggerClassName, trigger, children }: {
   className: string; label: string; triggerClassName: string; trigger: ReactNode;
+  shortcut?: string;
   children: (close: () => void) => ReactNode;
 }) {
   const [open, setOpen] = useState(false);
@@ -169,9 +170,9 @@ function DesktopMenu({ className, label, triggerClassName, trigger, children }: 
     items[next]?.focus();
   };
   return <div className={`desktop-menu ${className}`} ref={wrapper}>
-    <button className={triggerClassName} type="button" ref={triggerButton}
-      aria-label={label} title={label} aria-haspopup="menu" aria-expanded={open}
-      onClick={() => setOpen((value) => !value)}>{trigger}</button>
+    <Tooltip label={label} shortcut={shortcut} align="start"><button className={triggerClassName}
+      type="button" ref={triggerButton} aria-label={label} aria-haspopup="menu" aria-expanded={open}
+      onClick={() => setOpen((value) => !value)}>{trigger}</button></Tooltip>
     {open && <div className="desktop-action-menu" role="menu" aria-label={label}
       onKeyDown={moveFocus}>{children(close)}</div>}
   </div>;
@@ -720,9 +721,10 @@ export function App({ client = "desktop", webCapabilities, createProductPort,
           if ((event.target as HTMLElement).closest("button")) setNavigationOpen(false);
         }}>
         <div className="sidebar-window-row" data-tauri-drag-region="deep">
-          <button className="sidebar-collapse icon-button" type="button"
-            aria-label={t("shell.collapseNavigation")} title={t("shell.collapseNavigation")}
-            onClick={() => setNavigationCollapsed(true)}><Icon name="panel" /></button>
+          <Tooltip label={t("shell.collapseNavigation")} align="start"><button
+            className="sidebar-collapse icon-button" type="button"
+            aria-label={t("shell.collapseNavigation")}
+            onClick={() => setNavigationCollapsed(true)}><Icon name="panel" /></button></Tooltip>
           <button className="history-button history-back" type="button" disabled
             aria-label={t("shell.historyBack")}><Icon name="chevron" /></button>
           <button className="history-button" type="button" disabled
@@ -743,9 +745,10 @@ export function App({ client = "desktop", webCapabilities, createProductPort,
               <button type="button" role="menuitem" onClick={() => { close(); setSettingsSection("general"); setScreen("settings"); }}>
                 <Icon name="settings" /><span>{t("nav.settings")}</span><kbd>⌘,</kbd></button></>}
           </DesktopMenu>
-          <button className="sidebar-search icon-button" type="button" aria-label={t("nav.search")}
+          <Tooltip label={t("nav.search")} shortcut="⌘F" align="end"><button
+            className="sidebar-search icon-button" type="button" aria-label={t("nav.search")}
             disabled={!state.capabilities?.durable_navigation}
-            onClick={() => setScreen("search")}><Icon name="search" /></button>
+            onClick={() => setScreen("search")}><Icon name="search" /></button></Tooltip>
         </div>
         <button className="new-work" type="button" aria-label={t("nav.newWork")} onClick={beginNewWork}>
           <Icon name="plus" /><span>{t("nav.newWork")}</span><kbd>⌘N</kbd>
@@ -799,9 +802,10 @@ export function App({ client = "desktop", webCapabilities, createProductPort,
               <small>{state.capabilities?.configured ? t("shell.runtimeReadyShort") : t("shell.setupRequired")}</small></span>
             <span className="status-dot" aria-hidden="true" />
           </button>
-          <button className="sidebar-settings-button" type="button" aria-label={t("nav.settings")}
-            title={`${t("nav.settings")} (⌘,)`} onClick={() => { setSettingsSection("general"); setScreen("settings"); }}>
-            <Icon name="settings" /></button>
+          <Tooltip label={t("nav.settings")} shortcut="⌘," side="top" align="end"><button
+            className="sidebar-settings-button" type="button" aria-label={t("nav.settings")}
+            onClick={() => { setSettingsSection("general"); setScreen("settings"); }}>
+            <Icon name="settings" /></button></Tooltip>
           <span className="sr-only" role="status" aria-live="polite">{t("shell.local")} · {t(state.capabilities?.configured
             ? "shell.runtimeReadyShort" : "shell.setupRequired")}</span>
         </div>
@@ -1173,11 +1177,11 @@ function WorkSurface({ state, composer, submit, startSuggestion, dispatch, conte
             key={`${workspace.workspace_id}-${workspace.grant_revision}`}>
             <Icon name="work" /><span><strong dir="auto">{workspace.display_name}</strong>
               <small>{t(workspace.access === "read_write" ? "context.readOutput" : "context.readOnly")} · {t("context.attachedState")}</small></span>
-            <button type="button" title={t("context.detach")}
+            <Tooltip label={t("context.detach")} side="top"><button type="button"
               aria-label={t("context.detach")}
               disabled={state.phase === "submitting" || Boolean(detachingWorkspaceId)}
               onClick={() => void detachWorkspace(workspace)}>{detachingWorkspaceId === workspace.workspace_id
-                ? <span className="spinner" /> : <Icon name="close" />}</button>
+                ? <span className="spinner" /> : <Icon name="close" />}</button></Tooltip>
           </span>)}</div>}
         {context && <div className="context-chips" aria-label={t("context.nextTurn")}>
           {context.entries.map((entry) => <span className="context-chip" key={entry.entry_id}>
@@ -1231,9 +1235,10 @@ function Welcome({ draftActive, onSelect, t }: { draftActive: boolean;
   return <div className="welcome"><h1>{t("work.welcome.title")}</h1>
     <p className="welcome-copy">{t("work.welcome.description")}</p>
     {!draftActive && <div className="suggestion-grid">{suggestions.map(({ label, text, icon }) =>
-      <button type="button" key={label} aria-label={`${label}: ${text}`} title={`${label}: ${text}`}
+      <Tooltip key={label} label={`${label}: ${text}`} side="top" align="start"><button
+        type="button" aria-label={`${label}: ${text}`}
         onClick={() => onSelect(text)}><span className="suggestion-icon"><Icon name={icon} /></span>
-        <span className="suggestion-copy">{text}</span></button>)}</div>}
+        <span className="suggestion-copy">{text}</span></button></Tooltip>)}</div>}
   </div>;
 }
 
@@ -1371,10 +1376,10 @@ function MarkdownCodeBlock({ children, t, variant = "result" }: { children?: Rea
   };
   return <div className={`code-block ${variant === "document" ? "document-code-block" : ""}`}
     role="region" aria-label={t("timeline.codeBlock")}>
-    <header><span>{language}</span><button type="button" aria-label={t(copied
-      ? "timeline.codeCopied" : "timeline.copyCode")} title={t(copied
+    <header><span>{language}</span><Tooltip label={t(copied ? "timeline.codeCopied" : "timeline.copyCode")}
+      side="top" align="end"><button type="button" aria-label={t(copied
         ? "timeline.codeCopied" : "timeline.copyCode")} onClick={() => void copy()}><Icon name={copied
-          ? "check" : "copy"} /></button></header><pre>{children}</pre></div>;
+          ? "check" : "copy"} /></button></Tooltip></header><pre>{children}</pre></div>;
 }
 
 function markdownNodeText(node: ReactNode): string {

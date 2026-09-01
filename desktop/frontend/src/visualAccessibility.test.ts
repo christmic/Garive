@@ -173,6 +173,9 @@ describe("Desktop visual accessibility contract", () => {
     expect(CSS).toContain(".ui-tooltip-anchor { position: relative; display: inline-flex; min-width: 0; }");
     expect(CSS).toContain("transition-delay: 350ms; font-size: var(--text-2xs);");
     expect(CSS).toContain(".ui-tooltip-anchor:focus-within > .ui-tooltip { transition-delay: 0ms; }");
+    expect(CSS).toContain('.ui-tooltip-anchor:has(> button[aria-expanded="true"]) > .ui-tooltip { display: none; }');
+    expect(CSS).toContain(".suggestion-grid > .ui-tooltip-anchor, .suggestion-grid > .ui-tooltip-anchor > button { width: 100%; }");
+    expect(CSS).toContain(".suggestion-grid .ui-tooltip { white-space: normal; }");
     expect(CSS).toContain(".work-menu-trigger { display: grid; place-items: center; width: 24px; height: 24px;");
     expect(CSS).toContain(".desktop-action-menu { position: absolute; z-index: 12; top: 27px; left: 0; width: 220px;");
     expect(CSS).toContain(".command-center { grid-template-rows: auto minmax(0, 1fr); width: min(var(--command-menu-width), calc(100vw - 32px));");

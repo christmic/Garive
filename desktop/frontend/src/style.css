@@ -701,6 +701,7 @@ kbd { font-size: var(--text-2xs); }
 .ui-tooltip-anchor[data-align="center"]:is(:hover, :focus-within) > .ui-tooltip { transform: translate(-50%, 0); }
 .ui-tooltip-anchor[data-side="right"]:is(:hover, :focus-within) > .ui-tooltip { transform: translate(0, -50%); }
 .ui-tooltip-anchor:focus-within > .ui-tooltip { transition-delay: 0ms; }
+.ui-tooltip-anchor:has(> button[aria-expanded="true"]) > .ui-tooltip { display: none; }
 .usage-trigger { min-height: 34px; border-color: transparent; background: transparent; font-size: var(--text-xs); }
 .usage-trigger:hover { border-color: transparent; background: var(--surface-hover); }
 .icon-button { width: 34px; height: 34px; border-radius: var(--radius-control); }
@@ -724,6 +725,8 @@ kbd { font-size: var(--text-2xs); }
 .suggestion-grid .suggestion-icon { display: grid; place-items: center; width: 20px; height: 20px; flex: none; color: inherit; font-size: inherit; font-weight: inherit; letter-spacing: normal; text-transform: none; }
 .suggestion-grid .suggestion-icon svg { position: static; width: 15px; height: 15px; color: inherit; }
 .suggestion-grid .suggestion-copy { min-width: 0; overflow: hidden; color: inherit; font-size: var(--text-sm); font-weight: 400; letter-spacing: normal; text-overflow: ellipsis; text-transform: none; white-space: nowrap; }
+.suggestion-grid > .ui-tooltip-anchor, .suggestion-grid > .ui-tooltip-anchor > button { width: 100%; }
+.suggestion-grid .ui-tooltip { white-space: normal; }
 
 .workspace-loading { align-self: stretch; display: flex; align-items: center; justify-content: center; gap: 8px; min-height: 0; color: var(--text-tertiary); font-size: var(--text-sm); user-select: none; }
 .workspace-loading-dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; animation: workspace-loading-pulse 1.4s var(--ease-basic) infinite; }

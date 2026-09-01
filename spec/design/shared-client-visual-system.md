@@ -609,6 +609,12 @@ disabled action enters the Tab order only when the primitive is explicitly
 given a truthful unavailability explanation; the inner disabled control then
 leaves the accessibility tree and the wrapper owns `aria-disabled` semantics.
 
+Shell controls, action-menu triggers, code actions and Home starter descriptions
+use that same primitive. A menu trigger suppresses its Tooltip while
+`aria-expanded=true`; the open menu is the only disclosure surface. Starter
+descriptions may wrap within the 260px Tooltip bound and open above the row so a
+full-width starter cannot push the disclosure beyond the viewport edge.
+
 ## Capacity view contract
 
 `UsageBudgetView` is a presentation value, not a billing calculation:

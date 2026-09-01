@@ -294,6 +294,10 @@ describe("Desktop product experience", () => {
     expect(view.container.querySelector(".suggestion-grid .suggestion-copy")?.textContent)
       .toBe("Turn notes into a clear decision memo");
     expect(view.container.querySelector(".suggestion-grid button svg[aria-hidden='true']")).not.toBeNull();
+    const starter = screen.getByRole("button", { name: /Synthesize/ });
+    expect(starter.hasAttribute("title")).toBe(false);
+    expect(document.getElementById(starter.getAttribute("aria-describedby")!)?.textContent)
+      .toContain("Synthesize");
     const composer = screen.getByRole("textbox", { name: "Describe the outcome you want" });
     expect(composer.getAttribute("rows")).toBe("1");
     expect(composer.closest(".composer")?.getAttribute("data-layout")).toBe("single-line");
@@ -317,9 +321,13 @@ describe("Desktop product experience", () => {
     await screen.findByText("What should we accomplish?");
     const separator = screen.getByRole("separator", { name: "Resize navigation" });
     expect(separator.getAttribute("aria-valuenow")).toBe("275");
+    const collapse = screen.getByRole("button", { name: "Hide navigation" });
+    expect(collapse.hasAttribute("title")).toBe(false);
+    expect(document.getElementById(collapse.getAttribute("aria-describedby")!)?.textContent)
+      .toBe("Hide navigation");
     fireEvent.keyDown(separator, { key: "End" });
     expect(separator.getAttribute("aria-valuenow")).toBe("520");
-    fireEvent.click(screen.getByRole("button", { name: "Hide navigation" }));
+    fireEvent.click(collapse);
     expect(view.container.querySelector(".app-shell")?.classList.contains("navigation-collapsed")).toBe(true);
     expect(view.container.querySelector("#primary-navigation")?.getAttribute("aria-hidden")).toBe("true");
     fireEvent.click(screen.getByRole("button", { name: "Open navigation" }));

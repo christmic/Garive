@@ -1114,6 +1114,25 @@ Live 1280×720 evidence measures a 520px palette at y=108, 44px search chrome,
 run proves Down, wrapping Up, Home and End order plus Escape returning focus to
 the running thread's next-instruction draft.
 
+### XXXV. Shell disclosure uses one Tooltip system
+
+Installed `app-initial-B6Gk5KCN.js` composes the Electron sidebar trigger with
+an explicit Tooltip whose copy is “Toggle sidebar”, while keeping separate
+accessible “Hide sidebar” and “Show sidebar” labels. The same source resolves a
+275px default and clamps the rail from 240px to 520px. These facts also confirm
+that Garive's stable sidebar geometry was already correct; a transparent
+Desktop material rendered in an ordinary browser is not valid Web evidence.
+
+Garive now routes the shell collapse/search/settings controls, action-menu
+triggers, Workspace detach, code copy and Home starter disclosure through the
+shared Tooltip primitive instead of browser-native `title`. Opening a menu
+suppresses its trigger Tooltip so the two overlays never compete. Long starter
+descriptions wrap within 260px above their row; their category remains available
+without adding a permanent visual column. Live Web evidence preserves all three
+starter rows at 672×40px, shows immediate keyboard disclosure fully inside a
+1280×720 viewport, proves the action menu replaces its Tooltip on open and
+reports zero horizontal overflow.
+
 ## Gate 1 — Codex fidelity
 
 This gate passes only when both Desktop and Web show:
