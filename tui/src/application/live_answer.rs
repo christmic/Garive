@@ -285,7 +285,16 @@ impl LiveAnswerProjection {
         }
     }
 
-    pub(crate) fn mark_seen(&mut self) {}
+    pub(crate) fn mark_seen(&mut self) {
+        let Some(answer) = self.current.as_mut() else {
+            return;
+        };
+        if answer.availability == LiveAnswerAvailability::Available
+            && answer.presented_text != answer.received_text
+        {
+            answer.present(answer.received_text.clone());
+        }
+    }
 
     pub(crate) fn preview_unavailable(&mut self, detached: bool) -> LiveAnswerEffect {
         let Some(answer) = self.current.as_mut() else {

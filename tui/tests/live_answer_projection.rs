@@ -444,4 +444,7 @@ fn detached_live_frame_preserves_anchor_and_end_restores_follow() {
     assert!(model.viewport.follow_latest);
     assert_eq!(model.viewport.anchor_key, None);
     assert_eq!(model.viewport.newer_updates, 0);
+    let answer = model.live_answer.current().unwrap();
+    assert_eq!(answer.presented_text, "one two");
+    assert_eq!(answer.markdown.as_text(), "one two");
 }
