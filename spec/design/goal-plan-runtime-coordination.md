@@ -328,8 +328,10 @@ A Goal with no Plan requests `ProposePlan`. One exact proposed Plan produces an
 `AdmitProposedPlan { plan_id, plan_revision }` decision. Without a constructed
 admission-policy port it remains `AwaitingPolicy`; multiple proposals fail
 closed as `ambiguous_plan_proposals`. Suspended work and failed Steps likewise
-stop at explicit continuation/failure-policy reasons. Suspension continuation
-and failed-Step retry/replan selection remain explicit policy gaps.
+stop at explicit continuation/failure-policy reasons. The Worker may reduce an
+owned failed Turn only to its exact Step terminal; it must not infer Plan or
+Goal failure. Suspension continuation and failed-Step fail/replan selection
+remain explicit policy gaps.
 
 For initial planning, the constructed asynchronous proposal port receives only
 the fixed Goal objective, ordered criterion identities, Goal-admitted

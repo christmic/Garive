@@ -1158,7 +1158,7 @@ async fn completed_owned_turn_reduces_to_step_with_observed_evidence_after_resta
 }
 
 #[tokio::test]
-async fn retry_posture_reopens_within_bounds_and_refuses_exhaustion_after_restart() {
+async fn retry_posture_reopens_within_bounds_and_stops_at_failure_policy_after_exhaustion() {
     let directory = tempdir().unwrap();
     let path = directory.path().join("retry.sqlite3");
     let session = SessionId::try_from("session-1").unwrap();
@@ -1326,9 +1326,9 @@ async fn retry_posture_reopens_within_bounds_and_refuses_exhaustion_after_restar
     let LocalWorkerDisposition::TerminalCommitted { positions } =
         worker.execute(&committed, &worker_attempt()).await.unwrap()
     else {
-        panic!("failed final attempt must close Step, Plan and Goal")
+        panic!("failed final attempt must durably reduce the owned Step")
     };
-    assert_eq!(positions.len(), 5);
+    assert_eq!(positions.len(), 3);
     assert_eq!(
         worker.execute(&committed, &worker_attempt()).await.unwrap(),
         LocalWorkerDisposition::AlreadyTerminal
@@ -1336,14 +1336,30 @@ async fn retry_posture_reopens_within_bounds_and_refuses_exhaustion_after_restar
     let ledger = SqliteLedger::open(&path).unwrap();
     assert_eq!(
         recover(&ledger, &session).snapshot.state(),
-        PlanState::Failed
+        PlanState::Running
     );
     assert_eq!(
         reconstruct_goal(&ledger, &session, "goal-1")
             .unwrap()
             .snapshot
             .state(),
-        GoalState::Failed
+        GoalState::Active
+    );
+    assert_eq!(
+        recover(&ledger, &session)
+            .snapshot
+            .step(&step_id("prepare"))
+            .unwrap()
+            .state(),
+        StepState::Failed
+    );
+    assert_eq!(
+        evaluate_goal_plan_once(&ledger, &session, "goal-1")
+            .unwrap()
+            .decision,
+        GoalPlanDecision::NeedsOperator {
+            reason: "plan_failure_policy_required",
+        }
     );
 }
 
