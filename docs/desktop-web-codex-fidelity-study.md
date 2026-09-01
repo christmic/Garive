@@ -746,14 +746,32 @@ with 357.56/232.40px bubbles and no horizontal overflow. The tokenized geometry
 preserves those outer widths while increasing only the readable inset to the
 exact 16 px reference value.
 
+### XXV. Source-resolved desktop shell geometry
+
+Direct inspection of the installed shell tokens supersedes earlier measurements
+taken from the downscaled reference attachment. Codex defines a resizable
+sidebar as `clamp(240px, preferred 275px, min(520px, 100vw - 320px))`, main,
+compact and pane toolbars at 46/36/40px, and the primary thread at 42rem. Because
+Garive intentionally uses a 14px root, copying `42rem` literally produced only
+588px; the shared token therefore freezes the equivalent rendered width of
+672px rather than preserving a misleading source string.
+
+Garive now persists only the bounded 240–520px sidebar preference, migrates
+older appearance records without losing admitted fields, supports pointer,
+Home/End/arrow-key resizing and resets to 275px on double click. Real Browser
+proves 240 and 520px endpoints survive layout with a 672px thread and zero
+overflow. At the 275px default, artifact mode retains its independent 352px
+thread pane, 332px content rail, 342px Composer, 40px file toolbar and zero
+overflow. Desktop and Web consume the same DOM, preference and CSS contract.
+
 ## Gate 1 — Codex fidelity
 
 This gate passes only when both Desktop and Web show:
 
 - neutral layered surfaces with no decorative gradient;
-- a 240–275 px comfortable rail, 30–36 px rows and quiet selected surfaces;
-- a 34 px title bar with one-line orientation and low-chrome actions;
-- a 39 rem reference reading measure and clear user/agent turn rhythm;
+- a 240–520 px resizable rail with 275 px preferred width, compact rows and quiet selected surfaces;
+- a 46 px main toolbar, 36 px compact chrome and 40 px pane toolbar;
+- a source-equivalent 672 px reference reading measure and clear user/agent turn rhythm;
 - an elevated compact composer with a 14 px input and 36 px actions;
 - semantic navigation groups in sentence case;
 - Environment as a compact dismissible overlay and artifacts/files as a true

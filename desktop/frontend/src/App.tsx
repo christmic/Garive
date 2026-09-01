@@ -25,7 +25,7 @@ import { SetupFlow } from "./features/setup/SetupFlow";
 import { WorkspacePicker } from "./workspace/WorkspacePicker";
 import { decodeDesktopMenuIntent, DESKTOP_MENU_EVENT } from "./desktopMenu";
 import {
-  clampWorkspaceSplit, readDesktopPreferences, writeDesktopPreferences, type DesktopDensity,
+  clampSidebarWidth, clampWorkspaceSplit, readDesktopPreferences, writeDesktopPreferences, type DesktopDensity,
   type DesktopLocalePreference, type DesktopPreferences, type DesktopTheme,
 } from "./preferences";
 import { createTranslator, resolveDesktopLocale, type MessageKey } from "./i18n";
@@ -670,9 +670,15 @@ export function App({ client = "desktop", webCapabilities, createProductPort,
 
   const effectiveTheme = preferences.theme === "system"
     ? systemDark ? "dark" : "light" : preferences.theme;
+  const resizeSidebarFromPointer = (clientX: number) => {
+    const shell = document.querySelector<HTMLElement>(".app-shell")?.getBoundingClientRect();
+    if (shell) setPreferences((current) => ({ ...current,
+      sidebarWidthPx: clampSidebarWidth(clientX - shell.left) }));
+  };
   return <div className={`desktop-root theme-${effectiveTheme} density-${preferences.density}`}>
     <div className={navigationCollapsed ? "app-shell navigation-collapsed" : "app-shell"}
-      style={{ "--conversation-split": `${preferences.workspaceSplitPx}px` } as CSSProperties}
+      style={{ "--conversation-split": `${preferences.workspaceSplitPx}px`,
+        "--sidebar-preferred-width": `${preferences.sidebarWidthPx}px` } as CSSProperties}
       inert={Boolean(pickerGrant) || commandOpen}
       aria-hidden={Boolean(pickerGrant) || commandOpen}>
       <aside id="primary-navigation" className={navigationOpen ? "sidebar navigation-open" : "sidebar"}
@@ -768,6 +774,21 @@ export function App({ client = "desktop", webCapabilities, createProductPort,
             ? "shell.runtimeReadyShort" : "shell.setupRequired")}</span>
         </div>
       </aside>
+      {!navigationCollapsed && <div className="sidebar-resizer" role="separator"
+        aria-label={t("shell.resizeNavigation")} aria-orientation="vertical"
+        aria-valuemin={240} aria-valuemax={520} aria-valuenow={preferences.sidebarWidthPx} tabIndex={0}
+        onPointerDown={(event) => { event.currentTarget.setPointerCapture(event.pointerId);
+          resizeSidebarFromPointer(event.clientX); }}
+        onPointerMove={(event) => { if (event.currentTarget.hasPointerCapture(event.pointerId))
+          resizeSidebarFromPointer(event.clientX); }}
+        onDoubleClick={() => setPreferences((current) => ({ ...current, sidebarWidthPx: 275 }))}
+        onKeyDown={(event) => {
+          const next = event.key === "ArrowLeft" ? preferences.sidebarWidthPx - 16
+            : event.key === "ArrowRight" ? preferences.sidebarWidthPx + 16
+              : event.key === "Home" ? 240 : event.key === "End" ? 520 : undefined;
+          if (next !== undefined) { event.preventDefault(); setPreferences((current) => ({ ...current,
+            sidebarWidthPx: clampSidebarWidth(next) })); }
+        }} />}
       {navigationOpen && <button className="navigation-backdrop" type="button"
         aria-label={t("shell.closeNavigation")} onClick={() => setNavigationOpen(false)} />}
 

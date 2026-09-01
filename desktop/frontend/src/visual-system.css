@@ -21,6 +21,8 @@
   --user-chat-width: 70%;
   --thread-content-margin: 16px;
   --radius-user-message: 22px;
+  --thread-content-max-width: 672px;
+  --sidebar-preferred-width: 275px;
   --sidebar-scroll-fade-distance: 40px;
 
   --space-1: 4px;
@@ -34,8 +36,11 @@
   --radius-panel: 14px;
   --radius-composer: 20px;
   --radius-pill: 999px;
-  --height-window-bar: 34px;
-  --height-file-toolbar: 30px;
+  --height-toolbar: 46px;
+  --height-toolbar-sm: 36px;
+  --height-toolbar-pane: 40px;
+  --height-window-bar: var(--height-toolbar);
+  --height-file-toolbar: var(--height-toolbar-pane);
   --motion-basic: 150ms;
   --motion-relaxed: 300ms;
   --blur-lg: 16px;

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  DEFAULT_DESKTOP_PREFERENCES, readDesktopPreferences, writeDesktopPreferences,
+  clampSidebarWidth, DEFAULT_DESKTOP_PREFERENCES, readDesktopPreferences, writeDesktopPreferences,
 } from "./preferences";
 
 describe("Desktop appearance preferences", () => {
@@ -10,12 +10,12 @@ describe("Desktop appearance preferences", () => {
       encoded = value;
     } };
     writeDesktopPreferences({
-      schema_version: 3, theme: "dark", density: "compact", locale: "zh-Hans",
-      workspaceSplitPx: 416,
+      schema_version: 4, theme: "dark", density: "compact", locale: "zh-Hans",
+      workspaceSplitPx: 416, sidebarWidthPx: 304,
     }, storage);
     expect(readDesktopPreferences(storage)).toEqual({
-      schema_version: 3, theme: "dark", density: "compact", locale: "zh-Hans",
-      workspaceSplitPx: 416,
+      schema_version: 4, theme: "dark", density: "compact", locale: "zh-Hans",
+      workspaceSplitPx: 416, sidebarWidthPx: 304,
     });
     expect(encoded).not.toContain("path");
   });
@@ -38,8 +38,8 @@ describe("Desktop appearance preferences", () => {
     expect(readDesktopPreferences({ getItem: () =>
       '{"schema_version":1,"theme":"light","density":"compact"}',
     })).toEqual({
-      schema_version: 3, theme: "light", density: "compact", locale: "system",
-      workspaceSplitPx: 352,
+      schema_version: 4, theme: "light", density: "compact", locale: "system",
+      workspaceSplitPx: 352, sidebarWidthPx: 275,
     });
   });
 
@@ -47,8 +47,20 @@ describe("Desktop appearance preferences", () => {
     expect(readDesktopPreferences({ getItem: () =>
       '{"schema_version":2,"theme":"dark","density":"comfortable","locale":"en"}',
     })).toEqual({
-      schema_version: 3, theme: "dark", density: "comfortable", locale: "en",
-      workspaceSplitPx: 352,
+      schema_version: 4, theme: "dark", density: "comfortable", locale: "en",
+      workspaceSplitPx: 352, sidebarWidthPx: 275,
     });
+  });
+
+  it("migrates v3 and bounds the source-backed navigation width", () => {
+    expect(readDesktopPreferences({ getItem: () =>
+      '{"schema_version":3,"theme":"dark","density":"comfortable","locale":"en","workspaceSplitPx":416}',
+    })).toEqual({
+      schema_version: 4, theme: "dark", density: "comfortable", locale: "en",
+      workspaceSplitPx: 416, sidebarWidthPx: 275,
+    });
+    expect(clampSidebarWidth(120)).toBe(240);
+    expect(clampSidebarWidth(337.6)).toBe(338);
+    expect(clampSidebarWidth(900)).toBe(520);
   });
 });

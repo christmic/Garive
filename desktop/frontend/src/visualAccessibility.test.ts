@@ -45,9 +45,15 @@ describe("Desktop visual accessibility contract", () => {
     expect(TOKENS).toContain("--user-chat-width: 70%");
     expect(TOKENS).toContain("--thread-content-margin: 16px");
     expect(TOKENS).toContain("--radius-user-message: 22px");
+    expect(TOKENS).toContain("--thread-content-max-width: 672px");
+    expect(TOKENS).toContain("--sidebar-preferred-width: 275px");
+    expect(CSS).toContain("--sidebar-width: clamp(240px, var(--sidebar-preferred-width), min(520px, calc(100vw - 320px)))");
     expect(TOKENS).toContain("--sidebar-scroll-fade-distance: 40px");
-    expect(TOKENS).toContain("--height-window-bar: 34px");
-    expect(TOKENS).toContain("--height-file-toolbar: 30px");
+    expect(TOKENS).toContain("--height-toolbar: 46px");
+    expect(TOKENS).toContain("--height-toolbar-sm: 36px");
+    expect(TOKENS).toContain("--height-toolbar-pane: 40px");
+    expect(TOKENS).toContain("--height-window-bar: var(--height-toolbar)");
+    expect(TOKENS).toContain("--height-file-toolbar: var(--height-toolbar-pane)");
     expect(TOKENS).toContain("--radius-composer: 20px");
     expect(TOKENS).toContain("--shadow-composer: 0 0 0 1px rgba(0, 0, 0, .04)");
     expect(TOKENS).toContain("--shadow-composer: inset 0 0 1px rgba(255, 255, 255, .2)");
@@ -65,7 +71,7 @@ describe("Desktop visual accessibility contract", () => {
     expect(TOKENS).toContain("--ease-exit: cubic-bezier(.8, 0, .4, 1)");
     expect(TOKENS).toContain("--ease-enter-snappy: cubic-bezier(.23, 1, .32, 1)");
     expect(TOKENS).toContain("@supports (corner-shape: superellipse(1.5))");
-    expect(CSS).toContain("--sidebar-width: clamp(204px, 16vw, 240px)");
+    expect(CSS).toContain("grid-template-columns: var(--sidebar-width) minmax(0, 1fr)");
     expect(CSS).toContain("--conversation-split: 352px");
     expect(CSS).toContain(".app-shell:has(.workspace-panel)");
     expect(CSS).toContain("var(--conversation-split) minmax(500px, 1fr)");
@@ -92,6 +98,8 @@ describe("Desktop visual accessibility contract", () => {
     expect(CSS).toContain("min-height: var(--height-file-toolbar);");
     expect(CSS).toContain(".app-shell:has(.workspace-panel) .timeline { width: calc(100% - 20px); }");
     expect(CSS).toContain("grid-template-columns: minmax(0, 1fr); grid-template-rows: var(--height-window-bar) minmax(0, 1fr)");
+    expect(CSS).toContain(".sidebar-resizer { position: absolute; z-index: 11; top: var(--height-toolbar-sm);");
+    expect(CSS).toContain(".timeline { width: min(var(--thread-content-max-width), calc(100% - 48px));");
     expect(CSS).toContain(".navigation-collapsed > .sidebar { display: none; }");
     expect(CSS).toContain(".task-groups { display: grid; align-content: start; gap: 8px;");
     expect(CSS).toContain('.task-groups[data-fade-top="true"][data-fade-bottom="true"]');
@@ -107,11 +115,11 @@ describe("Desktop visual accessibility contract", () => {
     expect(CSS).toContain("@keyframes environment-enter");
     expect(CSS).toContain("@keyframes workspace-content-enter");
     expect(CSS).toContain(".app-shell:has(.environment-panel) .work-surface { margin-right: 236px; }");
-    expect(CSS).toContain("width: min(39rem, calc(100% - 48px))");
+    expect(CSS).toContain("width: min(var(--thread-content-max-width), calc(100% - 48px))");
     expect(CSS).toContain(".settings-workbench { display: grid; grid-template-columns: 164px minmax(0, 1fr)");
     expect(CSS).toContain(".settings-panel { min-width: 0; overflow: auto;");
     expect(CSS).toContain(".settings-navigation { display: flex;");
-    expect(CSS).toContain(".welcome { width: min(39rem, 100%);");
+    expect(CSS).toContain(".welcome { width: min(var(--thread-content-max-width), 100%);");
     expect(CSS).toContain(".new-work-surface .composer-wrap { top: clamp(210px, 27vh, 236px);");
     expect(CSS).toContain("grid-template-columns: 78px minmax(0, 1fr) 16px");
     expect(CSS).toContain(".new-work-surface .composer-wrap { top: 190px; }");
@@ -142,7 +150,7 @@ describe("Desktop visual accessibility contract", () => {
     expect(CSS).toContain(".user-message > div { max-width: var(--user-chat-width); padding: 10px var(--thread-content-margin); border: 0; border-radius: var(--radius-user-message); corner-shape: round;");
     expect(CSS).toContain("background: var(--surface-user-message)");
     expect(CSS).toContain(".turn-progress { margin: 0; overflow: hidden; border: 0; border-bottom: 1px solid var(--border-subtle); border-radius: var(--radius-composer) var(--radius-composer) 0 0; background: transparent; }");
-    expect(CSS).toContain(".composer { width: min(39rem, 100%); border: 0; border-radius: var(--radius-composer);");
+    expect(CSS).toContain(".composer { width: min(var(--thread-content-max-width), 100%); border: 0; border-radius: var(--radius-composer);");
     expect(CSS).toContain("background: var(--surface-composer)");
     expect(CSS).toContain(".theme-dark .environment-panel, .theme-dark .environment-panel header");
     expect(CSS).toContain('.conversation-top-fade[data-visible="true"] { opacity: 1; }');

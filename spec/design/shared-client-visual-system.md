@@ -74,7 +74,7 @@ essential label is clipped or replaced by an icon.
 | depth | `--shadow-raised` = 8/16/-4, `--shadow-overlay` = 16/32/-8; no other shadow families |
 | motion | `--motion-basic` 150 ms, `--motion-relaxed` 300 ms; exact basic, enter, exit and snappy curves |
 | material | `--blur-lg` 16 px; floating transparency only |
-| desktop chrome | `--height-window-bar` 34, `--height-file-toolbar` 30 px |
+| desktop chrome | `--height-toolbar` 46, `--height-toolbar-sm` 36, `--height-toolbar-pane` 40 px |
 | conversation rhythm | `--conversation-item-gap` 16, `--conversation-grouped-item-gap` 4 px |
 | navigation fade | `--sidebar-scroll-fade-distance` 40 px |
 
@@ -121,10 +121,11 @@ the boundary without creating a dark card stacked on another card.
 
 ## Layout contract
 
-The supplied reference shell contains a 206 px rail at 1280 px, expanding only
-to 240 px on wider windows, plus a fluid work canvas. Global navigation rows are
-24–30 px, durable task rows are 26–34 px, and the title bar is 34 px. The primary thread has
-a 39 rem readable measure. Environment and evidence summaries are compact
+The installed shell defines a resizable rail clamped to 240–520 px with a
+275 px preferred width, plus a fluid work canvas. Global navigation rows are
+24–30 px, durable task rows are 26–34 px, and the main toolbar is 46 px. The
+primary thread has a 672 px readable measure, equal to Codex's 42 rem at its
+16 px root. Environment and evidence summaries are compact
 dismissible overlays; opening an artifact, file, diff or terminal creates a
 separately scrollable tabbed workbench beside the thread. A generic fixed-width
 Inspector is not a canonical desktop layout.
@@ -186,8 +187,8 @@ workbench made from four persistent spatial layers:
    independent scroll. This layer may replace the work layer at narrow widths,
    but it never becomes a generic Inspector card.
 
-The four layers share one 4 px spacing basis, one neutral ramp, one 34 px
-window rhythm and structural 1 px separators. Depth is used only for surfaces
+The four layers share one 4 px spacing basis, one neutral ramp, a 46/40 px
+window/pane rhythm and structural 1 px separators. Depth is used only for surfaces
 that actually float: Composer, Environment, menus and modal selectors. Docked
 rails, title rows and file panes use surface contrast and separators, not
 shadows or rounded outer cards.
@@ -214,7 +215,7 @@ grouped token, but it must not change document typography or hide state.
   restoration to avoid a centered-to-restored flash. Visibility is used only
   for that startup handoff; decorations remain immutable product configuration,
   and no window-state command is delegated to the Web client.
-- The whole 34 px title row participates in native window dragging except
+- The whole 46 px title row participates in native window dragging except
   admitted controls, tabs and the resizer. Tauri 2.11 Desktop uses its deep
   drag-region mode so non-interactive title descendants retain the native hit
   target while buttons remain interactive. Double-click follows the platform
@@ -257,7 +258,7 @@ Rendered Markdown in the conversation and output layers uses the installed
 Codex desktop density as the Gate 1 baseline: 13 px body, 1.625 leading and a
 3.25 px rhythm.
 Heading scales are 1.5×, 1.25× and 1.125× for h1–h3. The first heading begins
-4 px below the 30 px file toolbar and 24 px from the pane edge. Lists, quotes,
+4 px below the 40 px file toolbar and 24 px from the pane edge. Lists, quotes,
 tables and code align to the same reading edge; they do not introduce a nested
 card measure.
 
@@ -289,7 +290,7 @@ A blocking approval is a compact permission rail attached to the Composer, not
 a saturated warning card or a second dialog. It uses a neutral raised surface,
 one 2 px attention edge and a 24 px authority glyph. Exact scope, duration and
 overwrite behavior precede the consequence copy and one-shot actions. At the
-39 rem measure those facts remain on one line and the rail stays under 100 px;
+672 px measure those facts remain on one line and the rail stays under 100 px;
 at narrow widths consequence and actions stack without horizontal overflow.
 The first safe action receives focus, but the Composer must not add a second
 action-colored focus ring around that focused button.
@@ -327,7 +328,7 @@ is a 30 px icon control; their accessible name and tooltip retain the full verb.
 The terminal state remains text-visible and is not replaced by color or an icon.
 
 The resting composer begins with one text row and grows only with entered or
-restored content. Its 39 rem measure, 32 px actions and compact live-status rail
+restored content. Its 672 px measure, 32 px actions and compact live-status rail
 form one surface. Running work replaces Send with exactly one circular Stop
 action; it never shows a second text Stop beside a busy Send control. The
 durability note remains programmatically associated with the field but does not
@@ -346,7 +347,7 @@ boundary requires a rule. Navigation groups use sentence case. Decorative
 gradients are forbidden in the application shell.
 
 First-run and reconfiguration remain inside that shell. They use the same
-39 rem work axis, canvas, title hierarchy, 34–36 px controls and quiet
+672 px work axis, canvas, title hierarchy, 34–36 px controls and quiet
 separators as Work. A setup route must not introduce a logo, marketing eyebrow,
 ambient glow, decorative gradient, floating hero card or a second radius/shadow
 system. Connect, Review and Restart are one compact progressive sequence;
@@ -367,12 +368,12 @@ and exact document width without becoming a separate mobile visual language.
 
 | Element | Comfortable target | Compact target |
 |---|---:|---:|
-| rail | 240–275 px | 72 px collapsed |
-| title bar | 34 px reference shell | unchanged |
+| rail | 240–520 px, 275 px preferred and persisted | 72 px collapsed |
+| title bar | 46 px main / 36 px compact chrome | unchanged |
 | global navigation row | 24–30 px | unchanged |
 | durable task row | 26–34 px | unchanged |
-| readable turn measure | 39 rem / 546 px at the 14 px root | unchanged |
-| composer | 39 rem / 546 px at the 14 px root | pane width in split mode |
+| readable turn measure | 42 rem / 672 px at the Codex 16 px root | unchanged |
+| composer | 672 px | pane width in split mode |
 | Environment overlay | 224 px reference | 224 px viewport overlay below 1120 px |
 | artifact/file workbench | 320–520 px conversation split, 352 px default | full overlay below 1120 px |
 
@@ -384,8 +385,8 @@ depth is `0 0 0 1px / 4%`, `0 2px 8px / 4%` and `0 4px 80px 8px / 2.4%`;
 dark depth is one 20% white inset pixel. Composer depth is a dedicated token and
 must not inherit the stronger card or overlay shadow family.
 
-The unified Desktop/Web window bar is 34px at the supplied 1280px reference
-size. The file tab shares that row, its location toolbar is 30px including its
+The unified Desktop/Web main toolbar is 46px; compact chrome uses 36px. The file
+tab shares the main row, its location toolbar is 40px including its
 separator, and the first rendered heading begins after a 4px document inset.
 An existing Work exposes one 24px title-proximate overflow action before the
 far-edge actions. It opens a compact desktop menu containing only real routes
