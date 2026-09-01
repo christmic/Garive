@@ -27,6 +27,7 @@ LocalReplicaConfig {
   model_target_id, deployment_id, recovery_policy_revision
   request/output/context limits
   worker_owner_id, execution_lease_duration_ms, dispatch_queue_capacity
+  optional constructed Plan admission policy
 }
 ```
 
@@ -36,6 +37,7 @@ constructed values. Provider endpoint, credential, headers and protocol
 configuration enter only through the constructed model port. R1 reads no
 process environment and performs no implicit config-file or credential-store
 lookup. Debug/error output contains stable codes and non-secret identities only.
+An absent Plan admission policy denies automatic proposal adoption.
 
 ## Commit and dispatch ordering
 

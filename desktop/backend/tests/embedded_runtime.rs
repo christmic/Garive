@@ -21,7 +21,7 @@ use garive_desktop::{
 use garive_goal::{
     GoalBoundsV1, GoalCriterion, GoalCriterionId, GoalDefinitionV1, GoalId, GoalScopeV1, GoalState,
 };
-use garive_ledger::{CanonicalPayload, SessionId};
+use garive_ledger::SessionId;
 use garive_llm::{
     InterruptionKind, InvokeOutcome, ModelCancellation, ModelCapability, ModelFuture,
     ModelInputItem, ModelItem, ModelObserver, ModelOutputKind, ModelOutputSettings, ModelPort,
@@ -30,13 +30,14 @@ use garive_llm::{
 };
 use garive_plan::{PlanBoundsV1, PlanDefinitionV1, PlanId, PlanStepId, PlanStepV1};
 use garive_runtime::{
-    commit_goal_command, commit_plan_command, plan_adopt_plan, plan_create_goal, plan_propose_plan,
-    reconstruct_goal, reconstruct_plan_graph, CataloguePlanStepDispatchFactory, CommittedTurn,
-    GoalCommandContext, HostClock, LiveHostLimits, LiveOutputEventKind, LocalExecutionAttempt,
-    LocalExecutionPolicy, LocalGovernedExecution, LocalGovernedExecutionFactory, LocalWorkerError,
-    PlanCommandContext, PlanRuntimeTransition, PlanStepDispatchFactory, PlanStepDispatchInput,
-    ProcessBackendHostConfig, ProcessExecutable, ProcessLane, ProcessLaneRegistry,
-    RuntimeAgentCatalogue, SafetyFuture, SafetyPort, SqliteLedger, T1HostSystemConfig,
+    commit_goal_command, commit_plan_command, plan_create_goal, plan_propose_plan,
+    reconstruct_goal, CataloguePlanStepDispatchFactory, CommittedTurn, GoalCommandContext,
+    HostClock, LiveHostLimits, LiveOutputEventKind, LocalExecutionAttempt, LocalExecutionPolicy,
+    LocalGovernedExecution, LocalGovernedExecutionFactory, LocalWorkerError, PlanAdmissionDecision,
+    PlanAdmissionInput, PlanAdmissionPolicy, PlanCommandContext, PlanStepDispatchFactory,
+    PlanStepDispatchInput, ProcessBackendHostConfig, ProcessExecutable, ProcessLane,
+    ProcessLaneRegistry, RuntimeAgentCatalogue, SafetyFuture, SafetyPort, SqliteLedger,
+    T1HostSystemConfig,
 };
 use garive_tools::{T1_APPLY_PATCH, T1_READ_TEXT};
 use sha2::{Digest, Sha256};
@@ -183,7 +184,8 @@ fn catalogue_plan_preparation_resolves_only_the_session_installation() {
 async fn desktop_goal_pump_activates_dispatches_and_closes_one_plan() {
     let directory = tempdir().unwrap();
     let database = directory.path().join("goal-pump.sqlite3");
-    let config = desktop_host_config(&database, Arc::new(CompletingModel));
+    let mut config = desktop_host_config(&database, Arc::new(CompletingModel));
+    config.plan_admission_policy = Some(Arc::new(AdoptExactProposal));
     let catalogue = config.agent_catalogue.clone();
     let governed = DesktopWorkspaceExecutionFactory::new(
         database.clone(),
@@ -263,34 +265,11 @@ async fn desktop_goal_pump_activates_dispatches_and_closes_one_plan() {
     )
     .unwrap();
     commit_plan_command(&mut ledger, session.clone(), 2, &proposed).unwrap();
-    let proposed = reconstruct_plan_graph(&ledger, &session)
-        .unwrap()
-        .remove(&("plan-pump".into(), 1))
-        .unwrap();
-    let adopted = plan_adopt_plan(
-        &ledger,
-        &session,
-        &proposed,
-        proposed.state_version,
-        &PlanCommandContext {
-            command_id: "plan-pump-adopt".into(),
-            actor_reference: "policy:test".into(),
-            recorded_at: "2026-08-29T00:00:00Z".into(),
-        },
-        PlanRuntimeTransition::Adopt {
-            expected_goal_revision: 1,
-            expected_prior_plan_revision: None,
-            policy_reference: "policy:test-v1".into(),
-            carry_forward_evidence: CanonicalPayload::from_value(&serde_json::json!([])).unwrap(),
-        },
-    )
-    .unwrap();
-    commit_plan_command(&mut ledger, session.clone(), 3, &adopted).unwrap();
     drop(ledger);
 
-    let activation = host.drive_goal(&session_id, "goal-pump", 1).await.unwrap();
-    assert_eq!(activation.executions, 0);
-    assert!(activation.exhausted);
+    let admission = host.drive_goal(&session_id, "goal-pump", 1).await.unwrap();
+    assert_eq!(admission.executions, 0);
+    assert!(admission.exhausted);
     let report = host.drive_goal(&session_id, "goal-pump", 8).await.unwrap();
     assert_eq!(report.executions, 1);
     assert!(!report.exhausted);
@@ -302,6 +281,19 @@ async fn desktop_goal_pump_activates_dispatches_and_closes_one_plan() {
             .state(),
         GoalState::Succeeded
     );
+}
+
+struct AdoptExactProposal;
+impl PlanAdmissionPolicy for AdoptExactProposal {
+    fn decide(&self, input: &PlanAdmissionInput) -> PlanAdmissionDecision {
+        assert_eq!(input.goal_id, "goal-pump");
+        assert_eq!(input.goal_revision, 1);
+        assert_eq!(input.plan_id, "plan-pump");
+        assert_eq!(input.plan_revision, 1);
+        PlanAdmissionDecision::Adopt {
+            policy_reference: "policy:test-v1".into(),
+        }
+    }
 }
 
 struct UnavailableSafety;
@@ -561,6 +553,7 @@ fn desktop_host_config(database: &Path, model: Arc<dyn ModelPort>) -> DesktopHos
         dispatch_capacity: 2,
         host_clock: Arc::new(FixedHostClock),
         model,
+        plan_admission_policy: None,
         operations: Arc::new(Operations(AtomicU64::new(1))),
     }
 }

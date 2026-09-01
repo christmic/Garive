@@ -1,7 +1,7 @@
 //! Fixed-prefix Goal/Plan coordination decisions.
 
 use garive_goal::GoalState;
-use garive_ledger::SessionId;
+use garive_ledger::{CanonicalPayload, SessionId};
 use garive_plan::{PlanState, PlanStepId, StepState};
 use sha2::{Digest, Sha256};
 
@@ -21,6 +21,13 @@ pub enum GoalPlanDecision {
     NoAction,
     /// A planning policy must produce a bounded Plan proposal.
     ProposePlan,
+    /// One exact proposal is waiting for an injected admission policy.
+    AdmitProposedPlan {
+        /// Exact proposed Plan identity.
+        plan_id: String,
+        /// Exact proposed Plan revision.
+        plan_revision: u64,
+    },
     /// The adopted Plan may activate its exact Draft Goal revision.
     ActivateGoal {
         /// Exact authoritative Plan identity.
@@ -90,6 +97,55 @@ pub struct GoalPlanCoordinationTick {
     pub recorded_at: String,
     /// Fenced worker tick, required only for `DispatchReadyStep`.
     pub dispatch: Option<PlanDispatchTick>,
+}
+
+/// Read-only fixed-prefix input exposed to a Plan admission policy.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PlanAdmissionInput {
+    /// Durable Session version that fences the decision.
+    pub session_version: u64,
+    /// Highest durable position visible to the decision.
+    pub through_position: u64,
+    /// Exact Goal identity.
+    pub goal_id: String,
+    /// Exact Goal revision.
+    pub goal_revision: u64,
+    /// Canonical immutable Goal definition digest.
+    pub goal_definition_digest: String,
+    /// Exact proposed Plan identity.
+    pub plan_id: String,
+    /// Exact proposed Plan revision.
+    pub plan_revision: u64,
+    /// Canonical immutable Plan definition digest.
+    pub plan_definition_digest: String,
+}
+
+/// Bounded result returned by a constructed Plan admission policy.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum PlanAdmissionDecision {
+    /// Adopt the exact proposal under this policy revision.
+    Adopt {
+        /// Stable policy revision that grants adoption.
+        policy_reference: String,
+    },
+    /// Reject the exact proposal with a stable secret-free reason.
+    Reject {
+        /// Stable policy revision that denies adoption.
+        policy_reference: String,
+        /// Stable secret-free reason code.
+        reason: String,
+    },
+    /// Preserve the proposal without granting authority.
+    Defer {
+        /// Stable secret-free reason code.
+        reason: String,
+    },
+}
+
+/// Read-only policy boundary for one exact proposed Plan.
+pub trait PlanAdmissionPolicy: Send + Sync {
+    /// Decides without receiving a Ledger or any mutation capability.
+    fn decide(&self, input: &PlanAdmissionInput) -> PlanAdmissionDecision;
 }
 
 /// Result of advancing at most one coordination decision.
@@ -170,6 +226,39 @@ pub fn advance_goal_plan_once(
     factory: &mut dyn PlanStepDispatchFactory,
     dispatcher: &dyn TurnDispatcher,
 ) -> Result<GoalPlanAdvanceOutcome, GoalPlanCoordinatorError> {
+    advance_goal_plan_internal(ledger, session_id, goal_id, tick, factory, dispatcher, None)
+}
+
+/// Advances one Goal lineage with an explicitly constructed admission policy.
+pub fn advance_goal_plan_with_admission_once(
+    ledger: &mut SqliteLedger,
+    session_id: &SessionId,
+    goal_id: &str,
+    tick: &GoalPlanCoordinationTick,
+    factory: &mut dyn PlanStepDispatchFactory,
+    dispatcher: &dyn TurnDispatcher,
+    admission_policy: &dyn PlanAdmissionPolicy,
+) -> Result<GoalPlanAdvanceOutcome, GoalPlanCoordinatorError> {
+    advance_goal_plan_internal(
+        ledger,
+        session_id,
+        goal_id,
+        tick,
+        factory,
+        dispatcher,
+        Some(admission_policy),
+    )
+}
+
+fn advance_goal_plan_internal(
+    ledger: &mut SqliteLedger,
+    session_id: &SessionId,
+    goal_id: &str,
+    tick: &GoalPlanCoordinationTick,
+    factory: &mut dyn PlanStepDispatchFactory,
+    dispatcher: &dyn TurnDispatcher,
+    admission_policy: Option<&dyn PlanAdmissionPolicy>,
+) -> Result<GoalPlanAdvanceOutcome, GoalPlanCoordinatorError> {
     if tick.actor_reference.is_empty()
         || chrono::DateTime::parse_from_rfc3339(&tick.recorded_at).is_err()
     {
@@ -182,6 +271,91 @@ pub fn advance_goal_plan_once(
         GoalPlanDecision::NoAction => Ok(GoalPlanAdvanceOutcome::NoAction),
         GoalPlanDecision::ProposePlan | GoalPlanDecision::NeedsOperator { .. } => {
             Ok(GoalPlanAdvanceOutcome::AwaitingPolicy(decision))
+        }
+        GoalPlanDecision::AdmitProposedPlan {
+            plan_id,
+            plan_revision,
+        } => {
+            let Some(policy) = admission_policy else {
+                return Ok(GoalPlanAdvanceOutcome::AwaitingPolicy(decision));
+            };
+            let plans = reconstruct_plan_graph(ledger, session_id).map_err(|_| {
+                GoalPlanCoordinatorError::Coordination(GoalPlanCoordinationError::CorruptState)
+            })?;
+            let proposal = plans
+                .values()
+                .find(|plan| {
+                    let definition = plan.snapshot.definition();
+                    definition.plan_id().as_str() == plan_id
+                        && definition.plan_revision() == *plan_revision
+                        && plan.snapshot.state() == PlanState::Proposed
+                        && plan.session_version == snapshot.session_version
+                        && plan.through_position == snapshot.through_position
+                })
+                .ok_or(GoalPlanCoordinatorError::Coordination(
+                    GoalPlanCoordinationError::ConcurrentModification,
+                ))?;
+            let plan_definition_digest = proposal.snapshot.definition().digest().map_err(|_| {
+                GoalPlanCoordinatorError::Coordination(GoalPlanCoordinationError::CorruptState)
+            })?;
+            let policy_decision = policy.decide(&PlanAdmissionInput {
+                session_version: snapshot.session_version,
+                through_position: snapshot.through_position,
+                goal_id: snapshot.goal_id.clone(),
+                goal_revision: snapshot.goal_revision,
+                goal_definition_digest: snapshot.goal_definition_digest.clone(),
+                plan_id: plan_id.clone(),
+                plan_revision: *plan_revision,
+                plan_definition_digest,
+            });
+            let context = plan_context(&snapshot, tick, "admit-plan");
+            let planned = match policy_decision {
+                PlanAdmissionDecision::Adopt { policy_reference } => crate::plan_adopt_plan(
+                    ledger,
+                    session_id,
+                    proposal,
+                    proposal.state_version,
+                    &context,
+                    crate::PlanRuntimeTransition::Adopt {
+                        expected_goal_revision: snapshot.goal_revision,
+                        expected_prior_plan_revision: None,
+                        policy_reference,
+                        carry_forward_evidence: CanonicalPayload::from_value(
+                            &serde_json::json!([]),
+                        )
+                        .map_err(|_| {
+                            GoalPlanCoordinatorError::Coordination(
+                                GoalPlanCoordinationError::CorruptState,
+                            )
+                        })?,
+                    },
+                )
+                .map_err(GoalPlanCoordinatorError::Plan)?,
+                PlanAdmissionDecision::Reject {
+                    policy_reference,
+                    reason,
+                } => crate::plan_reject_plan(
+                    ledger,
+                    session_id,
+                    proposal,
+                    proposal.state_version,
+                    &context,
+                    policy_reference,
+                    reason,
+                )
+                .map_err(GoalPlanCoordinatorError::Plan)?,
+                PlanAdmissionDecision::Defer { .. } => {
+                    return Ok(GoalPlanAdvanceOutcome::AwaitingPolicy(decision));
+                }
+            };
+            commit_plan_command(
+                ledger,
+                session_id.clone(),
+                snapshot.session_version,
+                &planned,
+            )
+            .map_err(GoalPlanCoordinatorError::Plan)?;
+            Ok(GoalPlanAdvanceOutcome::Committed(decision))
         }
         GoalPlanDecision::ActivateGoal { .. } => {
             let context = goal_context(&snapshot, tick, "activate");
@@ -374,14 +548,21 @@ fn decide(
     }
     let proposed = plans
         .iter()
+        .copied()
         .filter(|plan| plan.snapshot.state() == PlanState::Proposed)
-        .count();
+        .collect::<Vec<_>>();
     Ok(
-        if proposed == 0 && goal.snapshot.state() == GoalState::Draft {
+        if proposed.is_empty() && goal.snapshot.state() == GoalState::Draft {
             GoalPlanDecision::ProposePlan
-        } else if proposed > 0 {
+        } else if proposed.len() == 1 {
+            let definition = proposed[0].snapshot.definition();
+            GoalPlanDecision::AdmitProposedPlan {
+                plan_id: definition.plan_id().as_str().into(),
+                plan_revision: definition.plan_revision(),
+            }
+        } else if proposed.len() > 1 {
             GoalPlanDecision::NeedsOperator {
-                reason: "plan_admission_required",
+                reason: "ambiguous_plan_proposals",
             }
         } else {
             GoalPlanDecision::NeedsOperator {

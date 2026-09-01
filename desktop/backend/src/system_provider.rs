@@ -302,6 +302,7 @@ impl<R: DesktopSecretResolver, P: DesktopProfileRegistry> DesktopConfigurationPr
             dispatch_capacity: config.dispatch_capacity,
             host_clock: Arc::new(SystemHostClock),
             model,
+            plan_admission_policy: None,
             operations: Arc::new(SystemDesktopOperations {
                 worker_owner_id: format!("desktop-worker-{}", Uuid::new_v4()),
                 lease_duration_ms,

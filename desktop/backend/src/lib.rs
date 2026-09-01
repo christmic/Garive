@@ -14,13 +14,14 @@ use std::{
 use garive_ledger::SessionId;
 use garive_llm::ModelPort;
 use garive_runtime::{
-    advance_goal_plan_once, local_dispatch_queue, CatalogueBoundGovernedExecutionFactory,
-    CataloguePlanStepDispatchFactory, GoalPlanAdvanceOutcome, GoalPlanCoordinationTick, HostClock,
-    HostContinuationInput, HostEventPage, HostWorkspaceContextEntry, LiveHost, LiveHostEvent,
-    LiveHostLimits, LiveOutputHub, LiveOutputLimits, LiveOutputSubscriber,
-    LocalCapabilityPreparationFactory, LocalDispatchQueue, LocalExecutionAttempt,
-    LocalExecutionPolicy, LocalExecutionWorker, LocalGovernedExecutionFactory, LocalTurnDispatcher,
-    PlanDispatchOutcome, PlanDispatchTick, RuntimeAgentCatalogue, SqliteLedger,
+    advance_goal_plan_once, advance_goal_plan_with_admission_once, local_dispatch_queue,
+    CatalogueBoundGovernedExecutionFactory, CataloguePlanStepDispatchFactory,
+    GoalPlanAdvanceOutcome, GoalPlanCoordinationTick, HostClock, HostContinuationInput,
+    HostEventPage, HostWorkspaceContextEntry, LiveHost, LiveHostEvent, LiveHostLimits,
+    LiveOutputHub, LiveOutputLimits, LiveOutputSubscriber, LocalCapabilityPreparationFactory,
+    LocalDispatchQueue, LocalExecutionAttempt, LocalExecutionPolicy, LocalExecutionWorker,
+    LocalGovernedExecutionFactory, LocalTurnDispatcher, PlanAdmissionPolicy, PlanDispatchOutcome,
+    PlanDispatchTick, RuntimeAgentCatalogue, SqliteLedger,
 };
 use serde::Serialize;
 use tokio::sync::Mutex;
@@ -168,6 +169,8 @@ pub struct DesktopHostConfig {
     pub host_clock: Arc<dyn HostClock>,
     /// Fully constructed Provider-neutral model port.
     pub model: Arc<dyn ModelPort>,
+    /// Optional explicit Plan admission policy; absence denies automatic adoption.
+    pub plan_admission_policy: Option<Arc<dyn PlanAdmissionPolicy>>,
     /// Backend-owned command, lease and execution clock source.
     pub operations: Arc<dyn DesktopOperations>,
 }
@@ -280,6 +283,7 @@ pub struct DesktopHost {
     worker: LocalExecutionWorker,
     queue: Mutex<LocalDispatchQueue>,
     operations: Arc<dyn DesktopOperations>,
+    plan_admission_policy: Option<Arc<dyn PlanAdmissionPolicy>>,
     startup_recovery_pending: AtomicBool,
 }
 
@@ -393,6 +397,7 @@ impl DesktopHost {
             worker,
             queue: Mutex::new(queue),
             operations: config.operations,
+            plan_admission_policy: config.plan_admission_policy,
             startup_recovery_pending: AtomicBool::new(startup_recovery_pending),
         })
     }
@@ -667,14 +672,25 @@ impl DesktopHost {
                 self.database_path.clone(),
                 self.agent_catalogue.clone(),
             );
-            let outcome = advance_goal_plan_once(
-                &mut ledger,
-                &session,
-                goal_id,
-                &tick,
-                &mut factory,
-                self.dispatcher.as_ref(),
-            )
+            let outcome = match self.plan_admission_policy.as_deref() {
+                Some(policy) => advance_goal_plan_with_admission_once(
+                    &mut ledger,
+                    &session,
+                    goal_id,
+                    &tick,
+                    &mut factory,
+                    self.dispatcher.as_ref(),
+                    policy,
+                ),
+                None => advance_goal_plan_once(
+                    &mut ledger,
+                    &session,
+                    goal_id,
+                    &tick,
+                    &mut factory,
+                    self.dispatcher.as_ref(),
+                ),
+            }
             .map_err(|_| DesktopHostError::ExecutionFailure)?;
             advances += 1;
             drop(ledger);

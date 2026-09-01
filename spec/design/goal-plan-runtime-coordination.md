@@ -324,19 +324,22 @@ positive bound capped at 64. Queue rejection after durable Step/C6 start closes
 new work behind startup recovery; it is never reported as an uncommitted start.
 The pump stops on no-action, claim ownership or an admitted policy boundary.
 
-A Draft Goal with no Plan requests `ProposePlan`. A proposed Plan is never
-silently adopted: until a constructed admission-policy port supplies a bounded
-decision, coordination returns `plan_admission_required`. Suspended work and
-failed Steps likewise stop at explicit continuation/failure-policy reasons.
-Proposal admission, suspension continuation and failed-Step retry/replan
-selection remain explicit policy gaps; the pump must stop at those decisions.
+A Goal with no Plan requests `ProposePlan`. One exact proposed Plan produces an
+`AdmitProposedPlan { plan_id, plan_revision }` decision. Without a constructed
+admission-policy port it remains `AwaitingPolicy`; multiple proposals fail
+closed as `ambiguous_plan_proposals`. Suspended work and failed Steps likewise
+stop at explicit continuation/failure-policy reasons. Suspension continuation
+and failed-Step retry/replan selection remain explicit policy gaps.
 
 Plan admission may Adopt, Reject or Defer one exact proposal. Adopt records the
 policy revision in `plan.adopted`; Reject records the same revision plus the
 authenticated Runtime actor and a stable reason in `plan.rejected`. Both
 commands re-read the complete Goal prefix before planning and again at commit.
 No policy receives a write-capable Ledger, and no model-supplied policy identity
-is authoritative.
+is authoritative. Runtime supplies the policy only a fixed-prefix read-only
+Goal/Plan digest input, then independently reopens and commits the exact
+proposal. Desktop accepts this policy only as an explicitly constructed Host
+configuration value; absence is the default deny posture.
 
 ## Public surface
 

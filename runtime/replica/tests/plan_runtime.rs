@@ -26,9 +26,9 @@ use garive_plan::{
     PlanStepV1, StepState,
 };
 use garive_runtime::{
-    advance_goal_plan_once, commit_goal_command, commit_plan_command, commit_plan_replacement,
-    commit_planned_turn, dispatch_plan_step_once, evaluate_goal_plan_once, get_turn,
-    plan_activate_goal_from_authoritative_plan, plan_adopt_plan,
+    advance_goal_plan_once, advance_goal_plan_with_admission_once, commit_goal_command,
+    commit_plan_command, commit_plan_replacement, commit_planned_turn, dispatch_plan_step_once,
+    evaluate_goal_plan_once, get_turn, plan_activate_goal_from_authoritative_plan, plan_adopt_plan,
     plan_complete_owned_step_from_turn, plan_complete_plan, plan_continue_owned_plan_turn,
     plan_continue_turn, plan_core_terminal, plan_fail_owned_step_from_turn, plan_goal_transition,
     plan_next_turn_cancellation_for_goal, plan_plan_replacement, plan_plan_transition,
@@ -40,8 +40,9 @@ use garive_runtime::{
     CoreTerminalContext, EffectiveRuntimeLimits, GetTurnQuery, GoalCommandContext,
     GoalPlanAdvanceOutcome, GoalPlanCoordinationError, GoalPlanCoordinationTick, GoalPlanDecision,
     GoalRuntimeError, GoalRuntimeTransition, InteractionInputRepresentation, LocalExecutionAttempt,
-    LocalExecutionPolicy, LocalExecutionWorker, LocalWorkerDisposition, PlanCommandContext,
-    PlanDispatchError, PlanDispatchOutcome, PlanDispatchTick, PlanRuntimeError, PlanRuntimeState,
+    LocalExecutionPolicy, LocalExecutionWorker, LocalWorkerDisposition, PlanAdmissionDecision,
+    PlanAdmissionInput, PlanAdmissionPolicy, PlanCommandContext, PlanDispatchError,
+    PlanDispatchOutcome, PlanDispatchTick, PlanRuntimeError, PlanRuntimeState,
     PlanRuntimeTransition, PlanStepDispatchFactory, PlanStepDispatchInput, PlanStepExecutionStart,
     PreparedPlanStepDispatch, RuntimeCommandId, SqliteLedger, StartTurnCommand, TurnDispatchError,
     TurnDispatcher,
@@ -758,8 +759,9 @@ fn coordinator_selects_one_action_from_one_ledger_prefix() {
     let proposed_only = evaluate_goal_plan_once(&ledger, &session, "goal-1").unwrap();
     assert_eq!(
         proposed_only.decision,
-        GoalPlanDecision::NeedsOperator {
-            reason: "plan_admission_required"
+        GoalPlanDecision::AdmitProposedPlan {
+            plan_id: "plan-1".into(),
+            plan_revision: 1,
         }
     );
 
@@ -828,6 +830,92 @@ fn coordinator_selects_one_action_from_one_ledger_prefix() {
             .unwrap()
             .decision,
         GoalPlanDecision::NoAction
+    );
+}
+
+#[test]
+fn coordinator_admission_is_explicit_read_only_and_fixed_prefix() {
+    let directory = tempdir().unwrap();
+    let path = directory.path().join("goal-plan-admission.sqlite3");
+    let session = SessionId::try_from("session-1").unwrap();
+    let mut ledger = SqliteLedger::open(&path).unwrap();
+    open_session(&mut ledger, &session);
+    let proposed = plan_propose_plan(
+        &ledger,
+        &session,
+        &context("admission-propose"),
+        definition(),
+    )
+    .unwrap();
+    commit_plan_command(&mut ledger, session.clone(), 1, &proposed).unwrap();
+    let tick = GoalPlanCoordinationTick {
+        actor_reference: "coordinator:local".into(),
+        recorded_at: timestamp().into(),
+        dispatch: None,
+    };
+    let dispatcher = RecordingTurnDispatcher::default();
+    let mut factory = DispatchFactory {
+        unavailable: false,
+        policy_mismatch: false,
+    };
+    assert!(matches!(
+        advance_goal_plan_once(
+            &mut ledger,
+            &session,
+            "goal-1",
+            &tick,
+            &mut factory,
+            &dispatcher,
+        )
+        .unwrap(),
+        GoalPlanAdvanceOutcome::AwaitingPolicy(GoalPlanDecision::AdmitProposedPlan { .. })
+    ));
+
+    let defer = StaticAdmissionPolicy::new(PlanAdmissionDecision::Defer {
+        reason: "operator_review".into(),
+    });
+    assert!(matches!(
+        advance_goal_plan_with_admission_once(
+            &mut ledger,
+            &session,
+            "goal-1",
+            &tick,
+            &mut factory,
+            &dispatcher,
+            &defer,
+        )
+        .unwrap(),
+        GoalPlanAdvanceOutcome::AwaitingPolicy(GoalPlanDecision::AdmitProposedPlan { .. })
+    ));
+    assert_eq!(ledger.session_version(&session).unwrap(), Some(2));
+
+    let adopt = StaticAdmissionPolicy::new(PlanAdmissionDecision::Adopt {
+        policy_reference: "admission-policy-v1".into(),
+    });
+    assert!(matches!(
+        advance_goal_plan_with_admission_once(
+            &mut ledger,
+            &session,
+            "goal-1",
+            &tick,
+            &mut factory,
+            &dispatcher,
+            &adopt,
+        )
+        .unwrap(),
+        GoalPlanAdvanceOutcome::Committed(GoalPlanDecision::AdmitProposedPlan { .. })
+    ));
+    let seen = adopt.seen.lock().unwrap();
+    assert_eq!(seen.len(), 1);
+    assert_eq!(seen[0].session_version, 2);
+    assert_eq!(seen[0].through_position, 4);
+    assert_eq!(seen[0].goal_id, "goal-1");
+    assert_eq!(seen[0].goal_revision, 2);
+    assert_eq!(seen[0].plan_id, "plan-1");
+    assert_eq!(seen[0].plan_revision, 1);
+    assert_eq!(
+        recover(&ledger, &session).snapshot.state(),
+        PlanState::Adopted
     );
 }
 
@@ -2261,6 +2349,25 @@ impl PlanStepDispatchFactory for DispatchFactory {
 #[derive(Default)]
 struct RecordingTurnDispatcher {
     committed: Mutex<Vec<garive_runtime::CommittedTurn>>,
+}
+
+struct StaticAdmissionPolicy {
+    decision: PlanAdmissionDecision,
+    seen: Mutex<Vec<PlanAdmissionInput>>,
+}
+impl StaticAdmissionPolicy {
+    fn new(decision: PlanAdmissionDecision) -> Self {
+        Self {
+            decision,
+            seen: Mutex::new(Vec::new()),
+        }
+    }
+}
+impl PlanAdmissionPolicy for StaticAdmissionPolicy {
+    fn decide(&self, input: &PlanAdmissionInput) -> PlanAdmissionDecision {
+        self.seen.lock().unwrap().push(input.clone());
+        self.decision.clone()
+    }
 }
 impl TurnDispatcher for RecordingTurnDispatcher {
     fn dispatch(&self, turn: &garive_runtime::CommittedTurn) -> Result<(), TurnDispatchError> {
