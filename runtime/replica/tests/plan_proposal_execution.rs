@@ -1,14 +1,18 @@
 use std::sync::Arc;
 
 use garive_core::{AgentOutcome, ExecutionReport, UsageSummary};
-use garive_ledger::{AgentDefinitionId, AgentDefinitionRevision, AgentInstanceId, SessionId};
+use garive_ledger::{
+    AgentDefinitionId, AgentDefinitionRevision, AgentInstanceId, CanonicalPayload, SessionId,
+};
 use garive_llm::{ModelItem, TokenCount};
 use garive_runtime::{
-    bind_completed_plan_proposal_result, commit_planned_turn, plan_core_terminal,
-    plan_start_plan_proposal_execution, CoreTerminalContext, EffectiveRuntimeLimits, HostClock,
-    InstalledAgent, LiveHost, LiveHostLimits, RuntimeCommandId, SqliteLedger,
+    bind_completed_plan_proposal_result, commit_planned_turn, parse_bound_plan_proposal_result,
+    plan_core_terminal, plan_start_plan_proposal_execution, BoundPlanProposalResult,
+    CoreTerminalContext, EffectiveRuntimeLimits, HostClock, InstalledAgent, LiveHost,
+    LiveHostLimits, PlanProposalResultError, RuntimeCommandId, SqliteLedger,
     StartPlanProposalExecutionCommand, StartTurnCommand, TurnDispatchError, TurnDispatcher,
 };
+use serde_json::{json, Value};
 use tempfile::tempdir;
 
 struct Clock;
@@ -22,6 +26,58 @@ impl TurnDispatcher for Sink {
     fn dispatch(&self, _: &garive_runtime::CommittedTurn) -> Result<(), TurnDispatchError> {
         Ok(())
     }
+}
+
+fn bound(topology: Value) -> BoundPlanProposalResult {
+    let text = serde_jcs::to_string(&topology).unwrap();
+    let response = CanonicalPayload::from_value(&json!([{"kind":"text","text":text}])).unwrap();
+    BoundPlanProposalResult {
+        binding_fact_id: "binding-1".into(),
+        binding_position: 1,
+        result_digest: response.sha256().into(),
+        response_items_json: response.as_json().into(),
+    }
+}
+
+#[test]
+fn bound_result_reduces_only_one_canonical_topology_document() {
+    let topology = json!({
+        "contract":"garive.plan-proposal-topology", "version":1,
+        "steps":[{
+            "step_id":"step-1", "objective":"Do the work", "depends_on":[],
+            "completion_criteria":["criterion-1"], "required_capabilities":[],
+            "input_bindings":[], "max_attempts":1
+        }],
+        "bounds":{"max_steps":1,"max_parallel_ready":1,"max_total_attempts":1,
+            "token_budget":null,"duration_budget_ms":null}
+    });
+    let parsed = parse_bound_plan_proposal_result(&bound(topology.clone())).unwrap();
+    assert_eq!(parsed.steps[0].objective(), "Do the work");
+    assert_eq!(parsed.bounds.max_total_attempts(), 1);
+
+    let mut duplicate = topology.clone();
+    duplicate["steps"][0]["completion_criteria"] = json!(["criterion-1", "criterion-1"]);
+    assert_eq!(
+        parse_bound_plan_proposal_result(&bound(duplicate)),
+        Err(PlanProposalResultError::InvalidOutput)
+    );
+    let mut extra = topology;
+    extra
+        .as_object_mut()
+        .unwrap()
+        .insert("plan_id".into(), json!("model-owned"));
+    assert_eq!(
+        parse_bound_plan_proposal_result(&bound(extra)),
+        Err(PlanProposalResultError::InvalidOutput)
+    );
+    let mut multiple = bound(json!({}));
+    let empty = CanonicalPayload::from_value(&json!([])).unwrap();
+    multiple.response_items_json = empty.as_json().into();
+    multiple.result_digest = empty.sha256().into();
+    assert_eq!(
+        parse_bound_plan_proposal_result(&multiple),
+        Err(PlanProposalResultError::InvalidOutput)
+    );
 }
 
 #[test]

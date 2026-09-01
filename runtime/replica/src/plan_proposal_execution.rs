@@ -3,10 +3,15 @@
 use garive_ledger::{
     CanonicalPayload, DurableFact, FactDraft, FactId, FactKind, SessionId, TurnId,
 };
+use garive_plan::{PlanBoundsV1, PlanCapabilityReference, PlanStepId, PlanStepV1};
+use serde::Deserialize;
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 
-use crate::SqliteLedger;
+use crate::{PlanProposalContent, SqliteLedger};
+
+const PROPOSAL_CONTRACT: &str = "garive.plan-proposal-topology";
+const PROPOSAL_VERSION: u8 = 1;
 
 /// Result bytes recovered from a committed Planner terminal and its binding.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -32,6 +37,133 @@ pub enum PlanProposalBindingError {
     ConcurrentModification,
     /// SQLite could not read or commit the durable state.
     DurabilityFailure,
+}
+
+/// Stable failure while reducing one bound model result to topology only.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum PlanProposalResultError {
+    /// The terminal response is not one exact canonical topology document.
+    InvalidOutput,
+}
+
+/// Parses topology only from response bytes recovered by the durable binding.
+pub fn parse_bound_plan_proposal_result(
+    bound: &BoundPlanProposalResult,
+) -> Result<PlanProposalContent, PlanProposalResultError> {
+    if digest(bound.response_items_json.as_bytes()) != bound.result_digest {
+        return Err(PlanProposalResultError::InvalidOutput);
+    }
+    let items: Vec<RawModelItem> = serde_json::from_str(&bound.response_items_json)
+        .map_err(|_| PlanProposalResultError::InvalidOutput)?;
+    let [item] = items.as_slice() else {
+        return Err(PlanProposalResultError::InvalidOutput);
+    };
+    if item.kind != "text" {
+        return Err(PlanProposalResultError::InvalidOutput);
+    }
+    let value: Value =
+        serde_json::from_str(&item.text).map_err(|_| PlanProposalResultError::InvalidOutput)?;
+    if serde_jcs::to_string(&value).map_err(|_| PlanProposalResultError::InvalidOutput)?
+        != item.text
+    {
+        return Err(PlanProposalResultError::InvalidOutput);
+    }
+    let raw: RawTopology =
+        serde_json::from_value(value).map_err(|_| PlanProposalResultError::InvalidOutput)?;
+    if raw.contract != PROPOSAL_CONTRACT || raw.version != PROPOSAL_VERSION {
+        return Err(PlanProposalResultError::InvalidOutput);
+    }
+    let bounds = PlanBoundsV1::new(
+        raw.bounds.max_steps,
+        raw.bounds.max_parallel_ready,
+        raw.bounds.max_total_attempts,
+        raw.bounds.token_budget,
+        raw.bounds.duration_budget_ms,
+    )
+    .map_err(|_| PlanProposalResultError::InvalidOutput)?;
+    if raw.steps.is_empty() || raw.steps.len() > bounds.max_steps() as usize {
+        return Err(PlanProposalResultError::InvalidOutput);
+    }
+    let steps = raw
+        .steps
+        .into_iter()
+        .map(RawStep::build)
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(PlanProposalContent { steps, bounds })
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RawModelItem {
+    kind: String,
+    text: String,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RawTopology {
+    contract: String,
+    version: u8,
+    steps: Vec<RawStep>,
+    bounds: RawBounds,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RawBounds {
+    max_steps: u32,
+    max_parallel_ready: u32,
+    max_total_attempts: u32,
+    token_budget: Option<u64>,
+    duration_budget_ms: Option<u64>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RawStep {
+    step_id: String,
+    objective: String,
+    depends_on: Vec<String>,
+    completion_criteria: Vec<String>,
+    required_capabilities: Vec<RawCapability>,
+    input_bindings: Vec<String>,
+    max_attempts: u32,
+}
+
+impl RawStep {
+    fn build(self) -> Result<PlanStepV1, PlanProposalResultError> {
+        PlanStepV1::new(
+            PlanStepId::new(self.step_id).map_err(|_| PlanProposalResultError::InvalidOutput)?,
+            self.objective,
+            self.depends_on
+                .into_iter()
+                .map(PlanStepId::new)
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(|_| PlanProposalResultError::InvalidOutput)?,
+            self.completion_criteria,
+            self.required_capabilities
+                .into_iter()
+                .map(RawCapability::build)
+                .collect::<Result<Vec<_>, _>>()?,
+            self.input_bindings,
+            self.max_attempts,
+        )
+        .map_err(|_| PlanProposalResultError::InvalidOutput)
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RawCapability {
+    name: String,
+    exact_revision: String,
+}
+
+impl RawCapability {
+    fn build(self) -> Result<PlanCapabilityReference, PlanProposalResultError> {
+        PlanCapabilityReference::new(self.name, self.exact_revision)
+            .map_err(|_| PlanProposalResultError::InvalidOutput)
+    }
 }
 
 /// Binds one exact completed Planner result before topology parsing.

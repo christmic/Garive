@@ -232,7 +232,8 @@ pub use plan_dispatch_runtime::{
     PreparedPlanStepDispatch,
 };
 pub use plan_proposal_execution::{
-    bind_completed_plan_proposal_result, BoundPlanProposalResult, PlanProposalBindingError,
+    bind_completed_plan_proposal_result, parse_bound_plan_proposal_result, BoundPlanProposalResult,
+    PlanProposalBindingError, PlanProposalResultError,
 };
 pub use plan_proposal_runtime::{
     propose_initial_goal_plan_once, PlanProposalContent, PlanProposalFuture, PlanProposalPort,
