@@ -112,11 +112,12 @@ opaque reference. Do not edit the JSON by hand or store a credential in it.
 Re-running `configure` performs a bounded replacement and requires a Host
 restart.
 
-New installations write schema v4. Its non-secret `memory` member freezes the
+New installations write schema v5. Its non-secret `memory` member freezes the
 local namespace, User-scope owner, retrieval policy revisions and all scan,
 document and result bounds. Memory content remains in the fact-backed SQLite
-repository, never in this JSON. Older schema v1–v3 files retain legacy Agent
-meaning and do not acquire Memory until an explicit `configure` replacement.
+repository, never in this JSON. Schema v4 retains its Memory-only Agent meaning;
+older schema v1–v3 files retain legacy Agent meaning. None silently acquires the
+schema-v5 Knowledge binding; that requires an explicit `configure` replacement.
 
 The endpoint must be `http` or `https`, include a host, and contain no user
 information or fragment. Use `http` only for a trusted loopback gateway. Model
@@ -130,6 +131,10 @@ Start the Host in terminal A. It accepts loopback listeners only:
 ```sh
 target/release/garive-host serve "$config_dir" 127.0.0.1:8787
 ```
+
+The GUI and loopback Host construct the same governed Workspace execution
+surface. A tool-bearing installed Agent is never started through an ungoverned
+fallback; authority, safety, sandbox and executor ports must all be present.
 
 Expected startup text contains:
 

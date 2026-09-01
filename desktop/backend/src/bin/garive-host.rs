@@ -8,9 +8,10 @@ use std::{
 
 use garive_desktop::{
     BuiltinDesktopProfileRegistry, DesktopConfigurationProvider, DesktopHost,
-    DesktopSecretResolver, DesktopSetupInput, DesktopSetupService,
-    FileDesktopConfigurationProvider, SystemDesktopSecretResolver, SystemSetupCredentialStore,
-    DESKTOP_CONFIG_FILE,
+    DesktopSecretResolver, DesktopSetupInput, DesktopSetupService, DesktopWorkspaceService,
+    FileDesktopConfigurationProvider, SystemDesktopSecretResolver,
+    SystemDesktopWorkspaceBookmarkStore, SystemSetupCredentialStore, DESKTOP_CONFIG_FILE,
+    DESKTOP_WORKSPACE_MANIFEST_FILE,
 };
 use garive_provider_profile::SecretValue;
 use garive_runtime::LiveHostServer;
@@ -152,7 +153,7 @@ async fn serve_with_resolver<R: DesktopSecretResolver>(
     }
     let provider = FileDesktopConfigurationProvider::new(
         directory.join(DESKTOP_CONFIG_FILE),
-        directory,
+        directory.clone(),
         resolver,
         BuiltinDesktopProfileRegistry,
     );
@@ -160,7 +161,15 @@ async fn serve_with_resolver<R: DesktopSecretResolver>(
         .load()
         .map_err(|_| "configuration_load_failed")?
         .ok_or("configuration_missing")?;
-    let host = Arc::new(DesktopHost::new(config).map_err(|_| "host_construction_failed")?);
+    let workspaces = DesktopWorkspaceService::durable(
+        directory.join(DESKTOP_WORKSPACE_MANIFEST_FILE),
+        Arc::new(SystemDesktopWorkspaceBookmarkStore),
+    );
+    let _workspace_recovery = workspaces.recover("host-cli");
+    let host = Arc::new(
+        DesktopHost::new_with_workspaces(config, workspaces, "host-cli")
+            .map_err(|_| "host_construction_failed")?,
+    );
     let server = LiveHostServer::bind(host.live_host(), address)
         .await
         .map_err(|_| "host_bind_failed")?;

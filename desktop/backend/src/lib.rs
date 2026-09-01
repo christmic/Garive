@@ -276,6 +276,27 @@ impl DesktopHost {
         Self::construct(config, Some(governed))
     }
 
+    /// Constructs the shipping Desktop governance surface shared by the GUI and
+    /// loopback Host binary. Keeping this composition here prevents clients from
+    /// accidentally installing tool-bearing Agent snapshots without authority,
+    /// safety, sandbox and executor ports.
+    pub fn new_with_workspaces(
+        config: DesktopHostConfig,
+        workspaces: DesktopWorkspaceService,
+        owner_window: &str,
+    ) -> Result<Self, DesktopHostError> {
+        let mut factory = DesktopWorkspaceExecutionFactory::new(
+            config.database_path.clone(),
+            workspaces,
+            owner_window,
+        )
+        .map_err(|_| DesktopHostError::InvalidConfiguration)?;
+        if let Some(t1) = config.t1_host_system_config.clone() {
+            factory = factory.with_t1_host_system_config(t1);
+        }
+        Self::new_governed(config, Arc::new(factory))
+    }
+
     fn construct(
         config: DesktopHostConfig,
         governed: Option<Arc<dyn LocalGovernedExecutionFactory>>,
@@ -1133,16 +1154,7 @@ impl DesktopState {
         let Some(config) = provider.load()? else {
             return Ok(false);
         };
-        let mut factory = DesktopWorkspaceExecutionFactory::new(
-            config.database_path.clone(),
-            workspaces,
-            owner_window,
-        )
-        .map_err(|_| DesktopConfigurationError::ConstructionFailure)?;
-        if let Some(t1) = config.t1_host_system_config.clone() {
-            factory = factory.with_t1_host_system_config(t1);
-        }
-        let host = DesktopHost::new_governed(config, Arc::new(factory))
+        let host = DesktopHost::new_with_workspaces(config, workspaces, owner_window)
             .map_err(|_| DesktopConfigurationError::ConstructionFailure)?;
         self.install(host)
             .map_err(|_| DesktopConfigurationError::ConstructionFailure)?;

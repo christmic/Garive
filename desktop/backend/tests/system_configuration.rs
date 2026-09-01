@@ -13,11 +13,11 @@ use std::{fs, os::unix::fs::PermissionsExt};
 use garive_desktop::{
     builtin_desktop_agent_installation, builtin_desktop_workspace_agent_installation,
     BuiltinDesktopProfileRegistry, DesktopConfigurationError, DesktopConfigurationProvider,
-    DesktopProfileConfiguration, DesktopProfileRegistry, DesktopSecretResolver, DesktopSetupError,
-    DesktopSetupInput, DesktopSetupService, DesktopState, DesktopSystemConfiguration,
-    DesktopWorkspaceExecutionFactory, DesktopWorkspaceService, FileDesktopConfigurationProvider,
-    SetupCredentialStore, ANTHROPIC_MESSAGES_PROFILE_ID, MAX_DESKTOP_CONFIG_BYTES,
-    OPENAI_RESPONSES_PROFILE_ID,
+    DesktopHost, DesktopProfileConfiguration, DesktopProfileRegistry, DesktopSecretResolver,
+    DesktopSetupError, DesktopSetupInput, DesktopSetupService, DesktopState,
+    DesktopSystemConfiguration, DesktopWorkspaceExecutionFactory, DesktopWorkspaceService,
+    FileDesktopConfigurationProvider, SetupCredentialStore, ANTHROPIC_MESSAGES_PROFILE_ID,
+    MAX_DESKTOP_CONFIG_BYTES, OPENAI_RESPONSES_PROFILE_ID,
 };
 use garive_llm::{
     InvokeOutcome, ModelCancellation, ModelCapability, ModelFuture, ModelItem, ModelObserver,
@@ -356,6 +356,30 @@ fn governed_state(database: &Path) -> DesktopState {
     )
     .unwrap();
     DesktopState::governed(Arc::new(factory))
+}
+
+#[test]
+fn tool_bearing_config_uses_shared_workspace_governance_composition() {
+    let directory = tempdir().expect("temporary config directory");
+    let document = directory.path().join("desktop-v1.json");
+    std::fs::write(&document, FIXTURE).expect("write fixture");
+    let provider = FileDesktopConfigurationProvider::new(
+        document,
+        directory.path().to_owned(),
+        FixtureSecrets,
+        FixtureProfiles,
+    );
+    let ungoverned = provider.load().unwrap().unwrap();
+    assert_eq!(
+        DesktopHost::new(ungoverned)
+            .err()
+            .expect("tool-bearing config rejects ungoverned composition")
+            .code(),
+        "invalid_configuration"
+    );
+    let governed = provider.load().unwrap().unwrap();
+    DesktopHost::new_with_workspaces(governed, DesktopWorkspaceService::default(), "host-cli")
+        .expect("shipping GUI and loopback Host share governed composition");
 }
 
 #[tokio::test]
