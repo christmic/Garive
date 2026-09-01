@@ -26,9 +26,10 @@ use garive_plan::{
     PlanStepV1, StepState,
 };
 use garive_runtime::{
-    advance_goal_plan_once, advance_goal_plan_with_admission_once, commit_goal_command,
-    commit_plan_command, commit_plan_replacement, commit_planned_turn, dispatch_plan_step_once,
-    evaluate_goal_plan_once, get_turn, plan_activate_goal_from_authoritative_plan, plan_adopt_plan,
+    advance_goal_plan_once, advance_goal_plan_with_admission_once,
+    advance_goal_plan_with_failure_once, commit_goal_command, commit_plan_command,
+    commit_plan_replacement, commit_planned_turn, dispatch_plan_step_once, evaluate_goal_plan_once,
+    get_turn, plan_activate_goal_from_authoritative_plan, plan_adopt_plan,
     plan_complete_owned_step_from_turn, plan_complete_plan, plan_continue_owned_plan_turn,
     plan_continue_turn, plan_core_terminal, plan_fail_owned_step_from_turn, plan_goal_transition,
     plan_next_turn_cancellation_for_goal, plan_plan_replacement, plan_plan_transition,
@@ -43,8 +44,9 @@ use garive_runtime::{
     LocalCapabilityPreparationFactory, LocalCapabilityPreparationInput, LocalExecutionAttempt,
     LocalExecutionPolicy, LocalExecutionWorker, LocalWorkerDisposition, LocalWorkerError,
     PlanAdmissionDecision, PlanAdmissionInput, PlanAdmissionPolicy, PlanCommandContext,
-    PlanDispatchError, PlanDispatchOutcome, PlanDispatchTick, PlanRuntimeError, PlanRuntimeState,
-    PlanRuntimeTransition, PlanStepDispatchFactory, PlanStepDispatchInput, PlanStepExecutionStart,
+    PlanDispatchError, PlanDispatchOutcome, PlanDispatchTick, PlanFailureDecision,
+    PlanFailureInput, PlanFailurePolicy, PlanRuntimeError, PlanRuntimeState, PlanRuntimeTransition,
+    PlanStepDispatchFactory, PlanStepDispatchInput, PlanStepExecutionStart,
     PreparedAgentCapabilities, PreparedPlanStepDispatch, RuntimeCommandId, SqliteLedger,
     StartTurnCommand, TurnDispatchError, TurnDispatcher,
 };
@@ -1355,7 +1357,7 @@ async fn retry_posture_reopens_within_bounds_and_stops_at_failure_policy_after_e
         worker.execute(&committed, &worker_attempt()).await.unwrap(),
         LocalWorkerDisposition::AlreadyTerminal
     );
-    let ledger = SqliteLedger::open(&path).unwrap();
+    let mut ledger = SqliteLedger::open(&path).unwrap();
     assert_eq!(
         recover(&ledger, &session).snapshot.state(),
         PlanState::Running
@@ -1379,10 +1381,53 @@ async fn retry_posture_reopens_within_bounds_and_stops_at_failure_policy_after_e
         evaluate_goal_plan_once(&ledger, &session, "goal-1")
             .unwrap()
             .decision,
-        GoalPlanDecision::NeedsOperator {
-            reason: "plan_failure_policy_required",
+        GoalPlanDecision::ResolveFailedPlan {
+            plan_id: "plan-1".into(),
+            plan_revision: 1,
+            failed_step_ids: vec!["prepare".into()],
         }
     );
+    let failure = StaticFailurePolicy::new(PlanFailureDecision::Fail {
+        policy_reference: "failure-policy-v1".into(),
+        reason: "attempts_exhausted".into(),
+    });
+    let dispatcher = RecordingTurnDispatcher::default();
+    let mut factory = DispatchFactory {
+        unavailable: false,
+        policy_mismatch: false,
+    };
+    assert!(matches!(
+        advance_goal_plan_with_failure_once(
+            &mut ledger,
+            &session,
+            "goal-1",
+            &GoalPlanCoordinationTick {
+                actor_reference: "coordinator:local".into(),
+                recorded_at: timestamp().into(),
+                dispatch: None,
+            },
+            &mut factory,
+            &dispatcher,
+            &failure,
+        )
+        .unwrap(),
+        GoalPlanAdvanceOutcome::Committed(GoalPlanDecision::ResolveFailedPlan { .. })
+    ));
+    assert_eq!(failure.seen.lock().unwrap()[0].failed_step_ids, ["prepare"]);
+    assert_eq!(
+        recover(&ledger, &session).snapshot.state(),
+        PlanState::Failed
+    );
+    let evidence_fact = ledger
+        .read_facts(&session, 0, u64::MAX, None)
+        .unwrap()
+        .into_iter()
+        .find(|fact| fact.kind.as_str() == "plan.failed")
+        .unwrap();
+    assert!(evidence_fact
+        .payload
+        .as_json()
+        .contains("failure-policy-v1"));
 }
 
 #[test]
@@ -2490,6 +2535,25 @@ impl StaticAdmissionPolicy {
 }
 impl PlanAdmissionPolicy for StaticAdmissionPolicy {
     fn decide(&self, input: &PlanAdmissionInput) -> PlanAdmissionDecision {
+        self.seen.lock().unwrap().push(input.clone());
+        self.decision.clone()
+    }
+}
+
+struct StaticFailurePolicy {
+    decision: PlanFailureDecision,
+    seen: Mutex<Vec<PlanFailureInput>>,
+}
+impl StaticFailurePolicy {
+    fn new(decision: PlanFailureDecision) -> Self {
+        Self {
+            decision,
+            seen: Mutex::new(Vec::new()),
+        }
+    }
+}
+impl PlanFailurePolicy for StaticFailurePolicy {
+    fn decide(&self, input: &PlanFailureInput) -> PlanFailureDecision {
         self.seen.lock().unwrap().push(input.clone());
         self.decision.clone()
     }

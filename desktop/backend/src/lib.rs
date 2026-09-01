@@ -14,15 +14,15 @@ use std::{
 use garive_ledger::SessionId;
 use garive_llm::ModelPort;
 use garive_runtime::{
-    advance_goal_plan_once, advance_goal_plan_with_admission_once, local_dispatch_queue,
-    propose_initial_goal_plan_once, CatalogueBoundGovernedExecutionFactory,
-    CataloguePlanStepDispatchFactory, GoalPlanAdvanceOutcome, GoalPlanCoordinationTick, HostClock,
-    HostContinuationInput, HostEventPage, HostWorkspaceContextEntry, LiveHost, LiveHostEvent,
-    LiveHostLimits, LiveOutputHub, LiveOutputLimits, LiveOutputSubscriber,
-    LocalCapabilityPreparationFactory, LocalDispatchQueue, LocalExecutionAttempt,
-    LocalExecutionPolicy, LocalExecutionWorker, LocalGovernedExecutionFactory, LocalTurnDispatcher,
-    PlanAdmissionPolicy, PlanDispatchOutcome, PlanDispatchTick, PlanProposalPort,
-    RuntimeAgentCatalogue, SqliteLedger,
+    advance_goal_plan_once, advance_goal_plan_with_admission_once,
+    advance_goal_plan_with_failure_once, local_dispatch_queue, propose_initial_goal_plan_once,
+    CatalogueBoundGovernedExecutionFactory, CataloguePlanStepDispatchFactory,
+    GoalPlanAdvanceOutcome, GoalPlanCoordinationTick, HostClock, HostContinuationInput,
+    HostEventPage, HostWorkspaceContextEntry, LiveHost, LiveHostEvent, LiveHostLimits,
+    LiveOutputHub, LiveOutputLimits, LiveOutputSubscriber, LocalCapabilityPreparationFactory,
+    LocalDispatchQueue, LocalExecutionAttempt, LocalExecutionPolicy, LocalExecutionWorker,
+    LocalGovernedExecutionFactory, LocalTurnDispatcher, PlanAdmissionPolicy, PlanDispatchOutcome,
+    PlanDispatchTick, PlanFailurePolicy, PlanProposalPort, RuntimeAgentCatalogue, SqliteLedger,
 };
 use serde::Serialize;
 use tokio::sync::Mutex;
@@ -174,6 +174,8 @@ pub struct DesktopHostConfig {
     pub model: Arc<dyn ModelPort>,
     /// Optional explicit Plan admission policy; absence denies automatic adoption.
     pub plan_admission_policy: Option<Arc<dyn PlanAdmissionPolicy>>,
+    /// Optional explicit failed-Plan policy; absence denies terminal failure.
+    pub plan_failure_policy: Option<Arc<dyn PlanFailurePolicy>>,
     /// Optional topology-only Plan proposer; absence leaves Goals awaiting planning.
     pub plan_proposal_port: Option<Arc<dyn PlanProposalPort>>,
     /// Backend-owned command, lease and execution clock source.
@@ -289,6 +291,7 @@ pub struct DesktopHost {
     queue: Mutex<LocalDispatchQueue>,
     operations: Arc<dyn DesktopOperations>,
     plan_admission_policy: Option<Arc<dyn PlanAdmissionPolicy>>,
+    plan_failure_policy: Option<Arc<dyn PlanFailurePolicy>>,
     plan_proposal_port: Option<Arc<dyn PlanProposalPort>>,
     startup_recovery_pending: AtomicBool,
 }
@@ -403,6 +406,7 @@ impl DesktopHost {
             queue: Mutex::new(queue),
             operations: config.operations,
             plan_admission_policy: config.plan_admission_policy,
+            plan_failure_policy: config.plan_failure_policy,
             plan_proposal_port: config.plan_proposal_port,
             startup_recovery_pending: AtomicBool::new(startup_recovery_pending),
         })
@@ -678,26 +682,52 @@ impl DesktopHost {
                 self.database_path.clone(),
                 self.agent_catalogue.clone(),
             );
-            let mut outcome = match self.plan_admission_policy.as_deref() {
-                Some(policy) => advance_goal_plan_with_admission_once(
-                    &mut ledger,
-                    &session,
-                    goal_id,
-                    &tick,
-                    &mut factory,
-                    self.dispatcher.as_ref(),
-                    policy,
-                ),
-                None => advance_goal_plan_once(
-                    &mut ledger,
-                    &session,
-                    goal_id,
-                    &tick,
-                    &mut factory,
-                    self.dispatcher.as_ref(),
-                ),
-            }
+            let mut outcome = advance_goal_plan_once(
+                &mut ledger,
+                &session,
+                goal_id,
+                &tick,
+                &mut factory,
+                self.dispatcher.as_ref(),
+            )
             .map_err(|_| DesktopHostError::ExecutionFailure)?;
+            if matches!(
+                outcome,
+                GoalPlanAdvanceOutcome::AwaitingPolicy(
+                    garive_runtime::GoalPlanDecision::AdmitProposedPlan { .. }
+                )
+            ) {
+                if let Some(policy) = self.plan_admission_policy.as_deref() {
+                    outcome = advance_goal_plan_with_admission_once(
+                        &mut ledger,
+                        &session,
+                        goal_id,
+                        &tick,
+                        &mut factory,
+                        self.dispatcher.as_ref(),
+                        policy,
+                    )
+                    .map_err(|_| DesktopHostError::ExecutionFailure)?;
+                }
+            } else if matches!(
+                outcome,
+                GoalPlanAdvanceOutcome::AwaitingPolicy(
+                    garive_runtime::GoalPlanDecision::ResolveFailedPlan { .. }
+                )
+            ) {
+                if let Some(policy) = self.plan_failure_policy.as_deref() {
+                    outcome = advance_goal_plan_with_failure_once(
+                        &mut ledger,
+                        &session,
+                        goal_id,
+                        &tick,
+                        &mut factory,
+                        self.dispatcher.as_ref(),
+                        policy,
+                    )
+                    .map_err(|_| DesktopHostError::ExecutionFailure)?;
+                }
+            }
             advances += 1;
             drop(ledger);
 

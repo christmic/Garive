@@ -631,6 +631,7 @@ fn desktop_host_config(database: &Path, model: Arc<dyn ModelPort>) -> DesktopHos
         host_clock: Arc::new(FixedHostClock),
         model,
         plan_admission_policy: None,
+        plan_failure_policy: None,
         plan_proposal_port: None,
         operations: Arc::new(Operations(AtomicU64::new(1))),
     }

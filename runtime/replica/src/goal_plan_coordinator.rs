@@ -70,6 +70,15 @@ pub enum GoalPlanDecision {
         /// Stable secret-free reason code.
         reason: &'static str,
     },
+    /// Failed work requires an explicit terminal or replanning policy.
+    ResolveFailedPlan {
+        /// Exact authoritative Plan identity.
+        plan_id: String,
+        /// Exact authoritative Plan revision.
+        plan_revision: u64,
+        /// Failed Step identities in declaration order.
+        failed_step_ids: Vec<String>,
+    },
 }
 
 /// Frozen coordinates and exactly one decision from a single ledger watermark.
@@ -146,6 +155,58 @@ pub enum PlanAdmissionDecision {
 pub trait PlanAdmissionPolicy: Send + Sync {
     /// Decides without receiving a Ledger or any mutation capability.
     fn decide(&self, input: &PlanAdmissionInput) -> PlanAdmissionDecision;
+}
+
+/// Fixed-prefix input exposed to a Plan failure policy.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PlanFailureInput {
+    /// Durable Session version that fences the decision.
+    pub session_version: u64,
+    /// Highest durable position visible to the decision.
+    pub through_position: u64,
+    /// Exact Goal identity.
+    pub goal_id: String,
+    /// Exact Goal revision.
+    pub goal_revision: u64,
+    /// Canonical immutable Goal definition digest.
+    pub goal_definition_digest: String,
+    /// Exact authoritative Plan identity.
+    pub plan_id: String,
+    /// Exact authoritative Plan revision.
+    pub plan_revision: u64,
+    /// Canonical immutable Plan definition digest.
+    pub plan_definition_digest: String,
+    /// Failed Step identities in declaration order.
+    pub failed_step_ids: Vec<String>,
+}
+
+/// Bounded result returned by a constructed Plan failure policy.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum PlanFailureDecision {
+    /// Terminalize the exact Plan under one stable policy revision.
+    Fail {
+        /// Stable policy revision granting terminal failure.
+        policy_reference: String,
+        /// Stable secret-free terminal reason code.
+        reason: String,
+    },
+    /// Preserve the failed Plan pending another policy decision.
+    Defer {
+        /// Stable secret-free reason code.
+        reason: String,
+    },
+}
+
+/// Read-only policy boundary for one exact failed Plan prefix.
+pub trait PlanFailurePolicy: Send + Sync {
+    /// Decides without receiving a Ledger or mutation capability.
+    fn decide(&self, input: &PlanFailureInput) -> PlanFailureDecision;
+}
+
+#[derive(Default)]
+struct CoordinatorPolicies<'a> {
+    admission: Option<&'a dyn PlanAdmissionPolicy>,
+    failure: Option<&'a dyn PlanFailurePolicy>,
 }
 
 /// Result of advancing at most one coordination decision.
@@ -226,7 +287,15 @@ pub fn advance_goal_plan_once(
     factory: &mut dyn PlanStepDispatchFactory,
     dispatcher: &dyn TurnDispatcher,
 ) -> Result<GoalPlanAdvanceOutcome, GoalPlanCoordinatorError> {
-    advance_goal_plan_internal(ledger, session_id, goal_id, tick, factory, dispatcher, None)
+    advance_goal_plan_internal(
+        ledger,
+        session_id,
+        goal_id,
+        tick,
+        factory,
+        dispatcher,
+        CoordinatorPolicies::default(),
+    )
 }
 
 /// Advances one Goal lineage with an explicitly constructed admission policy.
@@ -246,7 +315,34 @@ pub fn advance_goal_plan_with_admission_once(
         tick,
         factory,
         dispatcher,
-        Some(admission_policy),
+        CoordinatorPolicies {
+            admission: Some(admission_policy),
+            failure: None,
+        },
+    )
+}
+
+/// Advances one Goal lineage with an explicitly constructed failure policy.
+pub fn advance_goal_plan_with_failure_once(
+    ledger: &mut SqliteLedger,
+    session_id: &SessionId,
+    goal_id: &str,
+    tick: &GoalPlanCoordinationTick,
+    factory: &mut dyn PlanStepDispatchFactory,
+    dispatcher: &dyn TurnDispatcher,
+    failure_policy: &dyn PlanFailurePolicy,
+) -> Result<GoalPlanAdvanceOutcome, GoalPlanCoordinatorError> {
+    advance_goal_plan_internal(
+        ledger,
+        session_id,
+        goal_id,
+        tick,
+        factory,
+        dispatcher,
+        CoordinatorPolicies {
+            admission: None,
+            failure: Some(failure_policy),
+        },
     )
 }
 
@@ -257,7 +353,7 @@ fn advance_goal_plan_internal(
     tick: &GoalPlanCoordinationTick,
     factory: &mut dyn PlanStepDispatchFactory,
     dispatcher: &dyn TurnDispatcher,
-    admission_policy: Option<&dyn PlanAdmissionPolicy>,
+    policies: CoordinatorPolicies<'_>,
 ) -> Result<GoalPlanAdvanceOutcome, GoalPlanCoordinatorError> {
     if tick.actor_reference.is_empty()
         || chrono::DateTime::parse_from_rfc3339(&tick.recorded_at).is_err()
@@ -272,11 +368,94 @@ fn advance_goal_plan_internal(
         GoalPlanDecision::ProposePlan | GoalPlanDecision::NeedsOperator { .. } => {
             Ok(GoalPlanAdvanceOutcome::AwaitingPolicy(decision))
         }
+        GoalPlanDecision::ResolveFailedPlan {
+            plan_id,
+            plan_revision,
+            failed_step_ids,
+        } => {
+            let Some(policy) = policies.failure else {
+                return Ok(GoalPlanAdvanceOutcome::AwaitingPolicy(decision));
+            };
+            let plans = reconstruct_plan_graph(ledger, session_id).map_err(|_| {
+                GoalPlanCoordinatorError::Coordination(GoalPlanCoordinationError::CorruptState)
+            })?;
+            let plan = plans
+                .values()
+                .find(|plan| {
+                    let definition = plan.snapshot.definition();
+                    definition.plan_id().as_str() == plan_id
+                        && definition.plan_revision() == *plan_revision
+                        && plan.session_version == snapshot.session_version
+                        && plan.through_position == snapshot.through_position
+                })
+                .ok_or(GoalPlanCoordinatorError::Coordination(
+                    GoalPlanCoordinationError::ConcurrentModification,
+                ))?;
+            let plan_definition_digest = plan.snapshot.definition().digest().map_err(|_| {
+                GoalPlanCoordinatorError::Coordination(GoalPlanCoordinationError::CorruptState)
+            })?;
+            let input = PlanFailureInput {
+                session_version: snapshot.session_version,
+                through_position: snapshot.through_position,
+                goal_id: snapshot.goal_id.clone(),
+                goal_revision: snapshot.goal_revision,
+                goal_definition_digest: snapshot.goal_definition_digest.clone(),
+                plan_id: plan_id.clone(),
+                plan_revision: *plan_revision,
+                plan_definition_digest,
+                failed_step_ids: failed_step_ids.clone(),
+            };
+            let PlanFailureDecision::Fail {
+                policy_reference,
+                reason,
+            } = policy.decide(&input)
+            else {
+                return Ok(GoalPlanAdvanceOutcome::AwaitingPolicy(decision));
+            };
+            if policy_reference.is_empty() || reason.is_empty() {
+                return Err(GoalPlanCoordinatorError::InvalidTick);
+            }
+            let evidence = CanonicalPayload::from_value(&serde_json::json!({
+                "contract":"garive.plan-failure-policy-decision",
+                "version":1,
+                "policy_reference":policy_reference,
+                "input":{
+                    "session_version":input.session_version,
+                    "through_position":input.through_position,
+                    "goal_id":input.goal_id,
+                    "goal_revision":input.goal_revision,
+                    "goal_definition_digest":input.goal_definition_digest,
+                    "plan_id":input.plan_id,
+                    "plan_revision":input.plan_revision,
+                    "plan_definition_digest":input.plan_definition_digest,
+                    "failed_step_ids":input.failed_step_ids,
+                },
+            }))
+            .map_err(|_| GoalPlanCoordinatorError::InvalidTick)?;
+            let planned = crate::plan_fail_plan(
+                ledger,
+                session_id,
+                plan,
+                plan.state_version,
+                &plan_context(&snapshot, tick, "fail-plan-policy"),
+                reason,
+                Some(evidence),
+            )
+            .map_err(GoalPlanCoordinatorError::Plan)?;
+            commit_plan_command(
+                ledger,
+                session_id.clone(),
+                snapshot.session_version,
+                &planned,
+            )
+            .map_err(GoalPlanCoordinatorError::Plan)?;
+            Ok(GoalPlanAdvanceOutcome::Committed(decision))
+        }
         GoalPlanDecision::AdmitProposedPlan {
             plan_id,
             plan_revision,
         } => {
-            let Some(policy) = admission_policy else {
+            let Some(policy) = policies.admission else {
                 return Ok(GoalPlanAdvanceOutcome::AwaitingPolicy(decision));
             };
             let plans = reconstruct_plan_graph(ledger, session_id).map_err(|_| {
@@ -640,8 +819,22 @@ fn decide_authoritative(
                 .map(|value| value.state())
                 == Some(StepState::Failed)
         }) {
-            GoalPlanDecision::NeedsOperator {
-                reason: "plan_failure_policy_required",
+            GoalPlanDecision::ResolveFailedPlan {
+                plan_id,
+                plan_revision,
+                failed_step_ids: plan
+                    .snapshot
+                    .definition()
+                    .steps()
+                    .iter()
+                    .filter(|step| {
+                        plan.snapshot
+                            .step(step.step_id())
+                            .map(|value| value.state())
+                            == Some(StepState::Failed)
+                    })
+                    .map(|step| step.step_id().as_str().to_owned())
+                    .collect(),
             }
         } else {
             GoalPlanDecision::NoAction
