@@ -3,10 +3,10 @@ source: tui/tests/view_snapshots.rs
 expression: "frame(&help, Theme::Dark, 100, 24)"
 ---
 
-
 › Summarize the release plan.
 
 • Completed
+  └ Read file
                    ╭ Keyboard guide ────────────────────────────────────────────╮
                    │                                                            │
                    │    Enter send   Ctrl+J new line                            │

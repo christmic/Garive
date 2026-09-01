@@ -2,9 +2,9 @@
 source: tui/tests/view_snapshots.rs
 expression: "frame(&activities, Theme::Mono, 40, 18)"
 ---
-
 › Verify the release candidate.
   ● Reading file · ✓2
+
 
 
 

@@ -2,7 +2,6 @@
 source: tui/tests/view_snapshots.rs
 expression: rendered
 ---
-
 › Summarize the release plan.
   ✓ Read file
 ## Release plan
@@ -11,6 +10,7 @@ expression: rendered
   • Ship with evidence
 
   cargo test passes.
+
 
 
 

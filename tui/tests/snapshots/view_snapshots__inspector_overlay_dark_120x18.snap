@@ -3,7 +3,6 @@ source: tui/tests/view_snapshots.rs
 expression: "inspector_frame(theme, 120)"
 ---
 
-
 › Summarize the release plan.
 
 • Completed
@@ -13,6 +12,7 @@ expression: "inspector_frame(theme, 120)"
 
   • Verify the Runtime
   • Ship with evidence
+
  Inspector · Activity ──────────────────────────────────────────────────────────────────────────────────────────────────
 › ✓ Read file
     Completed

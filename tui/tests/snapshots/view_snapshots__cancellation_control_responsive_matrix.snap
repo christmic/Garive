@@ -14,7 +14,6 @@ expression: "format!(\"===== requesting · compact mono 40x8 =====\\n{requesting
 
 ===== accepted · standard dark 100x24 =====
 
-
 › Summarize the release plan.
 
 • Completed
@@ -26,6 +25,7 @@ expression: "format!(\"===== requesting · compact mono 40x8 =====\\n{requesting
   • Ship with evidence
 
   cargo test passes.
+
 
 
 
@@ -40,7 +40,6 @@ expression: "format!(\"===== requesting · compact mono 40x8 =====\\n{requesting
 
 ===== unknown · wide light 160x28 =====
 
-
 › Summarize the release plan.
 
 • Completed
@@ -52,6 +51,7 @@ expression: "format!(\"===== requesting · compact mono 40x8 =====\\n{requesting
   • Ship with evidence
 
   cargo test passes.
+
 
 
 

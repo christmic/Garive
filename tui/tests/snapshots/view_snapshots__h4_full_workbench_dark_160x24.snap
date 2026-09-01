@@ -4,8 +4,8 @@ expression: wide
 ---
 ===== preparing =====
 
-
 › Show every verified streaming stage.
+
 
 
 
@@ -30,10 +30,10 @@ expression: wide
 
 ===== first presented delta =====
 
-
 › Show every verified streaming stage.
 
 • The first visible▍
+
 
 
 
@@ -56,13 +56,13 @@ expression: wide
 
 ===== second delta with activity =====
 
-
 › Show every verified streaming stage.
 
 • Working
   └ Verifying streamed output
 
 • The first visible streaming frame arrives.▍
+
 
 
 
@@ -82,13 +82,13 @@ expression: wide
 
 ===== overlay while streaming =====
 
-
 › Show every verified streaming stage.
 
 • Working
   └ Verifying streamed output
 
 • The first visible streaming frame arrives.▍
+
 
 
  Command palette · 1–8/21 ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -108,13 +108,13 @@ Search  type to search
 
 ===== stream restored after overlay =====
 
-
 › Show every verified streaming stage.
 
 • Working
   └ Verifying streamed output
 
 • The first visible streaming frame arrives.▍
+
 
 
 
@@ -134,7 +134,6 @@ Search  type to search
 
 ===== finalizing =====
 
-
 › Show every verified streaming stage.
 
 • Working
@@ -155,11 +154,11 @@ Search  type to search
 
 
 
+
 › A retained follow-up draft
   Esc interrupt
 
 ===== ended awaiting durable =====
-
 
 › Show every verified streaming stage.
 
@@ -167,6 +166,7 @@ Search  type to search
   └ Verifying streamed output
 
 • The first visible streaming frame arrives.
+
 
 
 
@@ -186,13 +186,13 @@ Search  type to search
 
 ===== durable takeover =====
 
-
 › Show every verified streaming stage.
 
 • Working
   └ Verifying streamed output
 
 • Saved streaming answer.
+
 
 
 

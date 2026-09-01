@@ -59,37 +59,16 @@ fn follow_cue_visible(model: &AppModel) -> bool {
 
 pub(crate) fn viewport_rect(model: &AppModel, area: Rect) -> Rect {
     let context_height = u16::from(follow_cue_visible(model));
-    let insets = ViewportInsets::resolve(area.height.saturating_sub(context_height));
     Rect::new(
-        area.x.saturating_add(insets.horizontal),
-        area.y
-            .saturating_add(insets.top)
-            .saturating_add(context_height),
-        area.width
-            .saturating_sub(insets.horizontal.saturating_mul(2)),
-        area.height
-            .saturating_sub(insets.top)
-            .saturating_sub(context_height),
+        area.x,
+        area.y.saturating_add(context_height),
+        area.width,
+        area.height.saturating_sub(context_height),
     )
 }
 
 pub(crate) fn follow_cue_hit_test(model: &AppModel, area: Rect, column: u16, row: u16) -> bool {
     follow_cue::hit_test(model, area, column, row)
-}
-
-#[derive(Clone, Copy)]
-struct ViewportInsets {
-    horizontal: u16,
-    top: u16,
-}
-
-impl ViewportInsets {
-    const fn resolve(available_height: u16) -> Self {
-        Self {
-            horizontal: 0,
-            top: if available_height > 8 { 1 } else { 0 },
-        }
-    }
 }
 
 struct ConversationWindow {
@@ -348,13 +327,13 @@ mod tests {
     use crate::application::{TimelineItem, TimelineRole};
 
     #[test]
-    fn compact_transcript_drops_decorative_top_inset_before_semantic_rows() {
+    fn transcript_spacing_is_owned_by_semantic_cells_not_the_viewport() {
         let model = AppModel::default();
         let compact = viewport_rect(&model, Rect::new(0, 0, 40, 8));
         assert_eq!(compact, Rect::new(0, 0, 40, 8));
 
         let standard = viewport_rect(&model, Rect::new(0, 0, 100, 9));
-        assert_eq!(standard, Rect::new(0, 1, 100, 8));
+        assert_eq!(standard, Rect::new(0, 0, 100, 9));
     }
 
     #[test]

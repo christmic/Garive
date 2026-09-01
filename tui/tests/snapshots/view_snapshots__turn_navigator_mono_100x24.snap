@@ -3,7 +3,6 @@ source: tui/tests/view_snapshots.rs
 expression: "frame(&turns, Theme::Mono, 100, 24)"
 ---
 
-
 › Summarize the release plan.
 
 • Completed
@@ -11,6 +10,7 @@ expression: "frame(&turns, Theme::Mono, 100, 24)"
 
 ## Release plan
 
+  • Verify the Runtime
  Jump to a Turn ────────────────────────────────────────────────────────────────────────────────────
 Search  release
    1  release checkpoint 00 with verified evidence

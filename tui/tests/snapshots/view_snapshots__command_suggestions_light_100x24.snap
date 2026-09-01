@@ -3,7 +3,6 @@ source: tui/tests/view_snapshots.rs
 expression: "command_suggestion_frame(Theme::Light)"
 ---
 
-
 › Summarize the release plan.
 
 • Completed
@@ -15,6 +14,7 @@ expression: "command_suggestion_frame(Theme::Light)"
   • Ship with evidence
 
   cargo test passes.
+
 
 
 

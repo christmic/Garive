@@ -14,7 +14,6 @@ expression: matrix
 ===== standard dark 100x24 =====
                               ↓ 12 newer updates ·  End follow latest
 
-
 › Summarize the release plan.
 
 • Completed
@@ -26,6 +25,7 @@ expression: matrix
   • Ship with evidence
 
   cargo test passes.
+
 
 
 
@@ -39,7 +39,6 @@ expression: matrix
 ===== wide light 160x28 =====
                                                             ↓ 12 newer updates ·  End follow latest
 
-
 › Summarize the release plan.
 
 • Completed
@@ -51,6 +50,7 @@ expression: matrix
   • Ship with evidence
 
   cargo test passes.
+
 
 
 
@@ -68,9 +68,9 @@ expression: matrix
 ===== overlay owns input =====
                                          ↓ 12 newer updates
 
-
 › Summarize the release plan.
 
+• Completed
                    ╭ Keyboard guide ────────────────────────────────────────────╮
                    │                                                            │
                    │    Enter send   Ctrl+J new line                            │

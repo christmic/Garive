@@ -3,7 +3,6 @@ source: tui/tests/view_snapshots.rs
 expression: "frame(&sessions, Theme::Mono, 100, 24)"
 ---
 
-
 › Summarize the release plan.
 
 • Completed
@@ -12,6 +11,7 @@ expression: "frame(&sessions, Theme::Mono, 100, 24)"
 ## Release plan
 
   • Verify the Runtime
+  • Ship with evidence
  Switch session ────────────────────────────────────────────────────────────────────────────────────
 Filter  type to search
   Session 5 · Agent   ● running

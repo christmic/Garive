@@ -610,7 +610,8 @@ row before the content, every wrapped content row, and one blank row after it;
 background. Garive adopts the grouped surface at standard/wide widths, while
 52–79 compact and 40–51 linear widths omit the optional vertical padding to
 protect transcript capacity. The User `›` and hanging indent remain the
-non-color identity.
+non-color identity. The request surface owns that breathing room; the outer
+transcript viewport adds no second top inset.
 
 The locally installed Claude Code 2.1.231 runtime was also observed at 80
 columns on 2026-09-01: its idle Composer uses full-axis horizontal boundaries

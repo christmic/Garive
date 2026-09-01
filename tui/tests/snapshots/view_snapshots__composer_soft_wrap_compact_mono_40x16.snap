@@ -2,7 +2,6 @@
 source: tui/tests/view_snapshots.rs
 expression: "frame(&wrapped, Theme::Mono, 40, 16)"
 ---
-
 › Summarize the release plan.
   ✓ Read file
 ## Release plan
@@ -11,6 +10,7 @@ expression: "frame(&wrapped, Theme::Mono, 40, 16)"
   • Ship with evidence
 
   cargo test passes.
+
 
 
 

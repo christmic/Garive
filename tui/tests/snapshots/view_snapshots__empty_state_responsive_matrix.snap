@@ -84,9 +84,9 @@ New conversation  ·  Garive                                                    
 
 ===== not configured · Mono · 100x18 =====
 
-
   No Agent is installed
   Install an Agent definition before starting a conversation.
+
 
 
 
@@ -105,9 +105,9 @@ New conversation  ·  Garive                                                    
 ===== degraded · Dark · 100x18 =====
 New conversation  ·  Garive                                                              unavailable
 
-
   Recovery details are available
   Open /status to inspect the safe failure and reconnect.
+
 
 
 

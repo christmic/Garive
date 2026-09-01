@@ -2,7 +2,6 @@
 source: tui/tests/view_snapshots.rs
 expression: rendered
 ---
-
 › Summarize the release plan.
 • Completed
   └ Read file
@@ -13,6 +12,7 @@ expression: rendered
   • Ship with evidence
 
   cargo test passes.
+
 
 
 • Working…  ·  esc to interrupt

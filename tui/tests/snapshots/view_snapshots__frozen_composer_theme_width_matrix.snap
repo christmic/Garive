@@ -3,7 +3,7 @@ source: tui/tests/view_snapshots.rs
 expression: frozen_composer_matrix()
 ---
 theme=Dark width=40 marker=Style::new().yellow().bg(Color::Reset).underline_color(Color::Reset) cursor=None
-
+› Summarize the release plan.
   ✓ Read file
 ## Release plan
 
@@ -17,7 +17,7 @@ theme=Dark width=40 marker=Style::new().yellow().bg(Color::Reset).underline_colo
  ● Waiting for durable command truth…
 
 theme=Dark width=100 marker=Style::new().yellow().bg(Color::Reset).underline_color(Color::Reset) cursor=None
-
+  └ Read file
 
 ## Release plan
 
@@ -31,7 +31,7 @@ theme=Dark width=100 marker=Style::new().yellow().bg(Color::Reset).underline_col
  ● Waiting for durable command truth…
 
 theme=Light width=40 marker=Style::new().yellow().bg(Color::Reset).underline_color(Color::Reset) cursor=None
-
+› Summarize the release plan.
   ✓ Read file
 ## Release plan
 
@@ -45,7 +45,7 @@ theme=Light width=40 marker=Style::new().yellow().bg(Color::Reset).underline_col
  ● Waiting for durable command truth…
 
 theme=Light width=100 marker=Style::new().yellow().bg(Color::Reset).underline_color(Color::Reset) cursor=None
-
+  └ Read file
 
 ## Release plan
 
@@ -59,7 +59,7 @@ theme=Light width=100 marker=Style::new().yellow().bg(Color::Reset).underline_co
  ● Waiting for durable command truth…
 
 theme=Mono width=40 marker=Style::new().fg(Color::Reset).bg(Color::Reset).underline_color(Color::Reset) cursor=None
-
+› Summarize the release plan.
   ✓ Read file
 ## Release plan
 
@@ -73,7 +73,7 @@ theme=Mono width=40 marker=Style::new().fg(Color::Reset).bg(Color::Reset).underl
  ● Waiting for durable command truth…
 
 theme=Mono width=100 marker=Style::new().fg(Color::Reset).bg(Color::Reset).underline_color(Color::Reset) cursor=None
-
+  └ Read file
 
 ## Release plan
 

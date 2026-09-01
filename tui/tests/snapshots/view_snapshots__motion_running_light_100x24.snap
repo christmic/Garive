@@ -3,7 +3,6 @@ source: tui/tests/view_snapshots.rs
 expression: "motion_frame(&model, Theme::Light, 4, 100, 24)"
 ---
 
-
 › Summarize the release plan.
 
 • Completed
@@ -15,6 +14,7 @@ expression: "motion_frame(&model, Theme::Light, 4, 100, 24)"
   • Ship with evidence
 
   cargo test passes.
+
 
 
 

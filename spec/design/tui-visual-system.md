@@ -332,9 +332,11 @@ Degradation order is ambient context, secondary hints, decoration, then
 nonessential metadata. Never remove the active action, semantic state,
 composer cursor, live received content, recovery consequence, or selected-row
 marker to make space.
-When the usable transcript has eight rows or fewer, its decorative top inset
-collapses before semantic content. The latest Agent identity row must remain
-visible when it can fit; an empty breathing row may not scroll it away.
+The transcript viewport adds no decorative top inset. User request surfaces,
+blocked empty states, Activity groups, and Markdown blocks own their semantic
+spacing, so the first visible cell never receives two unrelated breathing rows.
+The latest Agent identity row must remain visible when it can fit; an empty
+breathing row may not scroll it away.
 
 ## Interaction consistency
 

@@ -3,7 +3,6 @@ source: tui/tests/view_snapshots.rs
 expression: "frame(&action, Theme::Dark, 100, 24)"
 ---
 
-
 › Summarize the release plan.
 
 • Completed
@@ -13,6 +12,7 @@ expression: "frame(&action, Theme::Dark, 100, 24)"
 
   • Verify the Runtime
   • Ship with evidence
+
  Approval required ─────────────────────────────────────────────────────────────────────────────────
 !  Review the public request before responding.
 Create one bounded local file.
