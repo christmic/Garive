@@ -302,6 +302,16 @@ Planner invocation. A crash after the Planner terminal but before result
 binding binds that same terminal; a crash after `plan.proposed` proceeds to
 admission without invoking the Planner again.
 
+Recovery retains one `plan.replan.admitted` decision after later internal
+Planner facts only when the entire suffix is a closed ownership chain for that
+same admission: the adjacent replan request names the exact source and fixed
+prefix, every intervening Turn/Execution fact belongs to its bound internal
+identities, and an optional result binding is the final fact and names that
+request. An unrelated fact, second request, mismatched source or fact after the
+binding corrupts the pending decision instead of calling failure policy again.
+This rule prevents both duplicate admissions and a second model invocation
+after terminal-before-binding recovery.
+
 Completed step evidence may be carried forward only when:
 
 1. old and new `step_digest` are equal;
