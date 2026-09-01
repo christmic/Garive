@@ -2,10 +2,10 @@
 source: tui/tests/view_snapshots.rs
 expression: "frame(&activities, Theme::Mono, 40, 18)"
 ---
-Session 1                  Agent running
+Session 1
 
   › Verify the release candidate.
-    ● Running strict valida… · 2 done
+    ● Reading file · ✓2
 
 
 

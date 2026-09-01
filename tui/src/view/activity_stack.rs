@@ -6,6 +6,7 @@ use crate::{
     application::{TimelineItem, TimelineTone},
     Theme,
 };
+use unicode_width::UnicodeWidthStr;
 
 use super::{palette, primitives::truncate_display, safe_text};
 
@@ -14,10 +15,11 @@ pub(super) fn render(items: &[TimelineItem], theme: Theme, width: u16) -> Vec<Li
         .iter()
         .all(|item| item.role == crate::application::TimelineRole::Status));
     let colors = palette(theme);
-    let completed = items
+    let completed_items = items
         .iter()
         .filter(|item| item.tone == TimelineTone::Success)
-        .count();
+        .collect::<Vec<_>>();
+    let completed = completed_items.len();
     let primary = items.iter().rev().find(|item| {
         matches!(
             item.tone,
@@ -27,25 +29,20 @@ pub(super) fn render(items: &[TimelineItem], theme: Theme, width: u16) -> Vec<Li
                 | TimelineTone::Neutral
         )
     });
-    let completed_copy = match completed {
-        0 => None,
-        1 if primary.is_none() => items
-            .iter()
-            .find(|item| item.tone == TimelineTone::Success)
-            .map(|item| safe_text(&item.text)),
-        1 => Some("1 action completed".into()),
-        count => Some(format!("{count} actions completed")),
-    };
+    let completed_copy = completed_items.last().map(|item| safe_text(&item.text));
 
     if width < 52 {
         let available = usize::from(width.saturating_sub(2));
         let compact = match (primary, completed_copy.as_deref()) {
             (Some(item), _) if completed > 0 => {
-                let suffix = format!(" · {completed} done");
+                let suffix = format!(" · ✓{completed}");
                 let leading = format!("{} {}", icon(item.tone), safe_text(&item.text));
                 format!(
                     "{}{}",
-                    truncate_display(&leading, available.saturating_sub(suffix.len())),
+                    truncate_display(
+                        &leading,
+                        available.saturating_sub(UnicodeWidthStr::width(suffix.as_str()))
+                    ),
                     suffix
                 )
             }
@@ -61,7 +58,7 @@ pub(super) fn render(items: &[TimelineItem], theme: Theme, width: u16) -> Vec<Li
 
     let mut lines = Vec::with_capacity(2);
     if let Some(done) = completed_copy {
-        lines.push(activity_line("✓", done, colors.success, colors.muted));
+        lines.push(completed_line(done, completed.saturating_sub(1), colors));
     }
     if let Some(item) = primary {
         lines.push(activity_line(
@@ -72,6 +69,20 @@ pub(super) fn render(items: &[TimelineItem], theme: Theme, width: u16) -> Vec<Li
         ));
     }
     lines
+}
+
+fn completed_line(text: String, additional: usize, colors: super::style::Palette) -> Line<'static> {
+    let mut spans = vec![
+        Span::styled("  ✓  ", colors.success),
+        Span::styled(text, colors.muted),
+    ];
+    if additional > 0 {
+        spans.push(Span::styled(
+            format!(" · +{additional} completed"),
+            colors.muted.add_modifier(ratatui::style::Modifier::DIM),
+        ));
+    }
+    Line::from(spans)
 }
 
 fn activity_line(
@@ -130,10 +141,27 @@ mod tests {
         ];
         let standard = render(&items, Theme::Mono, 80);
         assert_eq!(standard.len(), 2);
-        assert_eq!(standard[0].to_string(), "  ✓  2 actions completed");
+        assert_eq!(standard[0].to_string(), "  ✓  Checked tests · +1 completed");
         assert_eq!(standard[1].to_string(), "  ●  Running cargo test");
         let compact = render(&items, Theme::Mono, 40);
         assert_eq!(compact.len(), 1);
-        assert_eq!(compact[0].to_string(), "  ● Running cargo test · 2 done");
+        assert_eq!(compact[0].to_string(), "  ● Running cargo test · ✓2");
+    }
+
+    #[test]
+    fn compact_counter_survives_wide_grapheme_truncation() {
+        let items = vec![
+            item("a", TimelineTone::Success, "Read config"),
+            item("b", TimelineTone::Success, "Checked tests"),
+            item(
+                "c",
+                TimelineTone::Active,
+                "读取界面 🦀 and validate the streamed response",
+            ),
+        ];
+
+        let line = render(&items, Theme::Mono, 40)[0].to_string();
+        assert!(line.ends_with(" · ✓2"));
+        assert!(UnicodeWidthStr::width(line.as_str()) <= 40);
     }
 }

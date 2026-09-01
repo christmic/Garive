@@ -40,6 +40,7 @@ struct Renderer<'a> {
     lines: Vec<Line<'static>>,
     spans: Vec<Span<'static>>,
     lists: Vec<ListState>,
+    item_line_starts: Vec<usize>,
     hanging_indents: Vec<usize>,
     quote_depth: usize,
     code_block: bool,
@@ -49,9 +50,14 @@ struct Renderer<'a> {
     width: usize,
 }
 
-enum ListState {
+enum ListKind {
     Unordered,
     Ordered(u64),
+}
+
+struct ListState {
+    kind: ListKind,
+    needs_blank_before_next_item: bool,
 }
 
 struct LinkState {
@@ -79,6 +85,7 @@ impl<'a> Renderer<'a> {
             lines: Vec::new(),
             spans: Vec::new(),
             lists: Vec::new(),
+            item_line_starts: Vec::new(),
             hanging_indents: Vec::new(),
             quote_depth: 0,
             code_block: false,
@@ -137,14 +144,24 @@ impl<'a> Renderer<'a> {
             }
             Tag::List(start) => {
                 self.start_block();
-                self.lists
-                    .push(start.map_or(ListState::Unordered, ListState::Ordered));
+                self.lists.push(ListState {
+                    kind: start.map_or(ListKind::Unordered, ListKind::Ordered),
+                    needs_blank_before_next_item: false,
+                });
             }
             Tag::Item => {
                 self.flush();
+                if self
+                    .lists
+                    .last_mut()
+                    .is_some_and(|list| std::mem::take(&mut list.needs_blank_before_next_item))
+                {
+                    self.lines.push(Line::default());
+                }
+                self.item_line_starts.push(self.lines.len());
                 let depth = self.lists.len().saturating_sub(1);
-                let marker = match self.lists.last_mut() {
-                    Some(ListState::Ordered(next)) => {
+                let marker = match self.lists.last_mut().map(|list| &mut list.kind) {
+                    Some(ListKind::Ordered(next)) => {
                         let marker = format!("{next}. ");
                         *next = next.saturating_add(1);
                         marker
@@ -219,6 +236,12 @@ impl<'a> Renderer<'a> {
             TagEnd::Item => {
                 self.flush();
                 self.hanging_indents.pop();
+                let start = self.item_line_starts.pop().unwrap_or(self.lines.len());
+                if self.lines.len().saturating_sub(start) > 1 {
+                    if let Some(list) = self.lists.last_mut() {
+                        list.needs_blank_before_next_item = true;
+                    }
+                }
             }
             TagEnd::TableCell => {
                 if let Some(table) = self.table.as_mut() {

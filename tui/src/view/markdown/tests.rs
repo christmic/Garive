@@ -146,10 +146,40 @@ fn wrapped_list_items_use_hanging_indent_and_major_blocks_breathe() {
     assert!(rows
         .iter()
         .any(|row| row.starts_with("    ") && row.trim_start().starts_with("that wraps")));
-    assert_eq!(rows.iter().filter(|row| row.is_empty()).count(), 3);
+    assert_eq!(rows.iter().filter(|row| row.is_empty()).count(), 4);
     assert!(rows
         .windows(2)
         .all(|pair| !(pair[0].is_empty() && pair[1].is_empty())));
+}
+
+#[test]
+fn multiline_list_items_breathe_while_simple_and_nested_siblings_stay_tight() {
+    let lines = render_markdown(
+        "- a long 界面 list item that wraps at this width\n- second\n  - nested one\n  - nested two\n- final",
+        "  ",
+        Style::default(),
+        Style::default(),
+        Style::default(),
+        syntax(),
+        20,
+    );
+    let rows = text(&lines);
+
+    let second = rows
+        .iter()
+        .position(|row| row == "  • second")
+        .expect("second item");
+    assert!(rows[second - 1].is_empty());
+    let nested_one = rows
+        .iter()
+        .position(|row| row == "    • nested one")
+        .expect("first nested item");
+    let nested_two = rows
+        .iter()
+        .position(|row| row == "    • nested two")
+        .expect("second nested item");
+    assert_eq!(nested_two, nested_one + 1);
+    assert_eq!(rows.last().map(String::as_str), Some("  • final"));
 }
 
 #[test]

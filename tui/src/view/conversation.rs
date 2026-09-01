@@ -69,12 +69,33 @@ fn context_copy(model: &AppModel) -> Option<String> {
 
 pub(crate) fn viewport_rect(model: &AppModel, area: Rect) -> Rect {
     let context_height = u16::from(context_copy(model).is_some());
+    let insets = ViewportInsets::resolve(area.height.saturating_sub(context_height));
     Rect::new(
-        area.x.saturating_add(2),
-        area.y.saturating_add(1).saturating_add(context_height),
-        area.width.saturating_sub(4),
-        area.height.saturating_sub(1).saturating_sub(context_height),
+        area.x.saturating_add(insets.horizontal),
+        area.y
+            .saturating_add(insets.top)
+            .saturating_add(context_height),
+        area.width
+            .saturating_sub(insets.horizontal.saturating_mul(2)),
+        area.height
+            .saturating_sub(insets.top)
+            .saturating_sub(context_height),
     )
+}
+
+#[derive(Clone, Copy)]
+struct ViewportInsets {
+    horizontal: u16,
+    top: u16,
+}
+
+impl ViewportInsets {
+    const fn resolve(available_height: u16) -> Self {
+        Self {
+            horizontal: 2,
+            top: if available_height > 8 { 1 } else { 0 },
+        }
+    }
 }
 
 struct ConversationWindow {
@@ -327,6 +348,16 @@ fn wrapped_height(lines: &[Line<'static>], width: u16) -> usize {
 mod tests {
     use super::*;
     use crate::application::{TimelineItem, TimelineRole};
+
+    #[test]
+    fn compact_transcript_drops_decorative_top_inset_before_semantic_rows() {
+        let model = AppModel::default();
+        let compact = viewport_rect(&model, Rect::new(0, 0, 40, 8));
+        assert_eq!(compact, Rect::new(2, 0, 36, 8));
+
+        let standard = viewport_rect(&model, Rect::new(0, 0, 100, 9));
+        assert_eq!(standard, Rect::new(2, 1, 96, 8));
+    }
 
     #[test]
     fn user_request_is_one_compact_hanging_surface() {

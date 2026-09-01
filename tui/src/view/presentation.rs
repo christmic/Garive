@@ -118,9 +118,15 @@ pub(crate) fn activity_copy(
     state: &str,
     safe_code: Option<&str>,
 ) -> (String, TimelineTone) {
+    let admitted_tool_copy = match (kind, label_key, state) {
+        ("tool", "agent.activity.read_file", "running") => Some("Reading file"),
+        ("tool", "agent.activity.read_file", "completed") => Some("Read file"),
+        _ => None,
+    };
     let label = match (kind, label_key) {
         ("interaction", "agent.activity.approval") => "Approval",
         ("interaction", "agent.activity.external_input") => "Input request",
+        ("tool", "agent.activity.read_file") => "Read file",
         ("tool", _) => "Agent action",
         _ => "Activity updated",
     };
@@ -139,7 +145,8 @@ pub(crate) fn activity_copy(
     let code = safe_code
         .map(|value| format!(" · {value}"))
         .unwrap_or_default();
-    (format!("{label} · {state_label}{code}"), tone)
+    let text = admitted_tool_copy.map_or_else(|| format!("{label} · {state_label}"), str::to_owned);
+    (format!("{text}{code}"), tone)
 }
 
 #[cfg(test)]
@@ -169,5 +176,20 @@ mod tests {
         let (text, tone) = activity_copy("future", "private.tool.name", "future", None);
         assert_eq!(text, "Activity updated · updated");
         assert_eq!(tone, TimelineTone::Neutral);
+    }
+
+    #[test]
+    fn admitted_read_file_activity_keeps_tool_semantics_through_lifecycle() {
+        for (state, expected, tone) in [
+            ("prepared", "Read file · prepared", TimelineTone::Neutral),
+            ("running", "Reading file", TimelineTone::Active),
+            ("completed", "Read file", TimelineTone::Success),
+            ("failed", "Read file · failed", TimelineTone::Danger),
+        ] {
+            assert_eq!(
+                activity_copy("tool", "agent.activity.read_file", state, None),
+                (expected.into(), tone)
+            );
+        }
     }
 }

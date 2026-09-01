@@ -447,6 +447,49 @@ mod tests {
     }
 
     #[test]
+    fn event_and_snapshot_paths_preserve_admitted_tool_semantics() {
+        let mut model = AppModel {
+            selected_session: Some("session".into()),
+            ..Default::default()
+        };
+        install_timeline(
+            &mut model,
+            vec![snapshot("turn", "read", "agent.activity.read_file")],
+        );
+        assert_eq!(model.turn_blocks[0].activities[0].text, "Reading file");
+
+        let mut state = RuntimeState::test_ephemeral(Vec::new());
+        state.model = model;
+        apply_event(
+            HostEvent {
+                api_version: "garive.host.v1".into(),
+                session_id: "session".into(),
+                position: 4,
+                event: "agent.activity.completed".into(),
+                turn_id: "turn".into(),
+                execution_id: "execution".into(),
+                text: String::new(),
+                activity: Some(HostActivity {
+                    api_version: "garive.host.v1".into(),
+                    activity_id: "read".into(),
+                    kind: "tool".into(),
+                    label_key: "agent.activity.read_file".into(),
+                    state: "completed".into(),
+                    source_position: 4,
+                    terminal: true,
+                    safe_code: None,
+                }),
+            },
+            &mut state,
+        );
+        assert_eq!(state.model.turn_blocks[0].activities[0].text, "Read file");
+        assert_eq!(
+            state.model.turn_blocks[0].activities[0].tone,
+            TimelineTone::Success
+        );
+    }
+
+    #[test]
     fn every_detached_durable_activity_update_is_counted() {
         let mut model = AppModel::default();
         model.viewport.follow_latest = false;

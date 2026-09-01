@@ -3,7 +3,7 @@ source: tui/tests/view_snapshots.rs
 expression: "frame(&model, Theme::Mono, 40, 12)"
 ---
 Session 1                  Agent running
-
+  ◆ Garive
     ## Release plan
 
     • Verify the Runtime

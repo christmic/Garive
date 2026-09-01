@@ -61,11 +61,20 @@ fn exceptional_state(model: &AppModel, motion: super::motion::StatusMotion) -> S
     match model.connection {
         ConnectionState::Online => online_state(
             model.execution,
-            model.live_answer.current().is_some(),
+            transcript_owns_work_indicator(model),
             motion,
         ),
         value => super::style::connection_name(value).to_owned(),
     }
+}
+
+fn transcript_owns_work_indicator(model: &AppModel) -> bool {
+    model.live_answer.current().is_some()
+        || model.turn_blocks.last().is_some_and(|turn| {
+            turn.activities
+                .iter()
+                .any(|item| item.tone == crate::application::TimelineTone::Active)
+        })
 }
 
 fn online_state(
@@ -98,9 +107,20 @@ fn state_style(model: &AppModel, colors: super::style::Palette) -> ratatui::styl
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::application::{TimelineItem, TimelineRole, TimelineTone};
+
+    fn timeline_item(role: TimelineRole, tone: TimelineTone) -> TimelineItem {
+        TimelineItem {
+            stable_key: format!("{role:?}"),
+            position: 1,
+            role,
+            tone,
+            text: "semantic work".into(),
+        }
+    }
 
     #[test]
-    fn visible_live_answer_suppresses_only_the_duplicate_following_label() {
+    fn visible_semantic_work_suppresses_only_the_duplicate_following_label() {
         let motion = || super::super::motion::StatusMotion {
             execution_label: "Agent running".into(),
         };
@@ -118,5 +138,14 @@ mod tests {
             online_state(ExecutionState::Failed, true, motion()),
             "Failed"
         );
+    }
+
+    #[test]
+    fn active_activity_in_latest_turn_owns_the_work_indicator() {
+        let mut model = AppModel::default();
+        model.push_test_timeline_item(timeline_item(TimelineRole::User, TimelineTone::Neutral));
+        model.push_test_timeline_item(timeline_item(TimelineRole::Status, TimelineTone::Active));
+
+        assert!(transcript_owns_work_indicator(&model));
     }
 }
