@@ -154,6 +154,25 @@ mod tests {
         assert!(cache.stream_id.is_empty() && cache.stable_lines.is_empty());
     }
 
+    #[test]
+    fn structural_holdback_matches_monolithic_markdown() {
+        for source in [
+            "Intro.\n\n- first\n\n  continued\n- second",
+            "> first\n>\n> second\n\nAfter",
+            "Heading\n=======\n\nBody",
+            "| A | B |\n|---|---|\n| 1 | 2 |\n\nAfter",
+            "See [guide][g].\n\nAfter.\n\n[g]: https://example.test",
+        ] {
+            let projection = live_projection(source);
+            let mut cache = LiveRenderCache::default();
+            assert_eq!(
+                cache.render_markdown(projection.current().unwrap(), Theme::Dark, 48),
+                render_source(source, palette(Theme::Dark), 48),
+                "source: {source:?}"
+            );
+        }
+    }
+
     fn live_projection(text: &str) -> LiveAnswerProjection {
         let mut projection = LiveAnswerProjection::default();
         projection.apply(

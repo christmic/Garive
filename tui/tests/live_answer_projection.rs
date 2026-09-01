@@ -259,6 +259,55 @@ fn incomplete_fenced_code_never_enters_stable_markdown_prefix() {
 }
 
 #[test]
+fn loose_list_remains_one_mutable_top_level_block() {
+    let mut projection = LiveAnswerProjection::default();
+    projection.apply(
+        snapshot(
+            STREAM_A,
+            1,
+            "Intro.\n\n- first item\n\n  continued first item\n- second item",
+        ),
+        expectation(false),
+    );
+
+    let answer = projection.current().unwrap();
+    assert_eq!(answer.markdown.stable_prefix(), "Intro.\n\n");
+    assert_eq!(
+        answer.markdown.mutable_tail(),
+        "- first item\n\n  continued first item\n- second item"
+    );
+}
+
+#[test]
+fn late_reference_definition_rejoins_previously_stable_source() {
+    let mut projection = LiveAnswerProjection::default();
+    projection.apply(
+        snapshot(STREAM_A, 1, "See [guide][g].\n\nNext paragraph."),
+        expectation(false),
+    );
+    assert_eq!(
+        projection.current().unwrap().markdown.stable_prefix(),
+        "See [guide][g].\n\n"
+    );
+
+    projection.apply(
+        event(
+            STREAM_A,
+            2,
+            LiveOutputEventKind::TextDelta {
+                text: "\n\n[g]: https://example.test/guide".into(),
+            },
+        ),
+        expectation(false),
+    );
+    projection.advance_frame(false);
+
+    let answer = projection.current().unwrap();
+    assert!(answer.markdown.stable_prefix().is_empty());
+    assert_eq!(answer.markdown.mutable_tail(), answer.presented_text);
+}
+
+#[test]
 fn new_generation_replaces_once_and_retired_stream_cannot_return() {
     let mut projection = LiveAnswerProjection::default();
     projection.apply(snapshot(STREAM_A, 8, "old"), expectation(false));
