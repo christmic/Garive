@@ -94,7 +94,8 @@ describe("Desktop visual accessibility contract", () => {
     expect(CSS).toContain(".app-shell:has(.workspace-panel) .main-surface { flex-grow: 0; max-width: var(--conversation-split); }");
     expect(CSS).toContain(".panel-animated > [data-panel] { transition: flex-grow var(--motion-relaxed) var(--ease-basic), max-width var(--motion-relaxed) var(--ease-basic); }");
     expect(CSS).toContain(".panel-animated.panel-dragging > [data-panel] { transition: none; }");
-    expect(CSS).toContain(".work-surface { min-width: 0; overflow: hidden; }");
+    expect(CSS).toContain(".work-surface { min-width: 0; overflow: clip; }");
+    expect(CSS).not.toContain(".work-surface { min-width: 0; overflow: hidden; }");
     expect(CSS).toContain(".workspace-resizer { position: absolute");
     expect(CSS).toContain(".artifact-preview-content { width: min(40rem, 100%)");
     expect(CSS).toContain("font-size: calc(var(--document-font-size) * 1.5)");

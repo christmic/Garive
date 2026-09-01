@@ -1172,6 +1172,29 @@ resolves to `rgb(230,184,111)` on `rgb(71,53,29)` in dark mode and
 overflow at 1280×720. Desktop and Web receive the change from the same visual
 system rather than maintaining client-specific theme patches.
 
+### XXXVIII. Only the conversation may scroll the thread viewport
+
+Installed `thread-scroll-layout-B1Q-zWDJ.js` gives the actual thread element
+`overflow-y-auto`, disables browser anchoring there and owns the Composer as an
+absolute footer inside a `relative h-full` shell. Its inner content clips only
+the horizontal axis with `overflow-x-clip`. This structure assigns scroll
+state to one explicit controller instead of letting an outer work surface
+become a second programmatic scroll container.
+
+Garive's `.work-surface` used `overflow: hidden`. Although visually clipped,
+that value still allowed focus/scroll-into-view behavior to set an outer
+`scrollTop`. Opening an Activity while Environment was visible moved the whole
+conversation and Composer upward by 238px: the Composer jumped from y=646 to
+y=408 even though its own rail remained 36px tall. The shared outer surface now
+uses `overflow: clip`; conversation remains the sole vertical scroll owner.
+
+Live Web evidence repeats the exact interaction with Environment open and keeps
+the Composer at y=646/bottom=712 before and after Activity disclosure, while
+the outer `scrollTop` remains zero. At 480px the conversation independently
+retains its 525px scroll position, the 432px Composer remains at the bottom and
+document overflow is zero. The 1280px split workbench likewise retains zero
+outer/workspace overflow and an independently scrolling file surface.
+
 ## Gate 1 — Codex fidelity
 
 This gate passes only when both Desktop and Web show:

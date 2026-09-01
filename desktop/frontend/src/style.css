@@ -640,7 +640,7 @@ kbd { font-size: var(--text-2xs); }
 .main-surface { flex: 1 1 auto; width: 100%; max-width: calc(100% - var(--sidebar-width)); grid-template-columns: minmax(0, 1fr); grid-template-rows: var(--height-active-thread-toolbar) minmax(0, 1fr); background: var(--surface-canvas); }
 .navigation-collapsed .main-surface { max-width: 100%; }
 .app-shell:has(.workspace-panel) .main-surface { flex-grow: 0; max-width: var(--conversation-split); }
-.work-surface { min-width: 0; overflow: hidden; }
+.work-surface { min-width: 0; overflow: clip; }
 .topbar { padding: 0 14px 0 10px; border-bottom-color: var(--border-subtle); background: color-mix(in srgb, var(--surface-canvas) 91%, transparent); }
 .topbar-title { flex: 1; gap: 8px; min-width: 0; font-size: var(--text-sm); font-weight: 590; }
 .topbar-title-copy { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
