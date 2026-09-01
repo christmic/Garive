@@ -180,6 +180,13 @@ fn suspension_is_a_structured_action_card_not_raw_json() {
     assert!(rendered.contains("Approval required"));
     assert!(rendered.contains("Create one file."));
     assert!(rendered.contains("Enter true or false."));
+    assert_eq!(
+        rendered
+            .lines()
+            .find_map(|line| line.find("Approval required")),
+        Some(1)
+    );
+    assert!(!rendered.contains('╭'));
     assert!(!rendered.contains("title_key"));
 }
 

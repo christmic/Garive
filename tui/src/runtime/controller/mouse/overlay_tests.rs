@@ -73,7 +73,7 @@ fn selectable_overlay_routes_visible_rows_and_wheel() {
             }
         })
         .collect::<std::collections::BTreeSet<_>>();
-    assert_eq!(activated, [18, 19, 20].into_iter().collect());
+    assert_eq!(activated, [17, 18, 19, 20].into_iter().collect());
 }
 
 #[test]

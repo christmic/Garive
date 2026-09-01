@@ -23,21 +23,21 @@ RECOVERY INSPECTOR
 ↑↓ select · Esc close
 
 DECISION SHEET
-  ╭ Approval required ───────────────╮
-  │                                  │
-  │  !  Review the public request    │
-  │  › false · 2/2 ↑↓                │
-  │    Enter submit response         │
-  │    Ctrl+Q leave safely           │
-  │                                  │
-  ╰──────────────────────────────────╯
+ Approval required ─────────────────────
+!  Review the public request before
+› false · 2/2 ↑↓
+
+
+
+  Enter submit response
+  Ctrl+Q leave safely
 
 UNKNOWN RECOVERY
-  ╭ Command result unknown ──────────╮
-  │                                  │
-  │  ×  Durable outcome is unknown;  │
-  │                                  │
-  │    Enter exact retry             │
-  │    A abandon local record        │
-  │                                  │
-  ╰──────────────────────────────────╯
+
+
+ Command result unknown ────────────────
+×  Durable outcome is unknown; review
+Host truth before any exact replay.
+
+  Enter exact retry
+  A abandon local record

@@ -8,14 +8,9 @@ expression: "frame(&recovery, Theme::Dark, 100, 24)"
 ## Release plan
 
   • Verify the Runtime
-                   ╭ Command result unknown ────────────────────────────────────╮
-                   │                                                            │
-                   │  ×  A prior command has an unknown durable outcome.        │
-                   │  Review Host truth before retrying.                        │
-                   │                                                            │
-                   │    Enter exact retry   A abandon local record              │
-                   │                                                            │
-                   ╰────────────────────────────────────────────────────────────╯
+  • Ship with evidence
+
+  cargo test passes.
 
 
 
@@ -23,6 +18,11 @@ expression: "frame(&recovery, Theme::Dark, 100, 24)"
 
 
 
+
+ Command result unknown ────────────────────────────────────────────────────────────────────────────
+×  A prior command has an unknown durable outcome. Review Host truth before retrying.
+
+  Enter exact retry   A abandon local record
 • Working…
 › Ask a follow-up…
   Agent · Session 1

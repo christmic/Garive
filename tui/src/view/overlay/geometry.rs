@@ -24,10 +24,14 @@ pub(super) fn overlay_geometry(model: &AppModel, overlay: Overlay, area: Rect) -
         Overlay::CommandPalette,
         "CommandPalette owns its geometry"
     );
-    let desired_width = desired_width(overlay);
-    let popup_width = desired_width.min(area.width.saturating_sub(4));
-    let desired_height = desired_height(model, overlay, popup_width);
     let modal_area = modal_area(model, overlay, area);
+    let desired_width = desired_width(overlay);
+    let popup_width = if super::uses_bottom_pane(overlay) {
+        modal_area.width
+    } else {
+        desired_width.min(area.width.saturating_sub(4))
+    };
+    let desired_height = desired_height(model, overlay, popup_width);
     let popup_height = desired_height.min(modal_area.height);
     let popup = if super::uses_bottom_pane(overlay) {
         Rect::new(
@@ -134,11 +138,10 @@ fn selector_height(count: usize, chrome_rows: u16) -> u16 {
 
 fn decision_height(model: &AppModel, overlay: Overlay, popup_width: u16) -> u16 {
     let spec = decision_sheet::project(model, overlay).expect("decision overlay has a spec");
-    let content_width = popup_width.saturating_sub(6).max(1);
-    let rows = decision_sheet::layout(&spec, content_width, usize::MAX)
+    let rows = decision_sheet::layout(&spec, popup_width.max(1), usize::MAX)
         .rows
         .len();
-    u16::try_from(rows.saturating_add(4)).unwrap_or(u16::MAX)
+    u16::try_from(rows.saturating_add(1)).unwrap_or(u16::MAX)
 }
 
 pub(in crate::view) fn selection_at(

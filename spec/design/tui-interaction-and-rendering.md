@@ -62,9 +62,10 @@ surfaces selected by semantics. At wide sizes an
 explicitly opened `Inspector` may share the work surface without changing
 transcript truth.
 
-Selection surfaces that do not block a durable decision are a `BottomPane`,
-not a desktop modal. The command palette, slash suggestions,
-Session/Turn/history selectors, and narrow/standard Inspector inherit the Composer's
+Composer-adjacent selection and decision surfaces are a `BottomPane`, not a
+desktop modal. Blocking semantics come from typed input ownership and safe
+actions, not from a surrounding box or dimmed workspace. The command palette,
+slash suggestions, Session/Turn/history selectors, DecisionSheet, and narrow/standard Inspector inherit the Composer's
 left axis and usable width, meet it without a floating gap, clear only their own
 rows, and use one quiet top rule instead of a surrounding box or dimmed
 workspace. They grow only with visible content and show at most eight command

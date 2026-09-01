@@ -65,10 +65,12 @@ cue; answer renderers cannot append a private caret glyph.
 backdrop, full-width same-height quiet band, cleared popup, title, and rounded
 border. The quiet band removes horizontally clipped transcript fragments while
 leaving the rows above and below the modal available as dimmed context.
-Blocking decisions, recovery confirmations, and the reference Help surface
-consume `ModalFrame`. CommandPalette, navigation selectors, and the
+The reference Help surface alone consumes `ModalFrame`. DecisionSheet,
+recovery confirmations, CommandPalette, navigation selectors, and the
 narrow/standard Inspector consume `BottomPane` and cannot reproduce modal
-chrome locally.
+chrome locally. Decision blocking is expressed by typed input ownership,
+explicit primary/safe-exit actions, and a visible tone marker—not backdrop
+dimming or a four-sided card.
 Help is content-driven rather than a fixed document card. At admitted desktop
 width it is an action-only two-column grid derived from the typed keymap; when
 the two columns do not fit it reflows by measured display width. Its height is
@@ -308,8 +310,9 @@ filter and the activation result set are the same ordered collection. Pointer
 hit boxes come from the rendered component geometry and never penetrate a
 modal backdrop.
 
-`DecisionSheet` uses one display-cell row plan for visual rendering, dynamic
-height, choice hit testing, and action hit testing. Tone glyphs share the first
+`DecisionSheet` uses one Composer-aligned top rule and one display-cell row plan
+for visual rendering, dynamic height, choice hit testing, and action hit
+testing. It has no side/bottom border or dimmed backdrop. Tone glyphs share the first
 consequence row and consume its width budget. Normal height keeps one blank row
 before actions; compact height removes that spacer before it removes the
 selected control or either primary/safe-exit action. When compact height folds

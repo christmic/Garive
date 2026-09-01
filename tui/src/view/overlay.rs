@@ -39,7 +39,21 @@ pub(super) const fn is_composition_selector(overlay: Overlay) -> bool {
 }
 
 pub(super) const fn uses_bottom_pane(overlay: Overlay) -> bool {
-    is_composition_selector(overlay) || matches!(overlay, Overlay::Inspector)
+    is_composition_selector(overlay)
+        || matches!(overlay, Overlay::Inspector)
+        || is_decision_surface(overlay)
+}
+
+const fn is_decision_surface(overlay: Overlay) -> bool {
+    matches!(
+        overlay,
+        Overlay::Suspension
+            | Overlay::UnknownCommand
+            | Overlay::AbandonConfirmation
+            | Overlay::ErrorDetails
+            | Overlay::EphemeralConfirmation
+            | Overlay::QuitConfirmation
+    )
 }
 
 pub(super) fn render_overlay(
@@ -74,7 +88,7 @@ pub(super) fn render_overlay(
         geometry.inner.height,
     );
     let inner = geometry.inner;
-    if is_composition_selector(overlay) {
+    if uses_bottom_pane(overlay) {
         BottomPaneFrame::resolve(popup).render(
             Line::styled(spec.title, colors.title),
             colors,

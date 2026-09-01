@@ -438,6 +438,16 @@ Help content follows the same discipline: one adaptive two-column action grid,
 one column when width requires it, and no Host, color, mouse, or clipboard
 explanation competing with the transcript.
 
+Codex's pinned blocking interaction surfaces also preserve the work axis.
+`bottom_pane/approval_overlay.rs` and its
+`approval_overlay_permissions_prompt.snap`, plus
+`bottom_pane/request_user_input/request_user_input_options.snap`, render the
+question, options, and confirm/cancel guidance without a centered four-sided
+card. Garive adopts that spatial discipline while retaining its own typed Host
+suspension schemas, danger tones, exact retry semantics, and `Ctrl+Q` safe-exit
+contract: DecisionSheet and recovery confirmations use the shared BottomPane;
+their blocking ownership does not depend on backdrop dimming.
+
 Direct inspection of `bottom_pane/textarea.rs` and its `textarea/` modules at
 the pinned revision found cursor, wrapping, paste, undo, and Vim behavior but
 no range-selection state or selected-text renderer. Pi's pinned
