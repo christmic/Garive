@@ -9,7 +9,7 @@ use crate::{application::AppModel, input::COMMAND_PALETTE};
 
 use super::super::{
     layout::FrameLayout,
-    primitives::{centered_popup, key_hints, selection_window, truncate_display},
+    primitives::{centered_popup, key_hints, selection_marker, selection_window, truncate_display},
     safe_text,
     style::Palette,
 };
@@ -17,6 +17,9 @@ use super::super::{
 const DESIRED_WIDTH: u16 = 74;
 const DESIRED_HEIGHT: u16 = 21;
 const COMPACT_WIDTH: u16 = 50;
+
+mod highlight;
+use highlight::highlighted_field;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct PaletteItem {
@@ -166,14 +169,14 @@ pub(super) fn render(model: &AppModel, colors: Palette, area: Rect, buffer: &mut
             let row = layout
                 .first_item_row
                 .saturating_add(u16::try_from(offset).unwrap_or(u16::MAX));
-            if selection == projection.selected {
-                buffer.set_style(
-                    Rect::new(layout.inner.x, row, layout.inner.width, 1),
-                    colors.selection_row,
-                );
-            }
             render_line(
-                item_line(item, selection == projection.selected, layout, colors),
+                item_line(
+                    item,
+                    projection.query,
+                    selection == projection.selected,
+                    layout,
+                    colors,
+                ),
                 layout.inner,
                 row,
                 buffer,
@@ -293,6 +296,7 @@ pub(in crate::view) fn linear_text(model: &AppModel) -> String {
 
 fn item_line(
     item: &PaletteItem,
+    query: &str,
     selected: bool,
     layout: PaletteLayout,
     colors: Palette,
@@ -300,25 +304,26 @@ fn item_line(
     let width = usize::from(layout.inner.width);
     let input_width = if layout.compact { 16 } else { 18 };
     let detail_width = width.saturating_sub(input_width + 4);
-    Line::from(vec![
-        Span::styled(if selected { "› " } else { "  " }, colors.selected),
-        Span::styled(
-            format!("{:<input_width$}  ", item.input),
-            if selected {
-                colors.selected
-            } else {
-                colors.normal
-            },
-        ),
-        Span::styled(
-            truncate_display(&safe_text(&item.detail), detail_width),
-            if item.unavailable_reason.is_some() {
-                colors.warning
-            } else {
-                colors.normal
-            },
-        ),
-    ])
+    let detail_style = if item.unavailable_reason.is_some() {
+        colors.warning
+    } else {
+        colors.normal
+    };
+    let mut spans = vec![selection_marker(selected, colors)];
+    spans.extend(highlighted_field(
+        item.input,
+        query,
+        input_width,
+        colors.normal,
+    ));
+    spans.push(Span::styled("  ", colors.normal));
+    spans.extend(highlighted_field(
+        &item.detail,
+        query,
+        detail_width,
+        detail_style,
+    ));
+    Line::from(spans)
 }
 
 fn search_line(query: &str, colors: Palette) -> Line<'static> {
@@ -411,68 +416,4 @@ fn modal_halo(popup: Rect, area: Rect) -> Rect {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::application::{Overlay, TerminalSize};
-
-    fn model(width: u16, height: u16, selection: usize) -> AppModel {
-        AppModel {
-            overlay: Some(Overlay::CommandPalette),
-            terminal_size: TerminalSize { width, height },
-            command_selection: selection,
-            ..Default::default()
-        }
-    }
-
-    #[test]
-    fn compact_layout_always_reserves_real_command_rows_and_safe_actions() {
-        let model = model(40, 8, COMMAND_PALETTE.len() - 1);
-        let layout = layout(&model, Rect::new(0, 0, 40, 8));
-        assert!(layout.item_capacity() >= 1);
-        assert_eq!(layout.window.1, COMMAND_PALETTE.len());
-        assert!(layout.first_item_row < layout.action_row);
-        assert!(layout.action_row.saturating_add(1) < layout.inner.bottom());
-    }
-
-    #[test]
-    fn every_command_can_own_a_visible_window() {
-        for selected in 0..COMMAND_PALETTE.len() {
-            let model = model(160, 28, selected);
-            let layout = layout(&model, Rect::new(0, 0, 160, 28));
-            assert!(layout.window.0 <= selected);
-            assert!(selected < layout.window.1);
-        }
-    }
-
-    #[test]
-    fn hit_testing_only_maps_rendered_item_rows() {
-        let model = model(40, 8, COMMAND_PALETTE.len() - 1);
-        let area = Rect::new(0, 0, 40, 8);
-        let layout = layout(&model, area);
-        assert_eq!(
-            selection_at(&model, area, layout.inner.x, layout.first_item_row),
-            Some(layout.window.0)
-        );
-        assert_eq!(
-            selection_at(&model, area, layout.inner.x, layout.inner.y),
-            None
-        );
-        assert_eq!(
-            selection_at(&model, area, layout.inner.x, layout.action_row),
-            None
-        );
-        assert_eq!(
-            selection_at(&model, area, layout.inner.right(), layout.first_item_row),
-            None
-        );
-    }
-
-    #[test]
-    fn linear_projection_announces_window_and_selected_absolute_index() {
-        let model = model(40, 8, COMMAND_PALETTE.len() - 1);
-        let spoken = linear_text(&model);
-        assert!(spoken.contains("Showing commands"));
-        assert!(spoken.contains("Selected 21 of 21: /quit"));
-        assert!(spoken.contains("Home and End for edges"));
-    }
-}
+mod tests;

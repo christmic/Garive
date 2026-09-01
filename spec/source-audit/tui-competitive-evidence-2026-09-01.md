@@ -126,7 +126,7 @@ reverse-engineered tree because provenance and version parity are unverified.
 | Overlay ownership | **Adopt** | Top overlay owns the key; dismissal/selection resolves before editor, focused region, interrupt, or global actions. | CX-I1, CX-I3 |
 | Binding consistency | **Adopt** | Resolve visual keycap, spoken name, controller action, and hint from one application-owned binding snapshot. | CX-I2 |
 | Composer navigation | **Adapt** | Up/Down traverses wrapped visual rows before history; Garive retains its documented Unicode/grapheme and logical-line contracts. | CC-I1; implementation source unavailable |
-| Selection styling | **Adapt** | Use one selected row, bold match spans, and a textual marker/reverse style so selection never depends on blue alone. | CC-I1, CC-A1 |
+| Selection styling | **Adapt** | Keep accent on one textual selection marker, bold grapheme-safe match spans, and reverse only the marker in mono so selection never depends on blue or floods the row. | CC-I1, CC-A1 |
 | User request hierarchy | **Adapt** | Use one low-contrast, unbordered request surface with a non-color marker and hanging Unicode indent; keep screen-reader role wording explicit. | CX-V1 |
 | Screen-reader projection | **Adapt** | Keep Garive's linear presenter and semantic announcements; suppress decorative animation and per-delta transcript chatter. | CC-A1; executable `claude --help` behavior |
 | Reconnect status | **Adopt** | A continuing failure is persistent, names the state, exposes details safely, and offers an explicit retry; it is not toast-only. | CX-R1, CC-R1 |

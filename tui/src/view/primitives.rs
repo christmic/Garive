@@ -45,6 +45,17 @@ pub(super) fn key_hints(items: &[(&str, &str)], colors: Palette) -> Line<'static
     Line::from(spans)
 }
 
+pub(super) fn selection_marker(selected: bool, colors: Palette) -> Span<'static> {
+    Span::styled(
+        if selected { "› " } else { "  " },
+        if selected {
+            colors.selection_row.patch(colors.selected)
+        } else {
+            colors.muted
+        },
+    )
+}
+
 pub(super) fn centered_popup(area: Rect, width: u16, height: u16) -> Rect {
     Rect::new(
         area.x + area.width.saturating_sub(width) / 2,

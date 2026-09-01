@@ -29,9 +29,12 @@ fn only_selected_command_and_navigator_rows_receive_accent_emphasis() {
         assert_hierarchy(theme, suggestion_plain, suggestion_selected);
 
         let palette = render(&palette_model(), theme, 40, 8);
-        let palette_plain = cell_at(&palette, 40, 8, "/help", 1, 0);
-        let palette_selected = cell_at(&palette, 40, 8, "/quit", 1, 0);
+        let palette_plain = cell_at(&palette, 40, 8, "/help", -2, 0);
+        let palette_selected = cell_at(&palette, 40, 8, "/quit", -2, 0);
         assert_hierarchy(theme, palette_plain, palette_selected);
+        let palette_selected_text = cell_at(&palette, 40, 8, "/quit", 1, 0);
+        assert!(!palette_selected_text.modifier.contains(Modifier::BOLD));
+        assert!(!palette_selected_text.modifier.contains(Modifier::REVERSED));
 
         let turns = render(&turn_model(), theme, 100, 24);
         let turn_plain = cell_at(&turns, 100, 24, "release checkpoint 00", -3, 0);
