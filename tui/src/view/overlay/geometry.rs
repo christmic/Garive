@@ -29,7 +29,7 @@ pub(super) fn overlay_geometry(model: &AppModel, overlay: Overlay, area: Rect) -
     let desired_height = desired_height(model, overlay, popup_width);
     let modal_area = modal_area(model, overlay, area);
     let popup_height = desired_height.min(modal_area.height);
-    let popup = if super::is_composition_selector(overlay) {
+    let popup = if super::uses_bottom_pane(overlay) {
         Rect::new(
             modal_area.x,
             modal_area.bottom().saturating_sub(popup_height),
@@ -39,7 +39,7 @@ pub(super) fn overlay_geometry(model: &AppModel, overlay: Overlay, area: Rect) -
     } else {
         centered_popup(modal_area, popup_width, popup_height)
     };
-    let inner = if super::is_composition_selector(overlay) {
+    let inner = if super::uses_bottom_pane(overlay) {
         BottomPaneFrame::resolve(popup).inner()
     } else {
         ModalFrame::resolve(popup, overlay_padding(overlay)).inner()
@@ -153,7 +153,7 @@ pub(in crate::view) fn selection_at(
     }
     let geometry = overlay_geometry(model, overlay, area);
     if overlay == Overlay::Inspector {
-        return super::super::inspector::selection_at(model, geometry.popup, column, row);
+        return super::super::inspector::selection_at_inner(model, geometry.inner, column, row);
     }
     if matches!(overlay, Overlay::SessionPicker | Overlay::PromptHistory) {
         let (count, selected) = list_count_and_selection(model, overlay)?;

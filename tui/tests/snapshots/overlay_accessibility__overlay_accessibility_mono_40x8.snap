@@ -13,14 +13,14 @@ Search  type to search
   Enter jump   Esc close
 
 RECOVERY INSPECTOR
-  ╭ Inspector · Recovery ────────────╮
-  │   ! Another Session needs review │
-  │     Switch Sessions to review i… │
-  │ › ! Reconnecting · attempt 3/5   │
-  │     Updates remain paused. Wait… │
-  │                                  │
-  │ ↑↓ select · Esc close            │
-  ╰──────────────────────────────────╯
+ Inspector · Recovery ──────────────────
+  ! Command result unknown
+    Review durable truth before exact r…
+  ! Another Session needs review
+    Switch Sessions to review its durab…
+› ! Reconnecting · attempt 3/5
+    Updates remain paused. Wait for thi…
+↑↓ select · Esc close
 
 DECISION SHEET
   ╭ Approval required ───────────────╮

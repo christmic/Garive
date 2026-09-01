@@ -115,7 +115,7 @@ fn compact_history_mouse_never_maps_action_or_grapheme_continuation_rows() {
             }
         })
         .collect::<std::collections::BTreeSet<_>>();
-    assert_eq!(activated, [1].into_iter().collect());
+    assert_eq!(activated, [0, 1, 2].into_iter().collect());
 }
 
 #[test]
@@ -136,7 +136,10 @@ fn compact_turn_and_inspector_mouse_use_only_their_rendered_windows() {
             .collect(),
         ..Default::default()
     };
-    assert_eq!(activated_indices(&turns), [19].into_iter().collect());
+    assert_eq!(
+        activated_indices(&turns),
+        [16, 17, 18, 19].into_iter().collect()
+    );
     assert_eq!(activated_rows(&turns, 19).len(), 1);
 
     let mut inspector = AppModel {
@@ -153,7 +156,11 @@ fn compact_turn_and_inspector_mouse_use_only_their_rendered_windows() {
     inspector.inspector.open = true;
     inspector.select_inspector_variant(InspectorVariant::Recovery);
     inspector.select_inspector_index(2);
-    assert_eq!(activated_indices(&inspector), [1, 2].into_iter().collect());
+    assert_eq!(
+        activated_indices(&inspector),
+        [0, 1, 2].into_iter().collect()
+    );
+    assert_eq!(activated_rows(&inspector, 0).len(), 2);
     assert_eq!(activated_rows(&inspector, 1).len(), 2);
     assert_eq!(activated_rows(&inspector, 2).len(), 2);
 }

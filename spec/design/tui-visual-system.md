@@ -156,9 +156,10 @@ unknown/new. Unknown public codes use neutral wording and never borrow success.
 An explicitly opened Inspector is exactly 32 cells wide at `>=129`, including
 its single border. The breakpoint is structural: 96 transcript cells, one gap,
 and 32 Inspector cells must all fit before the surfaces become side by side.
-At `40..=128` the same Activity, Recovery, or Details projection is a bounded
-top-level overlay; below 40 its open state is retained behind the safe minimum
-view. The variant title, stable selected marker, empty state, entry labels, and
+At `40..=128` the same Activity, Recovery, or Details projection is a bounded,
+Composer-aligned `BottomPane` with one top rule and no backdrop dimming; below
+40 its open state is retained behind the safe minimum view. The variant title,
+stable selected marker, empty state, entry labels, and
 safe details remain visible without color. Fullscreen, pointer, and linear
 screen-reader variants share one ordered entry projection and activation.
 Inspector density follows content, not a fixed card rhythm: entries without an
@@ -252,7 +253,7 @@ component without a transition card or duplicate answer.
 
 At 129 cells and above, the bounded transcript is centered and an explicitly
 opened 32-column Inspector may share the work surface. From 80 through 128,
-the transcript remains centered and Inspector becomes an overlay. From 52
+the transcript remains centered and Inspector becomes a bottom pane. From 52
 through 79, the transcript uses the available width and metadata collapses to
 compact labels. From 40 through 51, the transcript becomes linear,
 `ActivityStack` becomes one summary row, and `HintLine` shows at most one

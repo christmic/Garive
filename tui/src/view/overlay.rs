@@ -39,6 +39,10 @@ pub(super) const fn is_composition_selector(overlay: Overlay) -> bool {
     )
 }
 
+pub(super) const fn uses_bottom_pane(overlay: Overlay) -> bool {
+    is_composition_selector(overlay) || matches!(overlay, Overlay::Inspector)
+}
+
 pub(super) fn render_overlay(
     model: &AppModel,
     overlay: Overlay,
@@ -54,8 +58,7 @@ pub(super) fn render_overlay(
     let geometry = overlay_geometry(model, overlay, area);
     let popup = geometry.popup;
     if overlay == Overlay::Inspector {
-        ModalFrame::resolve(popup, overlay_padding(overlay)).render(
-            area,
+        BottomPaneFrame::resolve(popup).render(
             Line::styled(inspector::title(model), colors.title),
             colors,
             buffer,

@@ -106,6 +106,15 @@ pub(super) fn selection_at(model: &AppModel, area: Rect, column: u16, row: u16) 
     geometry.rows.selection_at(column, row)
 }
 
+pub(super) fn selection_at_inner(
+    model: &AppModel,
+    inner: Rect,
+    column: u16,
+    row: u16,
+) -> Option<usize> {
+    inner_geometry(model, inner).rows.selection_at(column, row)
+}
+
 pub(super) fn linear_text(model: &AppModel) -> String {
     let projection = model.inspector_projection();
     let selected = model.inspector_selection();
@@ -154,8 +163,8 @@ fn inner_geometry(model: &AppModel, inner: Rect) -> Geometry {
 
 pub(super) fn desired_height(model: &AppModel) -> u16 {
     row_layout::desired_rows(&model.inspector_projection().entries)
-        .saturating_add(3)
-        .clamp(8, 18)
+        .saturating_add(2)
+        .clamp(3, 18)
 }
 
 fn render_entry(

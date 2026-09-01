@@ -350,6 +350,7 @@ fn composition_bottom_panes_preserve_workspace_axis_and_selection() {
         (Overlay::SessionPicker, "Switch session"),
         (Overlay::TurnNavigator, "Jump to a Turn"),
         (Overlay::PromptHistory, "Prompt history"),
+        (Overlay::Inspector, "Inspector"),
     ] {
         let mut model = AppModel {
             overlay: Some(overlay),

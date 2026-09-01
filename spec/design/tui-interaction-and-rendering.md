@@ -86,7 +86,7 @@ frames.
 | `<40` | minimum | safe minimum-size view; no raw IDs or content echo; the draft remains in memory |
 | `40..=51` | linear | full-width transcript, collapsed activity summary, and at most one hint |
 | `52..=79` | compact | full-width transcript with compact metadata; all secondary surfaces are overlays |
-| `80..=128` | standard | full-width workbench with a shared transcript/Composer axis; Session and Inspector surfaces are overlays |
+| `80..=128` | standard | full-width workbench with a shared transcript/Composer axis; Session and Inspector surfaces are bottom panes |
 | `>=129` | wide | full-width workbench; opening Inspector explicitly reserves a 96-column transcript and one-cell gap |
 
 Height below eight rows shows a safe minimum-size view. Height pressure removes
@@ -445,7 +445,7 @@ otherwise Details. Only the open/closed bit is persisted. Variant, selection,
 and visible window are transient; selection is retained by stable internal
 entry identity across resize. At `>=129` cells an open Inspector is a bordered
 32-column region, including its border, beside a transcript whose measure is
-at most 96 cells. At `40..=128` it is the top-level bounded overlay. Below 40
+at most 96 cells. At `40..=128` it is the top-level bounded `BottomPane`. Below 40
 cells it remains open in model state but the minimum-size view takes priority.
 
 Activity contains only H3 public labels and states. Recovery contains only
