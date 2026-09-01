@@ -167,6 +167,8 @@ pub enum PlanDispatchOutcome {
     NoReadyStep,
     /// A different or already-started claim owns available work.
     ClaimBusy,
+    /// One never-started claim was durably expired; a later tick may reclaim it.
+    ClaimExpired,
     /// C6 and Step start committed; queue admission is best-effort afterward.
     Started {
         /// Exact durable worker coordinates.
@@ -207,18 +209,43 @@ pub fn dispatch_plan_step_once(
         return Err(PlanDispatchError::AuthoritativePlanUnavailable);
     }
     let mut plan = authoritative_plan(ledger, session_id, &goal, goal_id)?;
-    let step_id = if let Some((step_id, claim)) = plan
-        .active_claims
-        .iter()
-        .find(|(_, claim)| claim.claim_id == tick.claim_id)
+    let existing = plan.snapshot.definition().steps().iter().find_map(|step| {
+        plan.active_claims
+            .get(step.step_id())
+            .map(|claim| (step.step_id().clone(), claim.clone()))
+    });
+    let (step_id, claim_id, lease_epoch, clock_revision) = if let Some((step_id, claim)) = existing
     {
-        if claim.worker_reference != tick.worker_reference
-            || claim.lease_epoch != tick.lease_epoch
-            || claim.attempt_id.is_some()
-        {
+        if claim.attempt_id.is_some() || claim.clock_revision != tick.clock_revision {
             return Ok(PlanDispatchOutcome::ClaimBusy);
         }
-        step_id.clone()
+        if tick.observed_at_tick >= claim.expires_at_tick {
+            let expired = plan_plan_transition(
+                &plan,
+                plan.state_version,
+                &context(&tick.claim_command_id, tick),
+                PlanRuntimeTransition::ExpireClaim {
+                    step_id,
+                    claim_id: claim.claim_id,
+                    lease_epoch: claim.lease_epoch,
+                    clock_revision: claim.clock_revision,
+                    observed_at_tick: tick.observed_at_tick,
+                },
+            )
+            .map_err(PlanDispatchError::Plan)?;
+            commit_plan_command(ledger, session_id.clone(), plan.session_version, &expired)
+                .map_err(PlanDispatchError::Plan)?;
+            return Ok(PlanDispatchOutcome::ClaimExpired);
+        }
+        if claim.worker_reference != tick.worker_reference {
+            return Ok(PlanDispatchOutcome::ClaimBusy);
+        }
+        (
+            step_id,
+            claim.claim_id,
+            claim.lease_epoch,
+            claim.clock_revision,
+        )
     } else {
         let Some(step_id) = plan.snapshot.ready_steps().first().cloned().cloned() else {
             return Ok(if plan.active_claims.is_empty() {
@@ -247,7 +274,12 @@ pub fn dispatch_plan_step_once(
         let refreshed = reconstruct_goal(ledger, session_id, goal_id)
             .map_err(|_| PlanDispatchError::CorruptState)?;
         plan = authoritative_plan(ledger, session_id, &refreshed, goal_id)?;
-        step_id
+        (
+            step_id,
+            tick.claim_id.clone(),
+            tick.lease_epoch,
+            tick.clock_revision.clone(),
+        )
     };
     let step = plan
         .snapshot
@@ -297,9 +329,9 @@ pub fn dispatch_plan_step_once(
         &context(&tick.start_command_id, tick),
         PlanStepExecutionStart {
             step_id,
-            claim_id: tick.claim_id.clone(),
-            lease_epoch: tick.lease_epoch,
-            clock_revision: tick.clock_revision.clone(),
+            claim_id,
+            lease_epoch,
+            clock_revision,
             observed_at_tick: tick.observed_at_tick,
             attempt_id: tick.attempt_id.clone(),
         },

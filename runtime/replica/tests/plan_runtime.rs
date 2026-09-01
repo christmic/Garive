@@ -581,12 +581,15 @@ fn bounded_dispatch_resumes_claim_and_starts_exactly_one_execution() {
         unavailable: false,
         policy_mismatch: true,
     };
+    let mut resumed_tick = dispatch_tick();
+    resumed_tick.claim_id = "ignored-fresh-claim".into();
+    resumed_tick.lease_epoch = 99;
     assert_eq!(
         dispatch_plan_step_once(
             &mut ledger,
             &session,
             "goal-1",
-            &tick,
+            &resumed_tick,
             &mut mismatched,
             &dispatcher,
         ),
@@ -594,10 +597,43 @@ fn bounded_dispatch_resumes_claim_and_starts_exactly_one_execution() {
     );
     assert!(dispatcher.committed.lock().unwrap().is_empty());
 
+    let mut expiry_tick = resumed_tick.clone();
+    expiry_tick.observed_at_tick = 20;
+    expiry_tick.expires_at_tick = 30;
+    expiry_tick.claim_command_id = "dispatch-expire-command".into();
+    assert_eq!(
+        dispatch_plan_step_once(
+            &mut ledger,
+            &session,
+            "goal-1",
+            &expiry_tick,
+            &mut mismatched,
+            &dispatcher,
+        )
+        .unwrap(),
+        PlanDispatchOutcome::ClaimExpired
+    );
+    assert_eq!(
+        recover(&ledger, &session)
+            .snapshot
+            .step(&step_id("prepare"))
+            .unwrap()
+            .state(),
+        StepState::Ready
+    );
+
     let mut prepared = DispatchFactory {
         unavailable: false,
         policy_mismatch: false,
     };
+    let mut replacement_tick = dispatch_tick();
+    replacement_tick.claim_id = "replacement-claim".into();
+    replacement_tick.lease_epoch = 2;
+    replacement_tick.claimed_at_tick = 20;
+    replacement_tick.expires_at_tick = 30;
+    replacement_tick.observed_at_tick = 21;
+    replacement_tick.claim_command_id = "replacement-claim-command".into();
+    replacement_tick.start_command_id = "replacement-start-command".into();
     let PlanDispatchOutcome::Started {
         committed,
         dispatch_accepted,
@@ -605,7 +641,7 @@ fn bounded_dispatch_resumes_claim_and_starts_exactly_one_execution() {
         &mut ledger,
         &session,
         "goal-1",
-        &tick,
+        &replacement_tick,
         &mut prepared,
         &dispatcher,
     )
@@ -629,7 +665,7 @@ fn bounded_dispatch_resumes_claim_and_starts_exactly_one_execution() {
             &mut ledger,
             &session,
             "goal-1",
-            &tick,
+            &replacement_tick,
             &mut prepared,
             &dispatcher,
         )

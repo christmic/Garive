@@ -230,10 +230,13 @@ is later injected into that real F0 request as Goal/Plan references.
 
 A queue-admission failure cannot roll back the start transaction. Startup
 recovery re-discovers the durable open Execution. A crash after claim but
-before start leaves a fenced claim: the same exact command may resume it, or a
-later worker may expire it only with PL1's monotonic lease proof. A tick never
-silently steals a different worker's live claim or starts a second Execution
-for an already-started attempt.
+before start leaves a fenced claim. A later tick reuses the claim identity,
+epoch and clock revision reconstructed from the Ledger rather than requiring a
+process-local replay token. The same worker may start it before expiry; after
+expiry, a compatible monotonic observation first commits
+`plan.step.claim_expired`, and only a later tick may create a replacement
+claim. A tick never silently steals a different worker's live claim or starts a
+second Execution for an already-started attempt.
 
 ## Replanning and carry-forward
 
