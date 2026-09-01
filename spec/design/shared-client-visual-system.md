@@ -688,6 +688,10 @@ product admits those actions.
   completion label is visually hidden but announced; failure, interruption and
   required-input labels remain visible. Expanded Activity enters from −8 px at
   220 ms and respects reduced motion.
+- Assistant actions use one stable 20 px turn-control row with 6 px top space
+  and the Electron −4 px optical offset. The action group, not terminal
+  evidence, owns progressive opacity. Copy is first; admitted product actions
+  follow. Timestamp stays absent until a durable sent-time fact exists.
 - Collapse state may be local to the mounted Turn. Clients must not claim
   cross-session persistence until Runtime or preferences admit that contract.
 - User requests collapse only after rendered measurement exceeds 20 lines.

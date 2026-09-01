@@ -1493,6 +1493,24 @@ Artifact pane becomes a true 480 px single-panel surface instead of inheriting
 a one-pixel max-width. The covered conversation is inert and `aria-hidden`, so
 keyboard focus cannot move behind the visible workbench.
 
+### LI. Assistant actions are one progressive control row
+
+The installed Codex `26.825.51511` `conversation-blocks` source renders a
+`turn-action-controls` row at 20 px high with 6 px top spacing and a −4 px
+Electron x translation. The row owns a separate action group: actions default
+to zero opacity and appear on message hover or focus-within. Copy response is
+the first source action. Optional product actions follow it; the timestamp has
+its own progressive visibility and is omitted when no admitted `sentAtMs`
+exists.
+
+Garive now owns this contract in one `TurnActionControls` component shared by
+Desktop and Web. Completed terminal text remains screen-reader-only; failed,
+stopped and suspended evidence remains visible without forcing all actions to
+stay visible. Copy is first, followed by Garive's real Markdown export and an
+artifact action only when a committed artifact exists. The 1280×800 live page
+measures an exact 672×20 px row, reports zero horizontal overflow, and exposes
+the actions at opacity 1 when keyboard focus enters the first action.
+
 ## Gate 1 — Codex fidelity
 
 This gate passes only when both Desktop and Web show:

@@ -761,14 +761,13 @@ kbd { font-size: var(--text-2xs); }
 .turn-activity-row strong { overflow: hidden; font-size: var(--text-xs); font-weight: 540; text-overflow: ellipsis; white-space: nowrap; }
 .turn-activity-row small { color: var(--text-tertiary); font-size: var(--text-2xs); }
 @keyframes turn-activity-enter { from { opacity: 0; transform: translateY(-8px); } }
-.result-meta { justify-content: flex-start; gap: 2px; min-height: 20px; margin-top: 6px; padding: 0; border-top: 0; color: var(--text-tertiary); font-size: var(--text-xs); opacity: 0; transition: opacity var(--motion-basic) var(--ease-basic); transform: translateX(-4px); }
-.assistant-message:hover .result-meta, .result-meta:focus-within { opacity: 1; }
-.result-meta.attention { opacity: 1; }
+.result-meta { justify-content: flex-start; gap: 2px; min-height: 20px; margin-top: 6px; padding: 0; border-top: 0; color: var(--text-tertiary); font-size: var(--text-xs); transform: translateX(-4px); }
 .result-terminal { margin-right: 3px; }
 .result-terminal svg { color: var(--state-success); }
 .result-meta.attention .result-terminal svg { color: var(--state-attention); }
 .result-meta[data-terminal="failed"] .result-terminal svg { color: var(--state-danger); }
-.result-actions { gap: 2px; }
+.result-actions { gap: 2px; opacity: 0; transition: opacity var(--motion-basic) var(--ease-basic); }
+.assistant-message:hover .result-actions, .result-actions:focus-within { opacity: 1; }
 .result-actions svg { color: currentColor; }
 .result-meta button { display: grid; place-items: center; width: 20px; min-height: 20px; padding: 0; border-radius: 6px; font-size: var(--text-xs); }
 .result-meta button:hover:not(:disabled) { background: var(--surface-hover); }

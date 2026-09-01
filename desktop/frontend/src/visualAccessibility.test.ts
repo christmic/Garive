@@ -216,8 +216,8 @@ describe("Desktop visual accessibility contract", () => {
     expect(CSS).toContain(".user-message-meta { display: flex; min-height: 20px; gap: 2px; opacity: 0;");
     expect(CSS).toContain(".user-message:hover .user-message-meta, .user-message:focus-within .user-message-meta { opacity: 1; }");
     expect(CSS).toContain(".result-meta { justify-content: flex-start; gap: 2px; min-height: 20px; margin-top: 6px;");
-    expect(CSS).toContain("opacity: 0; transition: opacity var(--motion-basic) var(--ease-basic)");
-    expect(CSS).toContain(".result-meta.attention { opacity: 1; }");
+    expect(CSS).toContain(".result-actions { gap: 2px; opacity: 0; transition: opacity var(--motion-basic) var(--ease-basic);");
+    expect(CSS).toContain(".assistant-message:hover .result-actions, .result-actions:focus-within { opacity: 1; }");
     expect(CSS).toContain(".turn-activity > summary { display: flex; align-items: center; gap: 6px;");
     expect(CSS).toContain(".turn-activity-body { display: grid; gap: 2px; margin-top: 4px; animation: turn-activity-enter 220ms");
     expect(CSS).toContain(".composer-stack { width: min(var(--thread-content-max-width), 100%); margin: 0 auto;");

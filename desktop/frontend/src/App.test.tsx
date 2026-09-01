@@ -120,6 +120,8 @@ describe("Desktop product experience", () => {
     const completedMeta = view.container.querySelector(".result-meta[data-terminal='completed']");
     expect(completedMeta?.classList.contains("attention")).toBe(false);
     expect(completedMeta?.querySelector(".result-terminal")?.classList.contains("sr-only")).toBe(true);
+    expect(Array.from(completedMeta?.querySelectorAll("button") ?? [], (button) => button.getAttribute("aria-label")))
+      .toEqual(["Copy", "Export .md"]);
     expect(screen.getByRole("button", { name: "Export conversation as Markdown" })).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Work actions" }));
     expect(screen.getByRole("menu", { name: "Work actions" })).toBeTruthy();

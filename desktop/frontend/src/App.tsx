@@ -22,6 +22,7 @@ import type { DesktopUpdateState } from "./state/desktop-update";
 import { Icon, type IconName } from "./ui/Icon";
 import { ComposerRail } from "./ui/ComposerRail";
 import { Tooltip } from "./ui/Tooltip";
+import { TurnActionControls } from "./ui/TurnActionControls";
 import { UsageBudgetCard, UsageBudgetTrigger, type UsageBudgetSnapshot } from "./ui/UsageBudget";
 import { WindowZoomBanner } from "./ui/WindowZoomBanner";
 import { SetupFlow } from "./features/setup/SetupFlow";
@@ -1387,18 +1388,15 @@ function Timeline({ state, dispatch, t }: { state: WorkState; dispatch: WorkDisp
       <div className="result-markdown"><Markdown skipHtml remarkPlugins={[remarkGfm]}
       components={{ a: ({ children }) => <span className="safe-link">{children}</span>,
         pre: ({ children }) => <MarkdownCodeBlock t={t}>{children}</MarkdownCodeBlock> }}>{message.text || terminalCopy(message.terminal, t)}</Markdown></div>
-      <div className={message.terminal === "completed" ? "result-meta" : "result-meta attention"}
-        data-terminal={message.terminal}><span className={message.terminal === "completed"
-          ? "result-terminal sr-only" : "result-terminal"}><Icon name={message.terminal === "completed"
-            ? "check" : "warning"} />{terminalCopy(message.terminal, t)}</span><div className="result-actions">
-          <Tooltip label={t("timeline.export")}><button type="button" disabled={!message.text}
-            aria-label={t("timeline.export")} onClick={() => downloadMarkdown(message.id, message.text)}><Icon name="download" /></button></Tooltip>
+      <TurnActionControls terminal={message.terminal} terminalLabel={terminalCopy(message.terminal, t)}>
           <Tooltip label={t(copiedId === message.id ? "timeline.copied" : "timeline.copy")}><button type="button"
             aria-label={t(copiedId === message.id ? "timeline.copied" : "timeline.copy")}
             onClick={() => void copyResult(message.id, message.text)}><Icon name={copiedId === message.id ? "check" : "copy"} /></button></Tooltip>
+          <Tooltip label={t("timeline.export")}><button type="button" disabled={!message.text}
+            aria-label={t("timeline.export")} onClick={() => downloadMarkdown(message.id, message.text)}><Icon name="download" /></button></Tooltip>
           {state.artifacts.some((artifact) => artifact.turn_id === message.id) && <Tooltip label={t("timeline.openArtifacts")} align="end"><button type="button"
             aria-label={t("timeline.openArtifacts")} onClick={() => dispatch({ type: "inspector_selected", tab: "artifacts" })}><Icon name="file" /></button></Tooltip>}
-        </div></div></div></article>)}
+      </TurnActionControls></div></article>)}
     {state.livePreview && <article className="message assistant-message live-answer" aria-label={t("timeline.liveAnswer")}>
       {state.livePreview.available && state.livePreview.text
         ? <div className="result-markdown"><Markdown skipHtml remarkPlugins={[remarkGfm]}
