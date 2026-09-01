@@ -305,6 +305,54 @@ fn reconstruction_rejects_orphan_and_cyclic_goal_prefixes() {
     }
 }
 
+#[test]
+fn creation_rejects_foreign_session_scope_and_terminal_parent() {
+    let directory = tempdir().unwrap();
+    let path = directory.path().join("authority.sqlite3");
+    let session = SessionId::try_from("session-1").unwrap();
+    let mut ledger = SqliteLedger::open(&path).unwrap();
+    open_session(&mut ledger, &session);
+
+    let foreign = GoalDefinitionV1::new(
+        GoalId::new("foreign").unwrap(),
+        "Foreign Session scope",
+        criteria(),
+        GoalScopeV1::new(Some("session-2".into()), ["workspace-1".into()]).unwrap(),
+        bounds(),
+        None,
+        capabilities(),
+    )
+    .unwrap();
+    assert_eq!(
+        plan_create_goal(&ledger, &session, &context("foreign"), foreign),
+        Err(GoalRuntimeError::ScopeExceeded)
+    );
+
+    let parent = plan_create_goal(&ledger, &session, &context("parent"), definition()).unwrap();
+    commit_goal_command(&mut ledger, session.clone(), 1, &parent).unwrap();
+    let cancelled = plan_goal_transition(
+        &ledger,
+        &session,
+        "goal-1",
+        1,
+        &context("cancel-parent"),
+        GoalRuntimeTransition::Cancel {
+            reason: "user_request".into(),
+        },
+    )
+    .unwrap();
+    commit_goal_command(&mut ledger, session.clone(), 2, &cancelled).unwrap();
+    assert_eq!(
+        plan_create_goal(
+            &ledger,
+            &session,
+            &context("late-child"),
+            child_definition("late-child", "goal-1", 1),
+        ),
+        Err(GoalRuntimeError::TransitionInvalid)
+    );
+}
+
 fn open_session(ledger: &mut SqliteLedger, session: &SessionId) {
     let fact = FactDraft {
         fact_id: FactId::try_from("session-open").unwrap(),

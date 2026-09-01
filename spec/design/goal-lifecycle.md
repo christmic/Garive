@@ -205,6 +205,21 @@ adopted Plan before the first effectful step.
 - active Goal after worker loss: reconstruct attempt/Plan/effect positions;
   never infer success from an absent worker.
 
+## Public projection
+
+`GET /v1/sessions/{session_id}/goals` is the complete H2 Goal graph at one
+verified Session watermark. It returns stable Goal-ID order, current revision,
+state, definition digest, bounded objective display text, optional parent ID,
+attempt count and criterion totals. It omits scope, Workspace and capability
+grants, actors, reasons and evidence references. Objective truncation is
+UTF-8-safe and explicit. Goal count, fact scan and encoded response size are
+independently bounded.
+
+The Rust Host client validates the exact Session, API version, stable unique
+order, closed state vocabulary, digests, counts, parent existence and graph
+acyclicity. H3 remains the public effect/activity stream and does not duplicate
+Goal lifecycle state; clients reread H2 after a durable change notification.
+
 ## Stable failures
 
 `goal_invalid`, `goal_command_conflict`, `goal_revision_conflict`,
@@ -221,7 +236,9 @@ adopted Plan before the first effectful step.
 - Rust L0 payload validation and SQLite migration/projection;
 - real SQLite races, restart at every fact/publication boundary, corrupt
   prefix refusal and atomic revise-attempt termination;
-- H2/H3 projection tests proving bounded/redacted state and revision conflicts.
+- H2 Runtime and Rust-client projection tests proving bounded/redacted state,
+  one-watermark reconstruction and parent-graph refusal;
+- authoritative Runtime revision-conflict tests for competing commands.
 
 ## Meta
 
