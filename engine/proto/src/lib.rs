@@ -3,6 +3,14 @@
 #![forbid(unsafe_code)]
 #![deny(missing_docs)]
 
+mod process_frame;
+
+pub use process_frame::{
+    decode_guest_request_frame, decode_guest_response_frame, decode_host_request_frame,
+    decode_host_response_frame, encode_process_frame, ProcessFrameError,
+    PROCESS_FRAME_MAX_PAYLOAD_BYTES,
+};
+
 /// Experimental common Garive protocol package.
 pub mod garive {
     /// Version-one common wire values generated from the admitted Proto SSOT.

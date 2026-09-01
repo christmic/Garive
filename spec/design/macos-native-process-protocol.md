@@ -19,6 +19,9 @@ is at most 1,114,112 bytes. Truncation, trailing bytes, an unset `oneof`, unknow
 fields, unknown enum values, or a mismatched envelope direction fails closed.
 Host request, host response, guest request, and guest response top-level fields
 occupy disjoint tag ranges `10--14`, `20--23`, `30--32`, and `40--42`.
+After decoding, the pinned generated encoder must reproduce the payload byte for
+byte; this rejects duplicate fields, alternate order, non-minimal varints, and
+unknowns that a normal protobuf decoder would otherwise normalize or discard.
 
 The Swift consumer pins Apple SwiftProtobuf `1.38.1`, verified as the current
 stable release on 2026-09-01. Runtime and guest use the repository's pinned
