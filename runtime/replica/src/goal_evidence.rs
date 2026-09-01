@@ -73,9 +73,14 @@ pub(crate) fn verify_goal_success_evidence(
                 &facts_by_id,
                 success_position,
             )?,
-            GoalCriterion::ChildGoals { child_goal_ids, .. } => {
-                verify_children(item, goal_id, child_goal_ids, graph)?
-            }
+            GoalCriterion::ChildGoals { child_goal_ids, .. } => verify_children(
+                item,
+                goal_id,
+                child_goal_ids,
+                graph,
+                facts,
+                success_position,
+            )?,
         }
     }
     Ok(())
@@ -188,6 +193,8 @@ fn verify_children(
     goal_id: &str,
     child_ids: &BTreeSet<garive_goal::GoalId>,
     graph: &BTreeMap<String, GoalRuntimeState>,
+    facts: &[DurableFact],
+    success_position: Option<u64>,
 ) -> Result<(), GoalRuntimeError> {
     if item.kind() != GoalEvidenceKind::ChildGoals {
         return Err(GoalRuntimeError::EvidenceInvalid);
@@ -201,6 +208,10 @@ fn verify_children(
             if child.snapshot.state() != GoalState::Succeeded
                 || child.snapshot.definition().parent_goal_id().map(|id| id.as_str())
                     != Some(goal_id)
+                || success_position.is_some_and(|parent_position| {
+                    succeeded_position(facts, child_id.as_str())
+                        .is_none_or(|child_position| child_position >= parent_position)
+                })
             {
                 return Err(GoalRuntimeError::EvidenceInvalid);
             }
@@ -220,6 +231,18 @@ fn verify_children(
         return Err(GoalRuntimeError::EvidenceInvalid);
     }
     Ok(())
+}
+
+fn succeeded_position(facts: &[DurableFact], goal_id: &str) -> Option<u64> {
+    let mut positions = facts.iter().filter_map(|fact| {
+        if fact.kind.as_str() != "goal.succeeded" {
+            return None;
+        }
+        let payload: Value = serde_json::from_str(fact.payload.as_json()).ok()?;
+        (payload.get("goal_id").and_then(Value::as_str) == Some(goal_id)).then_some(fact.position)
+    });
+    let position = positions.next()?;
+    positions.next().is_none().then_some(position)
 }
 
 fn payload(fact: &DurableFact) -> Result<Map<String, Value>, GoalRuntimeError> {
@@ -249,4 +272,209 @@ fn content_digest<'a>(
         .and_then(Value::as_str)
         .filter(|value| !value.is_empty())
         .ok_or(GoalRuntimeError::EvidenceInvalid)
+}
+
+#[cfg(test)]
+mod tests {
+    use garive_goal::{
+        GoalBoundsV1, GoalCriterionId, GoalDefinitionV1, GoalEvidenceId, GoalId, GoalScopeV1,
+        GoalSnapshot, GoalTransition,
+    };
+    use garive_ledger::{FactId, FactKind, SessionId, ToolInvocationId};
+
+    use super::*;
+
+    const DIGEST_A: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+    const DIGEST_B: &str = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+
+    #[test]
+    fn artifact_and_user_acceptance_require_exact_durable_bindings() {
+        let artifact = fact(
+            "artifact-fact",
+            3,
+            "artifact.committed",
+            json!({"kind":"file","content_digest":DIGEST_A}),
+            None,
+        );
+        let artifact_item = evidence(
+            "artifact-evidence",
+            "artifact",
+            GoalEvidenceKind::Artifact,
+            "artifact-fact",
+            DIGEST_A,
+        );
+        let artifact_facts = BTreeMap::from([("artifact-fact", &artifact)]);
+        assert!(verify_artifact(
+            &artifact_item,
+            "file",
+            Some(DIGEST_A),
+            &artifact_facts,
+            Some(4)
+        )
+        .is_ok());
+        assert_eq!(
+            verify_artifact(
+                &artifact_item,
+                "text",
+                Some(DIGEST_A),
+                &artifact_facts,
+                Some(4)
+            ),
+            Err(GoalRuntimeError::EvidenceInvalid)
+        );
+
+        let tool = ToolInvocationId::try_from("tool-1").unwrap();
+        let requested = fact(
+            "request",
+            1,
+            "interaction.requested",
+            json!({"interaction_id":"interaction-1","suspension_id":"suspension-1","prepared_digest":DIGEST_B,"response_schema_digest":DIGEST_A}),
+            Some(tool.clone()),
+        );
+        let resolved = fact(
+            "resolved",
+            2,
+            "interaction.resolved",
+            json!({"interaction_id":"interaction-1","suspension_id":"suspension-1","prepared_digest":DIGEST_B,"response":{"digest":DIGEST_B}}),
+            Some(tool),
+        );
+        let acceptance = evidence(
+            "acceptance-evidence",
+            "acceptance",
+            GoalEvidenceKind::UserAcceptance,
+            "resolved",
+            DIGEST_B,
+        );
+        let interaction_facts = BTreeMap::from([("request", &requested), ("resolved", &resolved)]);
+        assert!(verify_user_acceptance(&acceptance, DIGEST_A, &interaction_facts, Some(3)).is_ok());
+        assert_eq!(
+            verify_user_acceptance(&acceptance, DIGEST_B, &interaction_facts, Some(3)),
+            Err(GoalRuntimeError::EvidenceInvalid)
+        );
+    }
+
+    #[test]
+    fn child_goal_evidence_requires_success_before_parent_success() {
+        let child_id = GoalId::new("child").unwrap();
+        let definition = GoalDefinitionV1::new(
+            child_id.clone(),
+            "Child",
+            vec![GoalCriterion::UserAcceptance {
+                criterion_id: GoalCriterionId::new("accepted").unwrap(),
+                response_schema_digest: DIGEST_A.into(),
+            }],
+            GoalScopeV1::new(Some("session-1".into()), []).unwrap(),
+            GoalBoundsV1::new(1, 1, 1, None, None).unwrap(),
+            Some(GoalId::new("parent").unwrap()),
+            [],
+        )
+        .unwrap();
+        let child_terminal = GoalSnapshot::new(definition)
+            .apply(1, GoalTransition::Activate)
+            .unwrap()
+            .apply(
+                2,
+                GoalTransition::Succeed(vec![evidence(
+                    "child-acceptance",
+                    "accepted",
+                    GoalEvidenceKind::UserAcceptance,
+                    "resolved",
+                    DIGEST_A,
+                )]),
+            )
+            .unwrap();
+        let graph = BTreeMap::from([(
+            "child".into(),
+            GoalRuntimeState {
+                snapshot: child_terminal,
+                attempt_number: 1,
+                session_version: 5,
+                through_position: 5,
+            },
+        )]);
+        let entries = json!([{
+            "goal_id":"child",
+            "revision":3,
+            "definition_digest":graph["child"].snapshot.definition().digest().unwrap(),
+        }]);
+        let digest = CanonicalPayload::from_value(&entries)
+            .unwrap()
+            .sha256()
+            .to_owned();
+        let item = evidence(
+            "children-evidence",
+            "children",
+            GoalEvidenceKind::ChildGoals,
+            &format!("goal-set:{digest}"),
+            &digest,
+        );
+        let child_ids = BTreeSet::from([child_id]);
+        let child_success = fact(
+            "child-success",
+            4,
+            "goal.succeeded",
+            json!({"goal_id":"child"}),
+            None,
+        );
+        assert!(verify_children(
+            &item,
+            "parent",
+            &child_ids,
+            &graph,
+            std::slice::from_ref(&child_success),
+            Some(5)
+        )
+        .is_ok());
+        assert_eq!(
+            verify_children(
+                &item,
+                "parent",
+                &child_ids,
+                &graph,
+                &[child_success],
+                Some(4)
+            ),
+            Err(GoalRuntimeError::EvidenceInvalid)
+        );
+    }
+
+    fn evidence(
+        evidence_id: &str,
+        criterion_id: &str,
+        kind: GoalEvidenceKind,
+        reference: &str,
+        digest: &str,
+    ) -> GoalEvidenceV1 {
+        GoalEvidenceV1::new(
+            GoalEvidenceId::new(evidence_id).unwrap(),
+            GoalCriterionId::new(criterion_id).unwrap(),
+            kind,
+            reference,
+            digest,
+            5,
+        )
+        .unwrap()
+    }
+
+    fn fact(
+        id: &str,
+        position: u64,
+        kind: &str,
+        payload: Value,
+        tool_invocation_id: Option<ToolInvocationId>,
+    ) -> DurableFact {
+        DurableFact {
+            fact_id: FactId::try_from(id).unwrap(),
+            session_id: SessionId::try_from("session-1").unwrap(),
+            position,
+            turn_id: None,
+            execution_id: None,
+            model_request_id: None,
+            tool_invocation_id,
+            kind: FactKind::new(kind).unwrap(),
+            schema_version: 1,
+            payload: CanonicalPayload::from_value(&payload).unwrap(),
+            recorded_at: "2026-09-01T00:00:00Z".into(),
+        }
+    }
 }
