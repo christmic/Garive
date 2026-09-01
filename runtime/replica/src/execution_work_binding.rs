@@ -125,7 +125,7 @@ fn reconstruct_bound(
         .get(goal_id)
         .ok_or(PlanRuntimeError::RecoveryCorrupt)?;
     if goal.snapshot.state().is_terminal()
-        || goal.snapshot.revision() != goal_revision
+        || goal.snapshot.revision() < goal_revision
         || goal
             .snapshot
             .definition()

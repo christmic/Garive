@@ -1569,6 +1569,7 @@ dependencies = [
  "chrono",
  "garive-config",
  "garive-core",
+ "garive-goal",
  "garive-knowledge",
  "garive-ledger",
  "garive-llm",

@@ -309,17 +309,27 @@ revalidates the prefix.
 
 Ready-Step dispatch includes recovery of a declaration-ordered active claim
 whose attempt has not started. Such a claim remains a dispatch decision so the
-same fenced worker coordinates can re-enter PL1 preparation after a crash. A
-claim with a started attempt yields no new dispatch decision; C6/Worker recovery
-owns it. Treating every active claim as `NoAction` would strand the admitted
+same worker can re-enter PL1 preparation after a crash using the claim identity,
+epoch and clock revision reconstructed from the Ledger. An expired claim first
+commits expiry and is replaced only on a later tick. A claim with a started
+attempt yields no new dispatch decision; C6/Worker recovery owns it. Treating
+every active claim as `NoAction` would strand the admitted
 claim-before-preparation crash cut and is forbidden.
+
+Desktop installs the coordinator, catalogue-backed preparation and local queue
+consumer as one explicitly bounded `drive_goal` pump. Every iteration obtains
+constructed worker/clock identities, evaluates at most one fixed-prefix
+decision and consumes at most one queued Execution. The caller supplies a
+positive bound capped at 64. Queue rejection after durable Step/C6 start closes
+new work behind startup recovery; it is never reported as an uncommitted start.
+The pump stops on no-action, claim ownership or an admitted policy boundary.
 
 A Draft Goal with no Plan requests `ProposePlan`. A proposed Plan is never
 silently adopted: until a constructed admission-policy port supplies a bounded
 decision, coordination returns `plan_admission_required`. Suspended work and
 failed Steps likewise stop at explicit continuation/failure-policy reasons.
-This slice is not yet installed in the Desktop/Host pump, so product-level
-automatic Plan progress remains incomplete.
+Proposal admission, suspension continuation and failed-Step retry/replan
+selection remain explicit policy gaps; the pump must stop at those decisions.
 
 ## Public surface
 

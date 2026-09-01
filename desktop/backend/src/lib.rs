@@ -11,13 +11,16 @@ use std::{
     },
 };
 
+use garive_ledger::SessionId;
 use garive_llm::ModelPort;
 use garive_runtime::{
-    local_dispatch_queue, CatalogueBoundGovernedExecutionFactory, HostClock, HostContinuationInput,
-    HostEventPage, HostWorkspaceContextEntry, LiveHost, LiveHostEvent, LiveHostLimits,
-    LiveOutputHub, LiveOutputLimits, LiveOutputSubscriber, LocalCapabilityPreparationFactory,
-    LocalDispatchQueue, LocalExecutionAttempt, LocalExecutionPolicy, LocalExecutionWorker,
-    LocalGovernedExecutionFactory, RuntimeAgentCatalogue, SqliteLedger,
+    advance_goal_plan_once, local_dispatch_queue, CatalogueBoundGovernedExecutionFactory,
+    CataloguePlanStepDispatchFactory, GoalPlanAdvanceOutcome, GoalPlanCoordinationTick, HostClock,
+    HostContinuationInput, HostEventPage, HostWorkspaceContextEntry, LiveHost, LiveHostEvent,
+    LiveHostLimits, LiveOutputHub, LiveOutputLimits, LiveOutputSubscriber,
+    LocalCapabilityPreparationFactory, LocalDispatchQueue, LocalExecutionAttempt,
+    LocalExecutionPolicy, LocalExecutionWorker, LocalGovernedExecutionFactory, LocalTurnDispatcher,
+    PlanDispatchOutcome, PlanDispatchTick, RuntimeAgentCatalogue, SqliteLedger,
 };
 use serde::Serialize;
 use tokio::sync::Mutex;
@@ -41,6 +44,8 @@ mod workspace_t1_execution;
 const STARTUP_MAX_RECOVERIES_PER_TURN: u64 = 3;
 const STARTUP_MAX_RECOVERABLE_TURNS: usize = 64;
 const STARTUP_MAX_ARGUMENT_BYTES: usize = 1024 * 1024;
+const DESKTOP_PLAN_CLOCK_REVISION: &str = "unix-epoch-ms-v1";
+const MAX_GOAL_PUMP_ADVANCES: usize = 64;
 
 pub use artifact_export::{
     DesktopArtifactExportError, DesktopArtifactExportReceipt, DesktopArtifactExportService,
@@ -198,6 +203,19 @@ pub struct DesktopTurnResult {
     pub text: String,
 }
 
+/// Bounded result of driving one Goal lineage through the local Host/Worker pump.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DesktopGoalPumpReport {
+    /// Number of fixed-prefix coordination decisions evaluated.
+    pub advances: usize,
+    /// Number of queued Executions consumed by the local Worker.
+    pub executions: usize,
+    /// Whether the caller-supplied bound stopped otherwise-progressing work.
+    pub exhausted: bool,
+    /// Last durable coordination outcome observed by the pump.
+    pub last_outcome: GoalPlanAdvanceOutcome,
+}
+
 /// Truthful capability snapshot for the currently installed Desktop backend.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct DesktopCapabilityManifest {
@@ -256,6 +274,9 @@ impl DesktopHostError {
 pub struct DesktopHost {
     host: LiveHost,
     definition_id: String,
+    database_path: PathBuf,
+    agent_catalogue: Arc<RuntimeAgentCatalogue>,
+    dispatcher: Arc<LocalTurnDispatcher>,
     worker: LocalExecutionWorker,
     queue: Mutex<LocalDispatchQueue>,
     operations: Arc<dyn DesktopOperations>,
@@ -321,6 +342,8 @@ impl DesktopHost {
         }
         let startup_recovery_pending = database_has_recoverable_turns(&config.database_path)?;
         let definition_id = config.default_agent_definition_id;
+        let database_path = config.database_path.clone();
+        let agent_catalogue = config.agent_catalogue.clone();
         let (dispatcher, queue) = local_dispatch_queue(config.dispatch_capacity)
             .map_err(|_| DesktopHostError::InvalidConfiguration)?;
         let live_output = LiveOutputHub::new(LiveOutputLimits {
@@ -336,7 +359,7 @@ impl DesktopHost {
             config.agent_catalogue.clone_installed_agents(),
             config.host_limits,
             config.host_clock,
-            dispatcher,
+            dispatcher.clone(),
             live_output.clone(),
         )
         .map_err(|_| DesktopHostError::InvalidConfiguration)?;
@@ -364,6 +387,9 @@ impl DesktopHost {
         Ok(Self {
             host,
             definition_id,
+            database_path,
+            agent_catalogue,
+            dispatcher,
             worker,
             queue: Mutex::new(queue),
             operations: config.operations,
@@ -614,6 +640,120 @@ impl DesktopHost {
                 Err(DesktopHostError::ExecutionFailure)
             }
         }
+    }
+
+    /// Advances one Goal lineage and consumes queued work until it waits or hits a bound.
+    pub async fn drive_goal(
+        &self,
+        session_id: &str,
+        goal_id: &str,
+        max_advances: usize,
+    ) -> Result<DesktopGoalPumpReport, DesktopHostError> {
+        self.ensure_startup_recovered()?;
+        if goal_id.is_empty() || !(1..=MAX_GOAL_PUMP_ADVANCES).contains(&max_advances) {
+            return Err(DesktopHostError::InvalidConfiguration);
+        }
+        let session = SessionId::try_from(session_id).map_err(|_| DesktopHostError::HostFailure)?;
+        let mut advances = 0;
+        let mut executions = 0;
+        let mut stopped = false;
+        let mut last_outcome = GoalPlanAdvanceOutcome::NoAction;
+        for _ in 0..max_advances {
+            let attempt = self.operations.execution_attempt()?;
+            let tick = self.plan_coordination_tick(&attempt)?;
+            let mut ledger = SqliteLedger::open(&self.database_path)
+                .map_err(|_| DesktopHostError::HostFailure)?;
+            let mut factory = CataloguePlanStepDispatchFactory::new(
+                self.database_path.clone(),
+                self.agent_catalogue.clone(),
+            );
+            let outcome = advance_goal_plan_once(
+                &mut ledger,
+                &session,
+                goal_id,
+                &tick,
+                &mut factory,
+                self.dispatcher.as_ref(),
+            )
+            .map_err(|_| DesktopHostError::ExecutionFailure)?;
+            advances += 1;
+            drop(ledger);
+
+            if matches!(
+                &outcome,
+                GoalPlanAdvanceOutcome::Dispatch(PlanDispatchOutcome::Started {
+                    dispatch_accepted: false,
+                    ..
+                })
+            ) {
+                self.startup_recovery_pending.store(true, Ordering::Release);
+                return Err(DesktopHostError::StartupRecoveryRequired);
+            }
+            let executed = match self
+                .queue
+                .lock()
+                .await
+                .try_run_next(&self.worker, &attempt)
+                .await
+            {
+                Ok(_) => {
+                    executions += 1;
+                    true
+                }
+                Err(garive_runtime::LocalWorkerError::QueueEmpty) => false,
+                Err(_) => {
+                    self.startup_recovery_pending.store(true, Ordering::Release);
+                    return Err(DesktopHostError::ExecutionFailure);
+                }
+            };
+            let waits = matches!(
+                &outcome,
+                GoalPlanAdvanceOutcome::NoAction
+                    | GoalPlanAdvanceOutcome::AwaitingPolicy(_)
+                    | GoalPlanAdvanceOutcome::Dispatch(
+                        PlanDispatchOutcome::NoReadyStep | PlanDispatchOutcome::ClaimBusy
+                    )
+            );
+            last_outcome = outcome;
+            if waits && !executed {
+                stopped = true;
+                break;
+            }
+        }
+        Ok(DesktopGoalPumpReport {
+            advances,
+            executions,
+            exhausted: !stopped && advances == max_advances,
+            last_outcome,
+        })
+    }
+
+    fn plan_coordination_tick(
+        &self,
+        attempt: &LocalExecutionAttempt,
+    ) -> Result<GoalPlanCoordinationTick, DesktopHostError> {
+        let expires_at_tick = attempt
+            .now_ms
+            .checked_add(attempt.lease_duration_ms)
+            .filter(|expires| *expires > attempt.now_ms)
+            .ok_or(DesktopHostError::InvalidConfiguration)?;
+        Ok(GoalPlanCoordinationTick {
+            actor_reference: attempt.worker_owner_id.clone(),
+            recorded_at: attempt.recorded_at.clone(),
+            dispatch: Some(PlanDispatchTick {
+                worker_reference: attempt.worker_owner_id.clone(),
+                claim_id: self.operations.command_id("plan-claim")?,
+                lease_epoch: attempt.now_ms.max(1),
+                clock_revision: DESKTOP_PLAN_CLOCK_REVISION.into(),
+                claimed_at_tick: attempt.now_ms,
+                expires_at_tick,
+                observed_at_tick: attempt.now_ms,
+                attempt_id: self.operations.command_id("plan-attempt")?,
+                claim_command_id: self.operations.command_id("plan-claim-command")?,
+                start_command_id: self.operations.command_id("plan-step-start")?,
+                recorded_at: attempt.recorded_at.clone(),
+            }),
+        })
     }
 
     async fn drive_next(&self) -> Result<(), DesktopHostError> {

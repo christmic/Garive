@@ -1,12 +1,13 @@
-#[cfg(unix)]
-use std::{fs, os::unix::fs::PermissionsExt};
 use std::{
+    collections::BTreeSet,
     path::Path,
     sync::{
         atomic::{AtomicU64, Ordering},
         Arc,
     },
 };
+#[cfg(unix)]
+use std::{fs, os::unix::fs::PermissionsExt};
 
 use garive_core::{
     MissingUsagePolicy, ModelRecoveryPolicy, OutputLimitAction, TerminalRecoveryAction,
@@ -17,21 +18,25 @@ use garive_desktop::{
     DesktopWorkspaceContextFile, DesktopWorkspaceExecutionFactory, DesktopWorkspaceGrant,
     DesktopWorkspaceService,
 };
-use garive_ledger::SessionId;
+use garive_goal::{
+    GoalBoundsV1, GoalCriterion, GoalCriterionId, GoalDefinitionV1, GoalId, GoalScopeV1, GoalState,
+};
+use garive_ledger::{CanonicalPayload, SessionId};
 use garive_llm::{
     InterruptionKind, InvokeOutcome, ModelCancellation, ModelCapability, ModelFuture,
     ModelInputItem, ModelItem, ModelObserver, ModelOutputKind, ModelOutputSettings, ModelPort,
     ModelRequest, ModelStopReason, ModelStreamEvent, ModelUsage, ObserverDecision, TextMode,
     TokenCount, UsageSource,
 };
-use garive_plan::PlanStepId;
+use garive_plan::{PlanBoundsV1, PlanDefinitionV1, PlanId, PlanStepId, PlanStepV1};
 use garive_runtime::{
-    CataloguePlanStepDispatchFactory, CommittedTurn, HostClock, LiveHostLimits,
-    LiveOutputEventKind, LocalExecutionAttempt, LocalExecutionPolicy, LocalGovernedExecution,
-    LocalGovernedExecutionFactory, LocalWorkerError, PlanStepDispatchFactory,
-    PlanStepDispatchInput, ProcessBackendHostConfig, ProcessExecutable, ProcessLane,
-    ProcessLaneRegistry, RuntimeAgentCatalogue, SafetyFuture, SafetyPort, SqliteLedger,
-    T1HostSystemConfig,
+    commit_goal_command, commit_plan_command, plan_adopt_plan, plan_create_goal, plan_propose_plan,
+    reconstruct_goal, reconstruct_plan_graph, CataloguePlanStepDispatchFactory, CommittedTurn,
+    GoalCommandContext, HostClock, LiveHostLimits, LiveOutputEventKind, LocalExecutionAttempt,
+    LocalExecutionPolicy, LocalGovernedExecution, LocalGovernedExecutionFactory, LocalWorkerError,
+    PlanCommandContext, PlanRuntimeTransition, PlanStepDispatchFactory, PlanStepDispatchInput,
+    ProcessBackendHostConfig, ProcessExecutable, ProcessLane, ProcessLaneRegistry,
+    RuntimeAgentCatalogue, SafetyFuture, SafetyPort, SqliteLedger, T1HostSystemConfig,
 };
 use garive_tools::{T1_APPLY_PATCH, T1_READ_TEXT};
 use sha2::{Digest, Sha256};
@@ -172,6 +177,131 @@ fn catalogue_plan_preparation_resolves_only_the_session_installation() {
             recorded_at: "2026-08-29T00:00:02Z",
         })
         .is_err());
+}
+
+#[tokio::test]
+async fn desktop_goal_pump_activates_dispatches_and_closes_one_plan() {
+    let directory = tempdir().unwrap();
+    let database = directory.path().join("goal-pump.sqlite3");
+    let config = desktop_host_config(&database, Arc::new(CompletingModel));
+    let catalogue = config.agent_catalogue.clone();
+    let governed = DesktopWorkspaceExecutionFactory::new(
+        database.clone(),
+        DesktopWorkspaceService::default(),
+        "main",
+    )
+    .unwrap();
+    let host = DesktopHost::new_governed(config, Arc::new(governed)).unwrap();
+    let session_id = host.create_session("definition-main").unwrap();
+    let session = SessionId::try_from(session_id.as_str()).unwrap();
+    let installation = catalogue.get("definition-main").unwrap();
+    let mut ledger = SqliteLedger::open(&database).unwrap();
+    let opened = ledger.read_facts(&session, 0, 1, None).unwrap().remove(0);
+    let criterion_id = GoalCriterionId::new("session-opened").unwrap();
+    let goal = GoalDefinitionV1::new(
+        GoalId::new("goal-pump").unwrap(),
+        "Complete one installed Plan",
+        vec![GoalCriterion::DurableFact {
+            criterion_id: criterion_id.clone(),
+            fact_kind: "session.opened".into(),
+            subject_digest: opened.payload.sha256().into(),
+        }],
+        GoalScopeV1::new(Some(session_id.clone()), []).unwrap(),
+        GoalBoundsV1::new(1, 1, 1, None, None).unwrap(),
+        None,
+        [],
+    )
+    .unwrap();
+    let goal_digest = goal.digest().unwrap();
+    let created = plan_create_goal(
+        &ledger,
+        &session,
+        &GoalCommandContext {
+            command_id: "goal-pump-create".into(),
+            actor_reference: "user:test".into(),
+            recorded_at: "2026-08-29T00:00:00Z".into(),
+        },
+        goal,
+    )
+    .unwrap();
+    commit_goal_command(&mut ledger, session.clone(), 1, &created).unwrap();
+    let required = BTreeSet::from([criterion_id.as_str().to_owned()]);
+    let plan = PlanDefinitionV1::new(
+        PlanId::new("plan-pump").unwrap(),
+        1,
+        "goal-pump",
+        1,
+        goal_digest,
+        installation.snapshot().snapshot_digest(),
+        installation.tool_catalogue_digest(),
+        &installation.snapshot().governance().exact_revision,
+        vec![PlanStepV1::new(
+            PlanStepId::new("complete").unwrap(),
+            "Complete the bounded objective",
+            [],
+            required.iter().cloned(),
+            [],
+            Vec::<String>::new(),
+            1,
+        )
+        .unwrap()],
+        PlanBoundsV1::new(1, 1, 1, None, None).unwrap(),
+        &required,
+        &BTreeSet::new(),
+        &BTreeSet::new(),
+    )
+    .unwrap();
+    let proposed = plan_propose_plan(
+        &ledger,
+        &session,
+        &PlanCommandContext {
+            command_id: "plan-pump-propose".into(),
+            actor_reference: "planner:test".into(),
+            recorded_at: "2026-08-29T00:00:00Z".into(),
+        },
+        plan,
+    )
+    .unwrap();
+    commit_plan_command(&mut ledger, session.clone(), 2, &proposed).unwrap();
+    let proposed = reconstruct_plan_graph(&ledger, &session)
+        .unwrap()
+        .remove(&("plan-pump".into(), 1))
+        .unwrap();
+    let adopted = plan_adopt_plan(
+        &ledger,
+        &session,
+        &proposed,
+        proposed.state_version,
+        &PlanCommandContext {
+            command_id: "plan-pump-adopt".into(),
+            actor_reference: "policy:test".into(),
+            recorded_at: "2026-08-29T00:00:00Z".into(),
+        },
+        PlanRuntimeTransition::Adopt {
+            expected_goal_revision: 1,
+            expected_prior_plan_revision: None,
+            policy_reference: "policy:test-v1".into(),
+            carry_forward_evidence: CanonicalPayload::from_value(&serde_json::json!([])).unwrap(),
+        },
+    )
+    .unwrap();
+    commit_plan_command(&mut ledger, session.clone(), 3, &adopted).unwrap();
+    drop(ledger);
+
+    let activation = host.drive_goal(&session_id, "goal-pump", 1).await.unwrap();
+    assert_eq!(activation.executions, 0);
+    assert!(activation.exhausted);
+    let report = host.drive_goal(&session_id, "goal-pump", 8).await.unwrap();
+    assert_eq!(report.executions, 1);
+    assert!(!report.exhausted);
+    let ledger = SqliteLedger::open(database).unwrap();
+    assert_eq!(
+        reconstruct_goal(&ledger, &session, "goal-pump")
+            .unwrap()
+            .snapshot
+            .state(),
+        GoalState::Succeeded
+    );
 }
 
 struct UnavailableSafety;
