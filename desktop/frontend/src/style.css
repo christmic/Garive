@@ -759,11 +759,15 @@ kbd { font-size: var(--text-2xs); }
 .workspace-resizer::after { position: absolute; top: 0; bottom: 0; left: 4px; width: 1px; background: var(--border-subtle); transition: width var(--motion-fast), background var(--motion-fast); content: ""; }
 .workspace-resizer:hover::after, .workspace-resizer:focus-visible::after { width: 2px; background: var(--action-primary); }
 .workspace-panel > header, .workspace-panel > .inspector-body { animation: workspace-content-enter var(--motion-base) var(--ease-enter); }
-.workspace-panel header { background: var(--surface-sidebar); }
+.workspace-panel header { padding-left: 16px; background: var(--surface-sidebar); }
 .workspace-tabs { align-self: stretch; min-width: 0; }
-.workspace-tabs button { display: flex; align-items: center; gap: 7px; min-width: 148px; max-width: 260px; height: 100%; padding: 0 12px; border: 0; border-right: 1px solid var(--border-subtle); border-bottom: 1px solid var(--surface-canvas); color: var(--text-primary); background: var(--surface-canvas); font-size: var(--text-xs); }
-.workspace-tabs button svg { flex: none; width: 13px; }
-.workspace-tabs button span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.workspace-tab { display: grid; grid-template-columns: minmax(0, 1fr) 22px; width: min(120px, 100%); height: 100%; border-right: 1px solid var(--border-subtle); border-bottom: 1px solid var(--surface-canvas); background: var(--surface-canvas); }
+.workspace-tab > [role="tab"] { display: flex; align-items: center; gap: 4px; min-width: 0; height: 100%; padding: 0 2px 0 7px; border: 0; color: var(--text-primary); background: transparent; font-size: var(--text-xs); }
+.workspace-tab > [role="tab"] svg { flex: none; width: 12px; }
+.workspace-tab > [role="tab"] span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.workspace-tab-close { display: grid; place-items: center; width: 22px; height: 100%; padding: 0; border: 0; color: var(--text-tertiary); background: transparent; }
+.workspace-tab-close:hover { color: var(--text-primary); background: var(--surface-hover); }
+.workspace-tab-close svg { width: 12px; }
 .workspace-panel .inspector-body { padding: 20px 24px; background: var(--surface-canvas); overflow: auto; }
 .workspace-panel .inspector-body:has(.artifact-preview) { padding: 0; }
 .workspace-panel .deliverable-list { width: 100%; margin: 0; }
