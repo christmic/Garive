@@ -13,6 +13,9 @@ const MAX_ENVIRONMENT_VALUE_BYTES: usize = 16_384;
 const MAX_ENVIRONMENT_TOTAL_BYTES: usize = 262_144;
 const MAX_OUTPUT_BYTES: usize = 1_048_576;
 
+/// Exact V0-B guest protocol revision admitted by identity validation.
+pub const PROCESS_PROTOCOL_REVISION_V1: &str = "guest-v1.0";
+
 /// Closed failures for canonical process protocol digests.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ProcessDigestError {
@@ -177,13 +180,7 @@ fn validate_workload(value: &ProcessWorkloadV1) -> Result<u8, ProcessDigestError
 }
 
 fn valid_protocol_revision(value: &str) -> bool {
-    let bytes = value.as_bytes();
-    (1..=128).contains(&bytes.len())
-        && bytes.first().is_some_and(u8::is_ascii_alphanumeric)
-        && bytes.last().is_some_and(u8::is_ascii_alphanumeric)
-        && bytes.iter().all(|byte| {
-            byte.is_ascii_lowercase() || byte.is_ascii_digit() || matches!(byte, b'.' | b'-')
-        })
+    value == PROCESS_PROTOCOL_REVISION_V1
 }
 
 fn valid_identity_text(value: &str) -> bool {

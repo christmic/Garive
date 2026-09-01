@@ -2,7 +2,10 @@ use garive_proto::com::garive::process::v1::{
     process_exit_v1, ProcessEnvironmentEntryV1, ProcessExitV1, ProcessIdentityV1,
     ProcessTerminalReceiptV1, ProcessWorkloadV1, ProcessWorkspaceModeV1,
 };
-use garive_proto::{process_receipt_digest, process_workload_digest, ProcessDigestError};
+use garive_proto::{
+    process_receipt_digest, process_workload_digest, ProcessDigestError,
+    PROCESS_PROTOCOL_REVISION_V1,
+};
 
 fn identity() -> ProcessIdentityV1 {
     ProcessIdentityV1 {
@@ -55,7 +58,6 @@ fn every_canonical_workload_input_is_digest_bound() {
             identities.push(value);
         }};
     }
-    identity_variant!(protocol_revision, "guest-v1.1".into());
     identity_variant!(invocation_id, "inv-2".into());
     identity_variant!(dispatch_attempt_id, "attempt-2".into());
     identity_variant!(executor_revision, "exec-2".into());
@@ -67,6 +69,13 @@ fn every_canonical_workload_input_is_digest_bound() {
             base
         );
     }
+    let mut wrong_protocol = base_identity.clone();
+    wrong_protocol.protocol_revision = "guest-v1.1".into();
+    assert_eq!(
+        process_workload_digest(&wrong_protocol, &base_workload),
+        Err(ProcessDigestError::InvalidIdentity)
+    );
+    assert_eq!(PROCESS_PROTOCOL_REVISION_V1, "guest-v1.0");
     let mut workloads = Vec::new();
     macro_rules! workload_variant {
         ($field:ident, $value:expr) => {{

@@ -9,6 +9,9 @@ private let maximumEnvironmentValueBytes = 16_384
 private let maximumEnvironmentTotalBytes = 262_144
 private let maximumOutputBytes = 1_048_576
 
+/// Exact V0-B guest protocol revision admitted by identity validation.
+public let processProtocolRevisionV1 = "guest-v1.0"
+
 /// Closed failures for canonical process-protocol digests.
 public enum ProcessDigestFailure: Error, Equatable, Sendable {
     case invalidIdentity
@@ -135,10 +138,7 @@ private func validate(_ value: GRVProcessWorkloadV1) throws -> UInt8 {
 }
 
 private func validProtocolRevision(_ value: String) -> Bool {
-    let bytes = Array(value.utf8)
-    return (1...128).contains(bytes.count)
-        && bytes.first?.isASCIIAlphanumeric == true && bytes.last?.isASCIIAlphanumeric == true
-        && bytes.allSatisfy { $0.isASCIILowercase || $0.isASCIIDigit || $0 == 46 || $0 == 45 }
+    value == processProtocolRevisionV1
 }
 
 private func validIdentityText(_ value: String, maximum: Int) -> Bool {

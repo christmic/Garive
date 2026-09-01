@@ -7,7 +7,10 @@ mod process_digest;
 mod process_frame;
 mod process_state;
 
-pub use process_digest::{process_receipt_digest, process_workload_digest, ProcessDigestError};
+pub use process_digest::{
+    process_receipt_digest, process_workload_digest, ProcessDigestError,
+    PROCESS_PROTOCOL_REVISION_V1,
+};
 pub use process_frame::{
     decode_guest_request_frame, decode_guest_response_frame, decode_host_request_frame,
     decode_host_response_frame, encode_process_frame, ProcessFrameError,

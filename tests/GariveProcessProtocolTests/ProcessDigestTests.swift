@@ -16,7 +16,6 @@ func everyWorkloadInputIsBound() throws {
     func identityVariant(_ change: (inout GRVProcessIdentityV1) -> Void) {
         var value = baseIdentity; change(&value); identityVariants.append(value)
     }
-    identityVariant { $0.protocolRevision = "guest-v1.1" }
     identityVariant { $0.invocationID = "inv-2" }
     identityVariant { $0.dispatchAttemptID = "attempt-2" }
     identityVariant { $0.executorRevision = "exec-2" }
@@ -25,6 +24,11 @@ func everyWorkloadInputIsBound() throws {
     for value in identityVariants {
         #expect(try processWorkloadDigest(identity: value, workload: baseWorkload) != base)
     }
+    var wrongProtocol = baseIdentity; wrongProtocol.protocolRevision = "guest-v1.1"
+    #expect(throws: ProcessDigestFailure.invalidIdentity) {
+        try processWorkloadDigest(identity: wrongProtocol, workload: baseWorkload)
+    }
+    #expect(processProtocolRevisionV1 == "guest-v1.0")
     var workloadVariants: [GRVProcessWorkloadV1] = []
     func workloadVariant(_ change: (inout GRVProcessWorkloadV1) -> Void) {
         var value = baseWorkload; change(&value); workloadVariants.append(value)
