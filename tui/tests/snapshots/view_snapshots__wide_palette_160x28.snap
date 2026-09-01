@@ -5,7 +5,7 @@ expression: "frame(&palette, Theme::Light, 160, 28)"
 
 › Summarize the release plan.
   ✓  Agent action · completed
-• ## Release plan
+## Release plan
 
   • Verify the Runtime
   • Ship with evidence
@@ -27,5 +27,6 @@ Search  type to search
   /help               Keyboard guide
 › /quit               Exit safely
   ↑/↓ select   Home/End edge   Enter run   Esc close
-                                                                                                                                                        Working…
+• Working…
 › Ask a follow-up…
+  Agent · Session 1

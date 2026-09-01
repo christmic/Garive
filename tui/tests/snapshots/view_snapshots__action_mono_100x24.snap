@@ -5,7 +5,7 @@ expression: "frame(&action, Theme::Mono, 100, 24)"
 
 › Summarize the release plan.
   ✓  Agent action · completed
-• ## Release plan
+## Release plan
                    ╭ Approval required ─────────────────────────────────────────╮
                    │                                                            │
                    │  !  Review the public request before responding.           │
@@ -23,5 +23,6 @@ expression: "frame(&action, Theme::Mono, 100, 24)"
 
 
 
-                                                                                            Working…
+• Working…
 › Ask a follow-up…
+  Agent · Session 1
