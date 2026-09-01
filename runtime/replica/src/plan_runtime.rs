@@ -126,7 +126,7 @@ pub enum PlanRetryPosture {
     Fail,
 }
 
-/// Plan-owned claim and F0 posture used to bind one real C6 Execution start.
+/// Plan-owned claim used to bind one real C6 Execution start.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct PlanStepExecutionStart {
     /// Claimed step.
@@ -141,10 +141,6 @@ pub struct PlanStepExecutionStart {
     pub observed_at_tick: u64,
     /// Stable attempt identity.
     pub attempt_id: String,
-    /// Prepared-v3 Sandbox profile digest frozen for the Execution posture.
-    pub sandbox_profile_digest: String,
-    /// Fresh Runtime Safety decision identity.
-    pub safety_decision_id: String,
 }
 
 /// Exact running attempt and durable continuation that suspend one Plan.
@@ -248,10 +244,6 @@ pub enum PlanRuntimeTransition {
         execution_id: String,
         /// Frozen C6 execution-input snapshot digest.
         execution_snapshot_digest: String,
-        /// Prepared-v3 Sandbox profile digest.
-        sandbox_profile_digest: String,
-        /// Fresh Safety decision identity.
-        safety_decision_id: String,
     },
     /// Complete one started attempt with exact evidence bindings.
     CompleteStep {

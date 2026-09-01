@@ -80,10 +80,6 @@ pub struct PreparedPlanStepDispatch {
     pub installed_tool_catalogue_digest: String,
     /// Safety policy revision resolved from the installed execution posture.
     pub installed_safety_policy_revision: String,
-    /// Prepared-v3 Sandbox profile digest frozen for this Execution posture.
-    pub sandbox_profile_digest: String,
-    /// Runtime Safety decision identity frozen for this Execution posture.
-    pub safety_decision_id: String,
 }
 
 /// Explicit composition boundary for installed Agent and execution posture resolution.
@@ -237,8 +233,6 @@ pub fn dispatch_plan_step_once(
             clock_revision: tick.clock_revision.clone(),
             observed_at_tick: tick.observed_at_tick,
             attempt_id: tick.attempt_id.clone(),
-            sandbox_profile_digest: prepared.sandbox_profile_digest,
-            safety_decision_id: prepared.safety_decision_id,
         },
         &turn,
     )

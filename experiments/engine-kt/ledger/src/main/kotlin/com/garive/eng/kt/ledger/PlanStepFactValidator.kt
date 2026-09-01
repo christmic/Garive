@@ -45,8 +45,7 @@ private fun JsonObject.started() {
     planMutation(
         setOf(
             "step_id", "step_digest", "claim_id", "lease_epoch", "clock_revision", "observed_at_tick",
-            "attempt_id", "execution_id",
-            "execution_snapshot_digest", "sandbox_profile_digest", "safety_decision_id",
+            "attempt_id", "execution_id", "execution_snapshot_digest",
         ),
     )
     nonEmpty("step_id")
@@ -58,8 +57,6 @@ private fun JsonObject.started() {
     nonEmpty("attempt_id")
     nonEmpty("execution_id")
     digest("execution_snapshot_digest")
-    digest("sandbox_profile_digest")
-    nonEmpty("safety_decision_id")
 }
 
 private fun JsonObject.completed() {
@@ -94,8 +91,13 @@ private fun JsonObject.suspended() {
 }
 
 private fun JsonObject.resumed() {
-    planMutation(setOf("step_id", "resolved_continuation_reference"))
-    nonEmpty("step_id")
+    planMutation(
+        setOf(
+            "step_id", "attempt_id", "prior_execution_id", "execution_id",
+            "resolved_continuation_reference",
+        ),
+    )
+    listOf("step_id", "attempt_id", "prior_execution_id", "execution_id").forEach(::nonEmpty)
     nonEmpty("resolved_continuation_reference")
 }
 

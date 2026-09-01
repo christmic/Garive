@@ -414,14 +414,10 @@ fn plan_transition(
             attempt_id,
             execution_id,
             execution_snapshot_digest,
-            sandbox_profile_digest,
-            safety_decision_id,
         } => {
             require_non_empty(&attempt_id)?;
             require_non_empty(&execution_id)?;
-            require_non_empty(&safety_decision_id)?;
             require_digest(&execution_snapshot_digest)?;
-            require_digest(&sandbox_profile_digest)?;
             let claim = exact_claim(&claims, &step_id, &claim_id, lease_epoch, &clock_revision)?;
             if claim.attempt_id.is_some() || observed_at_tick >= claim.expires_at_tick {
                 return Err(PlanRuntimeError::ClaimStale);
@@ -442,11 +438,6 @@ fn plan_transition(
                 "execution_snapshot_digest".into(),
                 json!(execution_snapshot_digest),
             );
-            value.insert(
-                "sandbox_profile_digest".into(),
-                json!(sandbox_profile_digest),
-            );
-            value.insert("safety_decision_id".into(), json!(safety_decision_id));
             let claim = claims
                 .get_mut(&step_id)
                 .ok_or(PlanRuntimeError::ClaimStale)?;
@@ -720,8 +711,6 @@ pub fn plan_start_step_execution(
             attempt_id: request.attempt_id,
             execution_id: execution_id.as_str().into(),
             execution_snapshot_digest: snapshot_digest.into(),
-            sandbox_profile_digest: request.sandbox_profile_digest,
-            safety_decision_id: request.safety_decision_id,
         },
     )?;
     let mut facts = turn.facts.clone();

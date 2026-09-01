@@ -810,8 +810,6 @@ async fn completed_owned_turn_reduces_to_step_with_observed_evidence_after_resta
             clock_revision: "monotonic-v1".into(),
             observed_at_tick: 15,
             attempt_id: "reduce-attempt".into(),
-            sandbox_profile_digest: digest('f'),
-            safety_decision_id: "safety-reduce".into(),
         },
         &turn,
     )
@@ -1151,8 +1149,6 @@ fn step_start_and_c6_execution_commit_as_one_restart_safe_command() {
                 attempt_id: "atomic-attempt".into(),
                 execution_id: execution_id.as_str().into(),
                 execution_snapshot_digest: digest('b'),
-                sandbox_profile_digest: digest('f'),
-                safety_decision_id: "safety-decision-atomic".into(),
             },
         ),
         Err(PlanRuntimeError::TransitionInvalid)
@@ -1168,8 +1164,6 @@ fn step_start_and_c6_execution_commit_as_one_restart_safe_command() {
             clock_revision: "monotonic-v1".into(),
             observed_at_tick: 15,
             attempt_id: "atomic-attempt".into(),
-            sandbox_profile_digest: digest('f'),
-            safety_decision_id: "safety-decision-atomic".into(),
         },
         &turn,
     )
@@ -1787,8 +1781,6 @@ fn start_step(
             clock_revision: "monotonic-v1".into(),
             observed_at_tick: request.observed,
             attempt_id: request.attempt.into(),
-            sandbox_profile_digest: digest('f'),
-            safety_decision_id: "safety-decision-1".into(),
         },
         &turn,
     )
@@ -2176,8 +2168,6 @@ impl PlanStepDispatchFactory for DispatchFactory {
                 digest('c')
             },
             installed_safety_policy_revision: "safety-v1".into(),
-            sandbox_profile_digest: digest('f'),
-            safety_decision_id: "safety-dispatch".into(),
         })
     }
 }

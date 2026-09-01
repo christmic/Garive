@@ -83,8 +83,6 @@ fn started(value: &Map<String, Value>) -> Result<(), LedgerError> {
             "attempt_id",
             "execution_id",
             "execution_snapshot_digest",
-            "sandbox_profile_digest",
-            "safety_decision_id",
         ],
         &[],
     )?;
@@ -96,9 +94,7 @@ fn started(value: &Map<String, Value>) -> Result<(), LedgerError> {
     unsigned(value, "observed_at_tick", false)?;
     non_empty(value, "attempt_id")?;
     non_empty(value, "execution_id")?;
-    digest(value, "execution_snapshot_digest")?;
-    digest(value, "sandbox_profile_digest")?;
-    non_empty(value, "safety_decision_id")
+    digest(value, "execution_snapshot_digest")
 }
 
 fn completed(value: &Map<String, Value>) -> Result<(), LedgerError> {

@@ -197,8 +197,8 @@ at most one claim and one start decision:
 4. pass the exact claimed Step, Plan/Goal bindings and current prefix to a
    constructed start-preparation port;
 5. validate the returned installed Agent binding, C6 start batch, frozen
-   execution snapshot, exact Tool catalogue digest, exact Safety policy
-   revision, Sandbox profile digest and Safety decision identity;
+   execution snapshot, exact Tool catalogue digest and exact Safety policy
+   revision;
 6. atomically commit C6 `turn.started + turn.input + execution.started` with
    `plan.step.started`;
 7. only after a new commit, offer the derived `CommittedTurn` to the bounded
@@ -213,6 +213,13 @@ Runtime compares the installed Tool catalogue digest and Safety policy revision
 returned by preparation with the immutable values frozen in the Plan. Matching
 the Session's Agent snapshot digest alone is insufficient; any one of these
 three bindings differing fails before C6 or `plan.step.started` can commit.
+
+Step Start precedes model output and any concrete Tool intent. It therefore
+must not invent or freeze a Safety decision identity or Prepared-v3 Sandbox
+profile. Those values exist only after Runtime prepares an exact Tool call;
+F0 durably records them as `safety.decided`, `sandbox.bound` and
+`sandbox.preflighted` before effect dispatch. The Plan-owned Execution binding
+is later injected into that real F0 request as Goal/Plan references.
 
 A queue-admission failure cannot roll back the start transaction. Startup
 recovery re-discovers the durable open Execution. A crash after claim but
@@ -289,7 +296,7 @@ the Plan mutation and any corresponding C6 posture atomically.
 | `plan.superseded` | old/new state versions, replacement Plan/revision/digest and canonical unresolved-work binding |
 | `plan.step.claimed` | old/new state versions, step/digest, claim, worker, positive lease epoch, monotonic clock revision and `[claimed_at_tick, expires_at_tick)` |
 | `plan.step.claim_expired` | old/new state versions, step/claim/lease epoch and observed monotonic expiry tick |
-| `plan.step.started` | old/new state versions, step/claim/lease epoch, same monotonic clock revision plus pre-expiry observed tick, attempt, Kernel Execution/snapshot, Prepared-v3 Sandbox profile and Safety decision bindings |
+| `plan.step.started` | old/new state versions, step/claim/lease epoch, same monotonic clock revision plus pre-expiry observed tick, attempt and Kernel Execution/snapshot binding |
 | `plan.step.completed` | old/new state versions, step/attempt/Execution, result digest and canonical step/criterion evidence bindings |
 | `plan.step.failed` | old/new state versions, step/attempt/Execution, stable reason, optional evidence and closed retry posture |
 | `plan.step.suspended` | old/new state versions, step/attempt/Execution and typed continuation reference |
