@@ -23,6 +23,8 @@
   --radius-user-message: 22px;
   --thread-content-max-width: 672px;
   --thread-content-top-inset: 32px;
+  --thread-summary-panel-width: 300px;
+  --thread-summary-content-shift: -158px;
   --sidebar-preferred-width: 275px;
   --sidebar-scroll-fade-distance: 40px;
 

@@ -245,11 +245,13 @@ invented queue, and it does not mutate the active Runtime Turn.
 ### K. Measured desktop geometry and file-workbench lifecycle
 
 The supplied screenshots and Garive fixtures were measured at the same
-1280 × 800 viewport. The 224 px Environment panel starts at x=1044; the
-reference starts at approximately x=1045. The panel is an overlay and therefore
-must not change the ordinary thread axis. In the file surface, Garive's divider
-starts at x=558 while the reference starts at approximately x=556; that is a
-real split workbench and intentionally changes the reading measure.
+1280 × 800 rendered viewport. The reference's visually scaled Environment
+panel starts near x=1045, while its thread starts near x=352. Later installed
+source inspection establishes the unscaled panel width and responsive content
+shift; those facts supersede the earlier assumption that an absolute panel
+could not move the thread axis. In the file surface, Garive's divider starts at
+x=558 while the reference starts at approximately x=556; that remains a real
+split workbench and intentionally changes the reading measure.
 
 A read-only audit of the installed Codex desktop bundle also confirms the
 underlying density model: a 4 px spacing unit, 30–36 px navigation rows, 36–46
@@ -1402,8 +1404,9 @@ Garive now maps that exact interaction onto its existing native Zoom commands.
 Desktop commits HUD state only after the Tauri WebView accepts the requested
 bounded step. Web handles `CmdOrCtrl` plus `+`, `-`, or `0` and applies the same
 inverse-size viewport composition, while sharing the same banner component,
-tokens, labels, hover pause and deterministic 80/100/120/150/175/200 percent
-steps. This is presentation state only: it neither enters Runtime nor changes
+tokens, labels and hover pause. A deeper read of the same source establishes a
+relative 10% step, rounded to two decimals and bounded from 50% through 300%.
+This is presentation state only: it neither enters Runtime nor changes
 Session, draft, Workspace, Goal, Artifact, or navigation state.
 
 Live Web evidence at 80% measures a 1280px rendered root inside a 1280px
@@ -1414,26 +1417,34 @@ the viewport, and horizontal overflow stays zero. This provides the compact
 effect visible in the supplied Codex references without corrupting the
 source-backed 14px default scale or inventing a second density system.
 
-### XLVIII. Environment is progressive overlay, not a third column
+### XLVIII. Environment overlay owns a responsive content shift
 
 The installed Codex `26.825.51511` thread source renders the summary panel in
 an `absolute`, right-anchored, `z-40` container. Its outer region ignores
 pointer input while the raised panel restores it; Environment is a collapsible
-section inside that panel. This source structure agrees with the supplied
-running screenshot and rules out allocating a permanent inspector column.
+section inside that panel. The same source routes a `contentShift` motion value
+to both the thread scroll content and its footer, which owns the Composer.
 
-Garive previously kept its 224px visual card but reserved another 236px beside
-the work surface whenever it opened. At 1280×800 this translated the unchanged
-672px transcript and Composer from x=441.5 to x=323.5 and reduced the work
-surface from 1005px to 769px. The disclosure therefore changed reading position
-even though it did not open a committed artifact.
+The exact responsive function computes `(mainContentTargetWidth - 736) / 2`.
+Values below 180 use overlay mode, values below 400 use shift mode, and larger
+values use the natural gutter. These correspond to 1096 and 1536 px viewport
+thresholds. Shift mode uses exactly `-316 / 2`, or -158 px. The panel's source
+width is 300 px. Therefore an absolute panel does not allocate a permanent
+third column, but it can still move the reading axis progressively.
 
-Desktop and Web now keep the work surface, transcript, Goal rail and Composer
-geometry invariant while Environment floats at x=1044. A visual contract rejects
-any Environment selector that reintroduces `margin-right` layout reservation;
-live browser measurement must additionally prove identical before/after bounds
-and zero horizontal overflow. Files, diffs, terminals and committed artifacts
-remain the only secondary surfaces allowed to create the real split workbench.
+Garive now preserves the work-surface dimensions while translating its
+transcript, Goal rail and Composer as one unit only at 1096–1535 px. At 80%
+Window Zoom in a 1280×800 rendered viewport, their x position moves from 481.2
+to 354.8 px: the exact rendered -126.4 px counterpart of the source -158 px and
+within about 3 px of the supplied reference. The panel is 240 rendered px, the
+scaled counterpart of its 300 px source width. At 480×720 overlay mode produces
+zero content movement; at 1600×900 gutter mode leaves 171.6 rendered px between
+thread and panel. All three states retain zero horizontal overflow.
+
+The visual contract rejects a work-surface `margin-right` reservation and
+requires the exact source width, shift and thresholds. Files, diffs, terminals
+and committed artifacts remain the only surfaces allowed to resize the actual
+workbench.
 
 ## Gate 1 — Codex fidelity
 

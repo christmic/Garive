@@ -710,7 +710,7 @@ kbd { font-size: var(--text-2xs); }
 @keyframes workspace-loading-pulse { 50% { opacity: .35; transform: scale(.72); } }
 @media (prefers-reduced-motion: reduce) { .workspace-loading-dot { animation: none; } }
 
-.timeline { width: min(var(--thread-content-max-width), calc(100% - 48px)); padding: var(--thread-content-top-inset) 0 174px; }
+.timeline { width: min(var(--thread-content-max-width), calc(100% - 48px)); padding: var(--thread-content-top-inset) 0 174px; transition: transform var(--motion-relaxed) var(--ease-enter); }
 .message { margin: 0; }
 .message:not(:first-child) { margin-top: var(--conversation-item-gap); }
 .user-turn { display: flex; width: 100%; flex-direction: column; align-items: flex-end; gap: 4px; }
@@ -777,7 +777,7 @@ kbd { font-size: var(--text-2xs); }
 .live-answer > p { display: flex; align-items: center; gap: 8px; margin: 0; color: var(--text-tertiary); font-size: var(--text-sm); }
 .live-answer .result-markdown::after { display: inline-block; width: 5px; height: 15px; margin-left: 2px; border-radius: 2px; background: var(--text-tertiary); vertical-align: -2px; animation: live-caret 1s steps(1) infinite; content: ""; }
 @keyframes live-caret { 50% { opacity: 0; } }
-.composer-stack { width: min(var(--thread-content-max-width), 100%); margin: 0 auto; display: flex; min-width: 0; flex-direction: column; pointer-events: none; }
+.composer-stack { width: min(var(--thread-content-max-width), 100%); margin: 0 auto; display: flex; min-width: 0; flex-direction: column; pointer-events: none; transition: transform var(--motion-relaxed) var(--ease-enter); }
 .composer-stack > .composer { width: 100%; margin: 0; position: relative; z-index: 2; }
 .turn-progress { position: relative; z-index: 1; margin: 0 var(--composer-rail-inline-inset) calc(var(--composer-rail-tuck) * -1); padding: 0 var(--space-1) var(--composer-rail-tuck); overflow: clip; border: 0; border-radius: var(--radius-composer-rail) var(--radius-composer-rail) 0 0; background: var(--surface-composer-action-bar); pointer-events: auto; transition: margin var(--motion-relaxed) var(--ease-enter), opacity var(--motion-relaxed) var(--ease-enter); }
 .turn-progress-head { display: grid; grid-template-columns: 14px minmax(0, 1fr) auto auto; align-items: center; gap: 6px; min-height: 32px; padding: 0 3px 0 8px; }
@@ -845,7 +845,7 @@ kbd { font-size: var(--text-2xs); }
 .inspector-tabs button.active::after { height: 1px; background: var(--text-primary); }
 .inspector-body { place-items: start stretch; padding: 20px; }
 .environment-title { color: var(--text-secondary); font-size: var(--text-xs); font-weight: 540; }
-.environment-panel { position: absolute; z-index: 7; top: 42px; right: 12px; width: min(224px, calc(100% - 28px)); max-height: min(560px, calc(100% - 56px)); overflow: hidden; border: 1px solid var(--border-subtle); border-radius: var(--radius-panel); background: var(--surface-raised); box-shadow: var(--shadow-overlay); animation: environment-enter var(--motion-basic) var(--ease-enter-snappy); transform-origin: top right; }
+.environment-panel { position: absolute; z-index: 7; top: 42px; right: 12px; width: min(var(--thread-summary-panel-width), calc(100% - 28px)); max-height: min(560px, calc(100% - 56px)); overflow: hidden; border: 1px solid var(--border-subtle); border-radius: var(--radius-panel); background: var(--surface-raised); box-shadow: var(--shadow-overlay); animation: environment-enter var(--motion-basic) var(--ease-enter-snappy); transform-origin: top right; }
 .environment-panel header { background: var(--surface-raised); }
 .environment-panel .inspector-tabs { gap: 14px; }
 .environment-panel .inspector-body { padding: 8px 10px 10px; overflow: auto; }
@@ -1144,6 +1144,10 @@ html[data-client="desktop"] .navigation-collapsed .topbar { padding-left: 70px; 
 
 @keyframes environment-enter { from { opacity: 0; transform: translateY(-4px) scale(.985); } }
 @keyframes workspace-content-enter { from { opacity: 0; transform: translateX(4px); } }
+
+@media (min-width: 1096px) and (max-width: 1535px) {
+  .app-shell:has(.environment-panel) :is(.timeline, .composer-stack) { transform: translateX(var(--thread-summary-content-shift)); }
+}
 
 @media (min-width: 1121px) {
   .app-shell:has(.workspace-panel) .timeline { width: calc(100% - 20px); }

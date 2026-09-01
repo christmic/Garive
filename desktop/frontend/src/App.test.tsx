@@ -176,8 +176,8 @@ describe("Desktop product experience", () => {
     render(<App />);
     await waitFor(() => expect(desktopEventHandler).toBeTruthy());
     desktopEventHandler!({ payload: "desktop.zoom-out" });
-    await waitFor(() => expect(setZoom).toHaveBeenCalledWith(0.8));
-    expect(await screen.findByText("80%")).toBeTruthy();
+    await waitFor(() => expect(setZoom).toHaveBeenCalledWith(0.9));
+    expect(await screen.findByText("90%")).toBeTruthy();
     expect(screen.getByRole("button", { name: "Reset" })).toBeTruthy();
   });
 

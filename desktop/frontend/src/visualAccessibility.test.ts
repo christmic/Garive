@@ -140,12 +140,16 @@ describe("Desktop visual accessibility contract", () => {
     expect(CSS).toContain(".host-identity { grid-template-columns: 18px minmax(0, 1fr) 8px;");
     expect(CSS).toContain(".sidebar-settings-button { display: grid; place-items: center; width: 30px; height: 30px;");
     expect(CSS).toContain(".environment-panel { position: absolute");
+    expect(TOKENS).toContain("--thread-summary-panel-width: 300px");
+    expect(TOKENS).toContain("--thread-summary-content-shift: -158px");
     expect(CSS).toContain(".environment-content { display: grid; gap: 7px; width: 100%; }");
     expect(CSS).toContain(".environment-section + .environment-section { padding-top: 7px; border-top: 1px solid var(--border-subtle); }");
     expect(CSS).toContain(".environment-row { display: grid; grid-template-columns: 18px minmax(0, 1fr) 14px; align-items: center; gap: 7px; min-height: 34px; }");
     expect(CSS).toContain("@keyframes environment-enter");
     expect(CSS).toContain("@keyframes workspace-content-enter");
     expect(CSS).not.toMatch(/:has\(\.environment-panel\)[^{]*\.work-surface\s*{[^}]*margin-right/);
+    expect(CSS).toContain("@media (min-width: 1096px) and (max-width: 1535px)");
+    expect(CSS).toContain(":is(.timeline, .composer-stack) { transform: translateX(var(--thread-summary-content-shift)); }");
     expect(CSS).toContain("width: min(var(--thread-content-max-width), calc(100% - 48px))");
     expect(CSS).toContain(".settings-workbench { display: grid; grid-template-columns: 164px minmax(0, 1fr)");
     expect(CSS).toContain(".settings-panel { min-width: 0; overflow: auto;");

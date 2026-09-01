@@ -208,13 +208,15 @@ workbench made from four persistent spatial layers:
    enter the mask. Forced colors removes the mask so task text stays exact.
 3. **Work layer.** Conversation and Composer form one bounded work column on a
    continuous canvas. Assistant output is document content, not a card stack.
-   Environment floats above this layer. Opening or closing it must not resize,
-   translate or reflow the conversation, Composer, Goal rail or work surface.
+   Environment floats above this layer and never resizes the work surface. At
+   a 1096–1535 px viewport, opening it translates the conversation, Composer
+   and Goal rail together by -158 px; below that range it overlays without a
+   content shift, and above it the natural right gutter absorbs the panel.
    Its compact fact hierarchy is Runtime, optional Workspaces, then Activity.
    Each admitted section uses 34 px rows under a quiet 20 px label; sections
    with no durable fact disappear. Git changes, branches, sources and provider
    state must never be reproduced from the reference unless Garive owns that
-   exact fact. The reference-width overlay is 224 px, not a generic inspector.
+   exact fact. Its source width is 300 px, not a generic inspector width.
    The goal rail belongs to the durable Turn, not to a transient network request:
    it remains attached to the Composer while work is running or suspended for
    approval, partial output, or external input. Suspension changes the admitted
@@ -436,7 +438,7 @@ and exact document width without becoming a separate mobile visual language.
 | durable task row | 26–34 px | unchanged |
 | readable turn measure | 42 rem / 672 px at the Codex 16 px root | unchanged |
 | composer | 672 px | pane width in split mode |
-| Environment overlay | 224 px reference | 224 px viewport overlay below 1120 px |
+| Environment overlay | 300 px source width; -158 px content shift at 1096–1535 px | 300 px bounded viewport overlay below 1096 px |
 | artifact/file workbench | 320–520 px conversation split, 352 px default | full overlay below 1120 px |
 
 Localization and 200% text zoom may grow rows and must never clip content.
@@ -591,7 +593,7 @@ space. The same rule applies in light and dark themes and at narrow widths.
 | Modal | entering, active, exiting | traps focus, Escape closes when safe, returns focus to invoker |
 | Artifact card | preparing, ready, unverified, verified, unavailable | name/type/revision/verification visible; authority actions explicit |
 | Workspace tab | opening, active, background, changed, unavailable | stable title, close action, independent scroll and focus restoration |
-| Environment overlay | closed, open, attention, unavailable | compact summary only; opening and closing never reflows the work column or reserves a layout column |
+| Environment overlay | closed, open, attention, unavailable | compact summary only; never resizes the work surface; overlay/shift/gutter modes use the source 1096/1536 px thresholds |
 | Capacity | unavailable, normal, watch, critical, exhausted | scope, period, attribution, remaining/reset and continuation policy travel together |
 | Turn activity | active, completed, attention | uses only admitted per-Turn Activity; active starts expanded, completed starts collapsed |
 | Result actions | hidden, hover, focus, attention | 20 px row, 6 px top gap, 2 px action gap; ordinary actions disclose on turn hover/focus |
