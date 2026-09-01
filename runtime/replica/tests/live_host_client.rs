@@ -38,6 +38,15 @@ impl GoalCommandAuthority for AllowGoalAuthority {
     ) -> Result<String, GoalCommandAuthorityError> {
         Ok("actor:e2e".into())
     }
+
+    fn authorize_transition(
+        &self,
+        _session_id: &str,
+        _current: &garive_runtime::GoalRuntimeState,
+        _transition: &garive_runtime::GoalRuntimeTransition,
+    ) -> Result<String, GoalCommandAuthorityError> {
+        Ok("actor:e2e".into())
+    }
 }
 
 impl TurnDispatcher for NoopDispatcher {
@@ -127,9 +136,24 @@ async fn shared_client_completes_a_real_runtime_host_turn() {
     let goals = client.get_goals(&session.session_id).await.unwrap();
     assert_eq!(goals.goals.len(), 1);
     assert_eq!(goals.session_version, 2);
+    let cancelled = client
+        .cancel_goal(
+            "cancel-goal-e2e",
+            &session.session_id,
+            "goal-e2e",
+            2,
+            1,
+            "operator_cancelled",
+        )
+        .await
+        .unwrap();
+    assert_eq!(cancelled.state, "cancelled");
+    let goals = client.get_goals(&session.session_id).await.unwrap();
+    assert_eq!(goals.goals[0].state, "cancelled");
+    assert_eq!(goals.session_version, 3);
     let plans = client.get_plans(&session.session_id).await.unwrap();
     assert!(plans.plans.is_empty());
-    assert_eq!(plans.session_version, 2);
+    assert_eq!(plans.session_version, 3);
     let started = client
         .start_turn("start-e2e", &session.session_id, "hello")
         .await
@@ -164,7 +188,7 @@ async fn shared_client_completes_a_real_runtime_host_turn() {
         .unwrap()
         .commit(
             SessionId::try_from(session.session_id.as_str()).unwrap(),
-            3,
+            4,
             terminal,
         )
         .unwrap();

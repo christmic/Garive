@@ -214,6 +214,54 @@ impl LiveHostClient {
         Ok(response)
     }
 
+    /// Cancels one exact non-terminal Goal through the Host's configured authority.
+    pub async fn cancel_goal(
+        &self,
+        command_id: &str,
+        session_id: &str,
+        goal_id: &str,
+        expected_session_version: u64,
+        expected_revision: u64,
+        reason: &str,
+    ) -> Result<GoalCommandResponse, HostClientError> {
+        if session_id.is_empty()
+            || goal_id.is_empty()
+            || expected_session_version == 0
+            || expected_revision == 0
+            || reason.is_empty()
+        {
+            return Err(HostClientError::new(HostClientErrorCode::InvalidCommand));
+        }
+        let path = format!("v1/goals/{}:cancel", encode_segment(goal_id));
+        let value = self
+            .post(
+                &path,
+                command_id,
+                &CancelGoalCommand {
+                    session_id,
+                    expected_session_version,
+                    expected_revision,
+                    reason,
+                },
+            )
+            .await?;
+        let response: GoalCommandResponse = decode(value)?;
+        if response.api_version != "v1"
+            || response.session_id != session_id
+            || response.goal_id != goal_id
+            || response.revision != expected_revision.checked_add(1).ok_or_else(invalid_event)?
+            || response.state != "cancelled"
+            || response.session_version
+                != expected_session_version
+                    .checked_add(1)
+                    .ok_or_else(invalid_event)?
+            || response.committed_position == 0
+        {
+            return Err(invalid_event());
+        }
+        Ok(response)
+    }
+
     /// Reads the complete bounded Plan graph at one durable Session watermark.
     pub async fn get_plans(&self, session_id: &str) -> Result<PlanPage, HostClientError> {
         if session_id.is_empty() {
@@ -832,6 +880,14 @@ struct SessionCommand<'a> {
 struct CreateGoalCommand<'a> {
     expected_session_version: u64,
     definition_json: &'a str,
+}
+
+#[derive(Serialize)]
+struct CancelGoalCommand<'a> {
+    session_id: &'a str,
+    expected_session_version: u64,
+    expected_revision: u64,
+    reason: &'a str,
 }
 
 #[derive(Serialize)]

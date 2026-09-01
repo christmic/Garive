@@ -380,6 +380,61 @@ async fn goal_create_is_canonical_identity_bound_and_strictly_validated() {
 }
 
 #[tokio::test]
+async fn goal_cancel_binds_both_expected_revisions_and_identity() {
+    let fixture = fixture();
+    let valid = serde_json::json!({
+        "api_version":"v1","session_id":"session-cancel","goal_id":"goal-cancel",
+        "revision":3,"state":"cancelled","session_version":6,"committed_position":8
+    });
+    let invalid = serde_json::json!({
+        "api_version":"v1","session_id":"session-cancel","goal_id":"goal-cancel",
+        "revision":3,"state":"failed","session_version":6,"committed_position":8
+    });
+    let requests = Arc::new(Mutex::new(Vec::new()));
+    let (base_url, server) = serve(
+        vec![
+            http_json(200, &valid.to_string()),
+            http_json(200, &invalid.to_string()),
+        ],
+        Arc::clone(&requests),
+    )
+    .await;
+    let client = LiveHostClient::new(&base_url, limits(&fixture)).unwrap();
+    let response = client
+        .cancel_goal(
+            "cancel-goal",
+            "session-cancel",
+            "goal-cancel",
+            5,
+            2,
+            "operator_cancelled",
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.state, "cancelled");
+    assert_eq!(
+        client
+            .cancel_goal(
+                "cancel-goal-2",
+                "session-cancel",
+                "goal-cancel",
+                5,
+                2,
+                "operator_cancelled",
+            )
+            .await
+            .unwrap_err()
+            .code,
+        HostClientErrorCode::InvalidEvent
+    );
+    server.await.unwrap();
+    let request = &requests.lock().await[0];
+    assert!(request.starts_with("POST /v1/goals/goal-cancel:cancel HTTP/1.1\r\n"));
+    assert!(request.contains("\"expected_session_version\":5"));
+    assert!(request.contains("\"expected_revision\":2"));
+}
+
+#[tokio::test]
 async fn plan_page_is_typed_ordered_and_count_checked() {
     let fixture = fixture();
     let plan = serde_json::json!({
