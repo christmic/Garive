@@ -213,62 +213,99 @@ message GoalPageV1 {
 
 // Authority-admitted canonical Goal creation proposal.
 message CreateGoalRequestV1 {
+  // Exact Session version against which creation must commit.
   uint64 expected_session_version = 1;
+  // Canonical authority-admitted GoalDefinitionV1 JSON.
   string definition_json = 2;
 }
 
 // Durable public receipt for one Goal mutation.
 message GoalCommandResponseV1 {
+  // Exact Host API version used to encode this receipt.
   string api_version = 1;
+  // Session owning the mutated Goal.
   string session_id = 2;
+  // Stable Goal identity.
   string goal_id = 3;
+  // Durable Goal lifecycle revision after the mutation.
   uint64 revision = 4;
+  // Stable Goal lifecycle state code.
   string state = 5;
+  // Session version committed by the mutation.
   uint64 session_version = 6;
+  // Highest durable position committed by the mutation.
   uint64 committed_position = 7;
 }
 
 // Exact authority-admitted Goal cancellation proposal.
 message CancelGoalRequestV1 {
+  // Session owning the Goal.
   string session_id = 1;
+  // Exact Session version against which cancellation must commit.
   uint64 expected_session_version = 2;
+  // Exact Goal revision authorized for cancellation.
   uint64 expected_revision = 3;
+  // Stable authority-admitted cancellation reason code.
   string reason = 4;
 }
 
 // Exact authority-admitted Goal definition replacement.
 message ReviseGoalRequestV1 {
+  // Session owning the Goal.
   string session_id = 1;
+  // Exact Session version against which revision must commit.
   uint64 expected_session_version = 2;
+  // Exact Goal revision being replaced.
   uint64 expected_revision = 3;
+  // Canonical authority-admitted replacement GoalDefinitionV1 JSON.
   string definition_json = 4;
+  // Stable authority-admitted replacement reason code.
   string replacement_reason = 5;
 }
 
 // One bounded redacted durable Plan revision projection.
 message PlanSummaryV1 {
+  // Exact Host API version used to encode this summary.
   string api_version = 1;
+  // Stable Plan lineage identity.
   string plan_id = 2;
+  // Immutable Plan definition revision.
   uint64 revision = 3;
+  // Stable Plan lifecycle state code.
   string state = 4;
+  // Canonical immutable Plan definition digest.
   string definition_digest = 5;
+  // Goal identity bound by this Plan revision.
   string goal_id = 6;
+  // Goal lifecycle anchor observed by this Plan revision.
   uint64 goal_revision = 7;
+  // Contiguous mutable state version within this Plan revision.
   uint64 state_version = 8;
+  // Total number of declared Steps.
   uint32 steps_total = 9;
+  // Number of Steps currently ready for claim.
   uint32 steps_ready = 10;
+  // Number of currently claimed, running or suspended Steps.
   uint32 steps_active = 11;
+  // Number of durably completed Steps.
   uint32 steps_completed = 12;
+  // Number of durably failed Steps.
   uint32 steps_failed = 13;
+  // Total attempts consumed by this Plan revision.
   uint32 total_attempts = 14;
 }
 
 // Complete bounded Plan revision page at one Session watermark.
 message PlanPageV1 {
+  // Exact Host API version used to encode this page.
   string api_version = 1;
+  // Session owning every projected Plan revision.
   string session_id = 2;
+  // Plan revisions in stable lineage/revision order.
   repeated PlanSummaryV1 plans = 3;
+  // Session version used for optimistic commands.
   uint64 session_version = 4;
+  // Frozen maximum durable position used by this projection.
   uint64 observed_max_position = 5;
 }
 
