@@ -3,7 +3,9 @@ source: tui/tests/view_snapshots.rs
 expression: "inspector_frame(theme, 120)"
 ---
 
+
             › Summarize the release plan.
+
               ✓  Agent action · completed
 
             ## Release plan
@@ -12,8 +14,6 @@ expression: "inspector_frame(theme, 120)"
               • Ship with evidence
 
               cargo test passes.
-
-
              Inspector · Activity ──────────────────────────────────────────────────────────────────────────
             › ✓ Agent action · completed
             ↑↓ select · Enter jump · Esc close

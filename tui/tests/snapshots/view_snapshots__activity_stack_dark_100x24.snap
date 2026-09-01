@@ -3,11 +3,11 @@ source: tui/tests/view_snapshots.rs
 expression: "frame(&activities, Theme::Dark, 100, 24)"
 ---
 
+
 › Verify the release candidate.
+
   ✓  Read file · +1 completed
   ●  Reading file
-
-
 
 
 

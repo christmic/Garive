@@ -4,8 +4,8 @@ expression: filmstrip
 ---
 ===== preparing =====
 
-› Show every verified streaming stage.
 
+› Show every verified streaming stage.
 
 
 
@@ -30,10 +30,10 @@ expression: filmstrip
 
 ===== first presented delta =====
 
+
 › Show every verified streaming stage.
+
 • The first visible▍
-
-
 
 
 
@@ -56,12 +56,12 @@ expression: filmstrip
 
 ===== second delta with activity =====
 
+
 › Show every verified streaming stage.
+
   ●  Verifying streamed output
 
 • The first visible streaming frame arrives.▍
-
-
 
 
 
@@ -82,12 +82,12 @@ expression: filmstrip
 
 ===== overlay while streaming =====
 
+
 › Show every verified streaming stage.
+
   ●  Verifying streamed output
 
 • The first visible streaming frame arrives.▍
-
-
 
 
 
@@ -108,12 +108,12 @@ Search  type to search
 
 ===== stream restored after overlay =====
 
+
 › Show every verified streaming stage.
+
   ●  Verifying streamed output
 
 • The first visible streaming frame arrives.▍
-
-
 
 
 
@@ -134,12 +134,12 @@ Search  type to search
 
 ===== finalizing =====
 
+
 › Show every verified streaming stage.
+
   ●  Verifying streamed output
 
 • The first visible streaming frame arrives.▍
-
-
 
 
 
@@ -160,12 +160,12 @@ Search  type to search
 
 ===== ended awaiting durable =====
 
+
 › Show every verified streaming stage.
+
   ●  Verifying streamed output
 
 • The first visible streaming frame arrives.
-
-
 
 
 
@@ -186,12 +186,12 @@ Search  type to search
 
 ===== durable takeover =====
 
+
 › Show every verified streaming stage.
+
   ●  Verifying streamed output
 
 • Saved streaming answer.
-
-
 
 
 

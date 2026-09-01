@@ -20,7 +20,8 @@ pub(super) fn render(source: &str, theme: Theme, width: u16) -> Vec<Line<'static
     if rows.is_empty() {
         rows.push(String::new());
     }
-    rows.into_iter()
+    let mut lines = rows
+        .into_iter()
         .enumerate()
         .map(|(index, content)| {
             let prefix = if index == 0 { "› " } else { HANGING_INDENT };
@@ -36,7 +37,13 @@ pub(super) fn render(source: &str, theme: Theme, width: u16) -> Vec<Line<'static
                 Span::styled(padding, colors.request_surface),
             ])
         })
-        .collect()
+        .collect::<Vec<_>>();
+    if width >= 80 {
+        let breathing_row = Line::from(Span::styled(" ".repeat(width), colors.request_surface));
+        lines.insert(0, breathing_row.clone());
+        lines.push(breathing_row);
+    }
+    lines
 }
 
 fn wrap_line(source: &str, width: usize) -> Vec<String> {
@@ -96,5 +103,25 @@ mod tests {
             wrap_line("e\u{301}e\u{301}e\u{301}", 2),
             ["e\u{301}e\u{301}", "e\u{301}"]
         );
+    }
+
+    #[test]
+    fn standard_request_surface_breathes_while_compact_stays_tight() {
+        let standard = render("Ship the verified release", Theme::Dark, 80);
+        assert_eq!(standard.len(), 3);
+        assert_eq!(standard[0].to_string(), " ".repeat(80));
+        assert_eq!(
+            standard[1].to_string(),
+            format!("› Ship the verified release{}", " ".repeat(53))
+        );
+        assert_eq!(standard[2].to_string(), " ".repeat(80));
+        assert!(standard
+            .iter()
+            .flat_map(|line| &line.spans)
+            .all(|span| span.style.bg == palette(Theme::Dark).request_surface.bg));
+
+        let compact = render("Ship the verified release", Theme::Dark, 79);
+        assert_eq!(compact.len(), 1);
+        assert!(compact[0].to_string().starts_with("› Ship"));
     }
 }

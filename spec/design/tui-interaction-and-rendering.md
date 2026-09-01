@@ -80,7 +80,10 @@ The transcript composes `TurnBlock` values. A Turn owns one restrained User
 request, its `ActivityStack`, one `LiveAnswer` or committed `MarkdownAnswer`,
 and its terminal outcome. Durable, ephemeral, and local values remain separate
 presentation types; a renderer never infers one from another. User content has
-a role marker but no full-width card. Agent prose uses the terminal background.
+a role marker but no bordered card. At widths `>=80`, its low-contrast
+terminal-width surface includes one blank fill row above and below the wrapped
+content; narrower modes omit the optional padding. Agent prose uses the
+terminal background.
 Only modal boundaries and an explicitly opened Inspector keep frames. A
 Markdown heading is self-marking and never receives an additional Agent bullet.
 At standard and wide widths, exactly one blank row separates `ActivityStack`

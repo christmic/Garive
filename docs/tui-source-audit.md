@@ -570,6 +570,22 @@ chips, modal background dimming, and reverse-video monochrome selection. Those
 choices are Garive-authored against its Host contracts; they are not copied
 product decoration.
 
+Codex user history is not a bare highlighted text row. Pinned
+`history_cell/messages.rs:123-185` applies `user_message_style()` to one blank
+row before the content, every wrapped content row, and one blank row after it;
+`style.rs:16-38` derives that low-contrast fill from the detected terminal
+background. Garive adopts the grouped surface at standard/wide widths, while
+52–79 compact and 40–51 linear widths omit the optional vertical padding to
+protect transcript capacity. The User `›` and hanging indent remain the
+non-color identity.
+
+The locally installed Claude Code 2.1.231 runtime was also observed at 80
+columns on 2026-09-01: its idle Composer uses full-axis horizontal boundaries
+with prompt and context/effort metadata in separate rows. This is product
+evidence only because the shipping TUI source is unavailable. Garive does not
+adopt the double rule in this batch; Composer boundary ownership remains a
+separate decision from transcript User-message grouping.
+
 ### Markdown presentation
 
 Codex `codex-rs/tui/src/markdown_render.rs:430-567` keeps inline styles in a

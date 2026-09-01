@@ -47,11 +47,14 @@ work state and cancel control and starts on the shared left axis as
 `• phase · esc to interrupt`. Once a non-terminal live answer or selected active
 Activity owns that signal, the rail reduces to the muted `esc to interrupt`
 control; an overlay suppresses even that background action. It never strands
-the primary state at the terminal's right edge. No Composer variant
-adds a persistent surrounding border. `RequestSurface` renders User input as an unbordered,
-low-contrast terminal-width row with the same non-color `›` identity and a
-two-cell hanging indent. Its wrapper measures sanitized grapheme display width,
-so CJK and combining sequences cannot split or shift later components.
+the primary state at the terminal's right edge. No Composer variant adds a
+persistent surrounding border. `RequestSurface` renders User input as an
+unbordered, low-contrast terminal-width group with the same non-color `›`
+identity and a two-cell hanging indent. At widths `>=80`, one same-surface blank
+row above and below the content makes the authored Turn read as one calm block
+instead of a thin color stripe. Widths `52..=79` and `40..=51` omit those
+optional rows. Its wrapper measures sanitized grapheme display width, so CJK
+and combining sequences cannot split or shift later components.
 
 Implementations live in `tui/src/view/primitives.rs` and `style.rs`.
 Higher-level renderers must reuse these primitives for equivalent behavior.
@@ -250,9 +253,10 @@ shows a Turn ID, stable key, hidden activity, or full prompt in popup chrome.
 At widths `>=52`, one additional rhythm row separates an `ActivityStack` from
 the live or committed answer so operation metadata cannot merge visually with
 Agent prose; the 40–51 column linear mode keeps that boundary tight. User
-content uses the compact `RequestSurface`: one low-contrast fill, a left role
-marker, and no separate `You` header or surrounding border. Agent prose remains
-on the terminal background. Public positions,
+content uses the responsive `RequestSurface`: one low-contrast grouped fill, a
+left role marker, and no separate `You` header or surrounding border. Standard
+and wide surfaces own one blank fill row above and below; compact and linear
+surfaces stay tight. Agent prose remains on the terminal background. Public positions,
 stable keys, opaque IDs, and repeated `Conversation` titles do not appear in
 ordinary transcript chrome.
 
