@@ -2,11 +2,11 @@
 source: tui/tests/view_snapshots.rs
 expression: "frame(&palette, Theme::Dark, 40, 8)"
 ---
-╭ Command palette ─────────────────────╮
-│  Search  type to search              │
-│  Showing 20–21 / 21 · ↑19            │
-│    /help             Keyboard guide  │
-│  › /quit             Exit safely     │
-│    ↑/↓ select   Home/End edge        │
-│    Enter run   Esc close             │
-╰──────────────────────────────────────╯
+ Command palette ───────────────────────
+Search  type to search
+Showing 19–21 / 21 · ↑18
+  /copy session-id  Copy Session ID
+  /help             Keyboard guide
+› /quit             Exit safely
+  ↑/↓ select   Home/End edge
+  Enter run   Esc close

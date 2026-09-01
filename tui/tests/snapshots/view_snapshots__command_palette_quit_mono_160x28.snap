@@ -13,19 +13,19 @@ expression: "frame(&palette, Theme::Mono, 160, 28)"
   cargo test passes.
 
 
-                                           ╭ Command palette ───────────────────────────────────────────────────────╮
-                                           │  Search  type to search                                                │
-                                           │  21 commands · showing 14–21 · ↑ 13 earlier                            │
-                                           │    /mouse auto         Keep terminal selection and scrolling           │
-                                           │    /mouse on           Enable mouse capture now                        │
-                                           │    /mouse off          Disable mouse capture now                       │
-                                           │    /copy last          Copy last completion                            │
-                                           │    /copy selection     unavailable · no composer text is selected      │
-                                           │    /copy session-id    Copy Session ID                                 │
-                                           │    /help               Keyboard guide                                  │
-                                           │  › /quit               Exit safely                                     │
-                                           │                                                                        │
-                                           │    ↑/↓ select   Home/End edge   Enter run   Esc close                  │
-                                           ╰────────────────────────────────────────────────────────────────────────╯
-• Working…
+
+
+ Command palette ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+Search  type to search
+21 commands · showing 14–21 · ↑ 13 earlier
+  /mouse auto         Keep terminal selection and scrolling
+  /mouse on           Enable mouse capture now
+  /mouse off          Disable mouse capture now
+  /copy last          Copy last completion
+  /copy selection     unavailable · no composer text is selected
+  /copy session-id    Copy Session ID
+  /help               Keyboard guide
+› /quit               Exit safely
+  ↑/↓ select   Home/End edge   Enter run   Esc close
+                                                                                                                                                        Working…
 › Ask a follow-up…

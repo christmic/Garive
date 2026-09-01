@@ -9,7 +9,7 @@ expression: "format!(\"===== requesting · compact mono 40x8 =====\\n{requesting
 
   cargo test passes.
 
- … Cancelling…
+                             Cancelling…
 › Retained draft while cancellation
 
 ===== accepted · standard dark 100x24 =====
@@ -34,7 +34,7 @@ expression: "format!(\"===== requesting · compact mono 40x8 =====\\n{requesting
 
 
 
- … Stopping…
+                                                                                           Stopping…
 › Retained draft while cancellation settles
 
 
@@ -64,5 +64,5 @@ expression: "format!(\"===== requesting · compact mono 40x8 =====\\n{requesting
 
 
 
- ! Cancel status unknown
+                                                                                                                                           Cancel status unknown
 › Retained draft while cancellation settles
