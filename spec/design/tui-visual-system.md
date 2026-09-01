@@ -148,9 +148,10 @@ Session and activity state glyphs are closed semantic vocabulary: `✓`
 completed, `●` running, `!` action required, `×` failed, `■` stopped, and `○`
 unknown/new. Unknown public codes use neutral wording and never borrow success.
 
-An explicitly opened Inspector is exactly 32 cells wide at `>=120`, including
-its single border. It never expands the transcript beyond its 96-cell maximum.
-At `40..=119` the same Activity, Recovery, or Details projection is a bounded
+An explicitly opened Inspector is exactly 32 cells wide at `>=129`, including
+its single border. The breakpoint is structural: 96 transcript cells, one gap,
+and 32 Inspector cells must all fit before the surfaces become side by side.
+At `40..=128` the same Activity, Recovery, or Details projection is a bounded
 top-level overlay; below 40 its open state is retained behind the safe minimum
 view. The variant title, stable selected marker, empty state, entry labels, and
 safe details remain visible without color. Fullscreen, pointer, and linear
@@ -195,8 +196,12 @@ terminal background. Public positions,
 stable keys, opaque IDs, and repeated `Conversation` titles do not appear in
 ordinary transcript chrome.
 
-`ActivityStack` paints at most one active safe row plus one collapsed completed
-summary. Expanding details opens Inspector or an overlay; it does not insert a
+`ActivityStack` paints at most one active safe row plus the latest completed
+safe label and a supplemental completed count. Compact width retains the active
+label first, then a display-width-budgeted `✓N` suffix; CJK and emoji cannot
+silently consume that counter. The generic ContextLine execution phrase is
+absent whenever a live answer or active Activity already owns the work signal.
+Expanding details opens Inspector or an overlay; it does not insert a
 dashboard pane or expose tool arguments, raw paths, provider values, or hidden
 reasoning. State always has a semantic word or glyph in addition to color.
 
@@ -215,8 +220,8 @@ component without a transition card or duplicate answer.
 
 ## Layout and degradation
 
-At 120 cells and above, the bounded transcript is centered and an explicitly
-opened 32-column Inspector may share the work surface. From 80 through 119,
+At 129 cells and above, the bounded transcript is centered and an explicitly
+opened 32-column Inspector may share the work surface. From 80 through 128,
 the transcript remains centered and Inspector becomes an overlay. From 52
 through 79, the transcript uses the available width and metadata collapses to
 compact labels. From 40 through 51, the transcript becomes linear,
@@ -229,6 +234,9 @@ Degradation order is ambient context, secondary hints, decoration, then
 nonessential metadata. Never remove the active action, semantic state,
 composer cursor, live received content, recovery consequence, or selected-row
 marker to make space.
+When the usable transcript has eight rows or fewer, its decorative top inset
+collapses before semantic content. The latest Agent identity row must remain
+visible when it can fit; an empty breathing row may not scroll it away.
 
 ## Interaction consistency
 

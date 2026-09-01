@@ -21,7 +21,7 @@ pub(super) fn render(
     let colors = palette(theme);
     let mut lines = vec![Line::from(vec![
         RoleMarker::Agent.span(colors),
-        Span::styled(phase_copy(answer), colors.muted),
+        Span::styled(phase_copy(answer, width), colors.muted),
     ])];
     match answer.availability {
         LiveAnswerAvailability::Unavailable => lines.push(Line::styled(
@@ -46,8 +46,11 @@ pub(super) fn render(
     lines
 }
 
-fn phase_copy(answer: &LiveAnswer) -> &'static str {
+fn phase_copy(answer: &LiveAnswer, width: u16) -> &'static str {
     if answer.ended {
+        if width < 52 {
+            return " · Awaiting saved result";
+        }
         return " · Waiting for durable result";
     }
     match answer.phase {
@@ -114,6 +117,41 @@ mod tests {
             &mut cache,
         );
         assert_eq!(line_text(&visible).join("\n").matches('▍').count(), 1);
+    }
+
+    #[test]
+    fn ended_phase_uses_bounded_compact_copy() {
+        let mut projection = LiveAnswerProjection::default();
+        projection.apply(
+            event(
+                1,
+                LiveOutputEventKind::Snapshot {
+                    text: "Saved preview".into(),
+                    through_sequence: 1,
+                },
+            ),
+            expectation(),
+        );
+        projection.apply(
+            event(
+                2,
+                LiveOutputEventKind::Ended {
+                    reason: garive_host_client::LiveOutputEndReason::TerminalCommitted,
+                },
+            ),
+            expectation(),
+        );
+
+        let mut cache = LiveRenderCache::default();
+        let lines = render(
+            projection.current().unwrap(),
+            Theme::Mono,
+            36,
+            true,
+            &mut cache,
+        );
+        assert_eq!(line_text(&lines)[0], "◆ Garive · Awaiting saved result");
+        assert!(unicode_width::UnicodeWidthStr::width(line_text(&lines)[0].as_str()) <= 36);
     }
 
     fn line_text(lines: &[Line<'static>]) -> Vec<String> {
