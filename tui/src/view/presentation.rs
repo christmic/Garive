@@ -11,12 +11,6 @@ pub(crate) struct ActionOverlayCopy {
     pub(crate) body: String,
 }
 
-pub(crate) const HELP_NOTES: &[&str] = &[
-    "Durable truth comes from the local Garive Host.",
-    "No function keys are required. Color and mouse are optional.",
-    "Copy uses terminal OSC 52 support; otherwise select terminal text manually.",
-];
-
 pub(crate) fn action_overlay_copy(model: &AppModel, overlay: Overlay) -> Option<ActionOverlayCopy> {
     let copy = match overlay {
         Overlay::UnknownCommand => ActionOverlayCopy {

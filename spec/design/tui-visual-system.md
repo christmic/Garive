@@ -69,6 +69,12 @@ Blocking decisions, recovery confirmations, and the reference Help surface
 consume `ModalFrame`. CommandPalette, navigation selectors, and the
 narrow/standard Inspector consume `BottomPane` and cannot reproduce modal
 chrome locally.
+Help is content-driven rather than a fixed document card. At admitted desktop
+width it is an action-only two-column grid derived from the typed keymap; when
+the two columns do not fit it reflows by measured display width. Its height is
+the resulting action rows plus `ModalFrame` chrome. Architecture, Host
+durability, terminal capability, color, mouse, and clipboard notes do not
+belong in this reference surface.
 The shared Session identity/state presentation lives in `view/session.rs`;
 SessionSwitcher and Inspector may change density, but cannot invent separate
 labels, glyphs, or state wording. Their visible windows also define pointer hit

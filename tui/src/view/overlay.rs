@@ -8,13 +8,11 @@ use unicode_width::UnicodeWidthStr;
 
 use crate::{
     application::{AppModel, Overlay},
-    input::help_hints,
     Theme,
 };
 
 use super::{
     decision_sheet, inspector, palette,
-    presentation::HELP_NOTES,
     primitives::{key_hints, truncate_display, BottomPaneFrame, ModalFrame, SelectionRow},
     safe_text,
     session::picker_line,
@@ -24,6 +22,7 @@ use super::{
 pub(super) mod command_palette;
 pub(super) mod filtered_list;
 pub(super) mod geometry;
+mod help;
 
 use geometry::{overlay_geometry, overlay_padding};
 
@@ -118,7 +117,7 @@ fn overlay_spec(
         Overlay::CommandPalette => unreachable!("CommandPalette owns its composite renderer"),
         Overlay::Help => OverlaySpec {
             title: " Keyboard guide ".into(),
-            content: help_text(colors, content_width),
+            content: help::text(colors, content_width),
         },
         Overlay::SessionPicker => OverlaySpec {
             title: " Switch session ".into(),
@@ -441,42 +440,6 @@ fn decision_sheet_spec(
         title: format!(" {} ", spec.title),
         content: Text::from(lines),
     }
-}
-
-fn help_text(colors: Palette, content_width: u16) -> Text<'static> {
-    let mut rows = Vec::<Vec<(&str, &str)>>::new();
-    for hint in help_hints() {
-        let item = (hint.visual_key, hint.action);
-        let fits = rows.last().is_some_and(|row| {
-            let used = 1 + row
-                .iter()
-                .enumerate()
-                .map(|(index, (key, action))| {
-                    usize::from(index != 0) * 2 + key.width() + action.width() + 2
-                })
-                .sum::<usize>();
-            used + usize::from(!row.is_empty()) * 2 + item.0.width() + item.1.width() + 2
-                <= usize::from(content_width)
-        });
-        if fits {
-            rows.last_mut()
-                .expect("a fitting help row exists")
-                .push(item);
-        } else {
-            rows.push(vec![item]);
-        }
-    }
-    let mut lines = rows
-        .iter()
-        .map(|row| key_hints(row, colors))
-        .collect::<Vec<_>>();
-    lines.push(Line::default());
-    lines.extend(
-        HELP_NOTES
-            .iter()
-            .map(|note| Line::styled((*note).to_owned(), colors.muted)),
-    );
-    Text::from(lines)
 }
 
 fn search_line(label: &str, value: &str, colors: Palette) -> Line<'static> {

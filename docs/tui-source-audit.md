@@ -417,6 +417,16 @@ dismissal, while retaining a separate searchable command palette. Garive does
 not adopt Codex's command set, attachments, shell mode, model selection, or
 approval shapes without corresponding Host authority.
 
+Codex also keeps shortcut reference content action-only. The pinned
+`bottom_pane/footer.rs:733-749,880-949` projects `FooterMode::ShortcutOverlay`
+into a two-column list plus one customization action; the reviewed
+`bottom_pane/snapshots/codex_tui__bottom_pane__chat_composer__tests__footer_mode_shortcut_overlay.snap`
+contains no terminal-capability or product-architecture essay. Garive retains
+its bounded reference modal rather than copying Codex's Composer mode, but its
+Help content follows the same discipline: one adaptive two-column action grid,
+one column when width requires it, and no Host, color, mouse, or clipboard
+explanation competing with the transcript.
+
 Direct inspection of `bottom_pane/textarea.rs` and its `textarea/` modules at
 the pinned revision found cursor, wrapping, paste, undo, and Vim behavior but
 no range-selection state or selected-text renderer. Pi's pinned

@@ -153,8 +153,10 @@ fn modal_geometry_never_erases_a_grown_composer() {
         .composer
         .replace("one\ntwo\nthree\nfour\ncomposer-owned-tail")
         .unwrap();
-    let rendered = frame(&model, 100, 16);
+    let rendered = frame(&model, 100, 24);
     assert!(rendered.contains("Keyboard guide"));
+    assert!(!rendered.contains("Durable truth comes from"));
+    assert!(!rendered.contains("OSC 52"));
     assert!(rendered.contains("composer-owned-tail"));
 }
 

@@ -153,6 +153,7 @@ fn responsive_product_frames_match_reviewed_snapshots() {
     let mut help = product_model();
     help.overlay = Some(Overlay::Help);
     insta::assert_snapshot!("help_100x24", frame(&help, Theme::Dark, 100, 24));
+    insta::assert_snapshot!("help_52x16", frame(&help, Theme::Dark, 52, 16));
 
     let turns = turn_navigator_model();
     insta::assert_snapshot!(

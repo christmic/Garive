@@ -835,7 +835,7 @@ const FAIRNESS_EXPECT_SCRIPT: &str = r#"
     send "\r"
     send "\014"
     must "\033\[2J" 30
-    must "required." 31
+    must "Keyboard guide" 31
     mark $env(GARIVE_FAIRNESS_HELP)
     send "\033"
     after 500

@@ -1,6 +1,6 @@
 use crate::application::{AppModel, ExecutionState, Overlay};
 
-use super::{agent_label, decision_sheet, presentation::HELP_NOTES, primitives::selection_window};
+use super::{agent_label, decision_sheet, primitives::selection_window};
 use crate::input::help_hints;
 
 const LIST_CAPACITY: usize = 10;
@@ -134,7 +134,6 @@ fn help() -> String {
     let actions = help_hints().map(|hint| format!("{}: {}.", hint.spoken_key, hint.action));
     std::iter::once("Keyboard guide.".to_owned())
         .chain(actions)
-        .chain(HELP_NOTES.iter().map(|note| (*note).to_owned()))
         .collect::<Vec<_>>()
         .join(" ")
 }

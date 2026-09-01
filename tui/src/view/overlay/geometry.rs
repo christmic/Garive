@@ -95,7 +95,7 @@ pub(super) fn overlay_padding(overlay: Overlay) -> Padding {
 fn desired_width(overlay: Overlay) -> u16 {
     match overlay {
         Overlay::CommandPalette => unreachable!("CommandPalette owns its width"),
-        Overlay::Help => 72,
+        Overlay::Help => 62,
         Overlay::TurnNavigator => 72,
         Overlay::Inspector => 62,
         Overlay::SessionPicker
@@ -112,7 +112,7 @@ fn desired_width(overlay: Overlay) -> u16 {
 fn desired_height(model: &AppModel, overlay: Overlay, popup_width: u16) -> u16 {
     match overlay {
         Overlay::CommandPalette => unreachable!("CommandPalette owns its height"),
-        Overlay::Help => 14,
+        Overlay::Help => super::help::desired_height(popup_width),
         Overlay::SessionPicker => selector_height(model.matching_sessions().count(), 3),
         Overlay::PromptHistory => selector_height(model.matching_history().count(), 3),
         Overlay::TurnNavigator => selector_height(model.matching_landmark_indices().len(), 4),

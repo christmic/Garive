@@ -1,0 +1,20 @@
+---
+source: tui/tests/view_snapshots.rs
+expression: "frame(&help, Theme::Dark, 52, 16)"
+---
+  ╭ Keyboard guide ──────────────────────────────╮
+  │                                              │
+  │    Enter send   Ctrl+J new line              │
+  │    Ctrl+N new Session                        │
+  │    Ctrl+S open Sessions                      │
+  │    Ctrl+P open commands                      │
+  │    Ctrl+R open prompt history                │
+  │    Ctrl+G edit externally                    │
+  │    Ctrl+U/K kill to line edge                │
+  │    Ctrl+Y yank killed text                   │
+  │    Esc close guide   Ctrl+Q ask to quit      │
+  │                                              │
+  ╰──────────────────────────────────────────────╯
+• Working…
+› Ask a follow-up…
+  Agent · Session 1
