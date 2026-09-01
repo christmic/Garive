@@ -145,6 +145,11 @@ impl GoalScopeV1 {
                 .workspace_capability_ids
                 .is_subset(&parent.workspace_capability_ids)
     }
+
+    /// Returns the optional exact owning Session identity.
+    pub fn session_id(&self) -> Option<&str> {
+        self.session_id.as_deref()
+    }
 }
 
 /// Explicit non-zero hard bounds for one Goal definition.
@@ -366,6 +371,11 @@ impl GoalDefinitionV1 {
     /// Returns the immutable hard bounds for this revision.
     pub const fn bounds(&self) -> &GoalBoundsV1 {
         &self.bounds
+    }
+
+    /// Returns the immutable scope anchors for this revision.
+    pub const fn scope(&self) -> &GoalScopeV1 {
+        &self.scope
     }
 
     /// Returns the exact parent identity, when this is a child Goal.

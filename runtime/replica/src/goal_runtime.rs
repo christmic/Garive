@@ -120,6 +120,13 @@ pub fn plan_create_goal(
     definition: GoalDefinitionV1,
 ) -> Result<PlannedGoalCommand, GoalRuntimeError> {
     validate_context(context)?;
+    if definition
+        .scope()
+        .session_id()
+        .is_some_and(|value| value != session_id.as_str())
+    {
+        return Err(GoalRuntimeError::ScopeExceeded);
+    }
     let watermark = ledger
         .session_watermark(session_id)
         .map_err(map_ledger)?

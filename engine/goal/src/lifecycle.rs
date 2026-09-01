@@ -178,6 +178,11 @@ impl GoalSnapshot {
         &self.definition
     }
 
+    /// Returns exact verified terminal evidence, empty before success.
+    pub fn terminal_evidence(&self) -> &[GoalEvidenceV1] {
+        &self.terminal_evidence
+    }
+
     /// Applies one transition only at the caller's exact expected revision.
     pub fn apply(
         &self,

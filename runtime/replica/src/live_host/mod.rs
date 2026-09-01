@@ -12,9 +12,9 @@ pub use http::{LiveHostServer, LiveHostServerError};
 pub use service::LiveHost;
 pub use types::{
     ActivityProjectionLimits, AgentDefinitionPageV1, AgentDefinitionSummary,
-    AgentDefinitionSummaryV1, CommittedTurn, CreateSessionResponse, HostActivity, HostArtifact,
-    HostArtifactPage, HostClock, HostContinuationInput, HostEventPage, HostReadLimits,
-    HostWorkspaceAttachment, HostWorkspaceContextEntry, HostWorkspaceDetachment,
+    AgentDefinitionSummaryV1, CommittedTurn, CreateSessionResponse, GoalPageV1, GoalSummaryV1,
+    HostActivity, HostArtifact, HostArtifactPage, HostClock, HostContinuationInput, HostEventPage,
+    HostReadLimits, HostWorkspaceAttachment, HostWorkspaceContextEntry, HostWorkspaceDetachment,
     InstalledActivityCatalogue, InstalledActivityDescriptor, InstalledAgent, LiveHostError,
     LiveHostEvent, LiveHostLimits, SessionPageV1, SessionSummary, SessionSummaryV1, SessionViewV1,
     SuspensionViewV1, TurnCommandResponse, TurnDispatchError, TurnDispatcher, TurnSuspensionView,

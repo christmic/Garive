@@ -9,13 +9,18 @@ use futures::StreamExt;
 use garive_core::{
     AgentOutcome, ExecutionReport, GovernedSuspensionBinding, SuspensionReason, UsageSummary,
 };
+use garive_goal::{
+    GoalBoundsV1, GoalCapabilityReference, GoalCriterion, GoalCriterionId, GoalDefinitionV1,
+    GoalId, GoalScopeV1,
+};
 use garive_ledger::{CanonicalPayload, FactDraft, FactId, FactKind, SessionId, ToolInvocationId};
 use garive_llm::{ModelItem, TokenCount};
 use garive_runtime::{
-    plan_core_terminal, ActivityProjectionLimits, CommittedTurn, CoreTerminalContext,
-    EffectiveRuntimeLimits, HostClock, HostContinuationInput, HostReadLimits,
-    InstalledActivityCatalogue, InstalledActivityDescriptor, InstalledAgent, LiveHost,
-    LiveHostError, LiveHostLimits, LiveHostServer, SqliteLedger, TurnDispatchError, TurnDispatcher,
+    commit_goal_command, plan_core_terminal, plan_create_goal, ActivityProjectionLimits,
+    CommittedTurn, CoreTerminalContext, EffectiveRuntimeLimits, GoalCommandContext, HostClock,
+    HostContinuationInput, HostReadLimits, InstalledActivityCatalogue, InstalledActivityDescriptor,
+    InstalledAgent, LiveHost, LiveHostError, LiveHostLimits, LiveHostServer, SqliteLedger,
+    TurnDispatchError, TurnDispatcher,
 };
 use serde_json::Value;
 use tempfile::TempDir;
@@ -168,6 +173,57 @@ fn h2_read_limits_fail_closed_and_truncate_only_display_text() {
         fact_bound.host.get_session(&session.session_id),
         Err(LiveHostError::ReadBoundExceeded)
     );
+}
+
+#[test]
+fn h2_goal_projection_is_bounded_ordered_and_redacted() {
+    let harness = Harness::with_read_limits(
+        64,
+        false,
+        HostReadLimits {
+            max_goal_objective_bytes: 5,
+            ..HostReadLimits::PRODUCT_DEFAULT
+        },
+    );
+    let created = harness
+        .host
+        .create_session("create-goal-session", "definition-main")
+        .unwrap();
+    let session = SessionId::try_from(created.session_id.as_str()).unwrap();
+    let mut ledger = SqliteLedger::open(&harness.database).unwrap();
+    let parent = plan_create_goal(
+        &ledger,
+        &session,
+        &goal_context("create-parent"),
+        goal_definition("goal-parent", "目标目标", None, session.as_str()),
+    )
+    .unwrap();
+    commit_goal_command(&mut ledger, session.clone(), 1, &parent).unwrap();
+    let child = plan_create_goal(
+        &ledger,
+        &session,
+        &goal_context("create-child"),
+        goal_definition("goal-child", "child", Some("goal-parent"), session.as_str()),
+    )
+    .unwrap();
+    commit_goal_command(&mut ledger, session.clone(), 2, &child).unwrap();
+
+    let page = harness.host.get_goals(session.as_str()).unwrap();
+    assert_eq!(page.session_version, 3);
+    assert_eq!(page.goals.len(), 2);
+    assert_eq!(page.goals[0].goal_id, "goal-child");
+    assert_eq!(page.goals[0].parent_goal_id.as_deref(), Some("goal-parent"));
+    assert_eq!(page.goals[1].objective, "目");
+    assert!(page.goals[1].objective_truncated);
+    let encoded = serde_json::to_string(&page).unwrap();
+    for private in [
+        "workspace-1",
+        "catalogue-v1",
+        "user:fixture",
+        "actor_reference",
+    ] {
+        assert!(!encoded.contains(private));
+    }
 }
 
 #[test]
@@ -1300,6 +1356,17 @@ async fn real_loopback_http_has_stable_errors_commands_and_sse_replay() {
     assert_eq!(session_view["api_version"], "v1");
     assert_eq!(session_view["session"]["turn_count"], 0);
     assert_eq!(session_view["observed_max_position"], 1);
+    let goals = client
+        .get(format!("{base}/v1/sessions/{session_id}/goals"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(goals.status(), reqwest::StatusCode::OK);
+    let goals: Value = serde_json::from_slice(&goals.bytes().await.unwrap()).unwrap();
+    assert_eq!(goals["api_version"], "v1");
+    assert_eq!(goals["session_id"], session_id);
+    assert_eq!(goals["session_version"], 1);
+    assert!(goals["goals"].as_array().unwrap().is_empty());
     let sessions = client
         .get(format!("{base}/v1/sessions?limit=20"))
         .send()
@@ -1397,6 +1464,35 @@ async fn server_rejects_non_loopback_addresses() {
         result,
         Err(garive_runtime::LiveHostServerError::NonLoopbackAddress)
     ));
+}
+
+fn goal_definition(
+    goal_id: &str,
+    objective: &str,
+    parent: Option<&str>,
+    session_id: &str,
+) -> GoalDefinitionV1 {
+    GoalDefinitionV1::new(
+        GoalId::new(goal_id).unwrap(),
+        objective,
+        vec![GoalCriterion::UserAcceptance {
+            criterion_id: GoalCriterionId::new("accepted").unwrap(),
+            response_schema_digest: "a".repeat(64),
+        }],
+        GoalScopeV1::new(Some(session_id.into()), ["workspace-1".into()]).unwrap(),
+        GoalBoundsV1::new(2, 3, 2, Some(10_000), Some(60_000)).unwrap(),
+        parent.map(|value| GoalId::new(value).unwrap()),
+        [GoalCapabilityReference::new("tools", "catalogue-v1").unwrap()],
+    )
+    .unwrap()
+}
+
+fn goal_context(command_id: &str) -> GoalCommandContext {
+    GoalCommandContext {
+        command_id: command_id.into(),
+        actor_reference: "user:fixture".into(),
+        recorded_at: NOW.into(),
+    }
 }
 
 #[test]

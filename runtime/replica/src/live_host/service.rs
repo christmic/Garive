@@ -5,6 +5,7 @@ use std::{
     sync::Arc,
 };
 
+use garive_goal::GoalState;
 use garive_ledger::{
     AgentDefinitionId, AgentDefinitionRevision, AgentInstanceId, CanonicalPayload,
     CommitDisposition, DurableFact, ExecutionId, FactDraft, FactId, FactKind, LedgerError,
@@ -15,21 +16,22 @@ use serde_json::json;
 use sha2::{Digest, Sha256};
 
 use crate::{
-    commit_planned_turn, get_turn, plan_cancel_turn, plan_continue_turn, plan_start_turn,
-    reconstruct_suspended_turn, CancelReason, CancelTurnCommand, ContinuationInput,
-    ContinueTurnCommand, GetTurnQuery, InteractionInputRepresentation, LiveOutputHub,
-    LiveOutputSubscriber, RuntimeCommandError, RuntimeCommandId, RuntimeSuspensionKind,
-    RuntimeTurnStatus, SqliteLedger, SqliteLedgerError, StartTurnCommand,
+    commit_planned_turn, get_turn, goal_recovery::reconstruct_goal_graph_from_facts,
+    plan_cancel_turn, plan_continue_turn, plan_start_turn, reconstruct_suspended_turn,
+    CancelReason, CancelTurnCommand, ContinuationInput, ContinueTurnCommand, GetTurnQuery,
+    InteractionInputRepresentation, LiveOutputHub, LiveOutputSubscriber, RuntimeCommandError,
+    RuntimeCommandId, RuntimeSuspensionKind, RuntimeTurnStatus, SqliteLedger, SqliteLedgerError,
+    StartTurnCommand,
 };
 
 use super::{
     completion_text, project_activities, project_fact, AgentDefinitionPageV1,
     AgentDefinitionSummary, AgentDefinitionSummaryV1, CommittedTurn, CreateSessionResponse,
-    HostArtifact, HostArtifactPage, HostClock, HostContinuationInput, HostEventPage,
-    HostReadLimits, HostWorkspaceAttachment, HostWorkspaceContextEntry, HostWorkspaceDetachment,
-    InstalledAgent, LiveHostError, LiveHostEvent, LiveHostLimits, LiveHostState, SessionPageV1,
-    SessionSummary, SessionViewV1, TurnCommandResponse, TurnDispatcher, TurnSuspensionView,
-    TurnTimelineItem, TurnTimelinePage, TurnTimelinePageV1,
+    GoalPageV1, GoalSummaryV1, HostArtifact, HostArtifactPage, HostClock, HostContinuationInput,
+    HostEventPage, HostReadLimits, HostWorkspaceAttachment, HostWorkspaceContextEntry,
+    HostWorkspaceDetachment, InstalledAgent, LiveHostError, LiveHostEvent, LiveHostLimits,
+    LiveHostState, SessionPageV1, SessionSummary, SessionViewV1, TurnCommandResponse,
+    TurnDispatcher, TurnSuspensionView, TurnTimelineItem, TurnTimelinePage, TurnTimelinePageV1,
 };
 use super::{read_cursor, read_model, timeline_projection};
 
@@ -280,6 +282,84 @@ impl LiveHost {
             return Err(LiveHostError::ReadBoundExceeded);
         }
         Ok(view)
+    }
+
+    /// Reads all current Goals from one verified fixed Session prefix.
+    pub fn get_goals(&self, session: &str) -> Result<GoalPageV1, LiveHostError> {
+        let session_id = identity::<SessionId>(session)?;
+        let ledger = self.ledger()?;
+        let watermark = ledger
+            .session_watermark(&session_id)
+            .map_err(map_sqlite)?
+            .ok_or(LiveHostError::NotFound)?;
+        if watermark.max_position > MAX_SAFE_JSON_INTEGER
+            || watermark.session_version > MAX_SAFE_JSON_INTEGER
+        {
+            return Err(LiveHostError::ReadBoundExceeded);
+        }
+        let facts = ledger
+            .read_facts(&session_id, 0, watermark.max_position, None)
+            .map_err(map_sqlite)?;
+        if facts.len() > self.state.read_limits.max_facts {
+            return Err(LiveHostError::ReadBoundExceeded);
+        }
+        let installed = self.installed_for_facts(&facts)?;
+        read_model::project_session(
+            &session_id,
+            watermark.max_position,
+            &facts,
+            installed,
+            self.state.read_limits,
+        )?;
+        let graph = reconstruct_goal_graph_from_facts(
+            &facts,
+            watermark.session_version,
+            watermark.max_position,
+        )
+        .map_err(|_| LiveHostError::CorruptState)?;
+        if graph.len() > self.state.read_limits.max_goals {
+            return Err(LiveHostError::ReadBoundExceeded);
+        }
+        let goals = graph
+            .into_values()
+            .map(|state| {
+                let definition = state.snapshot.definition();
+                let (objective, objective_truncated) = bounded_text(
+                    definition.objective(),
+                    self.state.read_limits.max_goal_objective_bytes,
+                );
+                let criteria_total = u32::try_from(definition.criteria().len())
+                    .map_err(|_| LiveHostError::ReadBoundExceeded)?;
+                let criteria_satisfied = u32::try_from(state.snapshot.terminal_evidence().len())
+                    .map_err(|_| LiveHostError::ReadBoundExceeded)?;
+                Ok(GoalSummaryV1 {
+                    api_version: "v1",
+                    goal_id: definition.goal_id().as_str().into(),
+                    revision: state.snapshot.revision(),
+                    state: goal_state(state.snapshot.state()),
+                    definition_digest: definition
+                        .digest()
+                        .map_err(|_| LiveHostError::CorruptState)?,
+                    objective,
+                    objective_truncated,
+                    parent_goal_id: definition
+                        .parent_goal_id()
+                        .map(|value| value.as_str().into()),
+                    attempt_number: state.attempt_number,
+                    criteria_total,
+                    criteria_satisfied,
+                })
+            })
+            .collect::<Result<Vec<_>, LiveHostError>>()?;
+        let page = GoalPageV1 {
+            api_version: "v1",
+            session_id: session.into(),
+            goals,
+            session_version: watermark.session_version,
+            observed_max_position: watermark.max_position,
+        };
+        ensure_response_bound(&page, self.state.read_limits.max_response_bytes)?;
+        Ok(page)
     }
 
     /// Lists a reverse-opened page of verified durable Sessions.
@@ -1735,6 +1815,17 @@ fn bounded_text(value: &str, max_bytes: usize) -> (String, bool) {
         .last()
         .unwrap_or(0);
     (value[..boundary].to_owned(), true)
+}
+
+const fn goal_state(state: GoalState) -> &'static str {
+    match state {
+        GoalState::Draft => "draft",
+        GoalState::Active => "active",
+        GoalState::Suspended => "suspended",
+        GoalState::Succeeded => "succeeded",
+        GoalState::Failed => "failed",
+        GoalState::Cancelled => "cancelled",
+    }
 }
 
 fn suspension_kind(kind: RuntimeSuspensionKind) -> &'static str {

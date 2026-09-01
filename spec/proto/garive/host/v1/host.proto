@@ -171,6 +171,46 @@ message SessionViewV1 {
   uint64 observed_max_position = 3;
 }
 
+// One bounded and redacted durable Goal projection.
+message GoalSummaryV1 {
+  // Exact Host API version used to encode this Goal.
+  string api_version = 1;
+  // Stable Goal identity.
+  string goal_id = 2;
+  // Current contiguous Goal revision.
+  uint64 revision = 3;
+  // Stable public lifecycle state.
+  string state = 4;
+  // Current definition digest without private definition fields.
+  string definition_digest = 5;
+  // Bounded objective display text.
+  string objective = 6;
+  // Whether objective display text was truncated.
+  bool objective_truncated = 7;
+  // Public parent Goal identity when present.
+  optional string parent_goal_id = 8;
+  // Number of attempts started from Draft.
+  uint32 attempt_number = 9;
+  // Number of declared success criteria.
+  uint32 criteria_total = 10;
+  // Number of verified terminal success criteria.
+  uint32 criteria_satisfied = 11;
+}
+
+// Complete bounded Goal page at one Session watermark.
+message GoalPageV1 {
+  // Exact Host API version used to encode this page.
+  string api_version = 1;
+  // Session owning every Goal.
+  string session_id = 2;
+  // Goals in stable identity order.
+  repeated GoalSummaryV1 goals = 3;
+  // Session version used for optimistic commands.
+  uint64 session_version = 4;
+  // Frozen maximum durable position used by this projection.
+  uint64 observed_max_position = 5;
+}
+
 // Restart-safe public continuation coordinates and redacted prompt.
 message SuspensionViewV1 {
   // Exact current durable suspension identity.

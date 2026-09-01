@@ -44,6 +44,7 @@ impl LiveHostServer {
             .route("/v1/agent-definitions", get(agent_definitions))
             .route("/v1/sessions", post(create_session).get(session_page))
             .route("/v1/sessions/:session_id", get(session_view))
+            .route("/v1/sessions/:session_id/goals", get(goal_page))
             .route("/v1/sessions/:session_id/timeline", get(turn_timeline))
             .route("/v1/sessions/:session_id/turns", post(start_turn))
             .route("/v1/turns/:operation", post(mutate_turn))
@@ -111,6 +112,14 @@ async fn agent_definitions(State(host): State<LiveHost>) -> Response {
 
 async fn session_view(State(host): State<LiveHost>, Path(session_id): Path<String>) -> Response {
     let result = tokio::task::spawn_blocking(move || host.get_session(&session_id))
+        .await
+        .map_err(|_| LiveHostError::DurabilityUnavailable)
+        .and_then(|result| result);
+    command_response(result)
+}
+
+async fn goal_page(State(host): State<LiveHost>, Path(session_id): Path<String>) -> Response {
+    let result = tokio::task::spawn_blocking(move || host.get_goals(&session_id))
         .await
         .map_err(|_| LiveHostError::DurabilityUnavailable)
         .and_then(|result| result);

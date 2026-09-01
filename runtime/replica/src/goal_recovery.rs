@@ -29,6 +29,14 @@ pub(crate) fn reconstruct_goal_graph(
     let facts = ledger
         .read_facts(session_id, 0, watermark.max_position, None)
         .map_err(map_ledger)?;
+    reconstruct_goal_graph_from_facts(&facts, watermark.session_version, watermark.max_position)
+}
+
+pub(crate) fn reconstruct_goal_graph_from_facts(
+    facts: &[DurableFact],
+    session_version: u64,
+    through_position: u64,
+) -> Result<BTreeMap<String, GoalRuntimeState>, GoalRuntimeError> {
     let mut partial = BTreeMap::<String, (Option<GoalSnapshot>, u32)>::new();
     for fact in facts
         .iter()
@@ -52,8 +60,8 @@ pub(crate) fn reconstruct_goal_graph(
             GoalRuntimeState {
                 snapshot: snapshot.ok_or(GoalRuntimeError::RecoveryCorrupt)?,
                 attempt_number,
-                session_version: watermark.session_version,
-                through_position: watermark.max_position,
+                session_version,
+                through_position,
             },
         );
     }

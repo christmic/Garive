@@ -133,9 +133,9 @@ pub use goal_runtime::{
 };
 pub use live_host::{
     ActivityProjectionLimits, AgentDefinitionPageV1, AgentDefinitionSummary,
-    AgentDefinitionSummaryV1, CommittedTurn, CreateSessionResponse, HostActivity, HostArtifact,
-    HostArtifactPage, HostClock, HostContinuationInput, HostEventPage, HostReadLimits,
-    HostWorkspaceAttachment, HostWorkspaceContextEntry, HostWorkspaceDetachment,
+    AgentDefinitionSummaryV1, CommittedTurn, CreateSessionResponse, GoalPageV1, GoalSummaryV1,
+    HostActivity, HostArtifact, HostArtifactPage, HostClock, HostContinuationInput, HostEventPage,
+    HostReadLimits, HostWorkspaceAttachment, HostWorkspaceContextEntry, HostWorkspaceDetachment,
     InstalledActivityCatalogue, InstalledActivityDescriptor, InstalledAgent, LiveHost,
     LiveHostError, LiveHostEvent, LiveHostLimits, LiveHostServer, LiveHostServerError,
     SessionPageV1, SessionSummary, SessionSummaryV1, SessionViewV1, SuspensionViewV1,

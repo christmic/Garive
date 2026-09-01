@@ -83,6 +83,8 @@ pub struct HostReadLimits {
     pub max_sessions: usize,
     /// Maximum complete Turns in one timeline page.
     pub max_timeline_items: usize,
+    /// Maximum Goals in one Session projection.
+    pub max_goals: usize,
     /// Maximum durable facts scanned for one projection.
     pub max_facts: usize,
     /// Maximum encoded JSON response bytes.
@@ -93,6 +95,8 @@ pub struct HostReadLimits {
     pub max_completion_bytes: usize,
     /// Maximum public suspension prompt or schema bytes.
     pub max_prompt_bytes: usize,
+    /// Maximum projected Goal objective bytes.
+    pub max_goal_objective_bytes: usize,
     /// Maximum decoded or encoded Session cursor bytes.
     pub max_cursor_bytes: usize,
 }
@@ -103,11 +107,13 @@ impl HostReadLimits {
         max_definitions: 64,
         max_sessions: 100,
         max_timeline_items: 100,
+        max_goals: 256,
         max_facts: 8_192,
         max_response_bytes: 2 * 1_024 * 1_024,
         max_user_text_bytes: 64 * 1_024,
         max_completion_bytes: 1_024 * 1_024,
         max_prompt_bytes: 64 * 1_024,
+        max_goal_objective_bytes: 4 * 1_024,
         max_cursor_bytes: 2_048,
     };
 
@@ -115,11 +121,13 @@ impl HostReadLimits {
         self.max_definitions > 0
             && self.max_sessions > 0
             && self.max_timeline_items > 0
+            && self.max_goals > 0
             && self.max_facts > 0
             && self.max_response_bytes > 0
             && self.max_user_text_bytes > 0
             && self.max_completion_bytes > 0
             && self.max_prompt_bytes > 0
+            && self.max_goal_objective_bytes > 0
             && self.max_cursor_bytes > 0
     }
 }
@@ -194,6 +202,49 @@ pub struct SessionPageV1 {
     /// Opaque cursor for the next older page.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub next_before: Option<String>,
+}
+
+/// One bounded, redacted durable Goal projection.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct GoalSummaryV1 {
+    /// Exact Host API version.
+    pub api_version: &'static str,
+    /// Stable Goal identity.
+    pub goal_id: String,
+    /// Current contiguous Goal revision.
+    pub revision: u64,
+    /// Stable public lifecycle state.
+    pub state: &'static str,
+    /// Current definition digest without private definition fields.
+    pub definition_digest: String,
+    /// Bounded objective display text.
+    pub objective: String,
+    /// Whether objective display text was truncated.
+    pub objective_truncated: bool,
+    /// Public parent Goal identity, when present.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub parent_goal_id: Option<String>,
+    /// Number of distinct attempts started from Draft.
+    pub attempt_number: u32,
+    /// Number of declared success criteria.
+    pub criteria_total: u32,
+    /// Number of verified terminal success criteria.
+    pub criteria_satisfied: u32,
+}
+
+/// Complete bounded Goal page at one Session watermark.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct GoalPageV1 {
+    /// Exact Host API version.
+    pub api_version: &'static str,
+    /// Owning Session identity.
+    pub session_id: String,
+    /// Goals in stable identity order.
+    pub goals: Vec<GoalSummaryV1>,
+    /// Session version used for optimistic commands.
+    pub session_version: u64,
+    /// Highest durable position included in this response.
+    pub observed_max_position: u64,
 }
 
 /// Content-free Session transition state consumed only by the mobile Gateway.
