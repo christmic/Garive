@@ -53,6 +53,9 @@ fn responsive_product_frames_match_reviewed_snapshots() {
         "activity_stack_compact_mono_40x18",
         frame(&activities, Theme::Mono, 40, 18)
     );
+    let completed = frame(&completed_activity_stack_model(), Theme::Mono, 40, 18);
+    assert!(completed.contains("✓ Read file · +2"));
+    insta::assert_snapshot!("activity_stack_completed_compact_mono_40x18", completed);
     insta::assert_snapshot!(
         "motion_running_dark_100x24",
         motion_frame(&model, Theme::Dark, 4, 100, 24)
@@ -555,6 +558,19 @@ fn activity_stack_model() -> AppModel {
     ] {
         model.push_test_timeline_item(item);
     }
+    model
+}
+
+fn completed_activity_stack_model() -> AppModel {
+    let mut model = activity_stack_model();
+    model.execution = ExecutionState::Idle;
+    model
+        .turn_blocks
+        .last_mut()
+        .expect("activity stack turn")
+        .activities
+        .pop();
+    model.push_test_timeline_item(read_file_activity("read-c", 5, "completed"));
     model
 }
 
