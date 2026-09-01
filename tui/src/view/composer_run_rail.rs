@@ -42,7 +42,11 @@ pub(super) fn has_cancel_request(model: &AppModel) -> bool {
 }
 
 pub(super) fn visible(model: &AppModel) -> bool {
-    project(model).is_some()
+    match project(model) {
+        Some(TurnControlState::Running { .. }) => !transcript_owns_work(model),
+        Some(_) => true,
+        None => false,
+    }
 }
 
 pub(super) fn linear_status(model: &AppModel) -> Option<&'static str> {
@@ -104,7 +108,7 @@ pub(super) fn line(
         unreachable!("cancellation states handled above")
     };
     if transcript_owns_work(model) {
-        return cancel_available.then(|| Line::styled("  esc to interrupt", colors.muted));
+        return None;
     }
     let label = running_label(model);
     if cancel_available {
@@ -121,7 +125,7 @@ pub(super) fn line(
     }
 }
 
-fn transcript_owns_work(model: &AppModel) -> bool {
+pub(super) fn transcript_owns_work(model: &AppModel) -> bool {
     if let Some(answer) = model.live_answer.current() {
         if answer.ended || answer.availability == LiveAnswerAvailability::Unavailable {
             return false;
@@ -194,12 +198,8 @@ mod tests {
             tone: TimelineTone::Active,
             text: "Reading file".into(),
         });
-        assert_eq!(
-            line(&model, colors, MotionFrame::reduced())
-                .unwrap()
-                .to_string(),
-            "  esc to interrupt"
-        );
+        assert!(line(&model, colors, MotionFrame::reduced()).is_none());
+        assert!(!visible(&model));
 
         model.overlay = Some(Overlay::Help);
         assert!(line(&model, colors, MotionFrame::reduced()).is_none());

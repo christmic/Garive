@@ -163,6 +163,41 @@ mod tests {
 
         assert!((0..area.width).all(|column| buffer[(column, 0)].symbol() == " "));
     }
+
+    #[test]
+    fn active_transcript_moves_interrupt_control_into_the_hint_row() {
+        let mut model = AppModel {
+            execution: crate::application::ExecutionState::Following,
+            ..Default::default()
+        };
+        model.push_test_timeline_item(crate::application::TimelineItem {
+            stable_key: "user".into(),
+            position: 1,
+            role: crate::application::TimelineRole::User,
+            tone: crate::application::TimelineTone::Neutral,
+            text: "Inspect the layout".into(),
+        });
+        model.push_test_timeline_item(crate::application::TimelineItem {
+            stable_key: "activity".into(),
+            position: 2,
+            role: crate::application::TimelineRole::Status,
+            tone: crate::application::TimelineTone::Active,
+            text: "Reading files".into(),
+        });
+        let area = Rect::new(0, 0, 80, 1);
+        let mut buffer = Buffer::empty(area);
+
+        render_footer(&model, Theme::Mono, area, &mut buffer);
+
+        let text = (0..area.width)
+            .map(|column| buffer[(column, 0)].symbol())
+            .collect::<String>();
+        assert!(
+            text.trim_start().starts_with("Esc interrupt"),
+            "rendered footer: {text:?}"
+        );
+        assert!(!text.contains("Working"));
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -172,6 +207,7 @@ enum HintPriority {
     ByteLimit,
     Suggestion,
     Selection,
+    TurnControl,
     Recovery,
 }
 
@@ -274,6 +310,16 @@ fn project(model: &AppModel) -> Option<HintLine> {
             priority: HintPriority::Suggestion,
             key: "Tab",
             verb: "complete command",
+            detail: None,
+        });
+    }
+    if model.execution == crate::application::ExecutionState::Following
+        && composer_run_rail::transcript_owns_work(model)
+    {
+        candidates.push(HintLine::Action {
+            priority: HintPriority::TurnControl,
+            key: "Esc",
+            verb: "interrupt",
             detail: None,
         });
     }

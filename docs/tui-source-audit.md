@@ -465,8 +465,11 @@ high-level task status. Garive's admitted client projection currently has H3
 public Activity and H4 phase/live text, but no separate Host-authored task
 summary. Garive therefore does not copy Codex's second semantic layer. Once a
 selected active Activity or available non-terminal live answer is visible, the
-generic run-rail phase disappears, the rail retains only the interrupt action,
-and the shared pulse moves to the live caret. Ended and unavailable previews
+generic run rail disappears, the existing Composer hint row owns the structured
+interrupt action, and the shared pulse moves to the live caret. This also
+follows the independently inspected Claude Code extraction at
+`src/screens/REPL.tsx:1673-1686`, which hides its spinner when streaming text is
+visible because that text is already the feedback. Ended and unavailable previews
 keep their truthful `Saving…` or unavailability phase. This removes three
 simultaneous work markers without inventing status prose.
 

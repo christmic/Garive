@@ -340,8 +340,8 @@ state. `Enter` keeps the exact draft and emits a visible `Current Turn is
 running · draft retained` notice; it never fails silently and does not claim a
 durable queue. With no overlay and no visible work owner, the Composer status
 group owns one left-aligned `• phase · esc to interrupt` row. A non-terminal
-live answer or selected active Activity replaces the generic phase with its
-own visible work cue while the rail retains only `esc to interrupt`. With an
+live answer or selected active Activity suppresses the run rail, owns the
+visible work cue, and moves `Esc interrupt` into the Composer hint row. With an
 overlay, the rail follows the input-ownership rule above. Cancellation
 therefore cannot monopolize `HintLine`;
 byte-limit, selection, suggestion, recovery, and notice feedback remain

@@ -38,9 +38,9 @@ expression: compact
 
 
 
-  esc to interrupt
-› A retained follow-up draft
 
+› A retained follow-up draft
+  Esc interrupt
 
 ===== second delta with activity =====
 
@@ -58,9 +58,9 @@ expression: compact
 
 
 
-  esc to interrupt
-› A retained follow-up draft
 
+› A retained follow-up draft
+  Esc interrupt
 
 ===== overlay while streaming =====
 
@@ -98,9 +98,9 @@ Search  type to search
 
 
 
-  esc to interrupt
-› A retained follow-up draft
 
+› A retained follow-up draft
+  Esc interrupt
 
 ===== finalizing =====
 
@@ -118,9 +118,9 @@ Search  type to search
 
 
 
-  esc to interrupt
-› A retained follow-up draft
 
+› A retained follow-up draft
+  Esc interrupt
 
 ===== ended awaiting durable =====
 

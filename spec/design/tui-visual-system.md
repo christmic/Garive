@@ -56,8 +56,9 @@ rows between status and input; compact width, compact height, and overlays omit
 that optional air. Before transcript work is visible, the running rail combines the nearby
 work state and cancel control and starts on the shared left axis as
 `• phase · esc to interrupt`. Once a non-terminal live answer or selected active
-Activity owns that signal, the rail reduces to the muted `esc to interrupt`
-control; an overlay suppresses even that background action. It never strands
+Activity owns that signal, the rail disappears and the existing Composer hint
+row owns the structured `Esc interrupt` action; an overlay suppresses even that
+background action. It never strands
 the primary state at the terminal's right edge. No Composer variant adds side
 or bottom borders. `RequestSurface` renders User input as an
 unbordered, low-contrast terminal-width group with the same non-color `›`

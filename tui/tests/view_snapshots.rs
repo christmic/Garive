@@ -62,7 +62,7 @@ fn responsive_product_frames_match_reviewed_snapshots() {
     let active = frame(&activities, Theme::Mono, 40, 18);
     assert_eq!(active.matches("Working…").count(), 0);
     assert!(active.contains("Reading file"));
-    assert!(active.contains("esc to interrupt"));
+    assert!(active.contains("Esc interrupt"));
     let completed = frame(&completed_activity_stack_model(), Theme::Mono, 40, 18);
     assert!(completed.contains("✓ Read file · +2"));
     insta::assert_snapshot!("activity_stack_completed_compact_mono_40x18", completed);
