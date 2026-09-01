@@ -208,8 +208,8 @@ workbench made from four persistent spatial layers:
    enter the mask. Forced colors removes the mask so task text stays exact.
 3. **Work layer.** Conversation and Composer form one bounded work column on a
    continuous canvas. Assistant output is document content, not a card stack.
-   Environment may float above this layer; it does not permanently shrink an
-   idle canvas.
+   Environment floats above this layer. Opening or closing it must not resize,
+   translate or reflow the conversation, Composer, Goal rail or work surface.
    Its compact fact hierarchy is Runtime, optional Workspaces, then Activity.
    Each admitted section uses 34 px rows under a quiet 20 px label; sections
    with no durable fact disappear. Git changes, branches, sources and provider
@@ -591,7 +591,7 @@ space. The same rule applies in light and dark themes and at narrow widths.
 | Modal | entering, active, exiting | traps focus, Escape closes when safe, returns focus to invoker |
 | Artifact card | preparing, ready, unverified, verified, unavailable | name/type/revision/verification visible; authority actions explicit |
 | Workspace tab | opening, active, background, changed, unavailable | stable title, close action, independent scroll and focus restoration |
-| Environment overlay | closed, open, attention, unavailable | compact summary only; never reserves an empty permanent column |
+| Environment overlay | closed, open, attention, unavailable | compact summary only; opening and closing never reflows the work column or reserves a layout column |
 | Capacity | unavailable, normal, watch, critical, exhausted | scope, period, attribution, remaining/reset and continuation policy travel together |
 | Turn activity | active, completed, attention | uses only admitted per-Turn Activity; active starts expanded, completed starts collapsed |
 | Result actions | hidden, hover, focus, attention | 20 px row, 6 px top gap, 2 px action gap; ordinary actions disclose on turn hover/focus |

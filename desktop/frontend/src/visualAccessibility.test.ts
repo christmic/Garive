@@ -145,7 +145,7 @@ describe("Desktop visual accessibility contract", () => {
     expect(CSS).toContain(".environment-row { display: grid; grid-template-columns: 18px minmax(0, 1fr) 14px; align-items: center; gap: 7px; min-height: 34px; }");
     expect(CSS).toContain("@keyframes environment-enter");
     expect(CSS).toContain("@keyframes workspace-content-enter");
-    expect(CSS).toContain(".app-shell:has(.environment-panel) .work-surface { margin-right: 236px; }");
+    expect(CSS).not.toMatch(/:has\(\.environment-panel\)[^{]*\.work-surface\s*{[^}]*margin-right/);
     expect(CSS).toContain("width: min(var(--thread-content-max-width), calc(100% - 48px))");
     expect(CSS).toContain(".settings-workbench { display: grid; grid-template-columns: 164px minmax(0, 1fr)");
     expect(CSS).toContain(".settings-panel { min-width: 0; overflow: auto;");

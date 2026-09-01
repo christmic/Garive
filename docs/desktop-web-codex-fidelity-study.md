@@ -245,12 +245,11 @@ invented queue, and it does not mutate the active Runtime Turn.
 ### K. Measured desktop geometry and file-workbench lifecycle
 
 The supplied screenshots and Garive fixtures were measured at the same
-1280 × 800 viewport. With Environment open, Garive's 546 px conversation axis
-starts at x=352 and its 224 px panel starts at x=1044; the reference starts at
-approximately x=352 and x=1045. In the file surface, Garive's divider starts at
-x=558 while the reference starts at approximately x=556. These measurements
-rule out a permanent left-shift of the ordinary thread: the apparent shift is
-the intended response to an open overlay or split workbench.
+1280 × 800 viewport. The 224 px Environment panel starts at x=1044; the
+reference starts at approximately x=1045. The panel is an overlay and therefore
+must not change the ordinary thread axis. In the file surface, Garive's divider
+starts at x=558 while the reference starts at approximately x=556; that is a
+real split workbench and intentionally changes the reading measure.
 
 A read-only audit of the installed Codex desktop bundle also confirms the
 underlying density model: a 4 px spacing unit, 30–36 px navigation rows, 36–46
@@ -1414,6 +1413,27 @@ the rendered root remains exactly 480x720, the HUD and Composer remain inside
 the viewport, and horizontal overflow stays zero. This provides the compact
 effect visible in the supplied Codex references without corrupting the
 source-backed 14px default scale or inventing a second density system.
+
+### XLVIII. Environment is progressive overlay, not a third column
+
+The installed Codex `26.825.51511` thread source renders the summary panel in
+an `absolute`, right-anchored, `z-40` container. Its outer region ignores
+pointer input while the raised panel restores it; Environment is a collapsible
+section inside that panel. This source structure agrees with the supplied
+running screenshot and rules out allocating a permanent inspector column.
+
+Garive previously kept its 224px visual card but reserved another 236px beside
+the work surface whenever it opened. At 1280×800 this translated the unchanged
+672px transcript and Composer from x=441.5 to x=323.5 and reduced the work
+surface from 1005px to 769px. The disclosure therefore changed reading position
+even though it did not open a committed artifact.
+
+Desktop and Web now keep the work surface, transcript, Goal rail and Composer
+geometry invariant while Environment floats at x=1044. A visual contract rejects
+any Environment selector that reintroduces `margin-right` layout reservation;
+live browser measurement must additionally prove identical before/after bounds
+and zero horizontal overflow. Files, diffs, terminals and committed artifacts
+remain the only secondary surfaces allowed to create the real split workbench.
 
 ## Gate 1 — Codex fidelity
 
