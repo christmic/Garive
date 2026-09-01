@@ -179,6 +179,7 @@ describe("Desktop visual accessibility contract", () => {
     expect(CSS).toContain("background: var(--surface-composer)");
     expect(CSS).toContain(".theme-dark .environment-panel, .theme-dark .environment-panel header");
     expect(CSS).toContain('.conversation-top-fade[data-visible="true"] { opacity: 1; }');
+    expect(CSS).toContain(".conversation { overflow-anchor: none; }");
     expect(CSS).toContain("height: 16px; background: linear-gradient(to bottom, var(--surface-canvas), transparent)");
     expect(CSS).toContain(".conversation-tail-button { pointer-events: auto; position: absolute; z-index: 4; top: -25px; left: 50%;");
     expect(CSS).not.toContain(".conversation-tail-button { bottom:");

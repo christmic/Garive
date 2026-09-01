@@ -30,7 +30,9 @@ import {
 } from "./preferences";
 import { createTranslator, resolveDesktopLocale, type MessageKey } from "./i18n";
 import { resolveComposerLayout, shouldSubmitComposer, type ComposerLayout } from "./composer";
-import { isNearConversationTail, scrollConversationToTail } from "./conversationTail";
+import { conversationDistanceFromTail, conversationScrollDirectionForKey,
+  isNearConversationTail, preserveConversationDistanceFromTail, scrollConversationToTail,
+  type ConversationScrollDirection, type ConversationScrollMetrics } from "./conversationTail";
 import { visibleScrollEdges } from "./scrollEdges";
 import { nextDesktopZoom } from "./zoom";
 import { formatThreadMarkdown } from "./threadExport";
@@ -923,11 +925,36 @@ function WorkSurface({ state, composer, submit, startSuggestion, dispatch, conte
   const composerMeasure = useRef<HTMLSpanElement>(null);
   const [composerLayout, setComposerLayout] = useState<ComposerLayout>("single-line");
   const pendingTailFrame = useRef<number | undefined>(undefined);
+  const followingTailRef = useRef(true);
+  const lastScrollDistance = useRef(0);
+  const layoutMetrics = useRef<ConversationScrollMetrics | undefined>(undefined);
+  const userScrollIntent = useRef<{ direction?: ConversationScrollDirection; at: number } | undefined>(undefined);
+  const touchStartY = useRef<number | undefined>(undefined);
+  const previousSessionId = useRef(state.sessionId);
   const tailRevision = `${state.messages.length}:${state.messages.at(-1)?.text.length ?? 0}:${state.livePreview?.sequence ?? -1}:${state.phase}`;
   const previousTailRevision = useRef(tailRevision);
   const hasExpandedComposerCapability = state.phase === "submitting"
     || state.messages.some((message) => Boolean(message.suspension))
     || state.workspaces.length > 0 || Boolean(context);
+  const setTailFollowing = useCallback((value: boolean) => {
+    followingTailRef.current = value;
+    setFollowingTail(value);
+  }, []);
+
+  useLayoutEffect(() => {
+    if (previousSessionId.current === state.sessionId) return;
+    previousSessionId.current = state.sessionId;
+    userScrollIntent.current = undefined;
+    setTailFollowing(true);
+    setNewOutputBelow(false);
+    const frame = requestAnimationFrame(() => {
+      const element = conversation.current;
+      if (!element) return;
+      element.scrollTop = element.scrollHeight;
+      lastScrollDistance.current = 0;
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [setTailFollowing, state.sessionId]);
 
   useLayoutEffect(() => {
     const shell = composerShell.current;
@@ -954,15 +981,51 @@ function WorkSurface({ state, composer, submit, startSuggestion, dispatch, conte
     return () => observer.disconnect();
   }, [hasExpandedComposerCapability, state.draft]);
 
+  useLayoutEffect(() => {
+    const element = conversation.current;
+    if (!element) return;
+    const readMetrics = (): ConversationScrollMetrics => ({ scrollTop: element.scrollTop,
+      scrollHeight: element.scrollHeight, clientHeight: element.clientHeight });
+    layoutMetrics.current = readMetrics();
+    lastScrollDistance.current = conversationDistanceFromTail(layoutMetrics.current);
+    if (typeof ResizeObserver === "undefined") return;
+    let frame: number | undefined;
+    const reconcileLayout = () => {
+      frame = undefined;
+      const previous = layoutMetrics.current;
+      if (previous && (previous.scrollHeight !== element.scrollHeight
+        || previous.clientHeight !== element.clientHeight)) {
+        element.scrollTop = followingTailRef.current ? element.scrollHeight
+          : preserveConversationDistanceFromTail(previous, element.scrollHeight,
+            element.clientHeight);
+      }
+      layoutMetrics.current = readMetrics();
+      lastScrollDistance.current = conversationDistanceFromTail(layoutMetrics.current);
+      setScrolledFromTop(element.scrollTop > 1);
+    };
+    const observer = new ResizeObserver(() => {
+      if (frame === undefined) frame = requestAnimationFrame(reconcileLayout);
+    });
+    observer.observe(element);
+    if (element.firstElementChild) observer.observe(element.firstElementChild);
+    return () => {
+      observer.disconnect();
+      if (frame !== undefined) cancelAnimationFrame(frame);
+    };
+  }, [state.sessionId, state.messages.length === 0]);
+
   useEffect(() => {
     if (previousTailRevision.current === tailRevision) return;
     previousTailRevision.current = tailRevision;
     const element = conversation.current;
     if (!element) return;
-    if (!followingTail) { setNewOutputBelow(true); return; }
+    if (!followingTailRef.current) { setNewOutputBelow(true); return; }
     const frame = requestAnimationFrame(() => {
       pendingTailFrame.current = undefined;
       element.scrollTop = element.scrollHeight;
+      layoutMetrics.current = { scrollTop: element.scrollTop,
+        scrollHeight: element.scrollHeight, clientHeight: element.clientHeight };
+      lastScrollDistance.current = 0;
       setNewOutputBelow(false);
     });
     pendingTailFrame.current = frame;
@@ -972,27 +1035,44 @@ function WorkSurface({ state, composer, submit, startSuggestion, dispatch, conte
         pendingTailFrame.current = undefined;
       }
     };
-  }, [followingTail, tailRevision]);
+  }, [tailRevision]);
+
+  const markUserScroll = (direction?: ConversationScrollDirection) => {
+    userScrollIntent.current = { direction, at: performance.now() };
+  };
 
   const readScrollPosition = () => {
     const element = conversation.current;
     if (!element) return;
-    const attached = isNearConversationTail(element);
+    const metrics = { scrollTop: element.scrollTop, scrollHeight: element.scrollHeight,
+      clientHeight: element.clientHeight };
+    const distance = conversationDistanceFromTail(metrics);
+    const previousDistance = lastScrollDistance.current;
+    lastScrollDistance.current = distance;
+    layoutMetrics.current = metrics;
     setScrolledFromTop(element.scrollTop > 1);
+    const intent = userScrollIntent.current;
+    if (!intent || performance.now() - intent.at > 1_000) return;
+    const delta = distance - previousDistance;
+    const matchesDirection = Math.abs(delta) > 0.5 && (intent.direction === undefined
+      || (intent.direction === "away" && delta > 0)
+      || (intent.direction === "toward" && delta < 0));
+    if (!matchesDirection) return;
+    intent.at = performance.now();
+    const attached = isNearConversationTail(metrics);
     if (!attached && pendingTailFrame.current !== undefined) {
       cancelAnimationFrame(pendingTailFrame.current);
       pendingTailFrame.current = undefined;
     }
-    setFollowingTail(attached);
+    setTailFollowing(attached);
     if (attached) setNewOutputBelow(false);
   };
   const jumpToLatest = () => {
     const element = conversation.current;
     if (!element) return;
     const motionReduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    if (scrollConversationToTail(element, motionReduced) === "instant") {
-      setFollowingTail(true); setNewOutputBelow(false);
-    }
+    setTailFollowing(true); setNewOutputBelow(false);
+    scrollConversationToTail(element, motionReduced);
   };
 
   if (state.boot === "loading") return <div className="center-state"><span className="orb loading"><Icon name="sparkle" /></span><h1>{t("work.boot.title")}</h1><p>{t("work.boot.body")}</p></div>;
@@ -1014,6 +1094,28 @@ function WorkSurface({ state, composer, submit, startSuggestion, dispatch, conte
   const activeGoal = [...state.messages].reverse().find((message) => message.role === "user")?.text;
   return <section className={state.messages.length ? "work-surface" : "work-surface new-work-surface"}>
     <div ref={conversation} onScroll={readScrollPosition}
+      onWheel={(event) => markUserScroll(event.deltaY < 0 ? "away"
+        : event.deltaY > 0 ? "toward" : undefined)}
+      onPointerDown={(event) => { if (event.target === event.currentTarget) markUserScroll(); }}
+      onTouchStart={(event) => { touchStartY.current = event.touches[0]?.clientY; }}
+      onTouchMove={(event) => {
+        const currentY = event.touches[0]?.clientY;
+        const startY = touchStartY.current;
+        if (currentY === undefined || startY === undefined || Math.abs(currentY - startY) < 8) return;
+        markUserScroll(currentY > startY ? "away" : "toward");
+        touchStartY.current = currentY;
+      }}
+      onTouchEnd={() => { touchStartY.current = undefined; }}
+      onKeyDown={(event) => {
+        const target = event.target as HTMLElement;
+        const space = event.key === " " || event.key === "Spacebar";
+        const editable = target !== event.currentTarget && (target.isContentEditable
+          || Boolean(target.closest("input, select, textarea"))
+          || (space && Boolean(target.closest("button, [role='button']"))));
+        const direction = editable ? undefined
+          : conversationScrollDirectionForKey(event.key, event.shiftKey);
+        if (direction) markUserScroll(direction);
+      }}
       className={state.messages.length ? "conversation" : "conversation empty-conversation"}>
       {state.messages.length === 0 ? <Welcome draftActive={state.draft.trim().length > 0}
         onSelect={startSuggestion} t={t} />

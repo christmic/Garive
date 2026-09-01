@@ -290,13 +290,17 @@ grouped token, but it must not change document typography or hide state.
 - Layouts that require a stable gutter may retain it, but the reserved space
   must use the surrounding surface. Keyboard scrolling, focus order and scroll
   semantics never depend on the visual thumb being present.
-- Live output follows the tail only while the reader remains within the shared
-  attachment threshold. Leaving that threshold preserves the reading position
-  and reveals one explicit return control; new output changes its label and
-  unread marker without moving the document.
+- Live output follows the tail while the reader remains within the shared 24 px
+  attachment threshold. Only wheel, direct pointer/touch scrolling, or platform
+  scrolling keys may change that follow state; layout and scripted scroll
+  events are system events, not reader intent.
+- Every thread scroll owner disables browser `overflow-anchor`. Before measured
+  content or Composer geometry changes, it records scroll height and distance
+  from the tail. On the next animation frame it stays attached or restores that
+  distance. A detached reader is never moved by new output.
 - Return-to-latest uses a real smooth scroll unless the OS requests reduced
-  motion. The control remains visible until scroll events confirm attachment;
-  clicking it never fabricates the attached state before the viewport arrives.
+  motion. Activating it deliberately returns the controller to follow mode and
+  clears the unread marker while the viewport moves to the exact tail.
 - The return control is anchored to the variable-height Composer wrapper, 25 px
   above its leading edge. It must not use a fixed viewport-bottom offset, so
   approval, suspension and attached-workspace rows cannot overlap it.
@@ -567,6 +571,7 @@ space. The same rule applies in light and dark themes and at narrow widths.
 | Turn activity | active, completed, attention | uses only admitted per-Turn Activity; active starts expanded, completed starts collapsed |
 | Result actions | hidden, hover, focus, attention | 20 px row, 6 px top gap, 2 px action gap; ordinary actions disclose on turn hover/focus |
 | User Turn | short, measured-long, expanded, hover, focus | 70% bubble, 22 px radius, 16 px inset, 10 px vertical padding; actions belong to the full-width right-aligned Turn |
+| Thread scroll owner | attached, detached, unread, returning | 24 px threshold; only user intent detaches; layout changes preserve distance; browser anchoring is off |
 
 ## Capacity view contract
 

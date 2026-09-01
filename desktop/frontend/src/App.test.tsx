@@ -307,9 +307,13 @@ describe("Desktop product experience", () => {
     });
     fireEvent.scroll(conversation);
     expect(topFade.dataset.visible).toBe("true");
+    expect(screen.queryByRole("button", { name: "Jump to latest" })).toBeNull();
+    fireEvent.wheel(conversation, { deltaY: -120 });
+    conversation.scrollTop = 100;
+    fireEvent.scroll(conversation);
     const jump = await screen.findByRole("button", { name: "Jump to latest" });
     expect(jump.closest(".composer-wrap")).toBe(view.container.querySelector(".composer-wrap"));
-    expect(conversation.scrollTop).toBe(120);
+    expect(conversation.scrollTop).toBe(100);
     conversation.scrollTop = 0;
     fireEvent.scroll(conversation);
     expect(topFade.dataset.visible).toBe("false");

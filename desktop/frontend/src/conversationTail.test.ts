@@ -1,10 +1,30 @@
 import { describe, expect, it, vi } from "vitest";
-import { isNearConversationTail, scrollConversationToTail } from "./conversationTail";
+import { conversationScrollDirectionForKey, isNearConversationTail,
+  preserveConversationDistanceFromTail, scrollConversationToTail } from "./conversationTail";
 
 describe("conversation tail policy", () => {
   it("follows the tail within the bounded reading threshold", () => {
-    expect(isNearConversationTail({ scrollTop: 528, scrollHeight: 1_000, clientHeight: 400 })).toBe(true);
-    expect(isNearConversationTail({ scrollTop: 527, scrollHeight: 1_000, clientHeight: 400 })).toBe(false);
+    expect(isNearConversationTail({ scrollTop: 576, scrollHeight: 1_000, clientHeight: 400 })).toBe(true);
+    expect(isNearConversationTail({ scrollTop: 575, scrollHeight: 1_000, clientHeight: 400 })).toBe(false);
+  });
+
+  it("preserves distance from the tail across programmatic layout changes", () => {
+    expect(preserveConversationDistanceFromTail({ scrollTop: 600,
+      scrollHeight: 1_200, clientHeight: 400 }, 900)).toBe(300);
+    expect(preserveConversationDistanceFromTail({ scrollTop: 800,
+      scrollHeight: 1_200, clientHeight: 400 }, 900)).toBe(500);
+    expect(preserveConversationDistanceFromTail({ scrollTop: 0,
+      scrollHeight: 300, clientHeight: 400 }, 200)).toBe(0);
+    expect(preserveConversationDistanceFromTail({ scrollTop: 800,
+      scrollHeight: 1_200, clientHeight: 400 }, 1_200, 300)).toBe(900);
+  });
+
+  it("maps only platform scrolling keys to reader intent", () => {
+    expect(conversationScrollDirectionForKey("ArrowUp")).toBe("away");
+    expect(conversationScrollDirectionForKey("PageDown")).toBe("toward");
+    expect(conversationScrollDirectionForKey(" ", true)).toBe("away");
+    expect(conversationScrollDirectionForKey(" ", false)).toBe("toward");
+    expect(conversationScrollDirectionForKey("Enter")).toBeUndefined();
   });
 
   it("treats short content as attached and rejects invalid measurements", () => {

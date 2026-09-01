@@ -936,6 +936,30 @@ or editable durable command, so it maps only the supported subset: measured
 the Turn hover/focus row. Desktop and Web share the component. No send time or
 Edit affordance is invented because current Host projections admit neither.
 
+### XXVIII. Thread scroll ownership and layout anchoring
+
+Installed source is explicit in `thread-scroll-layout-B1Q-zWDJ.js`. Its
+controller uses a 24 px tail-attachment threshold and distinguishes `user`
+from `system` scrolling. User intent is admitted from wheel, direct pointer or
+touch scrolling, and Arrow/Page/Home/End/Space keys; programmatic scroll events
+do not detach the reader. A user-direction grace window lasts 1,000 ms. Before
+layout changes, the controller records `distanceFromBottomPx` and
+`scrollHeightPx`, then restores that distance on the next animation frame. It
+also observes the scroll owner and content, compensates footer height changes,
+and disables browser `overflow-anchor`. The installed implementation uses
+reverse flex and negative coordinates internally; that coordinate convention
+is an implementation fact, not a visual requirement.
+
+Garive maps the same ownership contract onto its normal positive `scrollTop`
+layout. Desktop and Web share a 24 px attachment threshold, key-direction
+mapping and distance-preservation helpers. Only recent user intent changes the
+follow state. Request measurement, font reflow, streaming content and Composer
+height changes either remain attached or retain the reader's prior distance
+from the tail. Native browser anchoring is disabled so it cannot compete with
+the controller. Garive does not copy reverse flex or negative coordinates
+because its existing document order and accessibility semantics do not require
+them.
+
 ## Gate 1 — Codex fidelity
 
 This gate passes only when both Desktop and Web show:
