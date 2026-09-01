@@ -6,9 +6,9 @@ use garive_plan::{PlanDefinitionV1, PlanErrorCode, PlanSnapshot, PlanStepId, Pla
 use serde_json::{json, Map, Value};
 
 use super::{
-    validate_active_goal_binding, validate_goal_anchor_binding, ActivePlanClaim,
-    PlanCommandContext, PlanRuntimeError, PlanRuntimeState, PlanRuntimeTransition,
-    PlanStepExecutionStart, PlannedPlanCommand,
+    validate_active_goal_binding, validate_goal_anchor_binding, validate_suspended_goal_binding,
+    ActivePlanClaim, PlanCommandContext, PlanRuntimeError, PlanRuntimeState, PlanRuntimeTransition,
+    PlanStepContinuation, PlanStepExecutionStart, PlanStepSuspension, PlannedPlanCommand,
 };
 use crate::{PlannedTurn, SqliteLedger, SqliteLedgerError};
 
@@ -141,6 +141,10 @@ pub fn plan_plan_transition(
         request,
         PlanRuntimeTransition::Start { .. }
             | PlanRuntimeTransition::Adopt { .. }
+            | PlanRuntimeTransition::SuspendStep(_)
+            | PlanRuntimeTransition::SuspendPlan { .. }
+            | PlanRuntimeTransition::ResumePlan { .. }
+            | PlanRuntimeTransition::ResumeStep { .. }
             | PlanRuntimeTransition::CompletePlan { .. }
     ) {
         return Err(PlanRuntimeError::TransitionInvalid);
@@ -474,6 +478,96 @@ fn plan_transition(
             }
             ("plan.step.failed", Value::Object(value), transitions)
         }
+        PlanRuntimeTransition::SuspendStep(binding) => {
+            continuation(&binding.continuation_kind, &binding.continuation_reference)?;
+            let claim = claims
+                .get(&binding.step_id)
+                .ok_or(PlanRuntimeError::ClaimStale)?;
+            if claim.attempt_id.as_deref() != Some(&binding.attempt_id)
+                || claim.execution_id.as_deref() != Some(&binding.execution_id)
+            {
+                return Err(PlanRuntimeError::ClaimStale);
+            }
+            let mut value = mutation(context, definition, expected_state_version, next_version);
+            value.insert("step_id".into(), json!(binding.step_id.as_str()));
+            value.insert("attempt_id".into(), json!(binding.attempt_id));
+            value.insert("execution_id".into(), json!(binding.execution_id));
+            value.insert("continuation_kind".into(), json!(binding.continuation_kind));
+            value.insert(
+                "continuation_reference".into(),
+                json!(binding.continuation_reference),
+            );
+            (
+                "plan.step.suspended",
+                Value::Object(value),
+                vec![PlanTransition::SuspendStep(binding.step_id)],
+            )
+        }
+        PlanRuntimeTransition::SuspendPlan {
+            continuation_kind,
+            continuation_reference,
+        } => {
+            continuation(&continuation_kind, &continuation_reference)?;
+            let mut value = mutation(context, definition, expected_state_version, next_version);
+            value.insert("continuation_kind".into(), json!(continuation_kind));
+            value.insert(
+                "continuation_reference".into(),
+                json!(continuation_reference),
+            );
+            (
+                "plan.suspended",
+                Value::Object(value),
+                vec![PlanTransition::Suspend],
+            )
+        }
+        PlanRuntimeTransition::ResumePlan {
+            resolved_continuation_reference,
+        } => {
+            require_non_empty(&resolved_continuation_reference)?;
+            let mut value = mutation(context, definition, expected_state_version, next_version);
+            value.insert(
+                "resolved_continuation_reference".into(),
+                json!(resolved_continuation_reference),
+            );
+            (
+                "plan.resumed",
+                Value::Object(value),
+                vec![PlanTransition::Resume],
+            )
+        }
+        PlanRuntimeTransition::ResumeStep {
+            continuation,
+            execution_id,
+        } => {
+            require_non_empty(&continuation.resolved_continuation_reference)?;
+            require_non_empty(&execution_id)?;
+            let claim = claims
+                .get_mut(&continuation.step_id)
+                .ok_or(PlanRuntimeError::ClaimStale)?;
+            if claim.attempt_id.as_deref() != Some(&continuation.attempt_id)
+                || claim.execution_id.as_deref() != Some(&continuation.prior_execution_id)
+            {
+                return Err(PlanRuntimeError::ClaimStale);
+            }
+            claim.execution_id = Some(execution_id.clone());
+            let mut value = mutation(context, definition, expected_state_version, next_version);
+            value.insert("step_id".into(), json!(continuation.step_id.as_str()));
+            value.insert("attempt_id".into(), json!(continuation.attempt_id));
+            value.insert(
+                "prior_execution_id".into(),
+                json!(continuation.prior_execution_id),
+            );
+            value.insert("execution_id".into(), json!(execution_id));
+            value.insert(
+                "resolved_continuation_reference".into(),
+                json!(continuation.resolved_continuation_reference),
+            );
+            (
+                "plan.step.resumed",
+                Value::Object(value),
+                vec![PlanTransition::ResumeStep(continuation.step_id)],
+            )
+        }
         PlanRuntimeTransition::CompletePlan { reduction_evidence } => {
             let mut value = mutation(context, definition, expected_state_version, next_version);
             value.insert("reduction_evidence".into(), content(&reduction_evidence));
@@ -583,6 +677,103 @@ pub fn plan_start_step_execution(
     Ok(planned)
 }
 
+/// Atomically suspends one running step and its Plan around one C6 continuation.
+pub fn plan_suspend_step_and_plan(
+    current: &PlanRuntimeState,
+    expected_state_version: u64,
+    context: &PlanCommandContext,
+    binding: PlanStepSuspension,
+) -> Result<PlannedPlanCommand, PlanRuntimeError> {
+    let step_context = derived_context(context, "step-suspended");
+    let mut step = plan_transition(
+        current,
+        expected_state_version,
+        &step_context,
+        PlanRuntimeTransition::SuspendStep(binding.clone()),
+    )?;
+    let plan_context = derived_context(context, "plan-suspended");
+    let mut plan = plan_transition(
+        &step.next,
+        step.next.state_version,
+        &plan_context,
+        PlanRuntimeTransition::SuspendPlan {
+            continuation_kind: binding.continuation_kind,
+            continuation_reference: binding.continuation_reference,
+        },
+    )?;
+    step.facts.append(&mut plan.facts);
+    plan.facts = step.facts;
+    Ok(plan)
+}
+
+/// Atomically resumes Plan/step state around one already planned C6 continuation.
+pub fn plan_resume_step_execution(
+    current: &PlanRuntimeState,
+    expected_state_version: u64,
+    context: &PlanCommandContext,
+    continuation: PlanStepContinuation,
+    turn: &PlannedTurn,
+) -> Result<PlannedPlanCommand, PlanRuntimeError> {
+    let execution_id = turn
+        .execution_id
+        .as_ref()
+        .ok_or(PlanRuntimeError::Invalid)?;
+    let starts = turn
+        .facts
+        .iter()
+        .filter(|fact| fact.kind.as_str() == "turn.started")
+        .collect::<Vec<_>>();
+    let executions = turn
+        .facts
+        .iter()
+        .filter(|fact| fact.kind.as_str() == "execution.started")
+        .collect::<Vec<_>>();
+    let [start] = starts.as_slice() else {
+        return Err(PlanRuntimeError::Invalid);
+    };
+    let [execution] = executions.as_slice() else {
+        return Err(PlanRuntimeError::Invalid);
+    };
+    let start_payload: Value =
+        serde_json::from_str(start.payload.as_json()).map_err(|_| PlanRuntimeError::Invalid)?;
+    if start_payload.get("command_id").and_then(Value::as_str) != Some(context.command_id.as_str())
+        || start_payload.get("kind").and_then(Value::as_str) != Some("continue")
+        || start_payload
+            .get("prior_suspension_id")
+            .and_then(Value::as_str)
+            != Some(continuation.resolved_continuation_reference.as_str())
+        || execution.execution_id.as_ref() != Some(execution_id)
+        || turn
+            .facts
+            .iter()
+            .any(|fact| fact.recorded_at != context.recorded_at || fact.schema_version != 1)
+    {
+        return Err(PlanRuntimeError::Invalid);
+    }
+    let plan_context = derived_context(context, "plan-resumed");
+    let mut plan = plan_transition(
+        current,
+        expected_state_version,
+        &plan_context,
+        PlanRuntimeTransition::ResumePlan {
+            resolved_continuation_reference: continuation.resolved_continuation_reference.clone(),
+        },
+    )?;
+    let mut step = plan_transition(
+        &plan.next,
+        plan.next.state_version,
+        context,
+        PlanRuntimeTransition::ResumeStep {
+            continuation,
+            execution_id: execution_id.as_str().into(),
+        },
+    )?;
+    plan.facts.extend(turn.facts.clone());
+    plan.facts.append(&mut step.facts);
+    step.facts = plan.facts;
+    Ok(step)
+}
+
 /// Commits one validated Plan command under Session optimistic concurrency.
 pub fn commit_plan_command(
     ledger: &mut SqliteLedger,
@@ -610,13 +801,17 @@ pub fn commit_plan_command(
         .facts
         .iter()
         .any(|fact| fact.kind.as_str() == "plan.adopted");
+    let resumes_suspended_goal = planned
+        .facts
+        .iter()
+        .any(|fact| matches!(fact.kind.as_str(), "plan.resumed" | "plan.step.resumed"));
     let requires_active_goal = planned.facts.iter().any(|fact| {
         matches!(
             fact.kind.as_str(),
-            "plan.resumed" | "plan.step.claimed" | "plan.step.resumed" | "plan.step.started"
+            "plan.suspended" | "plan.step.suspended" | "plan.step.claimed" | "plan.step.started"
         )
     });
-    if binds_anchor || requires_active_goal {
+    if binds_anchor || requires_active_goal || resumes_suspended_goal {
         if expected_session_version != watermark.session_version
             || planned.next.session_version != watermark.session_version
             || planned.next.through_position != watermark.max_position
@@ -628,6 +823,8 @@ pub fn commit_plan_command(
         let goal = goal(&prefix, definition.goal_id())?;
         if binds_anchor {
             validate_goal_anchor_binding(definition, goal)?;
+        } else if resumes_suspended_goal {
+            validate_suspended_goal_binding(definition, goal)?;
         } else {
             validate_active_goal_binding(definition, goal)?;
         }
@@ -715,6 +912,21 @@ fn require_digest(value: &str) -> Result<(), PlanRuntimeError> {
         Ok(())
     } else {
         Err(PlanRuntimeError::Invalid)
+    }
+}
+
+fn continuation(kind: &str, reference: &str) -> Result<(), PlanRuntimeError> {
+    if !matches!(kind, "interaction" | "reconciliation") {
+        return Err(PlanRuntimeError::Invalid);
+    }
+    require_non_empty(reference)
+}
+
+fn derived_context(context: &PlanCommandContext, suffix: &str) -> PlanCommandContext {
+    PlanCommandContext {
+        command_id: format!("{}:{suffix}", context.command_id),
+        actor_reference: context.actor_reference.clone(),
+        recorded_at: context.recorded_at.clone(),
     }
 }
 

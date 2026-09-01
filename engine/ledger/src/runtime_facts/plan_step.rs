@@ -159,8 +159,25 @@ fn suspended(value: &Map<String, Value>) -> Result<(), LedgerError> {
 }
 
 fn resumed(value: &Map<String, Value>) -> Result<(), LedgerError> {
-    mutation_with(value, &["step_id", "resolved_continuation_reference"], &[])?;
-    non_empty(value, "step_id")?;
+    mutation_with(
+        value,
+        &[
+            "step_id",
+            "attempt_id",
+            "prior_execution_id",
+            "execution_id",
+            "resolved_continuation_reference",
+        ],
+        &[],
+    )?;
+    for key in [
+        "step_id",
+        "attempt_id",
+        "prior_execution_id",
+        "execution_id",
+    ] {
+        non_empty(value, key)?;
+    }
     non_empty(value, "resolved_continuation_reference")
 }
 

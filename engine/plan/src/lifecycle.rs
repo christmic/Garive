@@ -262,8 +262,7 @@ impl PlanSnapshot {
                 next.require_state(&step_id, StepState::Running)?.state = StepState::Suspended;
             }
             PlanTransition::ResumeStep(step_id) => {
-                next.require_state(&step_id, StepState::Suspended)?.state = StepState::Pending;
-                next.refresh_ready();
+                next.require_state(&step_id, StepState::Suspended)?.state = StepState::Running;
             }
             PlanTransition::FailStep(step_id) => {
                 next.require_state(&step_id, StepState::Running)?.state = StepState::Failed;

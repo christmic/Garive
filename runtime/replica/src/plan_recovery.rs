@@ -217,8 +217,14 @@ fn apply(
     if previous != current.state_version || next != previous.checked_add(1).ok_or(corrupt(()))? {
         return Err(PlanRuntimeError::RecoveryCorrupt);
     }
-    if fact.kind.as_str() == "plan.step.started" {
+    if matches!(
+        fact.kind.as_str(),
+        "plan.step.started" | "plan.step.resumed"
+    ) {
         validate_execution_binding(ledger, facts, fact, value, current)?;
+    }
+    if matches!(fact.kind.as_str(), "plan.resumed" | "plan.step.resumed") {
+        validate_continuation_resolution(facts, fact, value)?;
     }
     if fact.kind.as_str() == "plan.completed" {
         validate_completion_evidence(ledger, facts, fact, value, current)?;
@@ -245,6 +251,38 @@ fn apply(
             snapshot.apply(transition).map_err(corrupt)
         })?;
     current.state_version = next;
+    Ok(())
+}
+
+fn validate_continuation_resolution(
+    facts: &[DurableFact],
+    resumed: &DurableFact,
+    value: &Map<String, Value>,
+) -> Result<(), PlanRuntimeError> {
+    let plan_id = text(value, "plan_id")?;
+    let plan_revision = unsigned(value, "plan_revision")?;
+    let step_id = value.get("step_id").and_then(Value::as_str);
+    let suspended_kind = if step_id.is_some() {
+        "plan.step.suspended"
+    } else {
+        "plan.suspended"
+    };
+    let candidates = facts
+        .iter()
+        .filter(|fact| fact.position < resumed.position && fact.kind.as_str() == suspended_kind)
+        .filter_map(|fact| {
+            let candidate = payload(fact).ok()?;
+            (candidate.get("plan_id")?.as_str()? == plan_id
+                && candidate.get("plan_revision")?.as_u64()? == plan_revision
+                && candidate.get("step_id").and_then(Value::as_str) == step_id)
+                .then_some(candidate)
+        })
+        .collect::<Vec<_>>();
+    let suspended = candidates.last().ok_or(PlanRuntimeError::RecoveryCorrupt)?;
+    if text(suspended, "continuation_reference")? != text(value, "resolved_continuation_reference")?
+    {
+        return Err(PlanRuntimeError::RecoveryCorrupt);
+    }
     Ok(())
 }
 
@@ -312,9 +350,12 @@ fn validate_execution_binding(
     current: &PlanRuntimeState,
 ) -> Result<(), PlanRuntimeError> {
     let execution_id = text(value, "execution_id")?;
-    if text(value, "execution_snapshot_digest")?
-        != current.snapshot.definition().agent_snapshot_digest()
-    {
+    let snapshot_digest = if plan_fact.kind.as_str() == "plan.step.started" {
+        text(value, "execution_snapshot_digest")?
+    } else {
+        current.snapshot.definition().agent_snapshot_digest()
+    };
+    if snapshot_digest != current.snapshot.definition().agent_snapshot_digest() {
         return Err(PlanRuntimeError::RecoveryCorrupt);
     }
     let commit_version = ledger
@@ -344,7 +385,7 @@ fn validate_execution_binding(
     if execution_payload
         .get("snapshot_digest")
         .and_then(Value::as_str)
-        != Some(text(value, "execution_snapshot_digest")?)
+        != Some(snapshot_digest)
     {
         return Err(PlanRuntimeError::RecoveryCorrupt);
     }
@@ -353,18 +394,23 @@ fn validate_execution_binding(
         .iter()
         .filter(|fact| fact.kind.as_str() == "turn.started")
         .filter(|fact| fact.turn_id.as_ref() == Some(turn_id))
+        .filter(|fact| {
+            ledger.fact_commit_version(&fact.fact_id).ok().flatten() == Some(commit_version)
+        })
         .collect::<Vec<_>>();
-    if turn_starts.len() != 1
-        || ledger
-            .fact_commit_version(&turn_starts[0].fact_id)
-            .map_err(map_ledger)?
-            != Some(commit_version)
-    {
+    if turn_starts.len() != 1 {
         return Err(PlanRuntimeError::RecoveryCorrupt);
     }
     let turn_payload: Value =
         serde_json::from_str(turn_starts[0].payload.as_json()).map_err(corrupt)?;
-    if turn_payload.get("command_id").and_then(Value::as_str) != Some(command_id) {
+    if turn_payload.get("command_id").and_then(Value::as_str) != Some(command_id)
+        || (plan_fact.kind.as_str() == "plan.step.resumed"
+            && (turn_payload.get("kind").and_then(Value::as_str) != Some("continue")
+                || turn_payload
+                    .get("prior_suspension_id")
+                    .and_then(Value::as_str)
+                    != Some(text(value, "resolved_continuation_reference")?)))
+    {
         return Err(PlanRuntimeError::RecoveryCorrupt);
     }
     Ok(())
@@ -418,7 +464,7 @@ fn transitions(
         "plan.step.suspended" => {
             terminal_step(current, value, StepTerminal::Suspend).map(|value| vec![value])
         }
-        "plan.step.resumed" => Ok(vec![PlanTransition::ResumeStep(step_id(value)?)]),
+        "plan.step.resumed" => resume_step(current, value).map(|value| vec![value]),
         _ => Err(PlanRuntimeError::RecoveryCorrupt),
     }
 }
@@ -719,6 +765,7 @@ fn start(
     Ok(PlanTransition::Start(step_id))
 }
 
+#[derive(Clone, Copy)]
 enum StepTerminal {
     Complete,
     Fail,
@@ -740,12 +787,32 @@ fn terminal_step(
     {
         return Err(PlanRuntimeError::RecoveryCorrupt);
     }
-    current.active_claims.remove(&step_id);
+    if !matches!(terminal, StepTerminal::Suspend) {
+        current.active_claims.remove(&step_id);
+    }
     Ok(match terminal {
         StepTerminal::Complete => PlanTransition::CompleteStep(step_id),
         StepTerminal::Suspend => PlanTransition::SuspendStep(step_id),
         StepTerminal::Fail => PlanTransition::FailStep(step_id),
     })
+}
+
+fn resume_step(
+    current: &mut PlanRuntimeState,
+    value: &Map<String, Value>,
+) -> Result<PlanTransition, PlanRuntimeError> {
+    let step_id = step_id(value)?;
+    let claim = current
+        .active_claims
+        .get_mut(&step_id)
+        .ok_or(PlanRuntimeError::RecoveryCorrupt)?;
+    if claim.attempt_id.as_deref() != Some(text(value, "attempt_id")?)
+        || claim.execution_id.as_deref() != Some(text(value, "prior_execution_id")?)
+    {
+        return Err(PlanRuntimeError::RecoveryCorrupt);
+    }
+    claim.execution_id = Some(text(value, "execution_id")?.into());
+    Ok(PlanTransition::ResumeStep(step_id))
 }
 
 fn exact_claim<'a>(

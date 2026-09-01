@@ -8,7 +8,8 @@ mod command;
 
 pub use command::{
     commit_plan_command, plan_adopt_plan, plan_complete_plan, plan_plan_transition,
-    plan_propose_plan, plan_start_step_execution,
+    plan_propose_plan, plan_resume_step_execution, plan_start_step_execution,
+    plan_suspend_step_and_plan,
 };
 
 pub(crate) fn validate_goal_anchor_binding(
@@ -34,6 +35,24 @@ pub(crate) fn validate_active_goal_binding(
     goal: &crate::GoalRuntimeState,
 ) -> Result<(), PlanRuntimeError> {
     if goal.snapshot.state() != GoalState::Active
+        || goal.snapshot.revision() < definition.goal_revision()
+        || goal
+            .snapshot
+            .definition()
+            .digest()
+            .map_err(|_| PlanRuntimeError::RecoveryCorrupt)?
+            != definition.goal_definition_digest()
+    {
+        return Err(PlanRuntimeError::BindingStale);
+    }
+    Ok(())
+}
+
+pub(crate) fn validate_suspended_goal_binding(
+    definition: &PlanDefinitionV1,
+    goal: &crate::GoalRuntimeState,
+) -> Result<(), PlanRuntimeError> {
+    if goal.snapshot.state() != GoalState::Suspended
         || goal.snapshot.revision() < definition.goal_revision()
         || goal
             .snapshot
@@ -126,6 +145,34 @@ pub struct PlanStepExecutionStart {
     pub sandbox_profile_digest: String,
     /// Fresh Runtime Safety decision identity.
     pub safety_decision_id: String,
+}
+
+/// Exact running attempt and durable continuation that suspend one Plan.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PlanStepSuspension {
+    /// Running step.
+    pub step_id: PlanStepId,
+    /// Exact attempt identity.
+    pub attempt_id: String,
+    /// Execution that committed the matching Turn suspension.
+    pub execution_id: String,
+    /// Stable continuation category admitted by PL1.
+    pub continuation_kind: String,
+    /// Runtime-owned suspension identity.
+    pub continuation_reference: String,
+}
+
+/// Exact suspended attempt rebound to a continued C6 Execution.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PlanStepContinuation {
+    /// Suspended step.
+    pub step_id: PlanStepId,
+    /// Existing logical attempt identity.
+    pub attempt_id: String,
+    /// Execution that suspended.
+    pub prior_execution_id: String,
+    /// Exact resolved Runtime suspension identity.
+    pub resolved_continuation_reference: String,
 }
 
 impl PlanRetryPosture {
@@ -235,6 +282,27 @@ pub enum PlanRuntimeTransition {
         evidence: Option<CanonicalPayload>,
         /// Closed policy result; Retry is applied in this same transition.
         retry_posture: PlanRetryPosture,
+    },
+    /// Suspend one running attempt with the Turn's exact continuation.
+    SuspendStep(PlanStepSuspension),
+    /// Suspend Plan dispatch around the same continuation.
+    SuspendPlan {
+        /// Stable continuation category admitted by PL1.
+        continuation_kind: String,
+        /// Runtime-owned suspension identity.
+        continuation_reference: String,
+    },
+    /// Resume Plan dispatch after the continuation commit.
+    ResumePlan {
+        /// Exact suspension identity resolved by C6.
+        resolved_continuation_reference: String,
+    },
+    /// Rebind one suspended attempt to the fresh continuation Execution.
+    ResumeStep {
+        /// Exact suspended attempt binding.
+        continuation: PlanStepContinuation,
+        /// Fresh C6 Execution identity created by continuation.
+        execution_id: String,
     },
     /// Terminalize only after every step and Goal criterion is verified.
     CompletePlan {
