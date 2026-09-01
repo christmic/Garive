@@ -122,6 +122,10 @@ workbench made from four persistent spatial layers:
    global destinations, durable tasks and host identity. It uses a distinct
    neutral surface, compact rows and one selected fill. Logos, hero branding,
    large avatars and duplicate connection badges are not part of this layer.
+   Its task area is a semantic stack rather than one undifferentiated feed:
+   truthful needs-input, running and failed Sessions form a bounded Priority
+   group ahead of completed/idle Recents. A Session appears once, empty groups
+   disappear, and no pin/project hierarchy is fabricated without durable data.
 3. **Work layer.** Conversation and Composer form one bounded work column on a
    continuous canvas. Assistant output is document content, not a card stack.
    Environment may float above this layer; it does not permanently shrink an

@@ -6,6 +6,7 @@ export interface RecentTask {
 
 export type TaskCategory = "attention" | "active" | "failed" | "completed" | "idle";
 export type TaskFilter = "all" | "attention" | "active" | "completed";
+export type SidebarTaskGroup = "priority" | "recent";
 
 export function classifyTask(task: RecentTask): TaskCategory {
   if (task.latest_turn_state === "suspended") return "attention";
@@ -42,4 +43,19 @@ export function filterAndOrderTasks(
     if (categoryOrder) return categoryOrder;
     return Date.parse(right.opened_at ?? "") - Date.parse(left.opened_at ?? "");
   });
+}
+
+export function groupSidebarTasks(
+  tasks: readonly RecentTask[], limit = 6,
+): readonly { readonly kind: SidebarTaskGroup; readonly tasks: readonly RecentTask[] }[] {
+  const visible = tasks.slice(0, Math.max(0, limit));
+  const priority = visible.filter((task) => {
+    const category = classifyTask(task);
+    return category === "attention" || category === "active" || category === "failed";
+  });
+  const recent = visible.filter((task) => !priority.includes(task));
+  return [
+    ...(priority.length ? [{ kind: "priority" as const, tasks: priority }] : []),
+    ...(recent.length ? [{ kind: "recent" as const, tasks: recent }] : []),
+  ];
 }

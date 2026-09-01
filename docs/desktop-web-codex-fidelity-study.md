@@ -516,6 +516,17 @@ the final reference composite. The shared tokens now freeze the measured
 effective surfaces, while Environment/command use a dedicated neutral overlay
 token rather than inheriting the warm sidebar material.
 
+### X. Desktop task-rail grouping
+
+Both supplied references use multiple labeled rail groups rather than one long
+undifferentiated history. Garive cannot truthfully reproduce `Pinned` or
+`Projects` until those facts exist in its Host contract, but it can preserve the
+same scanning grammar with admitted lifecycle data. The shared rail therefore
+places needs-input, running and failed Sessions in a bounded `Priority` group,
+then completed and idle Sessions in `Recents`. Empty groups disappear and the
+same Session cannot be repeated across groups. This keeps the Codex desktop
+hierarchy while making Garive's durable attention state more useful.
+
 ## Gate 1 — Codex fidelity
 
 This gate passes only when both Desktop and Web show:
