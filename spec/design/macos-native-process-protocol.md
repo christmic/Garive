@@ -17,6 +17,8 @@ the same framing over the sole Virtio socket. A frame is a 4-byte unsigned
 big-endian payload length followed by one protobuf envelope. Its total payload
 is at most 1,114,112 bytes. Truncation, trailing bytes, an unset `oneof`, unknown
 fields, unknown enum values, or a mismatched envelope direction fails closed.
+Host request, host response, guest request, and guest response top-level fields
+occupy disjoint tag ranges `10--14`, `20--23`, `30--32`, and `40--42`.
 
 The Swift consumer pins Apple SwiftProtobuf `1.38.1`, verified as the current
 stable release on 2026-09-01. Runtime and guest use the repository's pinned

@@ -22,5 +22,13 @@ pub mod com {
                 include!(concat!(env!("OUT_DIR"), "/com.garive.host.v1.rs"));
             }
         }
+
+        /// Native process-isolation wire namespace.
+        pub mod process {
+            /// Version-one process-isolation messages generated from the Proto SSOT.
+            pub mod v1 {
+                include!(concat!(env!("OUT_DIR"), "/com.garive.process.v1.rs"));
+            }
+        }
     }
 }

@@ -5,168 +5,285 @@ syntax = "proto3";
 package com.garive.process.v1;
 option swift_prefix = "GRV";
 
+// Exact host workspace authority projected into the VM and guest.
 enum ProcessWorkspaceModeV1 {
+  // Invalid missing authority.
   PROCESS_WORKSPACE_MODE_UNSPECIFIED = 0;
+  // Read-only workspace authority.
   PROCESS_WORKSPACE_MODE_READ_ONLY = 1;
+  // Read-write workspace authority.
   PROCESS_WORKSPACE_MODE_READ_WRITE = 2;
 }
 
+// Recoverable service ownership state for one exact identity.
 enum ProcessServiceStateV1 {
+  // Invalid missing state.
   PROCESS_SERVICE_STATE_UNSPECIFIED = 0;
+  // No owned VM or receipt exists.
   PROCESS_SERVICE_STATE_ABSENT = 1;
+  // The owned VM is starting but has not admitted execution.
   PROCESS_SERVICE_STATE_STARTING = 2;
+  // The exact workload may be running.
   PROCESS_SERVICE_STATE_RUNNING = 3;
+  // A bounded terminal receipt awaits Runtime acknowledgement.
   PROCESS_SERVICE_STATE_TERMINAL_RETAINED = 4;
 }
 
+// Closed safe failures allowed across either protocol boundary.
 enum ProcessProtocolFailureV1 {
+  // Invalid missing failure.
   PROCESS_PROTOCOL_FAILURE_UNSPECIFIED = 0;
+  // The frame or protobuf shape is malformed.
   PROCESS_PROTOCOL_FAILURE_MALFORMED = 1;
+  // The fixed protocol revision differs.
   PROCESS_PROTOCOL_FAILURE_VERSION_MISMATCH = 2;
+  // A declared protocol bound is exceeded.
   PROCESS_PROTOCOL_FAILURE_BOUNDS_EXCEEDED = 3;
+  // Complete execution identity does not match owned state.
   PROCESS_PROTOCOL_FAILURE_IDENTITY_MISMATCH = 4;
+  // The command is illegal in the current state.
   PROCESS_PROTOCOL_FAILURE_STATE_CONFLICT = 5;
+  // One explicitly configured local resource cannot be opened.
   PROCESS_PROTOCOL_FAILURE_RESOURCE_UNAVAILABLE = 6;
+  // The signed service or guest control plane is unavailable.
   PROCESS_PROTOCOL_FAILURE_SERVICE_UNAVAILABLE = 7;
+  // Dispatch may have crossed without trustworthy state.
   PROCESS_PROTOCOL_FAILURE_STATE_UNKNOWN = 8;
 }
 
+// Complete Runtime-owned identity carried by every command and result.
 message ProcessIdentityV1 {
+  // Exact guest protocol revision.
   string protocol_revision = 1;
+  // Durable Tool invocation identity.
   string invocation_id = 2;
+  // Exact never-replayed dispatch attempt.
   string dispatch_attempt_id = 3;
+  // Runtime executor configuration revision.
   string executor_revision = 4;
+  // Prepared-v3 call digest.
   bytes prepared_digest = 5;
+  // V0-A VM configuration binding digest.
   bytes vm_configuration_digest = 6;
+  // Canonical bounded workload digest.
   bytes workload_digest = 7;
 }
 
+// Explicit V0-A inputs required by the signed macOS service.
 message MacOSProcessVMPlanV1 {
+  // Absolute private kernel file URL.
   string kernel_url = 1;
+  // Expected kernel SHA-256 digest.
   bytes kernel_digest = 2;
+  // Absolute private initial-ramdisk file URL.
   string initial_ramdisk_url = 3;
+  // Expected initial-ramdisk SHA-256 digest.
   bytes initial_ramdisk_digest = 4;
+  // Absolute private root-disk file URL.
   string root_disk_url = 5;
+  // Expected root-disk SHA-256 digest.
   bytes root_disk_digest = 6;
+  // Absolute private workspace file URL.
   string workspace_url = 7;
+  // Exact workspace authority.
   ProcessWorkspaceModeV1 workspace_mode = 8;
+  // Exact virtual CPU count.
   uint64 cpu_count = 9;
+  // Exact VM memory size in bytes.
   uint64 memory_size_bytes = 10;
+  // Exact host control timeout.
   uint64 control_timeout_milliseconds = 11;
 }
 
+// One ordered explicit environment entry.
 message ProcessEnvironmentEntryV1 {
+  // POSIX environment key.
   string key = 1;
+  // Bounded environment value.
   string value = 2;
 }
 
+// Exact guest workload admitted by Runtime.
 message ProcessWorkloadV1 {
+  // Configured executable-lane identity.
   string lane = 1;
+  // Absolute guest executable path.
   string executable = 2;
+  // Ordered direct-execution argv vector.
   repeated string argv = 3;
+  // Workspace-relative working directory.
   string working_directory = 4;
+  // Strictly key-sorted explicit environment.
   repeated ProcessEnvironmentEntryV1 environment = 5;
+  // Aggregate stdout and stderr byte limit.
   uint64 max_output_bytes = 6;
+  // Wall-clock execution timeout.
   uint64 timeout_milliseconds = 7;
+  // Maximum guest workload process count.
   uint32 max_processes = 8;
+  // Maximum guest workload open-file count.
   uint32 max_open_files = 9;
+  // Exact workspace authority repeated for guest enforcement.
   ProcessWorkspaceModeV1 workspace_mode = 10;
 }
 
+// Complete host preflight or start command.
 message ProcessDispatchV1 {
+  // Complete Runtime-owned identity.
   ProcessIdentityV1 identity = 1;
+  // Exact private VM construction inputs.
   MacOSProcessVMPlanV1 vm_plan = 2;
+  // Exact bounded guest workload.
   ProcessWorkloadV1 workload = 3;
 }
 
+// Query or terminate command for one exact identity.
 message ProcessIdentityRequestV1 {
+  // Complete Runtime-owned identity.
   ProcessIdentityV1 identity = 1;
 }
 
+// Receipt acknowledgement for one exact identity.
 message ProcessAcknowledgeRequestV1 {
+  // Complete Runtime-owned identity.
   ProcessIdentityV1 identity = 1;
+  // Exact retained terminal receipt digest.
   bytes receipt_digest = 2;
 }
 
+// Runtime-to-XPC command envelope.
 message ProcessHostRequestV1 {
+  // Exactly one host command.
   oneof command {
-    ProcessDispatchV1 preflight = 1;
-    ProcessDispatchV1 start = 2;
-    ProcessIdentityRequestV1 query = 3;
-    ProcessIdentityRequestV1 terminate = 4;
-    ProcessAcknowledgeRequestV1 acknowledge = 5;
+    // Validate without creating a VM.
+    ProcessDispatchV1 preflight = 10;
+    // Start once after the durable Started fact.
+    ProcessDispatchV1 start = 11;
+    // Query exact owned state.
+    ProcessIdentityRequestV1 query = 12;
+    // Terminate or prove exact owned absence.
+    ProcessIdentityRequestV1 terminate = 13;
+    // Acknowledge and erase an exact retained receipt.
+    ProcessAcknowledgeRequestV1 acknowledge = 14;
   }
 }
 
+// Successful complete host preflight.
 message ProcessPreflightedV1 {
+  // Exact validated identity.
   ProcessIdentityV1 identity = 1;
 }
 
+// One trustworthy terminal classification.
 message ProcessExitV1 {
+  // Exactly one exit classification.
   oneof classification {
+    // Normal process exit code.
     sint32 code = 1;
+    // Platform signal number.
     sint32 signal = 2;
+    // Timeout marker, which must be true.
     bool timed_out = 3;
   }
 }
 
+// Bounded terminal evidence retained until acknowledgement.
 message ProcessTerminalReceiptV1 {
+  // Complete Runtime-owned identity.
   ProcessIdentityV1 identity = 1;
+  // Exact exit classification.
   ProcessExitV1 exit = 2;
+  // Bounded captured standard output.
   bytes stdout = 3;
+  // Bounded captured standard error.
   bytes stderr = 4;
+  // Whether output reached its aggregate bound.
   bool truncated = 5;
+  // Proof that no workload process remains.
   bool process_tree_terminated = 6;
+  // Canonical terminal receipt digest.
   bytes receipt_digest = 7;
 }
 
+// Exact query, terminate, or acknowledgement result.
 message ProcessStatusV1 {
+  // Complete Runtime-owned identity.
   ProcessIdentityV1 identity = 1;
+  // Current exact service state.
   ProcessServiceStateV1 state = 2;
+  // Required only for terminal-retained state.
   ProcessTerminalReceiptV1 terminal = 3;
 }
 
+// Path-free protocol failure envelope.
 message ProcessProtocolErrorV1 {
+  // Closed safe failure category.
   ProcessProtocolFailureV1 failure = 1;
 }
 
+// XPC-to-Runtime result envelope.
 message ProcessHostResponseV1 {
+  // Exactly one host result.
   oneof result {
-    ProcessPreflightedV1 preflighted = 1;
-    ProcessStatusV1 status = 2;
-    ProcessTerminalReceiptV1 terminal = 3;
-    ProcessProtocolErrorV1 error = 4;
+    // Successful preflight result.
+    ProcessPreflightedV1 preflighted = 20;
+    // Exact owned state result.
+    ProcessStatusV1 status = 21;
+    // Successful terminal execution result.
+    ProcessTerminalReceiptV1 terminal = 22;
+    // Closed safe failure.
+    ProcessProtocolErrorV1 error = 23;
   }
 }
 
+// Host challenge beginning one guest handshake.
 message ProcessGuestHelloV1 {
+  // Complete Runtime-owned identity.
   ProcessIdentityV1 identity = 1;
+  // Exact unpredictable 32-byte challenge.
   bytes challenge = 2;
 }
 
+// Guest handshake result before workload transmission.
 message ProcessGuestReadyV1 {
+  // Complete echoed Runtime-owned identity.
   ProcessIdentityV1 identity = 1;
+  // Exact echoed host challenge.
   bytes challenge = 2;
+  // Explicit guest-agent build revision.
   string guest_agent_revision = 3;
 }
 
+// Guest command excluding all host-private VM paths.
 message ProcessGuestExecuteV1 {
+  // Complete Runtime-owned identity.
   ProcessIdentityV1 identity = 1;
+  // Exact bounded workload.
   ProcessWorkloadV1 workload = 2;
 }
 
+// XPC-service-to-guest command envelope.
 message ProcessGuestRequestV1 {
+  // Exactly one guest command.
   oneof command {
-    ProcessGuestHelloV1 hello = 1;
-    ProcessGuestExecuteV1 execute = 2;
-    ProcessIdentityRequestV1 terminate = 3;
+    // Begin the exact guest handshake.
+    ProcessGuestHelloV1 hello = 30;
+    // Execute one admitted workload.
+    ProcessGuestExecuteV1 execute = 31;
+    // Terminate the exact workload tree.
+    ProcessIdentityRequestV1 terminate = 32;
   }
 }
 
+// Guest-to-XPC-service result envelope.
 message ProcessGuestResponseV1 {
+  // Exactly one guest result.
   oneof result {
-    ProcessGuestReadyV1 ready = 1;
-    ProcessTerminalReceiptV1 terminal = 2;
-    ProcessProtocolErrorV1 error = 3;
+    // Successful challenge response.
+    ProcessGuestReadyV1 ready = 40;
+    // Trustworthy bounded terminal evidence.
+    ProcessTerminalReceiptV1 terminal = 41;
+    // Closed safe guest failure.
+    ProcessProtocolErrorV1 error = 42;
   }
 }
