@@ -83,10 +83,10 @@ expression: wide
 ===== overlay while streaming =====
                                 Current session  ·  Garive
                                            ╭ Command palette ───────────────────────────────────────────────────────╮
-                                  › Show   │  Search  type to search                                                │
-                                    ●  Ve  │  21 commands · showing 1–14 · ↓ 7 more                                 │
-                                  ◆ Gariv  │  › /new                unavailable · no Agent is installed             │
-                                    The f  │    /sessions           Switch session                                  │
+                                           │  Search  type to search                                                │
+                                           │  21 commands · showing 1–14 · ↓ 7 more                                 │
+                                           │  › /new                unavailable · no Agent is installed             │
+                                           │    /sessions           Switch session                                  │
                                            │    /jump               unavailable · fewer than two Turns are loaded   │
                                            │    /inspect            Open Inspector                                  │
                                            │    /status             Connection details                              │

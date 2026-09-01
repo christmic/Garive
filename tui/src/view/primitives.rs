@@ -124,9 +124,9 @@ impl ModalFrame {
         buffer: &mut Buffer,
     ) {
         buffer.set_style(viewport, colors.modal_backdrop);
-        let halo = modal_halo(self.popup, viewport);
-        Clear.render(halo, buffer);
-        buffer.set_style(halo, colors.modal_backdrop);
+        let quiet_band = modal_quiet_band(self.popup, viewport);
+        Clear.render(quiet_band, buffer);
+        buffer.set_style(quiet_band, colors.modal_backdrop);
         Clear.render(self.popup, buffer);
         Block::default()
             .title(title)
@@ -138,18 +138,10 @@ impl ModalFrame {
     }
 }
 
-fn modal_halo(popup: Rect, viewport: Rect) -> Rect {
-    let x = popup.x.saturating_sub(2).max(viewport.x);
-    let right = popup.right().saturating_add(2).min(viewport.right());
-    Rect::new(
-        x,
-        popup.y.max(viewport.y),
-        right.saturating_sub(x),
-        popup
-            .bottom()
-            .min(viewport.bottom())
-            .saturating_sub(popup.y),
-    )
+fn modal_quiet_band(popup: Rect, viewport: Rect) -> Rect {
+    let y = popup.y.max(viewport.y);
+    let bottom = popup.bottom().min(viewport.bottom());
+    Rect::new(viewport.x, y, viewport.width, bottom.saturating_sub(y))
 }
 
 pub(super) fn key_hints(items: &[(&str, &str)], colors: Palette) -> Line<'static> {
@@ -222,13 +214,39 @@ mod tests {
     use super::*;
 
     #[test]
-    fn modal_frame_owns_padding_and_bounded_halo_geometry() {
+    fn modal_frame_owns_padding_and_same_height_quiet_band() {
         let frame = ModalFrame::resolve(Rect::new(4, 2, 12, 6), Padding::new(2, 2, 1, 1));
         assert_eq!(frame.inner(), Rect::new(7, 4, 6, 2));
         assert_eq!(
-            modal_halo(Rect::new(4, 2, 12, 6), Rect::new(3, 1, 14, 8)),
+            modal_quiet_band(Rect::new(4, 2, 12, 6), Rect::new(3, 1, 14, 8)),
             Rect::new(3, 2, 14, 6)
         );
+    }
+
+    #[test]
+    fn modal_frame_clears_only_the_full_width_rows_it_occupies() {
+        let viewport = Rect::new(0, 0, 20, 10);
+        let popup = Rect::new(4, 2, 12, 6);
+        let mut buffer = Buffer::empty(viewport);
+        for y in viewport.top()..viewport.bottom() {
+            for x in viewport.left()..viewport.right() {
+                buffer[(x, y)].set_symbol("x");
+            }
+        }
+
+        ModalFrame::resolve(popup, Padding::ZERO).render(
+            viewport,
+            Line::raw(" Modal "),
+            super::super::palette(crate::Theme::Mono),
+            &mut buffer,
+        );
+
+        for y in popup.top()..popup.bottom() {
+            assert!((viewport.left()..viewport.right()).all(|x| buffer[(x, y)].symbol() != "x"));
+        }
+        for y in [popup.top() - 1, popup.bottom()] {
+            assert!((viewport.left()..viewport.right()).all(|x| buffer[(x, y)].symbol() == "x"));
+        }
     }
 
     #[test]

@@ -4,15 +4,15 @@ expression: "frame(&palette, Theme::Light, 160, 28)"
 ---
                                 Session 1  ·  Agent                                                                Agent running
                                            ╭ Command palette · 21 commands · type to filter · ↑/↓ · Enter · Esc ────╮
-                                  › Summa  │    /new                Create session                                  │
-                                    ✓  Ag  │    /sessions           Switch session                                  │
-                                  ◆ Gariv  │    /jump               unavailable · fewer than two Turns are loaded   │
-                                    ## Re  │    /inspect            Open Inspector                                  │
+                                           │    /new                Create session                                  │
+                                           │    /sessions           Switch session                                  │
+                                           │    /jump               unavailable · fewer than two Turns are loaded   │
+                                           │    /inspect            Open Inspector                                  │
                                            │    /status             Connection details                              │
-                                    • Ver  │    /edit-prompt        Edit draft externally                           │
-                                    • Shi  │    /retry              unavailable · no unknown command                │
+                                           │    /edit-prompt        Edit draft externally                           │
+                                           │    /retry              unavailable · no unknown command                │
                                            │    /reconnect          Resume event stream                             │
-                                    cargo  │    /cancel             Cancel running turn                             │
+                                           │    /cancel             Cancel running turn                             │
                                            │    /theme system       Follow terminal theme                           │
                                            │    /theme dark         Use dark theme                                  │
                                            │    /theme light        Use light theme                                 │
