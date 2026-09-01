@@ -330,8 +330,15 @@ admission-policy port it remains `AwaitingPolicy`; multiple proposals fail
 closed as `ambiguous_plan_proposals`. Suspended work and failed Steps likewise
 stop at explicit continuation/failure-policy reasons. The Worker may reduce an
 owned failed Turn only to its exact Step terminal; it must not infer Plan or
-Goal failure. Suspension continuation and failed-Step fail/replan selection
-remain explicit policy gaps.
+Goal failure. Suspension continuation and failed-Step suspend/replan selection
+remain explicit policy gaps. Terminal failure is now a separate constructed
+`PlanFailurePolicy`: it receives only the fixed Session/Goal/Plan digests and
+declaration-ordered failed Step identities. Absence or `Defer` leaves the Plan
+unchanged. `Fail` must return a bounded policy reference and safe reason code;
+Runtime re-resolves the exact Plan, records the policy reference plus complete
+input in canonical evidence, and uses the dedicated `plan_fail_plan` command.
+The Desktop pump installs this port independently from proposal/admission and
+therefore cannot infer Goal failure directly from a failed Turn or Step.
 
 For initial planning, the constructed asynchronous proposal port receives only
 the fixed Goal objective, ordered criterion identities, Goal-admitted

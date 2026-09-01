@@ -412,7 +412,7 @@ fn advance_goal_plan_internal(
             else {
                 return Ok(GoalPlanAdvanceOutcome::AwaitingPolicy(decision));
             };
-            if policy_reference.is_empty() || reason.is_empty() {
+            if !valid_policy_reference(&policy_reference) || !valid_safe_code(&reason) {
                 return Err(GoalPlanCoordinatorError::InvalidTick);
             }
             let evidence = CanonicalPayload::from_value(&serde_json::json!({
@@ -668,6 +668,20 @@ fn coordination_command_id(snapshot: &GoalPlanCoordinationSnapshot, action: &str
     format!("g2-{}", &digest[..32])
 }
 
+fn valid_policy_reference(value: &str) -> bool {
+    (1..=128).contains(&value.len())
+        && value.bytes().all(|byte| {
+            byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b':' | b'-' | b'/')
+        })
+}
+
+fn valid_safe_code(value: &str) -> bool {
+    let mut bytes = value.bytes();
+    (1..=64).contains(&value.len())
+        && bytes.next().is_some_and(|byte| byte.is_ascii_lowercase())
+        && bytes.all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'_')
+}
+
 fn decide(
     goal: &crate::GoalRuntimeState,
     plans: &[&crate::PlanRuntimeState],
@@ -840,4 +854,19 @@ fn decide_authoritative(
             GoalPlanDecision::NoAction
         },
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{valid_policy_reference, valid_safe_code};
+
+    #[test]
+    fn failure_policy_metadata_is_bounded_and_content_free() {
+        assert!(valid_policy_reference("runtime:failure-policy/v1"));
+        assert!(!valid_policy_reference("contains secret"));
+        assert!(!valid_policy_reference(&"x".repeat(129)));
+        assert!(valid_safe_code("attempts_exhausted"));
+        assert!(!valid_safe_code("Human diagnostic"));
+        assert!(!valid_safe_code(&"x".repeat(65)));
+    }
 }

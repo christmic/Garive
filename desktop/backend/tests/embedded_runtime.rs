@@ -31,8 +31,8 @@ use garive_ledger::SessionId;
 use garive_llm::{
     InterruptionKind, InvokeOutcome, ModelCancellation, ModelCapability, ModelFuture,
     ModelInputItem, ModelItem, ModelObserver, ModelOutputKind, ModelOutputSettings, ModelPort,
-    ModelRequest, ModelStopReason, ModelStreamEvent, ModelUsage, ObserverDecision, TextMode,
-    TokenCount, UsageSource,
+    ModelRequest, ModelStopReason, ModelStreamEvent, ModelUsage, ObserverDecision, RejectionKind,
+    TextMode, TokenCount, UsageSource,
 };
 use garive_memory::{MemoryAuthorizedScope, MemoryDocumentLimits, MemoryScope, MemoryScopeClass};
 use garive_plan::{PlanBoundsV1, PlanStepId, PlanStepV1};
@@ -44,10 +44,11 @@ use garive_runtime::{
     LocalExecutionPolicy, LocalGovernedExecution, LocalGovernedExecutionFactory,
     LocalKnowledgeSystemBinding, LocalMemorySystemBinding, LocalWorkerError, MemoryControlAction,
     MemoryControlGrant, PlanAdmissionDecision, PlanAdmissionInput, PlanAdmissionPolicy,
-    PlanProposalContent, PlanProposalFuture, PlanProposalPort, PlanStepDispatchFactory,
-    PlanStepDispatchInput, ProcessBackendHostConfig, ProcessExecutable, ProcessLane,
-    ProcessLaneRegistry, RuntimeAgentCatalogue, SafetyFuture, SafetyPort, SqliteLedger,
-    T1HostSystemConfig, KEYWORD_CURRENT_INPUT_REVISION, USER_DECLARED_PUSH_REVISION,
+    PlanFailureDecision, PlanFailureInput, PlanFailurePolicy, PlanProposalContent,
+    PlanProposalFuture, PlanProposalPort, PlanStepDispatchFactory, PlanStepDispatchInput,
+    ProcessBackendHostConfig, ProcessExecutable, ProcessLane, ProcessLaneRegistry,
+    RuntimeAgentCatalogue, SafetyFuture, SafetyPort, SqliteLedger, T1HostSystemConfig,
+    KEYWORD_CURRENT_INPUT_REVISION, USER_DECLARED_PUSH_REVISION,
 };
 use garive_tools::{T1_APPLY_PATCH, T1_READ_TEXT};
 use sha2::{Digest, Sha256};
@@ -328,6 +329,74 @@ async fn desktop_goal_pump_activates_dispatches_and_closes_one_plan() {
     );
 }
 
+#[tokio::test]
+async fn desktop_goal_pump_requires_policy_before_failed_plan_closes_goal() {
+    let directory = tempdir().unwrap();
+    let database = directory.path().join("goal-failure.sqlite3");
+    let mut config = desktop_host_config(&database, Arc::new(RejectingModel));
+    config.plan_admission_policy = Some(Arc::new(AdoptExactProposal));
+    config.plan_failure_policy = Some(Arc::new(FailExhaustedPlan));
+    config.plan_proposal_port = Some(Arc::new(SingleStepProposal));
+    let governed = DesktopWorkspaceExecutionFactory::new(
+        database.clone(),
+        DesktopWorkspaceService::default(),
+        "main",
+    )
+    .unwrap();
+    let host = DesktopHost::new_governed(config, Arc::new(governed)).unwrap();
+    let session_id = host.create_session("definition-main").unwrap();
+    let session = SessionId::try_from(session_id.as_str()).unwrap();
+    let mut ledger = SqliteLedger::open(&database).unwrap();
+    let opened = ledger.read_facts(&session, 0, 1, None).unwrap().remove(0);
+    let goal = GoalDefinitionV1::new(
+        GoalId::new("goal-pump").unwrap(),
+        "Complete one installed Plan",
+        vec![GoalCriterion::DurableFact {
+            criterion_id: GoalCriterionId::new("session-opened").unwrap(),
+            fact_kind: "session.opened".into(),
+            subject_digest: opened.payload.sha256().into(),
+        }],
+        GoalScopeV1::new(Some(session_id.clone()), []).unwrap(),
+        GoalBoundsV1::new(1, 1, 1, None, None).unwrap(),
+        None,
+        [],
+    )
+    .unwrap();
+    let created = plan_create_goal(
+        &ledger,
+        &session,
+        &GoalCommandContext {
+            command_id: "goal-failure-create".into(),
+            actor_reference: "user:test".into(),
+            recorded_at: "2026-08-29T00:00:00Z".into(),
+        },
+        goal,
+    )
+    .unwrap();
+    commit_goal_command(&mut ledger, session.clone(), 1, &created).unwrap();
+    drop(ledger);
+
+    host.drive_goal(&session_id, "goal-pump", 1).await.unwrap();
+    let report = host.drive_goal(&session_id, "goal-pump", 12).await.unwrap();
+    assert_eq!(report.executions, 1);
+    assert!(!report.exhausted);
+    let ledger = SqliteLedger::open(database).unwrap();
+    assert_eq!(
+        reconstruct_goal(&ledger, &session, "goal-pump")
+            .unwrap()
+            .snapshot
+            .state(),
+        GoalState::Failed
+    );
+    let failure = ledger
+        .read_facts(&session, 0, u64::MAX, None)
+        .unwrap()
+        .into_iter()
+        .find(|fact| fact.kind.as_str() == "plan.failed")
+        .unwrap();
+    assert!(failure.payload.as_json().contains("failure-policy:test-v1"));
+}
+
 struct AdoptExactProposal;
 impl PlanAdmissionPolicy for AdoptExactProposal {
     fn decide(&self, input: &PlanAdmissionInput) -> PlanAdmissionDecision {
@@ -337,6 +406,19 @@ impl PlanAdmissionPolicy for AdoptExactProposal {
         assert_eq!(input.plan_revision, 1);
         PlanAdmissionDecision::Adopt {
             policy_reference: "policy:test-v1".into(),
+        }
+    }
+}
+
+struct FailExhaustedPlan;
+impl PlanFailurePolicy for FailExhaustedPlan {
+    fn decide(&self, input: &PlanFailureInput) -> PlanFailureDecision {
+        assert_eq!(input.goal_id, "goal-pump");
+        assert_eq!(input.plan_revision, 1);
+        assert_eq!(input.failed_step_ids, ["complete"]);
+        PlanFailureDecision::Fail {
+            policy_reference: "failure-policy:test-v1".into(),
+            reason: "attempts_exhausted".into(),
         }
     }
 }
@@ -367,6 +449,23 @@ impl PlanProposalPort for SingleStepProposal {
                 )
                 .unwrap()],
                 bounds: PlanBoundsV1::new(1, 1, 1, None, None).unwrap(),
+            })
+        })
+    }
+}
+
+struct RejectingModel;
+impl ModelPort for RejectingModel {
+    fn invoke<'a>(
+        &'a self,
+        _: &'a ModelRequest,
+        _: &'a mut dyn ModelObserver,
+        _: &'a dyn ModelCancellation,
+    ) -> ModelFuture<'a> {
+        Box::pin(async {
+            Ok(InvokeOutcome::Rejected {
+                kind: RejectionKind::ContentPolicy,
+                sanitized_evidence: "planner-test-rejection".into(),
             })
         })
     }

@@ -168,6 +168,13 @@ A failed step does not automatically fail the Plan. Frozen policy chooses a
 bounded retry, suspension, replan request or explicit Plan failure. An
 attempt-limit breach cannot return the step to Ready.
 
+Terminal failure policy is a read-only fixed-prefix Runtime port. It sees the
+exact Goal/Plan definition digests and failed Step identities, but no Ledger or
+mutation capability. A bounded safe `Fail` decision becomes canonical policy
+evidence before the dedicated Plan failure command commits; an absent or
+deferred policy cannot terminalize the Plan. Suspend and replan remain distinct
+policies because neither is semantically equivalent to failure.
+
 The generic Runtime transition entry rejects `FailPlan`. The dedicated Plan
 failure command rechecks the same active Goal binding and ledger watermark,
 requires at least one Failed Step and no active claims, and then emits
