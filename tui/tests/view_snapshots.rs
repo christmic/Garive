@@ -258,6 +258,15 @@ fn live_answer_states_match_reviewed_theme_snapshots() {
 }
 
 #[test]
+fn h4_full_workbench_timeline_matches_reviewed_snapshot() {
+    let filmstrip = live_workbench_filmstrip();
+    assert!(filmstrip.contains("The first visible"));
+    assert!(filmstrip.contains("streaming frame arrives."));
+    assert_eq!(filmstrip.matches("Saved streaming answer.").count(), 1);
+    insta::assert_snapshot!("h4_full_workbench_dark_100x24", filmstrip);
+}
+
+#[test]
 fn responsive_column_boundaries_match_reviewed_snapshots() {
     let model = product_model();
     for width in [39, 40, 51, 52, 79, 80, 119, 120, 160] {
@@ -599,6 +608,35 @@ fn frame(model: &AppModel, theme: Theme, width: u16, height: u16) -> String {
         .join("\n")
 }
 
+fn cached_frame(
+    model: &AppModel,
+    cache: &mut view::RenderCache,
+    theme: Theme,
+    width: u16,
+    height: u16,
+) -> String {
+    let area = Rect::new(0, 0, width, height);
+    let mut buffer = Buffer::empty(area);
+    let _ = view::render_cached_with_motion(
+        model,
+        theme,
+        view::MotionFrame::animated(1),
+        area,
+        &mut buffer,
+        cache,
+    );
+    (0..height)
+        .map(|y| {
+            (0..width)
+                .map(|x| buffer[(x, y)].symbol())
+                .collect::<String>()
+                .trim_end()
+                .to_owned()
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
 fn motion_frame(model: &AppModel, theme: Theme, tick: u64, width: u16, height: u16) -> String {
     let area = Rect::new(0, 0, width, height);
     let mut buffer = Buffer::empty(area);
@@ -759,6 +797,136 @@ fn live_answer_states_preview(theme: Theme) -> String {
         "-- preparing --\n{preparing}\n-- generating --\n{animated}\n-- reduced motion --\n{reduced}\n-- finalizing --\n{finalizing}\n-- unavailable --\n{unavailable}\n-- ended preview --\n{ended_preview}\n-- durable takeover --\nlive preview present: {}",
         ended.current().is_some()
     )
+}
+
+fn live_workbench_filmstrip() -> String {
+    let mut model = AppModel {
+        boot: BootState::Ready,
+        definition_count: 1,
+        session_count: 1,
+        selected_session: Some("session-a".into()),
+        selected_turn: Some("turn-a".into()),
+        active_execution_id: Some("execution-a".into()),
+        connection: ConnectionState::Online,
+        execution: ExecutionState::Following,
+        observed_position: 2,
+        ..Default::default()
+    };
+    model.push_test_timeline_item(item(
+        "turn-a",
+        1,
+        TimelineRole::User,
+        "Show every verified streaming stage.",
+    ));
+    model
+        .composer
+        .replace("A retained follow-up draft")
+        .unwrap();
+
+    let mut cache = view::RenderCache::default();
+    let mut frames = Vec::new();
+    let mut capture = |label: &str, model: &AppModel| {
+        frames.push(format!(
+            "===== {label} =====\n{}",
+            cached_frame(model, &mut cache, Theme::Dark, 100, 24)
+        ));
+    };
+
+    model.live_answer.apply(
+        live_event(
+            1,
+            LiveOutputEventKind::PhaseChanged {
+                phase: "preparing".into(),
+                label_key: "agent.live.preparing".into(),
+            },
+        ),
+        live_expectation(),
+    );
+    capture("preparing", &model);
+
+    model.live_answer.apply(
+        live_event(
+            2,
+            LiveOutputEventKind::TextDelta {
+                text: "The first visible ".into(),
+            },
+        ),
+        live_expectation(),
+    );
+    assert!(model.live_answer.frame_pending());
+    model.live_answer.advance_frame(false);
+    capture("first presented delta", &model);
+
+    model.live_answer.apply(
+        live_event(
+            3,
+            LiveOutputEventKind::PhaseChanged {
+                phase: "generating".into(),
+                label_key: "agent.live.generating".into(),
+            },
+        ),
+        live_expectation(),
+    );
+    model.live_answer.apply(
+        live_event(
+            4,
+            LiveOutputEventKind::TextDelta {
+                text: "**streaming frame** arrives.".into(),
+            },
+        ),
+        live_expectation(),
+    );
+    model.live_answer.advance_frame(false);
+    model.push_test_timeline_item(activity(
+        "live-activity",
+        2,
+        TimelineTone::Active,
+        "Verifying streamed output",
+    ));
+    capture("second delta with activity", &model);
+
+    model.overlay = Some(Overlay::CommandPalette);
+    capture("overlay while streaming", &model);
+    model.overlay = None;
+    capture("stream restored after overlay", &model);
+
+    model.live_answer.apply(
+        live_event(
+            5,
+            LiveOutputEventKind::PhaseChanged {
+                phase: "finalizing".into(),
+                label_key: "agent.live.finalizing".into(),
+            },
+        ),
+        live_expectation(),
+    );
+    capture("finalizing", &model);
+
+    model.live_answer.apply(
+        live_event(
+            6,
+            LiveOutputEventKind::Ended {
+                reason: LiveOutputEndReason::TerminalCommitted,
+            },
+        ),
+        live_expectation(),
+    );
+    capture("ended awaiting durable", &model);
+
+    model
+        .live_answer
+        .durable_takeover("session-a", "turn-a", Some("execution-a"));
+    model.push_test_timeline_item(item(
+        "durable-answer",
+        3,
+        TimelineRole::Agent,
+        "Saved streaming answer.",
+    ));
+    model.execution = ExecutionState::Idle;
+    model.active_execution_id = None;
+    capture("durable takeover", &model);
+
+    frames.join("\n\n")
 }
 
 fn live_event(sequence: u64, kind: LiveOutputEventKind) -> LiveOutputEvent {
