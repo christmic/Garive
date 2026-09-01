@@ -1,7 +1,8 @@
-use std::collections::BTreeSet;
+use std::{collections::BTreeSet, sync::Arc};
 
 use garive_core::{
-    AgentOutcome, ExecutionReport, GovernedSuspensionBinding, SuspensionReason, UsageSummary,
+    AgentOutcome, ExecutionReport, GovernedSuspensionBinding, MissingUsagePolicy,
+    ModelRecoveryPolicy, OutputLimitAction, SuspensionReason, TerminalRecoveryAction, UsageSummary,
 };
 use garive_goal::{
     GoalBoundsV1, GoalCapabilityReference, GoalCriterion, GoalCriterionId, GoalDefinitionV1,
@@ -11,7 +12,11 @@ use garive_ledger::{
     AgentDefinitionId, AgentDefinitionRevision, AgentInstanceId, CanonicalPayload, FactDraft,
     FactId, FactKind, SessionId, ToolInvocationId,
 };
-use garive_llm::{ModelItem, TokenCount};
+use garive_llm::{
+    InvokeOutcome, ModelCancellation, ModelCapability, ModelFuture, ModelItem, ModelObserver,
+    ModelOutputSettings, ModelPort, ModelRequest, ModelStopReason, ModelUsage, TextMode,
+    TokenCount, UsageSource,
+};
 use garive_plan::{
     PlanBoundsV1, PlanCapabilityReference, PlanDefinitionV1, PlanId, PlanState, PlanStepId,
     PlanStepV1, StepState,
@@ -28,7 +33,8 @@ use garive_runtime::{
     reconstruct_plan, reconstruct_plan_graph, reconstruct_suspended_turn,
     verify_plan_carry_forward, ContinuationInput, ContinueTurnCommand, CoreTerminalContext,
     EffectiveRuntimeLimits, GetTurnQuery, GoalCommandContext, GoalPlanCoordinationError,
-    GoalRuntimeError, GoalRuntimeTransition, InteractionInputRepresentation, PlanCommandContext,
+    GoalRuntimeError, GoalRuntimeTransition, InteractionInputRepresentation, LocalExecutionAttempt,
+    LocalExecutionPolicy, LocalExecutionWorker, LocalWorkerDisposition, PlanCommandContext,
     PlanRetryPosture, PlanRuntimeError, PlanRuntimeState, PlanRuntimeTransition,
     PlanStepExecutionStart, RuntimeCommandId, SqliteLedger, StartTurnCommand,
 };
@@ -492,8 +498,8 @@ fn proposal_and_adoption_require_the_current_durable_goal_binding() {
         .all(|fact| fact.fact_id.as_str() != "claim-terminal-goal"));
 }
 
-#[test]
-fn completed_owned_turn_reduces_to_step_with_observed_evidence_after_restart() {
+#[tokio::test]
+async fn completed_owned_turn_reduces_to_step_with_observed_evidence_after_restart() {
     let directory = tempdir().unwrap();
     let path = directory.path().join("turn-step-reduction.sqlite3");
     let session = SessionId::try_from("session-1").unwrap();
@@ -566,6 +572,16 @@ fn completed_owned_turn_reduces_to_step_with_observed_evidence_after_restart() {
     )
     .unwrap();
     let running = recover(&ledger, &session);
+    let committed = garive_runtime::CommittedTurn {
+        session_id: session.clone(),
+        turn_id: turn_id.clone(),
+        execution_id: execution_id.clone(),
+        definition_id: "agent-definition-1".into(),
+        definition_revision: "revision-1".into(),
+        snapshot_digest: digest('b'),
+        session_version: running.session_version,
+        committed_position: running.through_position,
+    };
     assert_eq!(
         plan_complete_owned_step_from_turn(
             &ledger,
@@ -578,45 +594,26 @@ fn completed_owned_turn_reduces_to_step_with_observed_evidence_after_restart() {
         ),
         Err(GoalPlanCoordinationError::CompletedTurnUnavailable)
     );
-    let usage = UsageSummary {
-        input_tokens: TokenCount::Known(3),
-        output_tokens: TokenCount::Known(1),
-        estimated: false,
+    drop(ledger);
+    let worker =
+        LocalExecutionWorker::new(&path, worker_policy(), Arc::new(PlanCompletingModel)).unwrap();
+    let disposition = worker.execute(&committed, &worker_attempt()).await.unwrap();
+    let LocalWorkerDisposition::TerminalCommitted { positions } = disposition else {
+        panic!("first dispatch must commit terminal and Step reduction")
     };
-    let terminal = plan_core_terminal(
-        &CoreTerminalContext {
-            turn_id: turn_id.clone(),
-            execution_id,
-            recorded_at: timestamp().into(),
-        },
-        &ExecutionReport {
-            outcome: AgentOutcome::Completed {
-                response_items: vec![ModelItem::Text {
-                    text: "prepared".into(),
-                }],
-                usage,
-            },
-            completed_iterations: 1,
-            usage,
-        },
-    )
-    .unwrap();
-    ledger
-        .commit(session.clone(), running.session_version, terminal)
+    assert_eq!(positions.len(), 3);
+    assert_eq!(
+        worker.execute(&committed, &worker_attempt()).await.unwrap(),
+        LocalWorkerDisposition::AlreadyTerminal
+    );
+    let ledger = SqliteLedger::open(&path).unwrap();
+    let completed = ledger
+        .read_facts(&session, 0, u64::MAX, None)
+        .unwrap()
+        .into_iter()
+        .find(|fact| fact.kind.as_str() == "plan.step.completed")
         .unwrap();
-    let goal = reconstruct_goal(&ledger, &session, "goal-1").unwrap();
-    let completed = plan_complete_owned_step_from_turn(
-        &ledger,
-        &session,
-        "goal-1",
-        &turn_id,
-        goal.session_version,
-        2,
-        &context("reduce-completed-turn"),
-    )
-    .unwrap();
-    let payload: serde_json::Value =
-        serde_json::from_str(completed.facts[0].payload.as_json()).unwrap();
+    let payload: serde_json::Value = serde_json::from_str(completed.payload.as_json()).unwrap();
     let criterion_evidence: serde_json::Value = serde_json::from_str(
         payload["criterion_evidence"]["inline_utf8"]
             .as_str()
@@ -626,13 +623,6 @@ fn completed_owned_turn_reduces_to_step_with_observed_evidence_after_restart() {
     assert_eq!(payload["step_id"], "prepare");
     assert_eq!(payload["attempt_id"], "reduce-attempt");
     assert_eq!(criterion_evidence[0]["criterion_id"], "accepted");
-    commit_plan_command(
-        &mut ledger,
-        session.clone(),
-        goal.session_version,
-        &completed,
-    )
-    .unwrap();
     drop(ledger);
     let ledger = SqliteLedger::open(&path).unwrap();
     let recovered = recover(&ledger, &session);
@@ -1591,7 +1581,11 @@ fn open_session(ledger: &mut SqliteLedger, session: &SessionId) {
             session.clone(),
             0,
             vec![
-                session_fact("session-open", "session.opened", json!({})),
+                session_fact(
+                    "session-open",
+                    "session.opened",
+                    serde_json::from_str(acceptance_payload().as_json()).unwrap(),
+                ),
                 session_fact(
                     "goal-create",
                     "goal.created",
@@ -1642,7 +1636,14 @@ fn goal_definition() -> GoalDefinitionV1 {
 }
 
 fn acceptance_payload() -> CanonicalPayload {
-    CanonicalPayload::from_value(&json!({})).unwrap()
+    CanonicalPayload::from_value(&json!({
+        "command_id":"session-open",
+        "definition_id":"agent-definition-1",
+        "definition_revision":"revision-1",
+        "snapshot_digest":digest('b'),
+        "agent_instance_id":"agent-instance-1",
+    }))
+    .unwrap()
 }
 
 fn goal_activation_payload() -> CanonicalPayload {
@@ -1748,6 +1749,66 @@ fn digest(character: char) -> String {
 }
 fn timestamp() -> &'static str {
     "2026-08-31T00:00:00Z"
+}
+
+struct PlanCompletingModel;
+impl ModelPort for PlanCompletingModel {
+    fn invoke<'a>(
+        &'a self,
+        _: &'a ModelRequest,
+        _: &'a mut dyn ModelObserver,
+        _: &'a dyn ModelCancellation,
+    ) -> ModelFuture<'a> {
+        Box::pin(async {
+            Ok(InvokeOutcome::Completed {
+                items: vec![ModelItem::Text {
+                    text: "prepared".into(),
+                }],
+                usage: ModelUsage {
+                    input_tokens: TokenCount::Known(3),
+                    output_tokens: TokenCount::Known(1),
+                    cache_read_tokens: None,
+                    cache_write_tokens: None,
+                    source: UsageSource::ProviderReported,
+                },
+                stop_reason: ModelStopReason::EndTurn,
+            })
+        })
+    }
+}
+
+fn worker_policy() -> LocalExecutionPolicy {
+    LocalExecutionPolicy {
+        model_target_id: "target-plan".into(),
+        deployment_id: "deployment-plan".into(),
+        recovery_policy_revision: "recovery-v1".into(),
+        required_capabilities: vec![ModelCapability::Text],
+        model_output: ModelOutputSettings {
+            max_output_tokens: Some(2_048),
+            text_mode: TextMode::Plain,
+            reasoning_visibility: false,
+        },
+        recovery_policy: ModelRecoveryPolicy {
+            max_context_rebuilds: 0,
+            output_limit: OutputLimitAction::Suspend,
+            transport: TerminalRecoveryAction::Suspend,
+            unavailable: TerminalRecoveryAction::Suspend,
+            missing_usage: MissingUsagePolicy::Stop,
+        },
+        max_context_items: 8,
+        max_context_utf8_bytes: 1_024,
+        max_model_attempts: 1,
+    }
+}
+
+fn worker_attempt() -> LocalExecutionAttempt {
+    LocalExecutionAttempt {
+        worker_owner_id: "worker-plan".into(),
+        lease_token: "unpredictable-plan-token".into(),
+        now_ms: 1_000,
+        lease_duration_ms: 5_000,
+        recorded_at: timestamp().into(),
+    }
 }
 
 fn start_turn(session: &SessionId, command: &str) -> StartTurnCommand {
