@@ -183,19 +183,27 @@ describe("Desktop product experience", () => {
     expect(document.activeElement).toBe(trigger);
   });
 
-  it("presents durable search as a compact desktop finder", async () => {
+  it("keeps durable search inside the contextual command overlay", async () => {
     const view = render(<App />);
     const searchTooltip = await screen.findByRole("tooltip", { name: "Search durable work (⌘F)" });
     const search = searchTooltip.parentElement?.querySelector<HTMLButtonElement>("button");
     expect(search?.hasAttribute("title")).toBe(false);
+    search?.focus();
     fireEvent.click(search!);
-    expect(screen.getByRole("heading", { name: "Find your work" })).toBeTruthy();
+    const dialog = screen.getByRole("dialog", { name: "Command menu" });
     expect(screen.getByRole("textbox", { name: "Search durable work" })).toBeTruthy();
     expect(screen.getByRole("group", { name: "Filter durable work" })).toBeTruthy();
-    expect(view.container.querySelector(".search-toolbar")).not.toBeNull();
-    expect(view.container.querySelector(".search-result-heading")?.textContent).toContain("Recents");
-    expect(view.container.querySelector(".search-empty")).not.toBeNull();
-    expect(view.container.querySelector(".search-results")?.classList.contains("card")).toBe(false);
+    expect(view.container.querySelector(".main-surface")).not.toBeNull();
+    expect(view.container.querySelector(".search-page")).toBeNull();
+    expect(view.container.querySelector(".app-shell")?.hasAttribute("inert")).toBe(true);
+    fireEvent.keyDown(dialog, { key: "Escape" });
+    await waitFor(() => expect(document.activeElement).toBe(search));
+    fireEvent.keyDown(window, { key: "f", metaKey: true });
+    const shortcutDialog = await screen.findByRole("dialog", { name: "Command menu" });
+    expect(screen.getByRole("textbox", { name: "Search durable work" })).toBeTruthy();
+    fireEvent.keyDown(shortcutDialog, { key: "Escape" });
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Command menu" })).toBeNull());
+    await waitFor(() => expect(document.activeElement).toBe(search));
   });
 
   it("projects the real installed Agent catalogue into a progressive desktop workbench", async () => {
@@ -254,12 +262,12 @@ describe("Desktop product experience", () => {
     const composer = screen.getByRole("textbox", { name: "Describe the outcome you want" });
     composer.focus();
     fireEvent.keyDown(window, { key: "k", metaKey: true });
-    const dialog = await screen.findByRole("dialog", { name: "Garive command center" });
+    const dialog = await screen.findByRole("dialog", { name: "Command menu" });
     const commandSearch = screen.getByRole("textbox", { name: "Search commands and durable work" });
     expect(commandSearch).toBeTruthy();
     fireEvent.keyDown(commandSearch, { key: "ArrowDown" });
     const newWork = within(dialog).getByRole("button", { name: "New work" });
-    const searchAll = within(dialog).getByRole("button", { name: "Open full work search" });
+    const searchAll = within(dialog).getByRole("button", { name: "Search durable work" });
     expect(newWork).toBe(document.activeElement);
     fireEvent.keyDown(newWork, { key: "ArrowDown" });
     expect(searchAll).toBe(document.activeElement);
@@ -269,21 +277,24 @@ describe("Desktop product experience", () => {
     expect(within(dialog).getAllByRole("button").at(-1)).toBe(document.activeElement);
     fireEvent.keyDown(document.activeElement!, { key: "Home" });
     expect(newWork).toBe(document.activeElement);
+    fireEvent.click(searchAll);
+    expect(screen.getByRole("group", { name: "Filter durable work" })).toBeTruthy();
+    expect(screen.getByRole("textbox", { name: "Search durable work" })).toBe(document.activeElement);
     fireEvent.keyDown(dialog, { key: "Escape" });
     await waitFor(() => expect(composer).toBe(document.activeElement));
-    expect(screen.queryByRole("dialog", { name: "Garive command center" })).toBeNull();
+    expect(screen.queryByRole("dialog", { name: "Command menu" })).toBeNull();
 
     fireEvent.keyDown(window, { key: "k", metaKey: true });
-    const routedDialog = await screen.findByRole("dialog", { name: "Garive command center" });
+    const routedDialog = await screen.findByRole("dialog", { name: "Command menu" });
     fireEvent.click(screen.getByRole("button", { name: "Settings" }));
     expect(await screen.findByRole("heading", { name: "Settings" })).toBeTruthy();
     expect(screen.queryByText("Desktop", { exact: true })).toBeNull();
     expect(routedDialog.isConnected).toBe(false);
 
     fireEvent.keyDown(window, { key: "k", metaKey: true });
-    expect(await screen.findByRole("dialog", { name: "Garive command center" })).toBeTruthy();
+    expect(await screen.findByRole("dialog", { name: "Command menu" })).toBeTruthy();
     fireEvent.keyDown(screen.getByRole("dialog"), { key: "Escape" });
-    expect(screen.queryByRole("dialog", { name: "Garive command center" })).toBeNull();
+    expect(screen.queryByRole("dialog", { name: "Command menu" })).toBeNull();
   });
 
   it("keeps navigation reachable as a dismissible small-window sheet", async () => {

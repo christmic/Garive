@@ -1285,6 +1285,32 @@ first Runtime-identity field; Back preserves the entered `token9` target and
 `gpt-5.6` model while retaining the pressed catalogue values. The 480×720 pass
 keeps the progressive flow operable without reintroducing native form chrome.
 
+### XLIII. Search preserves the work context
+
+Installed `app-initial-B6Gk5KCN.js` names the global surface “Command menu”,
+describes it as searching commands and past chats, and supplies separate
+“Search chats” and “Search chats or run a command” placeholders. Together with
+the source-backed palette geometry in Section XXXIV, this is direct evidence
+that high-frequency history search belongs inside the command overlay rather
+than replacing the active work surface with a Web-style destination page.
+
+Garive's sidebar Search, `⌘F`, native Search intent and Work action formerly
+routed to a full page with a large heading, explanatory copy and bordered form
+card. They now open the existing shared Command menu in search mode while the
+current thread remains mounted and inert beneath it. The unified mode retains
+the real durable-Session query and attention/active/completed filters; ordinary
+Command-menu mode still combines actions and work switching. Both modes share
+the same focus trap, Arrow/Home/End navigation, Escape dismissal and exact
+return-focus contract. The retired page component and its duplicate CSS are
+removed, so later search iterations have one surface rather than two.
+
+Live Web evidence at 1280×800 shows the 520px search palette over the running
+thread instead of a route transition. A four-state queue returns all four real
+fixture Sessions and narrows “Launch” to the one matching attention task. At
+480×720 the palette stays within a 16px viewport inset, preserves all filters
+and has no horizontal overflow. `⌘K` on the same narrow work surface opens the
+command/action mode without changing the underlying work.
+
 ## Gate 1 — Codex fidelity
 
 This gate passes only when both Desktop and Web show:

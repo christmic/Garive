@@ -1,5 +1,5 @@
 import { Children, isValidElement, useCallback, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState,
-  type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
+  useId, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import Markdown from "react-markdown";
@@ -46,7 +46,8 @@ import {
   type RecentTask, type TaskCategory, type TaskFilter,
 } from "./taskPresentation";
 
-type Screen = "work" | "search" | "agents" | "settings";
+type Screen = "work" | "agents" | "settings";
+type CommandMode = "commands" | "search";
 type SettingsSection = "general" | "usage" | "workspace" | "runtime" | "updates" | "privacy";
 type WorkDispatch = React.Dispatch<Parameters<typeof reduceWork>[1]>;
 interface SelectedContext {
@@ -190,6 +191,7 @@ export function App({ client = "desktop", webCapabilities, createProductPort,
   const [recents, setRecents] = useState<readonly RecentTask[]>([]);
   const [recentTitles, setRecentTitles] = useState<Readonly<Record<string, string>>>({});
   const [commandOpen, setCommandOpen] = useState(false);
+  const [commandMode, setCommandMode] = useState<CommandMode>("commands");
   const commandReturnFocus = useRef<HTMLElement | null>(null);
   const [selectedContext, setSelectedContext] = useState<SelectedContext>();
   const [pickerGrant, setPickerGrant] = useState<WorkspaceGrant>();
@@ -203,9 +205,10 @@ export function App({ client = "desktop", webCapabilities, createProductPort,
   const t = useMemo(() => createTranslator(locale), [locale]);
   const orderedRecents = useMemo(() => filterAndOrderTasks(recents, "all", "", recentTitles),
     [recentTitles, recents]);
-  const openCommandCenter = useCallback(() => {
+  const openCommandCenter = useCallback((mode: CommandMode = "commands") => {
     commandReturnFocus.current = document.activeElement instanceof HTMLElement
       && document.activeElement !== document.body ? document.activeElement : null;
+    setCommandMode(mode);
     setCommandOpen(true);
   }, []);
   const closeCommandCenter = useCallback(() => {
@@ -497,7 +500,7 @@ export function App({ client = "desktop", webCapabilities, createProductPort,
       const intent = decodeDesktopMenuIntent(event.payload);
       if (intent === "desktop.new-work") {
         beginNewWork();
-      } else if (intent === "desktop.search") setScreen("search");
+      } else if (intent === "desktop.search") openCommandCenter("search");
       else if (intent === "desktop.settings") { setSettingsSection("general"); setScreen("settings"); }
       else if (intent === "desktop.toggle-inspector") {
         dispatch({ type: "inspector_toggled" }); setScreen("work");
@@ -514,7 +517,7 @@ export function App({ client = "desktop", webCapabilities, createProductPort,
       else unlisten();
     }).catch(() => undefined);
     return () => { active = false; stop?.(); };
-  }, [beginNewWork, desktop]);
+  }, [beginNewWork, desktop, openCommandCenter]);
 
   useEffect(() => {
     const shortcuts = (event: KeyboardEvent) => {
@@ -526,8 +529,8 @@ export function App({ client = "desktop", webCapabilities, createProductPort,
         event.preventDefault(); beginNewWork();
       }
       if (event.key === ",") { event.preventDefault(); setSettingsSection("general"); setScreen("settings"); }
-      if (event.key.toLowerCase() === "k") { event.preventDefault(); openCommandCenter(); }
-      if (event.key.toLowerCase() === "f") { event.preventDefault(); setScreen("search"); }
+      if (event.key.toLowerCase() === "k") { event.preventDefault(); openCommandCenter("commands"); }
+      if (event.key.toLowerCase() === "f") { event.preventDefault(); openCommandCenter("search"); }
       if (event.shiftKey && event.key.toLowerCase() === "a") {
         event.preventDefault(); dispatch({ type: "inspector_toggled" });
       }
@@ -748,7 +751,7 @@ export function App({ client = "desktop", webCapabilities, createProductPort,
           <Tooltip label={t("nav.search")} shortcut="⌘F" align="end"><button
             className="sidebar-search icon-button" type="button" aria-label={t("nav.search")}
             disabled={!state.capabilities?.durable_navigation}
-            onClick={() => setScreen("search")}><Icon name="search" /></button></Tooltip>
+            onClick={() => openCommandCenter("search")}><Icon name="search" /></button></Tooltip>
         </div>
         <button className="new-work" type="button" aria-label={t("nav.newWork")} onClick={beginNewWork}>
           <Icon name="plus" /><span>{t("nav.newWork")}</span><kbd>⌘N</kbd>
@@ -757,9 +760,9 @@ export function App({ client = "desktop", webCapabilities, createProductPort,
           <NavItem icon="work" label={t("nav.work")}
             selected={screen === "work" && state.messages.length === 0}
             onClick={() => setScreen("work")} />
-          <NavItem icon="search" label={t("nav.search")} selected={screen === "search"}
+          <NavItem icon="search" label={t("nav.search")} selected={commandOpen && commandMode === "search"}
             disabled={!state.capabilities?.durable_navigation} hint={t("shell.searchHint")}
-            onClick={() => setScreen("search")} />
+            onClick={() => openCommandCenter("search")} />
           <NavItem icon="agent" label={t("nav.agents")} selected={screen === "agents"}
             onClick={() => setScreen("agents")} />
           <NavItem icon="memory" label={t("shell.memory")} disabled
@@ -839,14 +842,14 @@ export function App({ client = "desktop", webCapabilities, createProductPort,
             aria-controls="primary-navigation" onClick={() => navigationCollapsed
               ? setNavigationCollapsed(false) : setNavigationOpen((open) => !open)}><Icon name="panel" /></button>
             <span className="topbar-context-icon" aria-hidden="true"><Icon name={screen === "work" ? "folder"
-              : screen === "agents" ? "agent" : screen === "settings" ? "settings" : "search"} /></span>
-            <span className="topbar-title-copy">{screen === "work" ? title : screen === "search" ? t("nav.search") : screen === "agents" ? t("nav.agents") : t("nav.settings")}</span>
+              : screen === "agents" ? "agent" : "settings"} /></span>
+            <span className="topbar-title-copy">{screen === "work" ? title : screen === "agents" ? t("nav.agents") : t("nav.settings")}</span>
             {screen === "work" && state.messages.length > 0 && <DesktopMenu className="work-menu"
               label={t("work.menu.actions")} triggerClassName="work-menu-trigger" trigger={<Icon name="more" />}>
               {(close) => <><button type="button" role="menuitem" onClick={() => { close(); beginNewWork(); }}>
                   <Icon name="plus" /><span>{t("nav.newWork")}</span><kbd>⌘N</kbd></button>
                 {state.capabilities?.durable_navigation && <button type="button" role="menuitem"
-                  onClick={() => { close(); setScreen("search"); }}>
+                  onClick={() => { close(); openCommandCenter("search"); }}>
                   <Icon name="search" /><span>{t("nav.search")}</span><kbd>⌘F</kbd></button>}
                 <button type="button" role="menuitem" onClick={() => { close();
                   dispatch({ type: "inspector_toggled" }); }}><Icon name="panel" />
@@ -880,8 +883,7 @@ export function App({ client = "desktop", webCapabilities, createProductPort,
           resolveApproval={resolveApproval} removeContext={() => setSelectedContext(undefined)}
           detachWorkspace={detachWorkspace} detachingWorkspaceId={detachingWorkspaceId}
           approvalAction={approvalAction} t={t} />
-          : screen === "search" ? <SearchScreen recents={recents} titles={recentTitles} onOpen={openRecent} t={t} />
-            : screen === "agents" ? <AgentsScreen definitions={visualTest
+          : screen === "agents" ? <AgentsScreen definitions={visualTest
               ? visualAgentDefinitions : product.view?.definitions ?? []}
               sessions={visualTest ? visualAgentSessions : product.view?.sessions ?? []}
               defaultDefinitionId={state.capabilities?.agent_definition_id}
@@ -906,9 +908,9 @@ export function App({ client = "desktop", webCapabilities, createProductPort,
         setSelectedContext({ grant: pickerGrant, entries }); setPickerGrant(undefined);
         requestAnimationFrame(() => composer.current?.focus());
       }} />}
-    {commandOpen && <CommandCenter recents={orderedRecents} titles={recentTitles}
+    {commandOpen && <CommandCenter mode={commandMode} recents={orderedRecents} titles={recentTitles}
       onClose={closeCommandCenter} onNewWork={() => { setCommandOpen(false); beginNewWork(); }}
-      onSearch={() => { setCommandOpen(false); setScreen("search"); }}
+      onSearch={() => setCommandMode("search")}
       onSettings={() => { setCommandOpen(false); setSettingsSection("general"); setScreen("settings"); }}
       onToggleInspector={() => { setCommandOpen(false); setScreen("work");
         dispatch({ type: "inspector_toggled" }); }}
@@ -1658,47 +1660,27 @@ function activityIcon(state: string): IconName {
       : "warning";
 }
 
-function SearchScreen({ recents, titles, onOpen, t }: {
-  recents: readonly RecentTask[];
-  titles: Readonly<Record<string, string>>;
-  onOpen: (sessionId: string) => Promise<void>;
-  t: (key: MessageKey) => string;
-}) {
-  const [query, setQuery] = useState("");
-  const [filter, setFilter] = useState<TaskFilter>("all");
-  const results = filterAndOrderTasks(recents, filter, query, titles);
-  return <section className="search-page"><div className="search-heading"><h1>{t("search.title")}</h1>
-      <p>{t("search.description")}</p></div>
-    <div className="search-toolbar"><div className="search-box"><Icon name="search" /><input autoFocus aria-label={t("search.label")}
-      value={query} onChange={(event) => setQuery(event.target.value)} placeholder={t("search.placeholder")} /><kbd>⌘F</kbd></div>
-      <div className="task-filters" role="group" aria-label={t("tasks.filterAria")}>
-        {(["all", "attention", "active", "completed"] as const).map((value) => <button type="button"
-          className={filter === value ? "selected" : ""} aria-pressed={filter === value}
-          onClick={() => setFilter(value)} key={value}>{t(`tasks.${value}`)}</button>)}
-      </div></div>
-    <div className="search-result-heading"><span>{t("nav.recents")}</span><span>{results.length}</span></div>
-    <div className="search-results" aria-live="polite">{results.length ? results.map((recent) => <button type="button" key={recent.session_id} onClick={() => void onOpen(recent.session_id)}>
-      <span className="search-result-icon"><TaskStateDot task={recent} /></span><span><strong>{titles[recent.session_id] || recentLabel(recent)}</strong><small>{recent.turn_count} {t(recent.turn_count === 1 ? "search.turn" : "search.turns")}</small></span><span className="search-result-state">{terminalCopy(recent.latest_turn_state, t)}</span><Icon name="chevron" /></button>)
-      : <div className="search-empty"><Icon name="search" /><h2>{t(query ? "search.noMatch" : "search.noWork")}</h2><p>{t(query ? "search.tryDifferent" : "search.completedHint")}</p></div>}</div>
-  </section>;
-}
-
-function CommandCenter({ recents, titles, onClose, onNewWork, onSearch, onSettings,
+function CommandCenter({ mode, recents, titles, onClose, onNewWork, onSearch, onSettings,
   onToggleInspector, onOpen, t }: {
+  mode: CommandMode;
   recents: readonly RecentTask[]; titles: Readonly<Record<string, string>>;
   onClose: () => void; onNewWork: () => void; onSearch: () => void; onSettings: () => void;
   onToggleInspector: () => void; onOpen: (sessionId: string) => void;
   t: (key: MessageKey) => string;
 }) {
   const [query, setQuery] = useState("");
+  const [filter, setFilter] = useState<TaskFilter>("all");
   const dialog = useRef<HTMLElement>(null);
-  const matches = filterAndOrderTasks(recents, "all", query, titles).slice(0, 8);
-  const actions = query ? [] : [
+  const searchInput = useRef<HTMLInputElement>(null);
+  const descriptionId = useId();
+  const matches = filterAndOrderTasks(recents, mode === "search" ? filter : "all", query, titles).slice(0, 8);
+  const actions = mode === "search" || query ? [] : [
     { icon: "plus" as IconName, label: t("nav.newWork"), hint: "⌘N", run: onNewWork },
     { icon: "search" as IconName, label: t("command.searchAll"), hint: "⌘F", run: onSearch },
     { icon: "panel" as IconName, label: t("shell.toggleInspector"), hint: "⌘⇧A", run: onToggleInspector },
     { icon: "settings" as IconName, label: t("nav.settings"), hint: "⌘,", run: onSettings },
   ];
+  useEffect(() => { searchInput.current?.focus(); }, [mode]);
   const handleKeys = (event: React.KeyboardEvent<HTMLElement>) => {
     if (event.key === "Escape") { event.preventDefault(); onClose(); return; }
     const items = [...(dialog.current?.querySelectorAll<HTMLElement>("[data-command-item]") ?? [])]
@@ -1722,19 +1704,26 @@ function CommandCenter({ recents, titles, onClose, onNewWork, onSearch, onSettin
   return <div className="command-backdrop" role="presentation" onMouseDown={(event) => {
     if (event.target === event.currentTarget) onClose();
   }}><section ref={dialog} className="command-center" role="dialog" aria-modal="true"
-      aria-label={t("command.title")} onKeyDown={handleKeys}>
-      <div className="command-search"><Icon name="search" /><input autoFocus value={query}
-        aria-label={t("command.searchLabel")} placeholder={t("command.placeholder")}
+      aria-label={t("command.title")} aria-describedby={descriptionId} onKeyDown={handleKeys}>
+      <p className="sr-only" id={descriptionId}>{t("command.description")}</p>
+      <div className="command-search"><Icon name="search" /><input ref={searchInput} autoFocus value={query}
+        aria-label={t(mode === "search" ? "search.label" : "command.searchLabel")}
+        placeholder={t(mode === "search" ? "search.placeholder" : "command.placeholder")}
         onChange={(event) => setQuery(event.target.value)} /><kbd>esc</kbd></div>
       <div className="command-scroll">
+        {mode === "search" && <div className="command-filters" role="group" aria-label={t("tasks.filterAria")}>
+          {(["all", "attention", "active", "completed"] as const).map((value) => <button type="button"
+            data-command-item className={filter === value ? "selected" : ""} aria-pressed={filter === value}
+            onClick={() => setFilter(value)} key={value}>{t(`tasks.${value}`)}</button>)}
+        </div>}
         {actions.length > 0 && <div className="command-group"><p>{t("command.actions")}</p>{actions.map((action) =>
           <button type="button" data-command-item aria-label={action.label} onClick={action.run} key={action.label}><span className="command-icon"><Icon name={action.icon} /></span>
             <strong>{action.label}</strong><kbd>{action.hint}</kbd></button>)}</div>}
-        <div className="command-group"><p>{query ? t("command.matches") : t("command.work")}</p>
+        <div className="command-group"><p>{mode === "search" ? t("nav.recents") : query ? t("command.matches") : t("command.work")}</p>
           {matches.map((task) => <button type="button" data-command-item onClick={() => onOpen(task.session_id)} key={task.session_id}>
             <span className={`command-icon task-${classifyTask(task)}`}><TaskStateDot task={task} /></span>
             <span><strong>{titles[task.session_id] || recentLabel(task)}</strong><small>{taskStateCopy(task, t)}</small></span></button>)}
-          {!matches.length && <div className="command-empty">{t("command.empty")}</div>}
+          {!matches.length && <div className="command-empty">{t(query ? "search.noMatch" : "search.noWork")}</div>}
         </div>
       </div>
     </section></div>;
