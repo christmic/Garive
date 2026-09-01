@@ -7,13 +7,15 @@ import remarkGfm from "remark-gfm";
 import {
   attachWorkspaceToSession, authorizeWorkspaceWrites, chooseWorkspace,
   detachWorkspaceFromSession,
-  getArtifactPreview, getDesktopCapabilities, getSessionWorkspaces, getWorkspaceRecoveryStatus, listAllArtifacts,
+  getArtifactPreview, getDesktopCapabilities, getSessionWorkspaces, getSetupState,
+  getWorkspaceRecoveryStatus, listAllArtifacts,
   listWorkspaceAuthorizations, reauthorizeWorkspace,
   revokeWorkspace, setDesktopMenuLocale, commitArtifactExport,
-  prepareArtifactExport, type ArtifactExportReceipt, type ArtifactPreview,
+  prepareArtifactExport, restartDesktop, type ArtifactExportReceipt, type ArtifactPreview,
   type HostActivity, type HostArtifact, type HostArtifactPage, type HostGoalSummary, type HostTimelinePage,
   type WorkspaceAuthorization,
-  type WorkspaceAttachment, type WorkspaceEntry, type WorkspaceGrant, type WorkspaceRecoveryStatus,
+  type SetupState, type WorkspaceAttachment, type WorkspaceEntry, type WorkspaceGrant,
+  type WorkspaceRecoveryStatus,
 } from "./ipc/host";
 import { getProductGoals, startProductTurnWithWorkspaceContext } from "./ipc/productHost";
 import type { DesktopUpdateClient } from "./ipc/desktop-update";
@@ -29,7 +31,7 @@ import { ScrollToTailButton } from "./ui/ScrollToTailButton";
 import { ThreadSummarySection } from "./ui/ThreadSummarySection";
 import { UsageBudgetCard, UsageBudgetTrigger, type UsageBudgetSnapshot } from "./ui/UsageBudget";
 import { WindowZoomBanner } from "./ui/WindowZoomBanner";
-import { SetupFlow } from "./features/setup/SetupFlow";
+import { SetupFlow, SetupRecovery } from "./features/setup/SetupFlow";
 import { WorkspacePicker } from "./workspace/WorkspacePicker";
 import { decodeDesktopMenuIntent, DESKTOP_MENU_EVENT } from "./desktopMenu";
 import {
@@ -217,6 +219,8 @@ export function App({ client = "desktop", webCapabilities, createProductPort,
   const [recentTitles, setRecentTitles] = useState<Readonly<Record<string, string>>>({});
   const [commandOpen, setCommandOpen] = useState(false);
   const [commandMode, setCommandMode] = useState<CommandMode>("commands");
+  const [setupLifecycle, setSetupLifecycle] = useState<SetupState>();
+  const [reviewSetup, setReviewSetup] = useState(false);
   const [threadFind, setThreadFind] = useState({ open: false, revision: 0 });
   const commandReturnFocus = useRef<HTMLElement | null>(null);
   const [selectedContext, setSelectedContext] = useState<SelectedContext>();
@@ -595,6 +599,17 @@ export function App({ client = "desktop", webCapabilities, createProductPort,
       })
       .catch(() => dispatch({ type: "capabilities_failed" }));
   }, [desktop, webCapabilities]);
+
+  useEffect(() => {
+    if (!desktop || !state.capabilities || state.capabilities.configured) {
+      setSetupLifecycle(undefined); setReviewSetup(false); return;
+    }
+    let active = true;
+    void getSetupState().then((next) => { if (active) setSetupLifecycle(next); })
+      .catch(() => { if (active) setSetupLifecycle({ state: "invalid_configuration",
+        code: "setup_state_unavailable" }); });
+    return () => { active = false; };
+  }, [desktop, state.capabilities]);
 
   useEffect(() => {
     if (!desktop || visualTest) return;
@@ -1012,6 +1027,8 @@ export function App({ client = "desktop", webCapabilities, createProductPort,
 
         {screen === "work" ? <WorkSurface state={state} composer={composer} submit={submit}
           startSuggestion={startSuggestion} dispatch={workDispatch} context={selectedContext}
+          setupLifecycle={setupLifecycle} reviewSetup={reviewSetup}
+          onReviewSetup={() => setReviewSetup(true)} onRestartSetup={() => void restartDesktop()}
           cancelTurn={cancelTurn} retryPending={retryPending} reconnect={reconnect}
           openContext={openContext} authorizeOutputs={authorizeOutputs}
           resolveApproval={resolveApproval} removeContext={() => setSelectedContext(undefined)}
@@ -1062,7 +1079,8 @@ export function App({ client = "desktop", webCapabilities, createProductPort,
 
 function WorkSurface({ state, composer, submit, startSuggestion, dispatch, context, openContext,
   authorizeOutputs, resolveApproval, removeContext, detachWorkspace, detachingWorkspaceId,
-  approvalAction, cancelTurn, retryPending, reconnect, findOpen, findRevision, closeFind, obscured, t }: {
+  setupLifecycle, reviewSetup, onReviewSetup, onRestartSetup, approvalAction, cancelTurn,
+  retryPending, reconnect, findOpen, findRevision, closeFind, obscured, t }: {
   state: WorkState;
   composer: React.RefObject<HTMLTextAreaElement | null>;
   submit: () => Promise<void>;
@@ -1072,6 +1090,10 @@ function WorkSurface({ state, composer, submit, startSuggestion, dispatch, conte
   startSuggestion: (text: string) => void;
   dispatch: WorkDispatch;
   context?: SelectedContext;
+  setupLifecycle?: SetupState;
+  reviewSetup: boolean;
+  onReviewSetup: () => void;
+  onRestartSetup: () => void;
   openContext: () => Promise<void>;
   authorizeOutputs: () => Promise<void>;
   resolveApproval: (approved: boolean) => Promise<void>;
@@ -1315,7 +1337,17 @@ function WorkSurface({ state, composer, submit, startSuggestion, dispatch, conte
     body={t("work.boot.body")} />;
   if (state.boot === "unavailable") return <StatusCard icon="warning" title={t("work.unavailable.title")} body={t("error.desktopUnavailable")} />;
   if (!state.capabilities?.configured) {
-    return state.capabilities?.setup ? <SetupFlow preview={visualTest} t={t} /> : <SetupRequired t={t} />;
+    if (!state.capabilities?.setup) return <SetupRequired t={t} />;
+    if (!visualTest && (!setupLifecycle || setupLifecycle.state === "setup_recovering")) {
+      return <WorkspaceLoading title={t("setup.recovery.checking")}
+        body={t("setup.recovery.checkingBody")} />;
+    }
+    if (!reviewSetup && setupLifecycle?.state === "invalid_configuration") {
+      return <SetupRecovery code={setupLifecycle.code} t={t}
+        onRetry={onRestartSetup} onReview={onReviewSetup} />;
+    }
+    return <SetupFlow preview={visualTest} t={t}
+      reconfigure={setupLifecycle?.state !== "not_configured"} />;
   }
   const suspension = [...state.messages].reverse().find((message) => message.suspension)?.suspension;
   const needsInput = suspension?.kind === "partial_output" || suspension?.kind === "external_input_required";
@@ -1800,10 +1832,15 @@ function ResultDeliverables({ state, t, previewCloseRequest, onPreviewTitle }: {
         {artifact.workspace_id && <span><Icon name="shield" />{t("artifact.authorizedWorkspace")}</span>}
       </div>
     </article>; })}</div>
-    {selected && <section className="artifact-preview" aria-label={t("artifact.previewAria")}><div className="artifact-workbench-toolbar"><nav aria-label={t("artifact.breadcrumbs")}><span>{t("inspector.artifacts")}</span><Icon name="chevron" /><strong dir="auto">{selected.display_name}</strong></nav><div className="artifact-workbench-actions"><button type="button" disabled={!preview || previewState !== "idle"} onClick={() => setSourceMode((shown) => !shown)}><Icon name="source" /><span>{t(sourceMode ? "artifact.viewRendered" : "artifact.viewSource")}</span></button><button type="button"
+    {selected && <section className="artifact-preview" aria-label={t("artifact.previewAria")}><div className="artifact-workbench-toolbar"><nav aria-label={t("artifact.breadcrumbs")}><span>{t("inspector.artifacts")}</span><Icon name="chevron" /><strong dir="auto">{selected.display_name}</strong></nav><div className="artifact-workbench-actions"><button type="button"
         disabled={!selected.exportable || selectedExportState === "exporting"}
         aria-label={t(selectedExportState === "exporting" ? "artifact.choosing" : "artifact.exportCopy")}
-        onClick={() => void exportCopy(selected)}><Icon name="download" /><span>{t(selectedExportState === "exporting" ? "artifact.choosing" : "artifact.exportCopy")}</span></button></div></div>
+        onClick={() => void exportCopy(selected)}><Icon name="download" /><span>{t(selectedExportState === "exporting" ? "artifact.choosing" : "artifact.exportCopy")}</span></button><DesktopMenu
+          className="artifact-viewer-menu" triggerClassName="icon-button" label={t("artifact.viewerOptions")}
+          trigger={<Icon name="more" />}>{(close) => <button type="button" role="menuitem"
+            disabled={!preview || previewState !== "idle"} onClick={() => { close(); setSourceMode((shown) => !shown); }}>
+            <Icon name="source" /><span>{t(sourceMode ? "artifact.viewRendered" : "artifact.viewSource")}</span></button>}
+        </DesktopMenu></div></div>
       {selectedExportState === "exported" && selectedExportReceipt && <p className="artifact-workbench-notice success" role="status"><Icon name="check" />{t("artifact.exportedAs")} <bdi>{selectedExportReceipt.display_name}</bdi></p>}
       {selectedExportState === "exists" && <p className="artifact-workbench-notice error" role="alert"><Icon name="warning" />{t("artifact.overwriteError")}</p>}
       {selectedExportState === "unavailable" && <p className="artifact-workbench-notice error" role="alert"><Icon name="warning" />{t("artifact.exportError")}</p>}

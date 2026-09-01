@@ -31,16 +31,21 @@ use garive_knowledge::{
 use garive_ledger::SessionId;
 use garive_llm::{
     InterruptionKind, InvokeOutcome, ModelCancellation, ModelCapability, ModelFuture,
-    ModelInputItem, ModelItem, ModelObserver, ModelOutputKind, ModelOutputSettings, ModelPort,
-    ModelRequest, ModelStopReason, ModelStreamEvent, ModelUsage, ObserverDecision, RejectionKind,
-    TextMode, TokenCount, UsageSource,
+    ModelInputContent, ModelInputItem, ModelItem, ModelObserver, ModelOutputKind,
+    ModelOutputSettings, ModelPort, ModelRequest, ModelStopReason, ModelStreamEvent, ModelUsage,
+    ObserverDecision, RejectionKind, TextMode, TokenCount, UsageSource,
 };
-use garive_memory::{MemoryAuthorizedScope, MemoryDocumentLimits, MemoryScope, MemoryScopeClass};
+use garive_memory::{
+    ContentBinding, DurableFactReference, HypothesisState, MemoryAuthority, MemoryAuthorityBinding,
+    MemoryAuthorizedScope, MemoryCommit, MemoryDocumentLimits, MemoryKind, MemoryProposal,
+    MemoryRevisionClassification, MemoryRevisionScope, MemoryScope, MemoryScopeClass,
+    MemorySensitivity, MemoryState, MemoryType, MemoryTypeDescriptor, MemoryTypeRegistry,
+};
 use garive_plan::{PlanBoundsV1, PlanStepId, PlanStepV1};
 use garive_runtime::{
     advance_goal_plan_with_failure_once, commit_goal_command, local_dispatch_queue,
-    plan_core_terminal, plan_create_goal, reconstruct_goal, reconstruct_local_start,
-    reconstruct_plan_graph, start_initial_goal_plan_proposal_execution,
+    plan_classified_memory_write, plan_core_terminal, plan_create_goal, reconstruct_goal,
+    reconstruct_local_start, reconstruct_plan_graph, start_initial_goal_plan_proposal_execution,
     start_replacement_goal_plan_proposal_execution, CatalogueCapabilityPreparationFactory,
     CataloguePlanStepDispatchFactory, CommittedTurn, CoreTerminalContext, GoalCommandContext,
     GoalPlanAdvanceOutcome, GoalPlanCoordinationTick, HostClock, KnowledgeConnector,
@@ -48,12 +53,12 @@ use garive_runtime::{
     LocalCapabilityPreparationFactory, LocalExecutionAttempt, LocalExecutionPolicy,
     LocalGovernedExecution, LocalGovernedExecutionFactory, LocalKnowledgeSystemBinding,
     LocalMemorySystemBinding, LocalReconstructionError, LocalWorkerError, MemoryControlAction,
-    MemoryControlGrant, PlanAdmissionDecision, PlanAdmissionInput, PlanAdmissionPolicy,
-    PlanFailureDecision, PlanFailureInput, PlanFailurePolicy, PlanProposalContent,
-    PlanProposalFuture, PlanProposalPort, PlanStepDispatchFactory, PlanStepDispatchInput,
-    ProcessBackendHostConfig, ProcessExecutable, ProcessLane, ProcessLaneRegistry,
-    RuntimeAgentCatalogue, SafetyFuture, SafetyPort, SqliteLedger, T1HostSystemConfig,
-    KEYWORD_CURRENT_INPUT_REVISION, USER_DECLARED_PUSH_REVISION,
+    MemoryControlGrant, MemoryWriteContext, PlanAdmissionDecision, PlanAdmissionInput,
+    PlanAdmissionPolicy, PlanFailureDecision, PlanFailureInput, PlanFailurePolicy,
+    PlanProposalContent, PlanProposalFuture, PlanProposalPort, PlanStepDispatchFactory,
+    PlanStepDispatchInput, ProcessBackendHostConfig, ProcessExecutable, ProcessLane,
+    ProcessLaneRegistry, RuntimeAgentCatalogue, SafetyFuture, SafetyPort, SqliteLedger,
+    T1HostSystemConfig, KEYWORD_CURRENT_INPUT_REVISION, USER_DECLARED_PUSH_REVISION,
 };
 use garive_tools::{T1_APPLY_PATCH, T1_READ_TEXT};
 use sha2::{Digest, Sha256};
@@ -206,6 +211,218 @@ impl ModelPort for CompletingModel {
             })
         })
     }
+}
+
+struct DesktopMemoryCheckingModel(AtomicU64);
+impl ModelPort for DesktopMemoryCheckingModel {
+    fn invoke<'a>(
+        &'a self,
+        request: &'a ModelRequest,
+        observer: &'a mut dyn ModelObserver,
+        _: &'a dyn ModelCancellation,
+    ) -> ModelFuture<'a> {
+        let call = self.0.fetch_add(1, Ordering::SeqCst);
+        if call == 1 {
+            assert!(
+                request.input_items.iter().any(|item| matches!(
+                    item,
+                    ModelInputItem::Message { content, .. }
+                        if content.iter().any(|part| matches!(
+                            part,
+                            ModelInputContent::Text(text)
+                                if text.contains("garive.memory") && text.contains("dark mode")
+                        ))
+                )),
+                "input={:?}",
+                request.input_items
+            );
+        }
+        Box::pin(async move {
+            assert_eq!(
+                observer.observe(&ModelStreamEvent::OutputItemStarted {
+                    output_index: 0,
+                    kind: ModelOutputKind::Text,
+                }),
+                ObserverDecision::Continue
+            );
+            Ok(InvokeOutcome::Completed {
+                items: vec![ModelItem::Text { text: "ok".into() }],
+                usage: ModelUsage {
+                    input_tokens: TokenCount::Known(1),
+                    output_tokens: TokenCount::Known(1),
+                    cache_read_tokens: None,
+                    cache_write_tokens: None,
+                    source: UsageSource::ProviderReported,
+                },
+                stop_reason: ModelStopReason::EndTurn,
+            })
+        })
+    }
+}
+
+fn desktop_memory_registry() -> MemoryTypeRegistry {
+    let descriptor = |memory_type, roles, authorities, name: &str| {
+        MemoryTypeDescriptor::new(
+            memory_type,
+            roles,
+            authorities,
+            format!("{name}-retention-v1"),
+            format!("{name}-evidence-v1"),
+            format!("{name}-promotion-v1"),
+            format!("memory.{name}"),
+        )
+        .unwrap()
+    };
+    MemoryTypeRegistry::new(
+        "desktop-test-registry-v1",
+        vec![
+            descriptor(
+                MemoryType::Semantic,
+                vec![
+                    MemoryKind::Preference,
+                    MemoryKind::Constraint,
+                    MemoryKind::Decision,
+                    MemoryKind::LearnedFact,
+                ],
+                vec![
+                    MemoryAuthority::UserDeclared,
+                    MemoryAuthority::AgentLearned,
+                    MemoryAuthority::OrganisationPublished,
+                ],
+                "semantic",
+            ),
+            descriptor(
+                MemoryType::Episodic,
+                vec![MemoryKind::Summary],
+                vec![MemoryAuthority::AgentLearned],
+                "episodic",
+            ),
+            descriptor(
+                MemoryType::Lesson,
+                vec![MemoryKind::LearnedFact],
+                vec![
+                    MemoryAuthority::AgentLearned,
+                    MemoryAuthority::OrganisationPublished,
+                ],
+                "lesson",
+            ),
+            descriptor(
+                MemoryType::Procedural,
+                vec![MemoryKind::LearnedFact, MemoryKind::Summary],
+                vec![
+                    MemoryAuthority::AgentLearned,
+                    MemoryAuthority::OrganisationPublished,
+                ],
+                "procedural",
+            ),
+        ],
+    )
+    .unwrap()
+}
+
+#[tokio::test]
+async fn desktop_worker_supplies_committed_user_memory_to_a_later_session() {
+    let directory = tempdir().unwrap();
+    let database = directory.path().join("desktop-memory.sqlite3");
+    let model = Arc::new(DesktopMemoryCheckingModel(AtomicU64::new(0)));
+    let host = desktop_host(&database, model.clone());
+    let source_id = host.create_session("definition-main").unwrap();
+    let source = host
+        .run_turn_in_session(
+            "definition-main",
+            Some(&source_id),
+            "remember this preference",
+        )
+        .await
+        .unwrap();
+
+    let source_session = SessionId::try_from(source_id.as_str()).unwrap();
+    let mut ledger = SqliteLedger::open(&database).unwrap();
+    let evidence = ledger.read_facts(&source_session, 0, 1, None).unwrap()[0].clone();
+    let proposal = MemoryProposal::new(
+        "proposal-dark-mode",
+        "desktop-test-memory",
+        MemoryScope::Namespace,
+        MemoryKind::Preference,
+        ContentBinding::from_inline("dark mode"),
+        vec![DurableFactReference::new(
+            &source_id,
+            evidence.position,
+            evidence.fact_id.as_str(),
+            evidence.payload.sha256(),
+        )
+        .unwrap()],
+        MemorySensitivity::Ordinary,
+        10_000,
+        None,
+    )
+    .unwrap();
+    let classification = MemoryRevisionClassification::new(
+        MemoryKind::Preference,
+        MemoryAuthorityBinding::new(MemoryAuthority::UserDeclared, Some("e".repeat(64))).unwrap(),
+        MemoryRevisionScope::new(MemoryScopeClass::User, "desktop-test-user", None).unwrap(),
+        HypothesisState::Active,
+        "classification-v1",
+        &desktop_memory_registry(),
+    )
+    .unwrap();
+    let context = MemoryWriteContext {
+        turn_id: garive_ledger::TurnId::try_from(source.turn_id.as_str()).unwrap(),
+        execution_id: garive_ledger::ExecutionId::try_from(source.execution_id.as_str()).unwrap(),
+        through_position: source.cursor,
+        recorded_at: "2026-09-01T00:00:02Z".into(),
+    };
+    let commit = MemoryCommit::new(
+        "record-dark-mode",
+        "revision-dark-mode-v1",
+        "d".repeat(64),
+        source.cursor + 2,
+        None,
+        None,
+    )
+    .unwrap();
+    let planned = plan_classified_memory_write(
+        &context,
+        &MemoryState::default(),
+        &proposal,
+        commit,
+        &source_session,
+        "classification-dark-mode",
+        &classification,
+    )
+    .unwrap();
+    let source_version = ledger.session_version(&source_session).unwrap().unwrap();
+    ledger
+        .commit_classified_memory_write(
+            source_session,
+            source_version,
+            planned,
+            MemoryDocumentLimits::new(16_384, 8_192, 128).unwrap(),
+        )
+        .unwrap();
+    drop(ledger);
+
+    let target_id = host.create_session("definition-main").unwrap();
+    let target = host
+        .run_turn_in_session("definition-main", Some(&target_id), "what do I prefer?")
+        .await
+        .unwrap();
+    assert_eq!(target.terminal, DesktopTerminal::Completed);
+    assert_eq!(model.0.load(Ordering::SeqCst), 2);
+    let ledger = SqliteLedger::open(&database).unwrap();
+    let facts = ledger
+        .load_turn(&garive_ledger::TurnId::try_from(target.turn_id.as_str()).unwrap())
+        .unwrap()
+        .facts;
+    let retrieval = facts
+        .iter()
+        .position(|fact| fact.kind.as_str() == "memory.retrieval_recorded")
+        .unwrap();
+    let model_started = facts
+        .iter()
+        .position(|fact| fact.kind.as_str() == "model.started")
+        .unwrap();
+    assert!(retrieval < model_started);
 }
 
 #[test]

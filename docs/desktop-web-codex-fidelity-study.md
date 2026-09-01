@@ -1672,6 +1672,20 @@ fact. This is shared Desktop/Web infrastructure; future Git or Source adapters
 must supply real Runtime facts to these primitives rather than adding fixture
 rows to the client.
 
+### LIX. Artifact actions expose capability, while viewer mode is an option
+
+Installed Codex `26.825.51511` builds the Artifact header from two independent
+capabilities in `artifact-preview-header-oc02eWHL.js`. A native `Open` target is
+rendered only when an admitted application adapter supplies real targets. The
+separate `Artifact viewer options` ghost toolbar button opens a menu whose
+`View source` item changes presentation mode; it is not an export action.
+
+Garive has a real bounded export target but no native editor-target adapter.
+Desktop and Web therefore keep `Export copy…` as the primary admitted action,
+omit the unsupported `Open`, and move Rendered/View source into the source-shaped
+viewer options menu. The breadcrumb remains `Artifacts > display name` because
+Runtime intentionally does not disclose or fabricate a filesystem path.
+
 ## Gate 1 — Codex fidelity
 
 This gate passes only when both Desktop and Web show:

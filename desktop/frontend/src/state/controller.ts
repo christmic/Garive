@@ -239,9 +239,13 @@ function applyResult(state: AppViewState, intent: Extract<AppIntent, { type: "ef
     case "definitions_loaded":
       return issueMany({ ...next, definitions: intent.result.definitions }, [{ kind: "load_session_page" }]);
     case "session_page_loaded": {
-      const selected = next.selectedSessionId && intent.result.sessions.some((item) => item.sessionId === next.selectedSessionId)
-        ? next.selectedSessionId : intent.result.sessions[0]?.sessionId;
-      const base = { ...next, sessions: intent.result.sessions, selectedSessionId: selected,
+      const sessions = intent.result.sessions.filter((session) =>
+        !session.definitionId || !session.definitionRevision || next.definitions.some((definition) =>
+          definition.definitionId === session.definitionId
+          && definition.definitionRevision === session.definitionRevision));
+      const selected = next.selectedSessionId && sessions.some((item) => item.sessionId === next.selectedSessionId)
+        ? next.selectedSessionId : sessions[0]?.sessionId;
+      const base = { ...next, sessions, selectedSessionId: selected,
         shell: "ready" as const };
       return selected ? issueMany(base, [{ kind: "load_timeline", sessionId: selected }]) : changed(base);
     }

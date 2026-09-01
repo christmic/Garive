@@ -739,6 +739,11 @@ product admits those actions.
   Git and Source rows render only admitted facts; unavailable adapters may be
   muted or omitted but must never be replaced by illustrative rows. Activity
   lifecycle state is trailing metadata so long-running work remains scannable.
+- Artifact toolbar actions are capability-backed. `Open` appears only when a
+  native target adapter supplies at least one real target; export never changes
+  its label to imitate that action. Rendered/source mode lives under one
+  `Artifact viewer options` menu. Breadcrumb segments come from admitted
+  artifact authority and never invent a filesystem hierarchy.
 
 ## Content rules
 

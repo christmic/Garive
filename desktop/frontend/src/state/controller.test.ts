@@ -61,6 +61,23 @@ describe("A-UX1 shared controller", () => {
     expect(reduceApp(state, intent("true")).effects[0]?.continuationValueKind).toBe("json_boolean");
   });
 
+  it("does not restore a Session bound to an uninstalled Agent revision", () => {
+    const effect: AppEffect = { effectId: "effect-sessions", kind: "load_session_page",
+      generation: 1 };
+    const state: AppViewState = { ...initialAppViewState(), generation: 1,
+      definitions: [{ definitionId: "garive-work", definitionRevision: "desktop.agent.v3",
+        capabilities: [] }], selectedSessionId: "legacy-session", outstanding: [effect] };
+    const reduction = reduceApp(state, { type: "effect_result", effectId: effect.effectId,
+      generation: effect.generation, result: { type: "session_page_loaded", sessions: [{
+        sessionId: "legacy-session", definitionId: "garive-work",
+        definitionRevision: "revision-1",
+      }] } });
+    expect(reduction.state.shell).toBe("ready");
+    expect(reduction.state.sessions).toEqual([]);
+    expect(reduction.state.selectedSessionId).toBeUndefined();
+    expect(reduction.effects).toEqual([]);
+  });
+
   it("rejects fixture root, case, duplicate, and omission drift", () => {
     expect(() => validateFixture({ ...FIXTURE, unknown: true })).toThrow();
     const unknownCase = structuredClone(FIXTURE);

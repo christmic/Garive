@@ -1,15 +1,15 @@
 # Memory ledger live-API acceptance
 
-Date: 2026-08-31
+Date: 2026-09-01
 
 This acceptance separates two claims that must not be conflated:
 
 1. A committed Memory retrieval improves model work when Runtime supplies it.
 2. The default Desktop worker automatically performs that retrieval.
 
-The first claim is now supported by repeatable real-model evidence. The second
-is not: `LocalExecutionWorker` currently invokes the default execution path
-without constructing `PreparedAgentCapabilities.memory_retrieval`.
+Both claims are now supported. The shipping Desktop configuration constructs a
+`CatalogueCapabilityPreparationFactory` with its admitted local Memory binding,
+and `LocalExecutionWorker` prepares that capability before every model dispatch.
 
 ## Controlled experiment
 
@@ -31,7 +31,9 @@ user prompt, so a successful answer must come from admitted Memory evidence.
 
 ## Evidence
 
-Two independent live runs produced the same semantic results:
+Three independent live runs produced the same semantic results. The latest run
+on 2026-09-01 reported 13/576, 77/270 and 77/471 input/output tokens for the
+three conditions respectively:
 
 | Condition | Codename | Deploy day | Region | Evidence | Result |
 | --- | --- | --- | --- | --- | --- |
@@ -68,10 +70,22 @@ cargo test -p garive-runtime --test durable_core_execution \
 The placeholder loopback credential is intentionally non-secret; token9 owns
 upstream credentials. Do not put upstream keys in this test or repository.
 
+The Desktop-specific regression is:
+
+```sh
+cargo test -p garive-desktop --test embedded_runtime \
+  desktop_worker_supplies_committed_user_memory_to_a_later_session
+```
+
+It writes one user preference through the durable Memory plan, starts a Turn in
+a different Desktop Session, asserts that the model request contains the
+admitted `garive.memory` context, and proves `memory.retrieval_recorded` precedes
+`model.started` in that Turn.
+
 ## Product conclusion
 
-The commit-before-context Memory design improves factual task completion and
-prevents a superseded revision from contaminating the prompt in this controlled
-experiment. The remaining product work is automatic recall composition in the
-default Desktop worker. Until that is wired, the Desktop app does not receive
-these benefits merely because Memory facts exist in its ledger.
+The commit-before-context Memory design improves factual task completion,
+prevents a superseded revision from contaminating the prompt, and is consumed
+by the default Desktop worker. Memory quality still depends on admitted scope,
+classification and retrieval policy; merely storing an unrelated or
+unauthorized fact does not make it model context.

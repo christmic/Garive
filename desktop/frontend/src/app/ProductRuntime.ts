@@ -85,6 +85,9 @@ export class ProductRuntime {
     } catch (cause) {
       if (controller.signal.aborted || this.#disposed) return;
       const error = safeError(cause);
+      console.error("Garive product effect failed", {
+        kind: effect.kind, errorKind: error.kind, code: error.code,
+      });
       this.#deliver(effect, { type: "failed", error });
     }
   }

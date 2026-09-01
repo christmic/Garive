@@ -6,6 +6,7 @@ import { webcrypto } from "node:crypto";
 const commands: string[] = [];
 let storedPending: unknown = null;
 let configured = true;
+let setupState: unknown = { state: "not_configured" };
 let artifactItems: unknown[] = [];
 let completedText = "Durable product answer";
 let clipboardWrite = vi.fn(async (_text: string) => undefined);
@@ -28,6 +29,8 @@ vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn(async (command: string, a
       profiles: [], presets: [], limits: { max_profiles: 2, max_text_bytes: 256,
         max_endpoint_bytes: 2048, max_secret_bytes: 16384, max_plan_count: 16,
         plan_lifetime_seconds: 900 } };
+    case "get_setup_state": return setupState;
+    case "restart_desktop": return undefined;
     case "read_client_preferences": return null;
     case "read_pending_command": return storedPending;
     case "read_pending_update": return null;
@@ -79,7 +82,8 @@ describe("Desktop product experience", () => {
   });
 
   beforeEach(() => {
-    commands.length = 0; storedPending = null; configured = true; artifactItems = [];
+    commands.length = 0; storedPending = null; configured = true;
+    setupState = { state: "not_configured" }; artifactItems = [];
     completedText = "Durable product answer";
     desktopEventHandler = undefined; setZoom.mockClear();
     clipboardWrite = vi.fn(async (_text: string) => undefined);
@@ -145,6 +149,19 @@ describe("Desktop product experience", () => {
     expect(await screen.findByText("Configure Garive")).toBeTruthy();
     expect(commands).not.toContain("get_agent_definitions");
     expect(commands).not.toContain("get_product_sessions");
+  });
+
+  it("preserves an existing invalid setup before offering reconfiguration", async () => {
+    configured = false;
+    setupState = { state: "invalid_configuration", code: "secret_unavailable" };
+    render(<App />);
+    expect(await screen.findByRole("heading", {
+      name: "Garive couldn't start your Runtime",
+    })).toBeTruthy();
+    expect(screen.getByText("Existing setup preserved")).toBeTruthy();
+    expect(screen.queryByLabelText("Model target")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Review connection" }));
+    expect(await screen.findByRole("heading", { name: "Configure Garive" })).toBeTruthy();
   });
 
   it("shows exact version and an honest unavailable update channel", async () => {
@@ -522,9 +539,12 @@ describe("Desktop product experience", () => {
     expect(separator.getAttribute("aria-valuenow")).toBe("352");
     fireEvent.doubleClick(separator);
     expect(separator.getAttribute("aria-valuenow")).toBe("352");
-    fireEvent.click(await screen.findByRole("button", { name: "View source" }));
+    expect(screen.queryByRole("button", { name: "View source" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Artifact viewer options" }));
+    fireEvent.click(await screen.findByRole("menuitem", { name: "View source" }));
     expect(screen.getByLabelText("Artifact source").textContent).toContain("Immutable source.");
-    fireEvent.click(screen.getByRole("button", { name: "Rendered" }));
+    fireEvent.click(screen.getByRole("button", { name: "Artifact viewer options" }));
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Rendered" }));
     expect(await screen.findByRole("heading", { name: "Verified memo" })).toBeTruthy();
     expect(screen.getAllByRole("button", { name: "Close Artifact preview" })).toHaveLength(1);
     expect(view.container.querySelector(".workspace-panel > header .icon-button")).toBeNull();

@@ -18,6 +18,26 @@ export interface SetupFlowApi {
   readonly restart: () => Promise<void>;
 }
 
+export function SetupRecovery({ code, onRetry, onReview, t = createTranslator("en") }: {
+  code: string; onRetry: () => void; onReview: () => void; t?: Translator;
+}) {
+  const known = (["secret_unavailable", "unknown_profile", "construction_failure",
+    "read_failure", "invalid_document"] as const).find((item) => item === code);
+  return <main className="setup-shell"><section className="setup-card setup-recovery"
+    aria-labelledby="setup-recovery-title">
+    <p className="setup-kicker">{t("setup.recovery.kicker")}</p>
+    <h1 id="setup-recovery-title">{t("setup.recovery.title")}</h1>
+    <p className="setup-lede">{t("setup.recovery.body")}</p>
+    <div className="setup-recovery-status" role="status">
+      <strong>{t("setup.recovery.preserved")}</strong>
+      <span>{t(known ? `setup.recovery.${known}` : "setup.recovery.unknown")}</span>
+    </div>
+    <div className="setup-actions"><button type="button" onClick={onReview}>
+      {t("setup.recovery.review")}</button><button className="primary" type="button"
+      onClick={onRetry}>{t("setup.recovery.retry")}</button></div>
+  </section></main>;
+}
+
 const DEFAULT_API: SetupFlowApi = {
   catalogue: getSetupCatalogue,
   prepare: prepareSetup,
