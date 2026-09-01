@@ -7,12 +7,12 @@ use serde_json::{json, Value};
 
 use crate::plan_runtime::{plan_resume_step_execution, plan_suspend_step_and_plan};
 use crate::{
-    get_turn, plan_cancel_turn, plan_goal_transition, plan_plan_transition, reconstruct_goal,
-    reconstruct_plan_graph, reconstruct_suspended_turn, CancelReason, CancelTurnCommand,
-    GetTurnQuery, GoalCommandContext, GoalRuntimeError, GoalRuntimeTransition, PlanCommandContext,
-    PlanRuntimeError, PlanRuntimeTransition, PlanStepContinuation, PlanStepSuspension,
-    PlannedGoalCommand, PlannedPlanCommand, PlannedTurn, RuntimeCommandError, RuntimeCommandId,
-    RuntimeSuspensionKind, RuntimeTurnStatus, SqliteLedger,
+    get_turn, plan_cancel_turn, plan_complete_plan, plan_goal_transition, plan_plan_transition,
+    reconstruct_goal, reconstruct_plan_graph, reconstruct_suspended_turn, CancelReason,
+    CancelTurnCommand, GetTurnQuery, GoalCommandContext, GoalRuntimeError, GoalRuntimeTransition,
+    PlanCommandContext, PlanRuntimeError, PlanRuntimeTransition, PlanStepContinuation,
+    PlanStepSuspension, PlannedGoalCommand, PlannedPlanCommand, PlannedTurn, RuntimeCommandError,
+    RuntimeCommandId, RuntimeSuspensionKind, RuntimeTurnStatus, SqliteLedger,
 };
 
 /// Stable failure classes for cross-aggregate Goal/Plan coordination.
@@ -255,6 +255,96 @@ pub fn plan_complete_owned_step_from_turn(
             criterion_evidence,
         },
     )
+    .map_err(GoalPlanCoordinationError::Plan)
+}
+
+/// Plans the authoritative Plan terminal when every Step is durably complete.
+///
+/// `None` means the authoritative Plan still has unfinished Steps. Complete
+/// Goal evidence is observed and verified at the current ledger prefix.
+pub fn plan_complete_authoritative_plan(
+    ledger: &SqliteLedger,
+    session_id: &SessionId,
+    goal_id: &str,
+    expected_session_version: u64,
+    expected_goal_revision: u64,
+    context: &PlanCommandContext,
+) -> Result<Option<PlannedPlanCommand>, GoalPlanCoordinationError> {
+    let goal =
+        reconstruct_goal(ledger, session_id, goal_id).map_err(GoalPlanCoordinationError::Goal)?;
+    if goal.snapshot.state() != GoalState::Active {
+        return Err(GoalPlanCoordinationError::Goal(
+            GoalRuntimeError::TransitionInvalid,
+        ));
+    }
+    if goal.session_version != expected_session_version {
+        return Err(GoalPlanCoordinationError::ConcurrentModification);
+    }
+    if goal.snapshot.revision() != expected_goal_revision {
+        return Err(GoalPlanCoordinationError::Goal(
+            GoalRuntimeError::RevisionConflict,
+        ));
+    }
+    let plans = reconstruct_plan_graph(ledger, session_id)
+        .map_err(|_| GoalPlanCoordinationError::CorruptState)?;
+    if plans.values().any(|plan| {
+        plan.session_version != goal.session_version
+            || plan.through_position != goal.through_position
+    }) {
+        return Err(GoalPlanCoordinationError::ConcurrentModification);
+    }
+    let goal_digest = goal
+        .snapshot
+        .definition()
+        .digest()
+        .map_err(|_| GoalPlanCoordinationError::CorruptState)?;
+    let mut candidates = plans.values().filter(|plan| {
+        let definition = plan.snapshot.definition();
+        definition.goal_id() == goal_id
+            && definition.goal_revision() <= expected_goal_revision
+            && definition.goal_definition_digest() == goal_digest
+            && plan.snapshot.state() == PlanState::Running
+    });
+    let plan = candidates
+        .next()
+        .ok_or(GoalPlanCoordinationError::AuthoritativePlanUnavailable)?;
+    if candidates.next().is_some() {
+        return Err(GoalPlanCoordinationError::CorruptState);
+    }
+    if plan.snapshot.definition().steps().iter().any(|step| {
+        plan.snapshot
+            .step(step.step_id())
+            .map(|value| value.state())
+            != Some(garive_plan::StepState::Completed)
+    }) {
+        return Ok(None);
+    }
+    let facts = ledger
+        .read_facts(session_id, 0, goal.through_position, None)
+        .map_err(|_| GoalPlanCoordinationError::CorruptState)?;
+    let graph = crate::goal_recovery::reconstruct_goal_graph_from_facts(
+        &facts,
+        expected_session_version,
+        goal.through_position,
+    )
+    .map_err(|_| GoalPlanCoordinationError::CorruptState)?;
+    let evidence = crate::goal_evidence::observe_goal_evidence(
+        goal_id,
+        goal.snapshot.definition().criteria(),
+        &graph,
+        &facts,
+        expected_session_version,
+    )
+    .map_err(GoalPlanCoordinationError::Goal)?;
+    plan_complete_plan(
+        ledger,
+        session_id,
+        plan,
+        plan.state_version,
+        context,
+        evidence,
+    )
+    .map(Some)
     .map_err(GoalPlanCoordinationError::Plan)
 }
 

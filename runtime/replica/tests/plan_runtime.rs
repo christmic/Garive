@@ -505,8 +505,13 @@ async fn completed_owned_turn_reduces_to_step_with_observed_evidence_after_resta
     let session = SessionId::try_from("session-1").unwrap();
     let mut ledger = SqliteLedger::open(&path).unwrap();
     open_session(&mut ledger, &session);
-    let proposed =
-        plan_propose_plan(&ledger, &session, &context("reduce-propose"), definition()).unwrap();
+    let proposed = plan_propose_plan(
+        &ledger,
+        &session,
+        &context("reduce-propose"),
+        single_step_definition(),
+    )
+    .unwrap();
     commit_plan_command(&mut ledger, session.clone(), 1, &proposed).unwrap();
     let draft = recover(&ledger, &session);
     let adopted = plan_adopt_plan(
@@ -601,7 +606,7 @@ async fn completed_owned_turn_reduces_to_step_with_observed_evidence_after_resta
     let LocalWorkerDisposition::TerminalCommitted { positions } = disposition else {
         panic!("first dispatch must commit terminal and Step reduction")
     };
-    assert_eq!(positions.len(), 3);
+    assert_eq!(positions.len(), 5);
     assert_eq!(
         worker.execute(&committed, &worker_attempt()).await.unwrap(),
         LocalWorkerDisposition::AlreadyTerminal
@@ -623,6 +628,7 @@ async fn completed_owned_turn_reduces_to_step_with_observed_evidence_after_resta
     assert_eq!(payload["step_id"], "prepare");
     assert_eq!(payload["attempt_id"], "reduce-attempt");
     assert_eq!(criterion_evidence[0]["criterion_id"], "accepted");
+    assert_eq!(criterion_evidence[1]["criterion_id"], "artifact");
     drop(ledger);
     let ledger = SqliteLedger::open(&path).unwrap();
     let recovered = recover(&ledger, &session);
@@ -634,7 +640,15 @@ async fn completed_owned_turn_reduces_to_step_with_observed_evidence_after_resta
             .state(),
         StepState::Completed
     );
-    assert_eq!(recovered.snapshot.ready_steps(), vec![&step_id("deliver")]);
+    assert_eq!(recovered.snapshot.state(), PlanState::Completed);
+    assert!(recovered.snapshot.ready_steps().is_empty());
+    assert_eq!(
+        reconstruct_goal(&ledger, &session, "goal-1")
+            .unwrap()
+            .snapshot
+            .state(),
+        GoalState::Succeeded
+    );
 }
 
 #[test]
@@ -1525,6 +1539,35 @@ fn fail_step(
 
 fn definition() -> PlanDefinitionV1 {
     definition_revision(1)
+}
+
+fn single_step_definition() -> PlanDefinitionV1 {
+    let capability = PlanCapabilityReference::new("tools", "catalogue-v1").unwrap();
+    PlanDefinitionV1::new(
+        PlanId::new("plan-1").unwrap(),
+        1,
+        "goal-1",
+        2,
+        goal_definition().digest().unwrap(),
+        digest('b'),
+        digest('c'),
+        "safety-v1",
+        vec![PlanStepV1::new(
+            step_id("prepare"),
+            "Prepare and deliver",
+            [],
+            ["accepted".into(), "artifact".into()],
+            [capability.clone()],
+            [digest('d')],
+            2,
+        )
+        .unwrap()],
+        PlanBoundsV1::new(1, 1, 2, None, None).unwrap(),
+        &criteria(),
+        &BTreeSet::new(),
+        &BTreeSet::from([capability]),
+    )
+    .unwrap()
 }
 
 fn definition_revision(revision: u64) -> PlanDefinitionV1 {

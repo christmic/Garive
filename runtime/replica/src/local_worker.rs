@@ -11,15 +11,18 @@ use std::{
 
 use garive_core::{AgentEvent, AgentToolCapabilities, ClockPort, EventSink, PortFailure};
 use garive_core::{AgentOutcome, AgentTurnRequest, ToolPreparationPort};
+use garive_goal::GoalState;
 use garive_llm::{ModelCancellation, ModelPort};
+use garive_plan::PlanState;
 
 use crate::{
-    commit_plan_command, execute_durable_agent_with_capabilities,
+    commit_goal_command, commit_plan_command, execute_durable_agent_with_capabilities,
     execute_durable_model_only_with_capabilities, execution_work_binding::bind_governance_context,
-    get_turn, plan_complete_owned_step_from_turn, reconstruct_execution_work_binding,
-    reconstruct_goal, reconstruct_local_start, AuthorityPort, CommittedTurn, ExecutorPort,
+    get_turn, plan_complete_authoritative_plan, plan_complete_owned_step_from_turn,
+    plan_succeed_goal_from_completed_plan, reconstruct_execution_work_binding, reconstruct_goal,
+    reconstruct_local_start, reconstruct_plan_graph, AuthorityPort, CommittedTurn, ExecutorPort,
     F0ExecutionGovernance, F0GovernanceContext, F0RecoveryContentPort, GetTurnQuery,
-    LiveOutputEndReason, LiveOutputHub, LiveOutputSink, LocalExecutionAttempt,
+    GoalCommandContext, LiveOutputEndReason, LiveOutputHub, LiveOutputSink, LocalExecutionAttempt,
     LocalExecutionPolicy, LocalReconstructionError, LocalRecoveryReport, PlanCommandContext,
     PreparedAgentCapabilities, RuntimeTurnStatus, SafetyPort, SandboxAdmissionPort, SqliteLedger,
     TerminalPublicationError, TerminalPublisher, TurnDispatchError, TurnDispatcher,
@@ -440,21 +443,118 @@ impl LocalExecutionWorker {
         if reductions > 1 {
             return Err(LocalWorkerError::PlanCoordinationFailed);
         }
-        if reductions == 1 {
-            return Ok(None);
-        }
-        let goal = reconstruct_goal(ledger, &committed.session_id, binding.goal_id())
+        let mut positions = Vec::new();
+        if reductions == 0 {
+            let goal = reconstruct_goal(ledger, &committed.session_id, binding.goal_id())
+                .map_err(|_| LocalWorkerError::PlanCoordinationFailed)?;
+            let planned = plan_complete_owned_step_from_turn(
+                ledger,
+                &committed.session_id,
+                binding.goal_id(),
+                &committed.turn_id,
+                goal.session_version,
+                goal.snapshot.revision(),
+                &PlanCommandContext {
+                    command_id: format!(
+                        "worker-reduce:{}:{}",
+                        committed.turn_id.as_str(),
+                        committed.execution_id.as_str()
+                    ),
+                    actor_reference: PLAN_REDUCTION_ACTOR.into(),
+                    recorded_at: recorded_at.into(),
+                },
+            )
             .map_err(|_| LocalWorkerError::PlanCoordinationFailed)?;
-        let planned = plan_complete_owned_step_from_turn(
+            let commit = commit_plan_command(
+                ledger,
+                committed.session_id.clone(),
+                goal.session_version,
+                &planned,
+            )
+            .map_err(|_| LocalWorkerError::PlanCoordinationFailed)?;
+            positions.extend(commit.positions);
+        }
+        positions.extend(self.drive_plan_goal_terminals(
+            ledger,
+            committed,
+            binding.goal_id(),
+            recorded_at,
+        )?);
+        Ok((!positions.is_empty()).then_some(positions))
+    }
+
+    fn drive_plan_goal_terminals(
+        &self,
+        ledger: &mut SqliteLedger,
+        committed: &CommittedTurn,
+        goal_id: &str,
+        recorded_at: &str,
+    ) -> Result<Vec<u64>, LocalWorkerError> {
+        let mut positions = Vec::new();
+        let mut goal = reconstruct_goal(ledger, &committed.session_id, goal_id)
+            .map_err(|_| LocalWorkerError::PlanCoordinationFailed)?;
+        if goal.snapshot.state() == GoalState::Succeeded {
+            return Ok(positions);
+        }
+        if goal.snapshot.state() != GoalState::Active {
+            return Err(LocalWorkerError::PlanCoordinationFailed);
+        }
+        let plans = reconstruct_plan_graph(ledger, &committed.session_id)
+            .map_err(|_| LocalWorkerError::PlanCoordinationFailed)?;
+        let mut authoritative = plans.values().filter(|plan| {
+            plan.snapshot.definition().goal_id() == goal_id
+                && matches!(
+                    plan.snapshot.state(),
+                    PlanState::Running | PlanState::Completed
+                )
+        });
+        let plan = authoritative
+            .next()
+            .ok_or(LocalWorkerError::PlanCoordinationFailed)?;
+        if authoritative.next().is_some() {
+            return Err(LocalWorkerError::PlanCoordinationFailed);
+        }
+        if plan.snapshot.state() == PlanState::Running {
+            let planned = plan_complete_authoritative_plan(
+                ledger,
+                &committed.session_id,
+                goal_id,
+                goal.session_version,
+                goal.snapshot.revision(),
+                &PlanCommandContext {
+                    command_id: format!(
+                        "worker-complete-plan:{}:{}",
+                        committed.turn_id.as_str(),
+                        committed.execution_id.as_str()
+                    ),
+                    actor_reference: PLAN_REDUCTION_ACTOR.into(),
+                    recorded_at: recorded_at.into(),
+                },
+            )
+            .map_err(|_| LocalWorkerError::PlanCoordinationFailed)?;
+            let Some(planned) = planned else {
+                return Ok(positions);
+            };
+            let commit = commit_plan_command(
+                ledger,
+                committed.session_id.clone(),
+                goal.session_version,
+                &planned,
+            )
+            .map_err(|_| LocalWorkerError::PlanCoordinationFailed)?;
+            positions.extend(commit.positions);
+            goal = reconstruct_goal(ledger, &committed.session_id, goal_id)
+                .map_err(|_| LocalWorkerError::PlanCoordinationFailed)?;
+        }
+        let planned = plan_succeed_goal_from_completed_plan(
             ledger,
             &committed.session_id,
-            binding.goal_id(),
-            &committed.turn_id,
+            goal_id,
             goal.session_version,
             goal.snapshot.revision(),
-            &PlanCommandContext {
+            &GoalCommandContext {
                 command_id: format!(
-                    "worker-reduce:{}:{}",
+                    "worker-succeed-goal:{}:{}",
                     committed.turn_id.as_str(),
                     committed.execution_id.as_str()
                 ),
@@ -463,14 +563,15 @@ impl LocalExecutionWorker {
             },
         )
         .map_err(|_| LocalWorkerError::PlanCoordinationFailed)?;
-        let commit = commit_plan_command(
+        let commit = commit_goal_command(
             ledger,
             committed.session_id.clone(),
             goal.session_version,
             &planned,
         )
         .map_err(|_| LocalWorkerError::PlanCoordinationFailed)?;
-        Ok(Some(commit.positions))
+        positions.extend(commit.positions);
+        Ok(positions)
     }
 
     fn end_live(&self, committed: &CommittedTurn, reason: LiveOutputEndReason) {
