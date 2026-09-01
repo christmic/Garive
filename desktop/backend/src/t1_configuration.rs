@@ -7,7 +7,10 @@ use std::{
     path::{Component, Path, PathBuf},
 };
 
-use garive_runtime::{ProcessExecutable, ProcessLane, ProcessLaneRegistry, T1HostSystemConfig};
+use garive_runtime::{
+    ProcessBackendHostConfig, ProcessExecutable, ProcessLane, ProcessLaneRegistry,
+    T1HostSystemConfig,
+};
 use serde::Deserialize;
 
 use crate::{
@@ -81,16 +84,20 @@ impl<R: DesktopSecretResolver> DesktopT1ConfigurationProvider<R> {
         }
         let lanes =
             ProcessLaneRegistry::new(lanes).map_err(|_| DesktopConfigurationError::InvalidValue)?;
-        T1HostSystemConfig::new(
-            raw.policy_revision,
-            raw.executor_revision,
+        let process_backend = ProcessBackendHostConfig::podman(
             raw.podman.executable,
             raw.podman.socket_uri,
             raw.podman.image,
-            patch_recovery,
             process_recovery,
             raw.podman.control_timeout_ms,
+        )
+        .map_err(|_| DesktopConfigurationError::ConstructionFailure)?;
+        T1HostSystemConfig::new(
+            raw.policy_revision,
+            raw.executor_revision,
+            patch_recovery,
             lanes,
+            process_backend,
         )
         .map(Some)
         .map_err(|_| DesktopConfigurationError::ConstructionFailure)

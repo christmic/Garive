@@ -3,8 +3,9 @@
 use std::{collections::BTreeSet, fs, os::unix::fs::PermissionsExt};
 
 use garive_runtime::{
-    PodmanProcessConfig, ProcessExecutable, ProcessLane, ProcessLaneRegistry, T1HostSystemConfig,
-    T1RuntimeSystemConfig, T1_PROCESS_EXECUTOR_ID, T1_WORKSPACE_EXECUTOR_ID,
+    PodmanProcessConfig, ProcessBackendHostConfig, ProcessExecutable, ProcessLane,
+    ProcessLaneRegistry, T1HostSystemConfig, T1RuntimeSystemConfig, T1_PROCESS_EXECUTOR_ID,
+    T1_WORKSPACE_EXECUTOR_ID,
 };
 use garive_tools::{ToolIntent, T1_PROCESS_RUN, T1_READ_TEXT};
 use tempfile::tempdir;
@@ -101,13 +102,16 @@ fn persistent_host_values_bind_an_explicit_workspace_without_discovery() {
     let host = T1HostSystemConfig::new(
         "policy.v1",
         "executor.v1",
-        "/opt/garive/bin/podman",
-        "unix:///var/run/garive-podman.sock",
-        format!("localhost/garive-runner@sha256:{}", "a".repeat(64)),
         &patch_recovery,
-        &process_recovery,
-        5_000,
         lanes(),
+        ProcessBackendHostConfig::podman(
+            "/opt/garive/bin/podman",
+            "unix:///var/run/garive-podman.sock",
+            format!("localhost/garive-runner@sha256:{}", "a".repeat(64)),
+            &process_recovery,
+            5_000,
+        )
+        .unwrap(),
     )
     .unwrap();
     assert_eq!(host.policy_revision(), "policy.v1");
@@ -124,18 +128,34 @@ fn persistent_host_values_bind_an_explicit_workspace_without_discovery() {
             .len(),
         5
     );
-    assert!(T1HostSystemConfig::new(
-        "policy.v1",
-        "executor.v1",
+    assert!(ProcessBackendHostConfig::podman(
         "/opt/garive/bin/podman",
         "unix:///var/run/garive-podman.sock",
         "localhost/garive-runner:latest",
-        &patch_recovery,
         &process_recovery,
         5_000,
-        lanes(),
     )
     .is_err());
+}
+
+#[test]
+fn host_process_backend_is_one_closed_value_bound_only_with_a_workspace() {
+    let directory = tempdir().unwrap();
+    let workspace = directory.path().join("workspace");
+    let recovery = directory.path().join("process-recovery");
+    private_directory(&workspace, 0o755);
+    private_directory(&recovery, 0o700);
+
+    let backend = ProcessBackendHostConfig::podman(
+        "/opt/garive/bin/podman",
+        "unix:///var/run/garive-podman.sock",
+        format!("localhost/garive-runner@sha256:{}", "a".repeat(64)),
+        &recovery,
+        5_000,
+    )
+    .unwrap();
+    assert_eq!(backend.kind(), "podman");
+    assert_eq!(backend.bind_workspace(&workspace).unwrap().kind(), "podman");
 }
 
 #[test]

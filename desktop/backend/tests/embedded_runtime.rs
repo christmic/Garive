@@ -27,8 +27,8 @@ use garive_llm::{
 use garive_runtime::{
     CommittedTurn, HostClock, LiveHostLimits, LiveOutputEventKind, LocalExecutionAttempt,
     LocalExecutionPolicy, LocalGovernedExecution, LocalGovernedExecutionFactory, LocalWorkerError,
-    ProcessExecutable, ProcessLane, ProcessLaneRegistry, RuntimeAgentCatalogue, SafetyFuture,
-    SafetyPort, SqliteLedger, T1HostSystemConfig,
+    ProcessBackendHostConfig, ProcessExecutable, ProcessLane, ProcessLaneRegistry,
+    RuntimeAgentCatalogue, SafetyFuture, SafetyPort, SqliteLedger, T1HostSystemConfig,
 };
 use garive_tools::{T1_APPLY_PATCH, T1_READ_TEXT};
 use sha2::{Digest, Sha256};
@@ -1411,13 +1411,16 @@ fn t1_host(root: &Path) -> T1HostSystemConfig {
     T1HostSystemConfig::new(
         "t1.policy.v1",
         "t1.executor.v1",
-        "/opt/garive/bin/podman",
-        "unix:///var/run/garive-podman.sock",
-        format!("localhost/garive-runner@sha256:{}", "a".repeat(64)),
         patch_recovery,
-        process_recovery,
-        5_000,
         lanes,
+        ProcessBackendHostConfig::podman(
+            "/opt/garive/bin/podman",
+            "unix:///var/run/garive-podman.sock",
+            format!("localhost/garive-runner@sha256:{}", "a".repeat(64)),
+            process_recovery,
+            5_000,
+        )
+        .unwrap(),
     )
     .unwrap()
 }

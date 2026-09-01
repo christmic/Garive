@@ -26,8 +26,8 @@ use garive_llm::{
 use garive_provider_profile::SecretValue;
 use garive_runtime::{
     CommittedTurn, LocalGovernedExecution, LocalGovernedExecutionFactory, LocalWorkerError,
-    ProcessExecutable, ProcessLane, ProcessLaneRegistry, RuntimeHttpLimits, SqliteLedger,
-    T1HostSystemConfig,
+    ProcessBackendHostConfig, ProcessExecutable, ProcessLane, ProcessLaneRegistry,
+    RuntimeHttpLimits, SqliteLedger, T1HostSystemConfig,
 };
 use tempfile::tempdir;
 
@@ -179,13 +179,16 @@ fn provider_reconstructs_workspace_agent_only_from_exact_t1_capabilities() {
     let t1 = T1HostSystemConfig::new(
         "t1.policy.v1",
         "t1.executor.v1",
-        "/opt/garive/bin/podman",
-        "unix:///var/run/garive-podman.sock",
-        format!("localhost/garive-runner@sha256:{}", "a".repeat(64)),
         patch_recovery,
-        process_recovery,
-        5_000,
         lanes,
+        ProcessBackendHostConfig::podman(
+            "/opt/garive/bin/podman",
+            "unix:///var/run/garive-podman.sock",
+            format!("localhost/garive-runner@sha256:{}", "a".repeat(64)),
+            process_recovery,
+            5_000,
+        )
+        .unwrap(),
     )
     .unwrap();
     let general = builtin_desktop_agent_installation("agent-general", "desktop-general").unwrap();

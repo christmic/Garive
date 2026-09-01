@@ -16,62 +16,168 @@ use crate::{
     T1_WORKSPACE_EXECUTOR_ID,
 };
 
+/// Stable discriminator for the explicitly configured Podman backend.
+pub const PROCESS_BACKEND_PODMAN: &str = "podman";
+
+/// Machine-level Process backend values awaiting one authorized Workspace.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ProcessBackendHostConfig(ProcessBackendHostKind);
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+enum ProcessBackendHostKind {
+    Podman {
+        executable: PathBuf,
+        socket_uri: String,
+        image: String,
+        recovery_root: PathBuf,
+        control_timeout_ms: u64,
+    },
+}
+
+impl ProcessBackendHostConfig {
+    /// Constructs an explicit Podman backend without a Workspace or discovery.
+    pub fn podman(
+        executable: impl Into<PathBuf>,
+        socket_uri: impl Into<String>,
+        image: impl Into<String>,
+        recovery_root: impl Into<PathBuf>,
+        control_timeout_ms: u64,
+    ) -> Result<Self, String> {
+        let executable = executable.into();
+        let socket_uri = socket_uri.into();
+        let image = image.into();
+        let recovery_root = canonical_private_directory(recovery_root.into())?;
+        if !executable.is_absolute()
+            || !socket_uri.starts_with("unix:///")
+            || socket_uri.as_bytes().contains(&0)
+            || !digest_pinned_image(&image)
+            || control_timeout_ms == 0
+            || control_timeout_ms > 30_000
+        {
+            return Err("invalid Process backend Host configuration".into());
+        }
+        Ok(Self(ProcessBackendHostKind::Podman {
+            executable,
+            socket_uri,
+            image,
+            recovery_root,
+            control_timeout_ms,
+        }))
+    }
+
+    /// Returns the closed backend discriminator.
+    pub const fn kind(&self) -> &'static str {
+        match self.0 {
+            ProcessBackendHostKind::Podman { .. } => PROCESS_BACKEND_PODMAN,
+        }
+    }
+
+    /// Binds the exact authorized Workspace without changing backend identity.
+    pub fn bind_workspace(
+        &self,
+        workspace_root: impl Into<PathBuf>,
+    ) -> Result<ProcessBackendConfig, String> {
+        match &self.0 {
+            ProcessBackendHostKind::Podman {
+                executable,
+                socket_uri,
+                image,
+                recovery_root,
+                control_timeout_ms,
+            } => ProcessBackendConfig::podman(PodmanProcessConfig::new(
+                executable,
+                socket_uri,
+                image,
+                workspace_root,
+                recovery_root,
+                *control_timeout_ms,
+            )?),
+        }
+    }
+}
+
+/// Workspace-bound Process backend used only by Runtime construction.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ProcessBackendConfig(ProcessBackendKind);
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+enum ProcessBackendKind {
+    Podman(PodmanProcessConfig),
+}
+
+impl ProcessBackendConfig {
+    /// Wraps one already validated Podman configuration.
+    pub const fn podman(config: PodmanProcessConfig) -> Result<Self, String> {
+        Ok(Self(ProcessBackendKind::Podman(config)))
+    }
+
+    /// Returns the closed backend discriminator.
+    pub const fn kind(&self) -> &'static str {
+        match self.0 {
+            ProcessBackendKind::Podman(_) => PROCESS_BACKEND_PODMAN,
+        }
+    }
+
+    fn workspace_root(&self) -> &std::path::Path {
+        match &self.0 {
+            ProcessBackendKind::Podman(config) => config.workspace_root(),
+        }
+    }
+
+    fn executor_revision(&self, configured_revision: &str) -> Result<String, String> {
+        match &self.0 {
+            ProcessBackendKind::Podman(config) => {
+                podman_executor_revision(configured_revision, config)
+            }
+        }
+    }
+
+    fn build(&self) -> Arc<dyn ProcessIsolationBackend> {
+        match &self.0 {
+            ProcessBackendKind::Podman(config) => {
+                Arc::new(PodmanProcessBackend::new(config.clone()))
+            }
+        }
+    }
+}
+
+impl From<PodmanProcessConfig> for ProcessBackendConfig {
+    fn from(config: PodmanProcessConfig) -> Self {
+        Self(ProcessBackendKind::Podman(config))
+    }
+}
+
 /// Persistent machine-level T1 values awaiting one authorized Workspace binding.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct T1HostSystemConfig {
     policy_revision: String,
     executor_revision: String,
-    podman_executable: PathBuf,
-    podman_socket_uri: String,
-    process_image: String,
     patch_recovery_root: PathBuf,
-    process_recovery_root: PathBuf,
-    control_timeout_ms: u64,
     process_lanes: ProcessLaneRegistry,
+    process_backend: ProcessBackendHostConfig,
 }
 
 impl T1HostSystemConfig {
     /// Validates explicit machine resources without consulting environment or PATH.
-    #[allow(clippy::too_many_arguments)]
     pub fn new(
         policy_revision: impl Into<String>,
         executor_revision: impl Into<String>,
-        podman_executable: impl Into<PathBuf>,
-        podman_socket_uri: impl Into<String>,
-        process_image: impl Into<String>,
         patch_recovery_root: impl Into<PathBuf>,
-        process_recovery_root: impl Into<PathBuf>,
-        control_timeout_ms: u64,
         process_lanes: ProcessLaneRegistry,
+        process_backend: ProcessBackendHostConfig,
     ) -> Result<Self, String> {
         let policy_revision = policy_revision.into();
         let executor_revision = executor_revision.into();
-        let podman_executable = podman_executable.into();
-        let podman_socket_uri = podman_socket_uri.into();
-        let process_image = process_image.into();
         let patch_recovery_root = canonical_private_directory(patch_recovery_root.into())?;
-        let process_recovery_root = canonical_private_directory(process_recovery_root.into())?;
-        if policy_revision.is_empty()
-            || executor_revision.is_empty()
-            || !podman_executable.is_absolute()
-            || !podman_socket_uri.starts_with("unix:///")
-            || podman_socket_uri.as_bytes().contains(&0)
-            || !digest_pinned_image(&process_image)
-            || control_timeout_ms == 0
-            || control_timeout_ms > 30_000
-        {
+        if policy_revision.is_empty() || executor_revision.is_empty() {
             return Err("invalid T1 Host system configuration".into());
         }
         Ok(Self {
             policy_revision,
             executor_revision,
-            podman_executable,
-            podman_socket_uri,
-            process_image,
             patch_recovery_root,
-            process_recovery_root,
-            control_timeout_ms,
             process_lanes,
+            process_backend,
         })
     }
 
@@ -81,21 +187,14 @@ impl T1HostSystemConfig {
         workspace_root: impl Into<PathBuf>,
     ) -> Result<T1RuntimeSystemConfig, String> {
         let workspace_root = canonical_directory(workspace_root.into())?;
-        let podman = PodmanProcessConfig::new(
-            self.podman_executable.clone(),
-            self.podman_socket_uri.clone(),
-            self.process_image.clone(),
-            workspace_root.clone(),
-            self.process_recovery_root.clone(),
-            self.control_timeout_ms,
-        )?;
+        let process_backend = self.process_backend.bind_workspace(&workspace_root)?;
         T1RuntimeSystemConfig::new(
             self.policy_revision.clone(),
             self.executor_revision.clone(),
             workspace_root,
             self.patch_recovery_root.clone(),
             self.process_lanes.clone(),
-            podman,
+            process_backend,
         )
     }
 
@@ -133,26 +232,27 @@ pub struct T1RuntimeSystemConfig {
     workspace_root: PathBuf,
     patch_recovery_root: PathBuf,
     process_lanes: ProcessLaneRegistry,
-    podman: PodmanProcessConfig,
+    process_backend: ProcessBackendConfig,
 }
 
 impl T1RuntimeSystemConfig {
-    /// Validates explicit roots, revisions, lanes and Podman ownership.
+    /// Validates explicit roots, revisions, lanes and Process backend ownership.
     pub fn new(
         policy_revision: impl Into<String>,
         executor_revision: impl Into<String>,
         workspace_root: impl Into<PathBuf>,
         patch_recovery_root: impl Into<PathBuf>,
         process_lanes: ProcessLaneRegistry,
-        podman: PodmanProcessConfig,
+        process_backend: impl Into<ProcessBackendConfig>,
     ) -> Result<Self, String> {
         let policy_revision = policy_revision.into();
         let executor_revision = executor_revision.into();
+        let process_backend = process_backend.into();
         let workspace_root = canonical_directory(workspace_root.into())?;
         let patch_recovery_root = canonical_private_directory(patch_recovery_root.into())?;
         if policy_revision.is_empty()
             || executor_revision.is_empty()
-            || podman.workspace_root() != workspace_root
+            || process_backend.workspace_root() != workspace_root
         {
             return Err("invalid T1 Runtime system configuration".into());
         }
@@ -162,7 +262,7 @@ impl T1RuntimeSystemConfig {
             workspace_root,
             patch_recovery_root,
             process_lanes,
-            podman,
+            process_backend,
         })
     }
 
@@ -184,9 +284,10 @@ impl T1RuntimeSystemConfig {
             catalogue.clone(),
         )
         .map_err(|_| "T1 patch executor unavailable")?;
-        let process_revision = process_executor_revision(&self.executor_revision, &self.podman)?;
-        let backend: Arc<dyn ProcessIsolationBackend> =
-            Arc::new(PodmanProcessBackend::new(self.podman.clone()));
+        let process_revision = self
+            .process_backend
+            .executor_revision(&self.executor_revision)?;
+        let backend = self.process_backend.build();
         let process = BuiltinProcessExecutor::new(
             &process_revision,
             catalogue.clone(),
@@ -299,7 +400,7 @@ impl T1RuntimeExecution {
     }
 }
 
-fn process_executor_revision(
+fn podman_executor_revision(
     configured_revision: &str,
     podman: &PodmanProcessConfig,
 ) -> Result<String, String> {
