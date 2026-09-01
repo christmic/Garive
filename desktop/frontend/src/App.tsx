@@ -799,6 +799,8 @@ export function App({ client = "desktop", webCapabilities, createProductPort,
               section={settingsSection} onSectionChange={setSettingsSection} t={t} />}
       </main>
       {screen === "work" && state.inspectorOpen && <Inspector state={state} dispatch={workDispatch}
+        onAddContext={openContext} canAddContext={Boolean(state.capabilities?.workspaces)
+          && state.phase !== "submitting" && !state.messages.some((message) => message.suspension)}
         workspaceSplitPx={preferences.workspaceSplitPx} onWorkspaceSplitChange={(workspaceSplitPx) =>
           setPreferences((current) => ({ ...current,
             workspaceSplitPx: clampWorkspaceSplit(workspaceSplitPx) }))} t={t} />}
@@ -1092,9 +1094,12 @@ export function TurnProgress({ goal, status, activities, onOpen, t }: { goal?: s
   </article>;
 }
 
-function Inspector({ state, dispatch, workspaceSplitPx, onWorkspaceSplitChange, t }: {
+function Inspector({ state, dispatch, onAddContext, canAddContext, workspaceSplitPx,
+  onWorkspaceSplitChange, t }: {
   state: WorkState;
   dispatch: WorkDispatch;
+  onAddContext: () => Promise<void>;
+  canAddContext: boolean;
   workspaceSplitPx: number;
   onWorkspaceSplitChange: (value: number) => void;
   t: (key: MessageKey) => string;
@@ -1137,9 +1142,12 @@ function Inspector({ state, dispatch, workspaceSplitPx, onWorkspaceSplitChange, 
         aria-label={t("artifact.closePreview")} title={t("artifact.closePreview")}
         onClick={() => setPreviewCloseRequest((request) => request + 1)}><Icon name="close" /></button>}
     </div></div>}
-    {(mode !== "workspace-panel" || !workspaceTitle) && <button className="icon-button" type="button"
-      aria-label={t("inspector.close")} onClick={() => dispatch({ type: "inspector_toggled" })}>
-      <Icon name="close" /></button>}</header>
+    {mode === "environment-panel" ? <button className="icon-button" type="button"
+      aria-label={t("work.composer.addContext")} title={t("work.composer.chooseFiles")}
+      disabled={!canAddContext} onClick={() => void onAddContext()}><Icon name="plus" /></button>
+      : !workspaceTitle && <button className="icon-button" type="button"
+        aria-label={t("inspector.close")} onClick={() => dispatch({ type: "inspector_toggled" })}>
+        <Icon name="close" /></button>}</header>
     {state.inspectorTab === "activity" ? <div className="inspector-body" role="tabpanel"><CommittedActivity state={state} t={t} /></div>
       : <div className="inspector-body" role="tabpanel"><ResultDeliverables state={state} t={t}
         previewCloseRequest={previewCloseRequest} onPreviewTitle={setWorkspaceTitle} /></div>}

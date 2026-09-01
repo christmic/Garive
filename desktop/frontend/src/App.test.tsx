@@ -90,6 +90,9 @@ describe("Desktop product experience", () => {
     expect(screen.getByRole("menuitem", { name: /New work/ })).toBeTruthy();
     fireEvent.click(screen.getByRole("menuitem", { name: /Open Environment/ }));
     expect(screen.getByRole("button", { name: "Toggle inspector" }).getAttribute("aria-expanded")).toBe("true");
+    const environment = screen.getByRole("complementary", { name: "Work inspector" });
+    expect(within(environment).getByRole<HTMLButtonElement>("button", { name: "Add context" }).disabled).toBe(false);
+    expect(within(environment).queryByRole("button", { name: "Close inspector" })).toBeNull();
     expect(commands).toContain("create_product_session");
     expect(commands).toContain("start_product_turn");
     expect(commands).toContain("get_session_events");

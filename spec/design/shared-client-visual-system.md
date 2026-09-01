@@ -196,6 +196,11 @@ shadows or rounded outer cards.
   the same React tree, geometry and semantics without reserving that inset.
 - System focus, increased contrast, reduced motion and reduced transparency are
   first-class desktop states, not optional themes.
+- Environment follows the desktop workbench hierarchy observed in the supplied
+  reference: its trailing header action is Add context when Workspace support
+  is admitted, not a duplicate close glyph. It invokes the same governed
+  Workspace picker as Composer and disables while a Turn or suspension freezes
+  next-Turn context. The persistent title-bar toggle remains the close action.
 
 ### Scroll surfaces
 

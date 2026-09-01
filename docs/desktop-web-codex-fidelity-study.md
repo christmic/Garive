@@ -52,6 +52,12 @@ environment, text-file tabs and artifact tabs. This confirms that Codex is a
 desktop workbench, not one chat column plus a generic inspector. These values
 and module boundaries are evidence, not a license to import code or assets.
 
+The supplied Environment reference uses its trailing header slot for `+`, not
+for a second close button. Garive maps that visual hierarchy to the existing
+governed Workspace picker: it is enabled only when next-Turn context may be
+changed, while the persistent title-bar inspector toggle owns dismissal. This
+copies the desktop composition without fabricating an add-source capability.
+
 ### B. Official OpenAI UI material
 
 The official Features page renders a Codex sidebar and Add menu with real
