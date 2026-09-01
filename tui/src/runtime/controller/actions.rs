@@ -229,6 +229,9 @@ fn copy_value(value: Option<String>, state: &mut RuntimeState, show_details: boo
 }
 
 pub(super) fn cancel(state: &mut RuntimeState) {
+    if state.model.selected_cancel_request().is_some() {
+        return;
+    }
     if let (Some(session), Some(turn)) = (
         state.model.selected_session.clone(),
         state.model.selected_turn.clone(),

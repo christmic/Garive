@@ -453,6 +453,7 @@ mod tests {
             started_position: position,
             latest_position: position + 1,
             state: "completed".into(),
+            cancellation_requested: false,
             user_text: format!("question {id}"),
             completion_text: Some(format!("answer {id}")),
             suspension: None,

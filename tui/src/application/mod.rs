@@ -1,6 +1,7 @@
 mod action;
 mod action_overlay;
 mod bootstrap;
+mod cancel_request;
 mod effect;
 mod inspector;
 mod live_answer;
@@ -11,6 +12,7 @@ mod update;
 
 pub(crate) use action::AppAction;
 pub(crate) use action_overlay::{ActionOverlayBinding, ActionOverlayIntent, ActionOverlayKey};
+pub(crate) use cancel_request::{CancelRequest, CancelRequestPhase, CancelRequests};
 #[cfg(test)]
 #[allow(unused_imports)]
 pub(crate) use effect::AppGeneration;

@@ -142,6 +142,14 @@ an ordinary pending or in-flight mutation is not. One local retry owner spans
 the fresh Host-truth read, exact replay, and matching mutation result, so a
 repeated retry action cannot create a concurrent owner for the same command.
 
+Cancellation presentation has three explicit, non-terminal phases. Reducer
+admission creates `Requesting`; an exact successful Host response advances it
+to `AwaitingTerminal`; a transport-unknown result becomes `OutcomeUnknown` and
+the recovery overlay owns input. H2's durable `cancellation_requested` boolean
+restores `AwaitingTerminal` after process restart, without retaining local
+command identity or treating HTTP acceptance as a stopped Turn. An exact H1
+terminal or terminal H2 snapshot clears the projection.
+
 Explicit abandonment removes only the local pending record after a confirmation
 that states the durable outcome remains unknown. It does not cancel, roll back,
 or create another command. The Session then reloads H2 before accepting a new

@@ -38,6 +38,15 @@ impl RuntimeState {
             self.local_state_failure("invalid_persisted_mutation");
             return None;
         }
+        if pending.kind == PendingKind::CancelTurn {
+            if let (Some(session_id), Some(turn_id)) =
+                (pending.session_id.clone(), pending.turn_id.clone())
+            {
+                self.model
+                    .cancel_requests
+                    .begin(pending.command_id.clone(), session_id, turn_id);
+            }
+        }
         self.pending.push(pending.clone());
         self.sync_pending_projection();
         #[cfg(feature = "test-hooks")]
@@ -47,6 +56,7 @@ impl RuntimeState {
 
     pub(in crate::runtime::app::state) fn mark_pending_unknown(&mut self, command_id: &str) {
         self.pending_recovery.insert(command_id.into());
+        self.model.cancel_requests.mark_unknown(command_id);
         self.sync_pending_projection();
         self.model.notice = Some("The command context changed before it could be sent.".into());
         self.model.overlay = Some(Overlay::UnknownCommand);
@@ -324,6 +334,7 @@ impl RuntimeState {
             return;
         }
         self.pending_recovery.remove(&command_id);
+        self.model.cancel_requests.clear_command(&command_id);
         self.clear_exact_retry_owner(&command_id);
         self.pending.remove(index);
         self.sync_pending_projection();
@@ -429,9 +440,11 @@ impl RuntimeState {
                 self.pending_recovery.remove(command_id);
                 let _ = self.store.remove_pending(pending.session_id.as_deref());
             }
+            self.model.cancel_requests.clear_command(command_id);
             self.sync_pending_projection();
         } else if pending_index.is_some() {
             self.pending_recovery.insert(command_id.into());
+            self.model.cancel_requests.mark_unknown(command_id);
             self.sync_pending_projection();
             self.model.notice =
                 Some("The command outcome is unknown. Review /status or use exact /retry.".into());

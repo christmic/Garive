@@ -62,6 +62,9 @@ pub(super) fn handle_host(message: HostMessage, state: &mut RuntimeState) {
                 refresh_after_unmatched_mutation(state);
                 return;
             };
+            if kind == PendingKind::CancelTurn {
+                state.model.cancel_requests.mark_accepted(&command_id);
+            }
             state.finish_pending(&command_id, &submitted_text);
             if contains_pending(&state.pending, &command_id) {
                 return;

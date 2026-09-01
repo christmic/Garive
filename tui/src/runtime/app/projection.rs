@@ -51,6 +51,10 @@ pub(super) fn apply_event(event: HostEvent, state: &mut RuntimeState) {
         "turn.started" | "turn.completed" | "turn.failed" | "turn.stopped" | "turn.suspended"
     ) {
         if event.event != "turn.started" {
+            state
+                .model
+                .cancel_requests
+                .clear_terminal(&event.session_id, &event.turn_id);
             state.model.live_answer.await_durable_snapshot(
                 &event.session_id,
                 &event.turn_id,
@@ -156,6 +160,10 @@ fn apply_background_event(event: HostEvent, state: &mut RuntimeState) {
         event.event.as_str(),
         "turn.suspended" | "turn.completed" | "turn.failed" | "turn.stopped"
     ) {
+        state
+            .model
+            .cancel_requests
+            .clear_terminal(&event.session_id, &event.turn_id);
         let mut finished = state
             .background_follows
             .remove(&event.session_id)
@@ -200,6 +208,11 @@ pub(super) fn install_timeline(model: &mut AppModel, mut turns: Vec<TurnTimeline
     model.selected_turn = None;
     model.execution = ExecutionState::Idle;
     for (index, turn) in turns.into_iter().enumerate() {
+        if turn.state == "running" && turn.cancellation_requested {
+            model
+                .cancel_requests
+                .restore_accepted(session_id.clone(), turn.turn_id.clone());
+        }
         model.conversation_landmarks.push(ConversationLandmark {
             ordinal: index + 1,
             started_position: turn.started_position,
@@ -268,6 +281,7 @@ pub(super) fn install_timeline(model: &mut AppModel, mut turns: Vec<TurnTimeline
         if let (Some(session_id), Some(turn_id)) =
             (model.selected_session.clone(), model.selected_turn.clone())
         {
+            model.cancel_requests.clear_terminal(&session_id, &turn_id);
             model
                 .live_answer
                 .durable_takeover(&session_id, &turn_id, None);

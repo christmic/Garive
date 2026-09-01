@@ -218,6 +218,7 @@ pub(crate) struct AppModel {
     pub(crate) command_suggestion_dismissed: Option<String>,
     pub(crate) has_pending_command: bool,
     pub(crate) pending_recovery: PendingRecoveryProjection,
+    pub(crate) cancel_requests: super::CancelRequests,
     pub(crate) composer_is_frozen: bool,
     pub(crate) session_selection: usize,
     pub(crate) selected_session: Option<String>,
@@ -239,6 +240,13 @@ pub(crate) struct AppModel {
 }
 
 impl AppModel {
+    pub(crate) fn selected_cancel_request(&self) -> Option<&super::CancelRequest> {
+        self.cancel_requests.selected(
+            self.selected_session.as_deref(),
+            self.selected_turn.as_deref(),
+        )
+    }
+
     pub(crate) fn suspension_is_interactive(&self) -> bool {
         let Some(suspension) = self.suspension.as_ref() else {
             return false;

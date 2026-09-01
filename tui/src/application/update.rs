@@ -149,7 +149,17 @@ pub(crate) fn reduce(model: &mut AppModel, action: AppAction) -> Vec<AppEffect> 
                 && !has_pending_for_session(model, draft.session_id.as_deref())
                 && !model.composer_is_frozen =>
         {
-            issue_pending(model, draft, None)
+            let command_id = draft.command_id.clone();
+            let session_id = draft
+                .session_id
+                .clone()
+                .expect("admitted cancel has Session");
+            let turn_id = draft.turn_id.clone().expect("admitted cancel has Turn");
+            let effects = issue_pending(model, draft, None);
+            if !effects.is_empty() {
+                model.cancel_requests.begin(command_id, session_id, turn_id);
+            }
+            effects
         }
         AppAction::CancelTurnRequested(_) => Vec::new(),
         AppAction::ContinueTurnRequested {
@@ -280,7 +290,10 @@ pub(crate) fn reduce(model: &mut AppModel, action: AppAction) -> Vec<AppEffect> 
                         },
                     }]
                 }
-                (EffectKind::PersistPending { .. }, _) => {
+                (EffectKind::PersistPending { draft }, _) => {
+                    if draft.kind == PendingMutationKind::CancelTurn {
+                        model.cancel_requests.clear_command(&draft.command_id);
+                    }
                     model.notice = Some("The pending command could not be saved.".into());
                     model.overlay = Some(Overlay::ErrorDetails);
                     Vec::new()

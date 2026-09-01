@@ -136,6 +136,18 @@ impl RuntimeState {
             .iter()
             .map(|pending| pending.command_id.clone())
             .collect::<BTreeSet<_>>();
+        for pending in &restored.pending {
+            if pending.kind == crate::persistence::PendingKind::CancelTurn {
+                if let (Some(session_id), Some(turn_id)) =
+                    (pending.session_id.clone(), pending.turn_id.clone())
+                {
+                    model
+                        .cancel_requests
+                        .begin(pending.command_id.clone(), session_id, turn_id);
+                    model.cancel_requests.mark_unknown(&pending.command_id);
+                }
+            }
+        }
         if !pending_recovery.is_empty() {
             model.notice = Some("A prior command has an unknown durable outcome. Use /retry after reviewing status.".into());
             if restored.pending.iter().any(|pending| {

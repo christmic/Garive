@@ -6,6 +6,7 @@ use serde_json::json;
 
 use super::*;
 use crate::{
+    application::CancelRequestPhase,
     parse_launch_config,
     persistence::{now, PendingCommand, PendingKind, Preferences, StateStore},
 };
@@ -105,6 +106,39 @@ fn mutation_responses_require_the_exact_pending_owner() {
         &[create.clone(), create],
         "create"
     ));
+}
+
+#[tokio::test]
+async fn exact_cancel_acceptance_waits_for_durable_terminal_without_a_second_cancel() {
+    let owner = pending(
+        PendingKind::CancelTurn,
+        "cancel",
+        Some("session-a"),
+        Some("turn-a"),
+    );
+    let mut state = runtime(vec![owner]);
+    state.model.selected_session = Some("session-a".into());
+    state.model.selected_turn = Some("turn-a".into());
+    state.model.execution = ExecutionState::Following;
+
+    handle_host(
+        HostMessage::TurnAccepted {
+            command_id: "cancel".into(),
+            session_id: "session-a".into(),
+            submitted_text: String::new(),
+            response: turn_response("session-a", "turn-a", "execution-a"),
+        },
+        &mut state,
+    );
+
+    assert!(state.pending.is_empty());
+    assert_eq!(
+        state
+            .model
+            .selected_cancel_request()
+            .map(|request| request.phase),
+        Some(CancelRequestPhase::AwaitingTerminal)
+    );
 }
 
 #[tokio::test]

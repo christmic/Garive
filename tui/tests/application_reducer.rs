@@ -10,10 +10,10 @@ mod input;
 
 use application::{
     reduce, AppAction, AppEffect, AppEffectOutcome, AppEffectResult, AppGeneration, AppModel,
-    BootState, ConnectionState, ConversationLandmark, EffectFailure, EffectKind, EffectTracker,
-    FocusTarget, HostReadResponse, InspectorVariant, Overlay, PendingMutationDraft,
-    PendingMutationKind, PersistedPendingIdentity, PersistenceFailure, TerminalSize, TimelineItem,
-    TimelineRole, WIDE_INSPECTOR_MIN_WIDTH,
+    BootState, CancelRequestPhase, ConnectionState, ConversationLandmark, EffectFailure,
+    EffectKind, EffectTracker, FocusTarget, HostReadResponse, InspectorVariant, Overlay,
+    PendingMutationDraft, PendingMutationKind, PersistedPendingIdentity, PersistenceFailure,
+    TerminalSize, TimelineItem, TimelineRole, WIDE_INSPECTOR_MIN_WIDTH,
 };
 use garive_host_client::SuspensionView;
 use serde_json::json;
@@ -407,6 +407,10 @@ fn cancel_requires_exact_following_context_and_persistence() {
 
     let persist = reduce(&mut model, AppAction::CancelTurnRequested(draft.clone())).remove(0);
     assert_eq!(model.execution, application::ExecutionState::Following);
+    assert_eq!(
+        model.selected_cancel_request().map(|request| request.phase),
+        Some(CancelRequestPhase::Requesting)
+    );
     let duplicate = reduce(&mut model, AppAction::CancelTurnRequested(draft.clone()));
     assert!(duplicate.is_empty());
     let follow_up = reduce(
@@ -422,6 +426,23 @@ fn cancel_requires_exact_following_context_and_persistence() {
     ));
     assert_eq!(model.execution, application::ExecutionState::Following);
     assert!(model.effects.pending.is_empty());
+
+    let mut failed = AppModel {
+        selected_session: Some("session-a".into()),
+        selected_turn: Some("turn-a".into()),
+        execution: application::ExecutionState::Following,
+        ..Default::default()
+    };
+    let persist = reduce(&mut failed, AppAction::CancelTurnRequested(draft)).remove(0);
+    reduce(
+        &mut failed,
+        AppAction::EffectFinished(AppEffectResult {
+            context: persist.context,
+            kind: persist.kind.tag(),
+            outcome: AppEffectOutcome::PendingPersisted(Err(PersistenceFailure::Unavailable)),
+        }),
+    );
+    assert!(failed.selected_cancel_request().is_none());
 }
 
 #[test]

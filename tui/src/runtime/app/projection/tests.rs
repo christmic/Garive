@@ -36,6 +36,7 @@ fn snapshot(turn: &str, activity_id: &str, label: &str) -> TurnTimelineItem {
         started_position: 1,
         latest_position: 3,
         state: "running".into(),
+        cancellation_requested: false,
         user_text: "question".into(),
         completion_text: None,
         suspension: None,
@@ -106,6 +107,27 @@ fn snapshot_install_replaces_the_keyed_block_children() {
 }
 
 #[test]
+fn h2_restores_accepted_cancellation_until_terminal_truth_arrives() {
+    let mut model = AppModel {
+        selected_session: Some("session".into()),
+        ..Default::default()
+    };
+    let mut running = snapshot("turn", "activity", "activity.read");
+    running.cancellation_requested = true;
+    install_timeline(&mut model, vec![running]);
+    assert_eq!(
+        model.selected_cancel_request().map(|request| request.phase),
+        Some(crate::application::CancelRequestPhase::AwaitingTerminal)
+    );
+
+    let mut stopped = snapshot("turn", "activity", "activity.read");
+    stopped.state = "stopped".into();
+    stopped.cancellation_requested = false;
+    install_timeline(&mut model, vec![stopped]);
+    assert!(model.selected_cancel_request().is_none());
+}
+
+#[test]
 fn event_and_snapshot_paths_preserve_admitted_tool_semantics() {
     let mut model = AppModel {
         selected_session: Some("session".into()),
@@ -159,4 +181,33 @@ fn every_detached_durable_activity_update_is_counted() {
     model.follow_latest();
     note_detached_durable_update(&mut model);
     assert_eq!(model.viewport.newer_updates, 0);
+}
+
+#[tokio::test]
+async fn exact_terminal_event_clears_the_cancel_request_before_snapshot_takeover() {
+    let mut state = RuntimeState::test_ephemeral(Vec::new());
+    state.model.selected_session = Some("session".into());
+    state.model.selected_turn = Some("turn".into());
+    state.model.execution = ExecutionState::Following;
+    state
+        .model
+        .cancel_requests
+        .begin("cancel".into(), "session".into(), "turn".into());
+    state.model.cancel_requests.mark_accepted("cancel");
+
+    apply_event(
+        HostEvent {
+            api_version: "garive.host.v1".into(),
+            session_id: "session".into(),
+            position: 2,
+            event: "turn.stopped".into(),
+            turn_id: "turn".into(),
+            execution_id: "execution".into(),
+            text: String::new(),
+            activity: None,
+        },
+        &mut state,
+    );
+
+    assert!(state.model.selected_cancel_request().is_none());
 }
