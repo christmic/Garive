@@ -597,6 +597,7 @@ space. The same rule applies in light and dark themes and at narrow widths.
 | Capacity | unavailable, normal, watch, critical, exhausted | scope, period, attribution, remaining/reset and continuation policy travel together |
 | Turn activity | active, completed, attention | uses only admitted per-Turn Activity; active starts expanded, completed starts collapsed |
 | Result actions | hidden, hover, focus, attention | 20 px row, 6 px top gap, 2 px action gap; ordinary actions disclose on turn hover/focus |
+| Workbench tab close | hidden, hover, focus-within, focused | absolutely overlaid at inline end; pointer-inert and opacity zero at rest; title uses a 1 rem logical-end fade while disclosed |
 | User Turn | short, measured-long, expanded, hover, focus | 70% bubble, 22 px radius, 16 px inset, 10 px vertical padding; actions belong to the full-width right-aligned Turn |
 | Thread scroll owner | attached, detached, unread, returning | 24 px threshold; only user intent detaches; layout changes preserve distance; browser anchoring is off |
 

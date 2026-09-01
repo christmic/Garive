@@ -882,7 +882,7 @@ export function App({ client = "desktop", webCapabilities, createProductPort,
             {group.tasks.map((recent) => <button className={screen === "work" && state.messages.length > 0
               && recent.session_id === state.sessionId ? "recent-item selected" : "recent-item"}
               type="button" key={recent.session_id} onClick={() => void openRecent(recent.session_id)}>
-              <span>{recent.session_id === state.sessionId && state.messages.length ? title
+              <span className="text-fade-truncate" dir="auto">{recent.session_id === state.sessionId && state.messages.length ? title
                 : recentTitles[recent.session_id] || recentLabel(recent)}</span>
               <small><TaskStateDot task={recent} />{taskStateCopy(recent, t)}</small>
             </button>)}
@@ -890,7 +890,7 @@ export function App({ client = "desktop", webCapabilities, createProductPort,
             <div className="section-label" id="sidebar-recent-label"><span>{t("nav.recents")}</span>{!state.capabilities?.durable_navigation
               && <span className="beta-tag">{t("shell.live")}</span>}</div>
             {state.messages.length > 0 ? <button className="recent-item selected" type="button"
-              onClick={showCurrentWork}><span>{title}</span><small>{state.phase === "submitting"
+              onClick={showCurrentWork}><span className="text-fade-truncate" dir="auto">{title}</span><small>{state.phase === "submitting"
                 ? t("status.working") : terminalCopy(state.messages.at(-1)?.terminal, t)}
                 <CurrentTaskStateDot state={state} /></small></button>
               : <p className="sidebar-empty">{t("shell.recentsEmpty")}</p>}
@@ -945,7 +945,7 @@ export function App({ client = "desktop", webCapabilities, createProductPort,
               ? setNavigationCollapsed(false) : setNavigationOpen((open) => !open)}><Icon name="panel" /></button>
             <span className="topbar-context-icon" aria-hidden="true"><Icon name={screen === "work" ? "folder"
               : screen === "agents" ? "agent" : "settings"} /></span>
-            <span className="topbar-title-copy">{screen === "work" ? title : screen === "agents" ? t("nav.agents") : t("nav.settings")}</span>
+            <span className="topbar-title-copy text-fade-truncate" dir="auto">{screen === "work" ? title : screen === "agents" ? t("nav.agents") : t("nav.settings")}</span>
             {screen === "work" && state.messages.length > 0 && <DesktopMenu className="work-menu"
               label={t("work.menu.actions")} triggerClassName="work-menu-trigger" trigger={<Icon name="more" />}>
               {(close) => <><button type="button" role="menuitem" onClick={() => { close(); beginNewWork(); }}>
@@ -1632,7 +1632,7 @@ function Inspector({ state, dispatch, onAddContext, canAddContext, workspaceSpli
     <header>{state.inspectorTab === "activity"
     ? <strong className="environment-title">{t("inspector.environment")}</strong>
     : <div className="workspace-tabs" role="tablist" aria-label={t("inspector.views")}><div className="workspace-tab">
-      <button type="button" role="tab" aria-selected="true"><Icon name="file" /><span>{workspaceTitle ?? t("inspector.artifacts")}</span></button>
+      <button type="button" role="tab" aria-selected="true"><Icon name="file" /><span dir="auto">{workspaceTitle ?? t("inspector.artifacts")}</span></button>
       {workspaceTitle && <Tooltip label={t("artifact.closePreview")} align="start"><button className="workspace-tab-close" type="button"
         aria-label={t("artifact.closePreview")}
         onClick={() => setPreviewCloseRequest((request) => request + 1)}><Icon name="close" /></button></Tooltip>}

@@ -127,7 +127,16 @@ describe("Desktop visual accessibility contract", () => {
     expect(TOKENS).toContain("--composer-rail-indicator: color-mix(in srgb, var(--text-tertiary) 70%, transparent)");
     expect(CSS).toContain(".turn-progress-head { display: grid; grid-template-columns: 14px minmax(0, 1fr) auto auto;");
     expect(CSS).toContain(".progress-goal-icon { width: 14px; height: 14px; color: var(--composer-rail-indicator); }");
-    expect(CSS).toContain(".workspace-tab { display: grid; grid-template-columns: minmax(0, 1fr) 22px; width: min(120px, 100%);");
+    expect(CSS).toContain(".workspace-tab { position: relative; width: min(120px, 100%);");
+    expect(CSS).toContain(".workspace-tab-close { pointer-events: none; position: absolute;");
+    expect(CSS).toContain("visibility: hidden; border: 0;");
+    expect(CSS).toContain(".workspace-tab:is(:hover, :focus-within) .workspace-tab-close, .workspace-tab-close:focus-visible { pointer-events: auto; visibility: visible; opacity: 1; }");
+    expect(CSS).toContain(".workspace-tab:has(.workspace-tab-close):is(:hover, :focus-within) > [role=\"tab\"] span");
+    expect(CSS).toContain("padding-inline-end: 16px");
+    expect(CSS).toContain("span:dir(rtl)");
+    expect(CSS).toContain("inset-inline-end: 2px");
+    expect(CSS).toContain(".text-fade-truncate:dir(rtl)");
+    expect(CSS).toContain("--text-fade-truncate-distance, 1rem");
     expect(CSS).toContain("min-height: var(--height-file-toolbar);");
     expect(CSS).toContain(".app-shell:has(.workspace-panel) .timeline { width: calc(100% - 20px); }");
     expect(CSS).toContain("grid-template-columns: minmax(0, 1fr); grid-template-rows: var(--height-active-thread-toolbar) minmax(0, 1fr)");

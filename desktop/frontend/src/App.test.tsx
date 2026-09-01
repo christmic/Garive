@@ -476,7 +476,10 @@ describe("Desktop product experience", () => {
     expect(inspectorToggle).not.toBe(document.activeElement);
     expect(view.container.querySelectorAll(".nav-item.selected, .recent-item.selected")).toHaveLength(1);
     expect(view.container.querySelector(".recent-item.selected")).not.toBeNull();
-    expect(await screen.findByRole("tab", { name: "memo.md" })).toBeTruthy();
+    const artifactTab = await screen.findByRole("tab", { name: "memo.md" });
+    expect(artifactTab.querySelector("span")?.getAttribute("dir")).toBe("auto");
+    expect(view.container.querySelector(".workspace-tab-close")).not.toBeNull();
+    expect(view.container.querySelector(".recent-item.selected > .text-fade-truncate")?.getAttribute("dir")).toBe("auto");
     expect(commands).toContain("get_artifact_preview");
     expect(screen.queryByRole("heading", { name: "Deliverables" })).toBeNull();
     expect(await screen.findByRole("tab", { name: "memo.md" })).toBeTruthy();

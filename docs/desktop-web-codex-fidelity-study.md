@@ -1547,6 +1547,26 @@ component CSS. Live DOM confirms New work, Recents, section labels, the thread
 title and Goal rail at 500; Markdown section headings remain 600 and response
 copy remains 400 at the source-backed 13 px / 1.625 leading.
 
+### LIV. Workbench tab actions disclose progressively
+
+Installed Codex `26.825.51511` AppShell tab source positions the close action
+absolutely at the inline end. When progressive actions are enabled, that
+button is invisible, opacity zero and pointer-inert at rest; tab hover,
+focus-within or the close button's own visible focus restores pointer events
+and full opacity. The label switches to `text-fade-truncate` while the action
+is present, using a one-rem logical-end mask instead of adding another hard
+ellipsis. The source mirrors that mask for right-to-left content.
+
+Garive's Artifact tab formerly dedicated a permanent 22 px grid column to an
+always-visible close button. Desktop and Web now share the source grammar: the
+tab label keeps its full quiet width at rest, the close action overlays without
+layout shift, and hover or keyboard focus progressively reveals it while the
+label fades beneath the action. The reusable logical-direction fade utility is
+also applied to the thread title and sidebar work titles. Live 1280×720
+evidence measures the close action at opacity zero, hidden and pointer-inert at
+rest, then opacity one, visible and pointer-active on tab hover; the overflowing
+sidebar title resolves to `text-overflow: clip` with a one-rem mask.
+
 ## Gate 1 — Codex fidelity
 
 This gate passes only when both Desktop and Web show:
