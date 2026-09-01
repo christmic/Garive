@@ -330,6 +330,76 @@ async fn desktop_goal_pump_activates_dispatches_and_closes_one_plan() {
 }
 
 #[tokio::test]
+async fn desktop_goal_pump_runs_durable_model_planner_before_step_worker() {
+    let directory = tempdir().unwrap();
+    let database = directory.path().join("model-planner.sqlite3");
+    let mut config = desktop_host_config(
+        &database,
+        Arc::new(PlanningThenCompletingModel(AtomicU64::new(0))),
+    );
+    config.plan_admission_policy = Some(Arc::new(AdoptExactProposal));
+    config.model_plan_proposer_reference = Some("planner:model-test-v1".into());
+    let governed = DesktopWorkspaceExecutionFactory::new(
+        database.clone(),
+        DesktopWorkspaceService::default(),
+        "main",
+    )
+    .unwrap();
+    let host = DesktopHost::new_governed(config, Arc::new(governed)).unwrap();
+    let session_id = host.create_session("definition-main").unwrap();
+    let session = SessionId::try_from(session_id.as_str()).unwrap();
+    let mut ledger = SqliteLedger::open(&database).unwrap();
+    let opened = ledger.read_facts(&session, 0, 1, None).unwrap().remove(0);
+    let goal = GoalDefinitionV1::new(
+        GoalId::new("goal-pump").unwrap(),
+        "Complete one installed Plan",
+        vec![GoalCriterion::DurableFact {
+            criterion_id: GoalCriterionId::new("session-opened").unwrap(),
+            fact_kind: "session.opened".into(),
+            subject_digest: opened.payload.sha256().into(),
+        }],
+        GoalScopeV1::new(Some(session_id.clone()), []).unwrap(),
+        GoalBoundsV1::new(1, 1, 1, None, None).unwrap(),
+        None,
+        [],
+    )
+    .unwrap();
+    let created = plan_create_goal(
+        &ledger,
+        &session,
+        &GoalCommandContext {
+            command_id: "model-planner-goal".into(),
+            actor_reference: "user:test".into(),
+            recorded_at: "2026-08-29T00:00:00Z".into(),
+        },
+        goal,
+    )
+    .unwrap();
+    commit_goal_command(&mut ledger, session.clone(), 1, &created).unwrap();
+    drop(ledger);
+
+    let report = host.drive_goal(&session_id, "goal-pump", 12).await.unwrap();
+    assert_eq!(report.executions, 2);
+    let ledger = SqliteLedger::open(database).unwrap();
+    assert_eq!(
+        reconstruct_goal(&ledger, &session, "goal-pump")
+            .unwrap()
+            .snapshot
+            .state(),
+        GoalState::Succeeded
+    );
+    let kinds = ledger
+        .read_facts(&session, 0, u64::MAX, None)
+        .unwrap()
+        .into_iter()
+        .map(|fact| fact.kind.as_str().to_owned())
+        .collect::<Vec<_>>();
+    assert!(kinds
+        .windows(2)
+        .any(|pair| pair == ["plan.proposal.result_bound", "plan.proposed"]));
+}
+
+#[tokio::test]
 async fn desktop_goal_pump_requires_policy_before_failed_plan_closes_goal() {
     let directory = tempdir().unwrap();
     let database = directory.path().join("goal-failure.sqlite3");
@@ -466,6 +536,43 @@ impl ModelPort for RejectingModel {
             Ok(InvokeOutcome::Rejected {
                 kind: RejectionKind::ContentPolicy,
                 sanitized_evidence: "planner-test-rejection".into(),
+            })
+        })
+    }
+}
+
+struct PlanningThenCompletingModel(AtomicU64);
+impl ModelPort for PlanningThenCompletingModel {
+    fn invoke<'a>(
+        &'a self,
+        request: &'a ModelRequest,
+        _: &'a mut dyn ModelObserver,
+        _: &'a dyn ModelCancellation,
+    ) -> ModelFuture<'a> {
+        Box::pin(async move {
+            let call = self.0.fetch_add(1, Ordering::SeqCst);
+            let text = if call == 0 {
+                assert!(request.tools.is_empty());
+                assert!(matches!(
+                    request.output.text_mode,
+                    TextMode::JsonSchema { .. }
+                ));
+                serde_jcs::to_string(&serde_json::json!({
+                    "contract":"garive.plan-proposal-topology", "version":1,
+                    "steps":[{"step_id":"complete","objective":"Complete one installed Plan",
+                        "depends_on":[],"completion_criteria":["session-opened"],
+                        "required_capabilities":[],"input_bindings":[],"max_attempts":1}],
+                    "bounds":{"max_steps":1,"max_parallel_ready":1,"max_total_attempts":1,
+                        "token_budget":null,"duration_budget_ms":null}
+                }))
+                .unwrap()
+            } else {
+                "completed".into()
+            };
+            Ok(InvokeOutcome::Completed {
+                items: vec![ModelItem::Text { text }],
+                usage: usage(),
+                stop_reason: ModelStopReason::EndTurn,
             })
         })
     }
@@ -732,6 +839,7 @@ fn desktop_host_config(database: &Path, model: Arc<dyn ModelPort>) -> DesktopHos
         plan_admission_policy: None,
         plan_failure_policy: None,
         plan_proposal_port: None,
+        model_plan_proposer_reference: None,
         operations: Arc::new(Operations(AtomicU64::new(1))),
     }
 }

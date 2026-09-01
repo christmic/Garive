@@ -99,7 +99,6 @@ pub enum PlanProposalRuntimeError {
 pub async fn commit_completed_plan_proposal_once(
     database_path: &Path,
     session_id: &SessionId,
-    goal_id: &str,
     planner_turn_id: &TurnId,
     recorded_at: &str,
     catalogue: Arc<RuntimeAgentCatalogue>,
@@ -119,16 +118,14 @@ pub async fn commit_completed_plan_proposal_once(
     )
     .map_err(|_| PlanProposalRuntimeError::CorruptState)?;
     drop(ledger);
-    if bound.goal_id != goal_id {
-        return Err(PlanProposalRuntimeError::CorruptState);
-    }
     let content = parse_bound_plan_proposal_result(&bound)
         .map_err(|_| PlanProposalRuntimeError::ProposalFailed)?;
+    let goal_id = bound.goal_id.clone();
     let port = BoundResultPort { bound, content };
     propose_initial_goal_plan_once(
         database_path,
         session_id,
-        goal_id,
+        &goal_id,
         recorded_at,
         catalogue,
         &port,

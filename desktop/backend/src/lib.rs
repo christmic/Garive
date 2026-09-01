@@ -12,17 +12,21 @@ use std::{
 };
 
 use garive_ledger::SessionId;
-use garive_llm::ModelPort;
+use garive_llm::{ModelCapability, ModelPort, TextMode};
 use garive_runtime::{
     advance_goal_plan_once, advance_goal_plan_with_admission_once,
-    advance_goal_plan_with_failure_once, local_dispatch_queue, propose_initial_goal_plan_once,
-    CatalogueBoundGovernedExecutionFactory, CataloguePlanStepDispatchFactory,
-    GoalPlanAdvanceOutcome, GoalPlanCoordinationTick, HostClock, HostContinuationInput,
-    HostEventPage, HostWorkspaceContextEntry, LiveHost, LiveHostEvent, LiveHostLimits,
-    LiveOutputHub, LiveOutputLimits, LiveOutputSubscriber, LocalCapabilityPreparationFactory,
-    LocalDispatchQueue, LocalExecutionAttempt, LocalExecutionPolicy, LocalExecutionWorker,
-    LocalGovernedExecutionFactory, LocalTurnDispatcher, PlanAdmissionPolicy, PlanDispatchOutcome,
-    PlanDispatchTick, PlanFailurePolicy, PlanProposalPort, RuntimeAgentCatalogue, SqliteLedger,
+    advance_goal_plan_with_failure_once, commit_completed_plan_proposal_once,
+    is_plan_proposal_execution, local_dispatch_queue, propose_initial_goal_plan_once,
+    start_initial_goal_plan_proposal_execution, CatalogueBoundGovernedExecutionFactory,
+    CataloguePlanStepDispatchFactory, CommittedTurn, GoalPlanAdvanceOutcome,
+    GoalPlanCoordinationTick, HostClock, HostContinuationInput, HostEventPage,
+    HostWorkspaceContextEntry, LiveHost, LiveHostEvent, LiveHostLimits, LiveOutputHub,
+    LiveOutputLimits, LiveOutputSubscriber, LocalCapabilityPreparationFactory,
+    LocalCapabilityPreparationInput, LocalDispatchQueue, LocalExecutionAttempt,
+    LocalExecutionPolicy, LocalExecutionWorker, LocalGovernedExecutionFactory, LocalTurnDispatcher,
+    LocalWorkerError, PlanAdmissionPolicy, PlanDispatchOutcome, PlanDispatchTick,
+    PlanFailurePolicy, PlanProposalPort, PreparedAgentCapabilities, RuntimeAgentCatalogue,
+    SqliteLedger,
 };
 use serde::Serialize;
 use tokio::sync::Mutex;
@@ -47,6 +51,17 @@ const STARTUP_MAX_RECOVERIES_PER_TURN: u64 = 3;
 const STARTUP_MAX_RECOVERABLE_TURNS: usize = 64;
 const STARTUP_MAX_ARGUMENT_BYTES: usize = 1024 * 1024;
 const MAX_GOAL_PUMP_ADVANCES: usize = 64;
+
+struct PlannerCapabilityPreparation;
+impl LocalCapabilityPreparationFactory for PlannerCapabilityPreparation {
+    fn prepare(
+        &self,
+        _: &SqliteLedger,
+        _: LocalCapabilityPreparationInput<'_>,
+    ) -> Result<PreparedAgentCapabilities, LocalWorkerError> {
+        Ok(PreparedAgentCapabilities::default())
+    }
+}
 
 pub use artifact_export::{
     DesktopArtifactExportError, DesktopArtifactExportReceipt, DesktopArtifactExportService,
@@ -178,6 +193,8 @@ pub struct DesktopHostConfig {
     pub plan_failure_policy: Option<Arc<dyn PlanFailurePolicy>>,
     /// Optional topology-only Plan proposer; absence leaves Goals awaiting planning.
     pub plan_proposal_port: Option<Arc<dyn PlanProposalPort>>,
+    /// Optional durable model Planner revision; absence disables model planning.
+    pub model_plan_proposer_reference: Option<String>,
     /// Backend-owned command, lease and execution clock source.
     pub operations: Arc<dyn DesktopOperations>,
 }
@@ -288,11 +305,13 @@ pub struct DesktopHost {
     agent_catalogue: Arc<RuntimeAgentCatalogue>,
     dispatcher: Arc<LocalTurnDispatcher>,
     worker: LocalExecutionWorker,
+    planner_worker: Option<LocalExecutionWorker>,
     queue: Mutex<LocalDispatchQueue>,
     operations: Arc<dyn DesktopOperations>,
     plan_admission_policy: Option<Arc<dyn PlanAdmissionPolicy>>,
     plan_failure_policy: Option<Arc<dyn PlanFailurePolicy>>,
     plan_proposal_port: Option<Arc<dyn PlanProposalPort>>,
+    model_plan_proposer_reference: Option<String>,
     startup_recovery_pending: AtomicBool,
 }
 
@@ -345,6 +364,13 @@ impl DesktopHost {
         {
             return Err(DesktopHostError::InvalidConfiguration);
         }
+        if config
+            .model_plan_proposer_reference
+            .as_deref()
+            .is_some_and(str::is_empty)
+        {
+            return Err(DesktopHostError::InvalidConfiguration);
+        }
         if governed.is_none()
             && config
                 .agent_catalogue
@@ -376,6 +402,31 @@ impl DesktopHost {
             live_output.clone(),
         )
         .map_err(|_| DesktopHostError::InvalidConfiguration)?;
+        let planner_worker = config
+            .model_plan_proposer_reference
+            .as_ref()
+            .map(|_| {
+                let mut policy = config.execution_policy.clone();
+                if !policy
+                    .required_capabilities
+                    .contains(&ModelCapability::JsonOutput)
+                {
+                    policy
+                        .required_capabilities
+                        .push(ModelCapability::JsonOutput);
+                }
+                policy.model_output.text_mode = TextMode::JsonSchema {
+                    schema_json: garive_runtime::plan_proposal_output_schema().canonical_json,
+                };
+                LocalExecutionWorker::new(
+                    &config.database_path,
+                    policy,
+                    config.model.clone(),
+                    Arc::new(PlannerCapabilityPreparation),
+                )
+            })
+            .transpose()
+            .map_err(|_| DesktopHostError::InvalidConfiguration)?;
         let worker = match governed {
             Some(factory) => LocalExecutionWorker::new_governed(
                 &config.database_path,
@@ -403,11 +454,13 @@ impl DesktopHost {
             agent_catalogue,
             dispatcher,
             worker,
+            planner_worker,
             queue: Mutex::new(queue),
             operations: config.operations,
             plan_admission_policy: config.plan_admission_policy,
             plan_failure_policy: config.plan_failure_policy,
             plan_proposal_port: config.plan_proposal_port,
+            model_plan_proposer_reference: config.model_plan_proposer_reference,
             startup_recovery_pending: AtomicBool::new(startup_recovery_pending),
         })
     }
@@ -418,6 +471,48 @@ impl DesktopHost {
         } else {
             Ok(())
         }
+    }
+
+    async fn execute_committed(
+        &self,
+        committed: &CommittedTurn,
+        attempt: &LocalExecutionAttempt,
+    ) -> Result<bool, DesktopHostError> {
+        let ledger = SqliteLedger::open(&self.database_path)
+            .map_err(|_| DesktopHostError::ExecutionFailure)?;
+        let planner = is_plan_proposal_execution(
+            &ledger,
+            &committed.session_id,
+            &committed.turn_id,
+            &committed.execution_id,
+        )
+        .map_err(|_| DesktopHostError::ExecutionFailure)?;
+        drop(ledger);
+        if planner {
+            let worker = self
+                .planner_worker
+                .as_ref()
+                .ok_or(DesktopHostError::InvalidConfiguration)?;
+            worker
+                .execute(committed, attempt)
+                .await
+                .map_err(|_| DesktopHostError::ExecutionFailure)?;
+            commit_completed_plan_proposal_once(
+                &self.database_path,
+                &committed.session_id,
+                &committed.turn_id,
+                &attempt.recorded_at,
+                self.agent_catalogue.clone(),
+            )
+            .await
+            .map_err(|_| DesktopHostError::ExecutionFailure)?;
+        } else {
+            self.worker
+                .execute(committed, attempt)
+                .await
+                .map_err(|_| DesktopHostError::ExecutionFailure)?;
+        }
+        Ok(planner)
     }
 
     /// Recovers bounded durable startup work before admitting new execution.
@@ -442,10 +537,7 @@ impl DesktopHost {
         let recovered = report.dispatches.len();
         for committed in report.dispatches {
             let attempt = self.operations.execution_attempt()?;
-            self.worker
-                .execute(&committed, &attempt)
-                .await
-                .map_err(|_| DesktopHostError::ExecutionFailure)?;
+            self.execute_committed(&committed, &attempt).await?;
         }
         if report.has_more {
             return Err(DesktopHostError::StartupRecoveryRequired);
@@ -737,7 +829,22 @@ impl DesktopHost {
                     garive_runtime::GoalPlanDecision::ProposePlan
                 )
             ) {
-                if let Some(port) = self.plan_proposal_port.as_deref() {
+                if let Some(reference) = self.model_plan_proposer_reference.as_deref() {
+                    let committed = start_initial_goal_plan_proposal_execution(
+                        &self.database_path,
+                        &session,
+                        goal_id,
+                        reference,
+                        &attempt.recorded_at,
+                        self.agent_catalogue.clone(),
+                    )
+                    .map_err(|_| DesktopHostError::ExecutionFailure)?;
+                    self.execute_committed(&committed, &attempt).await?;
+                    executions += 1;
+                    outcome = GoalPlanAdvanceOutcome::Committed(
+                        garive_runtime::GoalPlanDecision::ProposePlan,
+                    );
+                } else if let Some(port) = self.plan_proposal_port.as_deref() {
                     propose_initial_goal_plan_once(
                         &self.database_path,
                         &session,

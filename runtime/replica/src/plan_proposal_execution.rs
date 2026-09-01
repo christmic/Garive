@@ -47,6 +47,38 @@ pub enum PlanProposalBindingError {
     DurabilityFailure,
 }
 
+/// Identifies one exact internal Planner Execution from the current Ledger.
+pub fn is_plan_proposal_execution(
+    ledger: &SqliteLedger,
+    session_id: &SessionId,
+    turn_id: &TurnId,
+    execution_id: &garive_ledger::ExecutionId,
+) -> Result<bool, PlanProposalBindingError> {
+    let watermark = ledger
+        .session_watermark(session_id)
+        .map_err(|_| PlanProposalBindingError::DurabilityFailure)?
+        .ok_or(PlanProposalBindingError::CorruptState)?;
+    let facts = ledger
+        .read_facts(session_id, 0, watermark.max_position, None)
+        .map_err(|_| PlanProposalBindingError::DurabilityFailure)?;
+    let matching = facts
+        .iter()
+        .filter(|fact| fact.kind.as_str() == "plan.proposal.requested")
+        .filter(|fact| {
+            payload(fact).ok().is_some_and(|value| {
+                value.get("turn_id").and_then(Value::as_str) == Some(turn_id.as_str())
+                    && value.get("execution_id").and_then(Value::as_str)
+                        == Some(execution_id.as_str())
+            })
+        })
+        .count();
+    match matching {
+        0 => Ok(false),
+        1 => Ok(true),
+        _ => Err(PlanProposalBindingError::CorruptState),
+    }
+}
+
 /// Stable failure while reducing one bound model result to topology only.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PlanProposalResultError {

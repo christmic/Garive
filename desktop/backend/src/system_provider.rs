@@ -311,6 +311,7 @@ impl<R: DesktopSecretResolver, P: DesktopProfileRegistry> DesktopConfigurationPr
             plan_admission_policy: None,
             plan_failure_policy: None,
             plan_proposal_port: None,
+            model_plan_proposer_reference: Some("desktop:model-planner-v1".into()),
             operations: Arc::new(SystemDesktopOperations {
                 worker_owner_id: format!("desktop-worker-{}", Uuid::new_v4()),
                 lease_duration_ms,
