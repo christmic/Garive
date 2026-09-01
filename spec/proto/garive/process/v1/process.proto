@@ -1,0 +1,172 @@
+// Garive macOS process-isolation wire schema. This file is the SSOT for host,
+// XPC-service, and Linux guest-agent generated bindings.
+syntax = "proto3";
+
+package com.garive.process.v1;
+option swift_prefix = "GRV";
+
+enum ProcessWorkspaceModeV1 {
+  PROCESS_WORKSPACE_MODE_UNSPECIFIED = 0;
+  PROCESS_WORKSPACE_MODE_READ_ONLY = 1;
+  PROCESS_WORKSPACE_MODE_READ_WRITE = 2;
+}
+
+enum ProcessServiceStateV1 {
+  PROCESS_SERVICE_STATE_UNSPECIFIED = 0;
+  PROCESS_SERVICE_STATE_ABSENT = 1;
+  PROCESS_SERVICE_STATE_STARTING = 2;
+  PROCESS_SERVICE_STATE_RUNNING = 3;
+  PROCESS_SERVICE_STATE_TERMINAL_RETAINED = 4;
+}
+
+enum ProcessProtocolFailureV1 {
+  PROCESS_PROTOCOL_FAILURE_UNSPECIFIED = 0;
+  PROCESS_PROTOCOL_FAILURE_MALFORMED = 1;
+  PROCESS_PROTOCOL_FAILURE_VERSION_MISMATCH = 2;
+  PROCESS_PROTOCOL_FAILURE_BOUNDS_EXCEEDED = 3;
+  PROCESS_PROTOCOL_FAILURE_IDENTITY_MISMATCH = 4;
+  PROCESS_PROTOCOL_FAILURE_STATE_CONFLICT = 5;
+  PROCESS_PROTOCOL_FAILURE_RESOURCE_UNAVAILABLE = 6;
+  PROCESS_PROTOCOL_FAILURE_SERVICE_UNAVAILABLE = 7;
+  PROCESS_PROTOCOL_FAILURE_STATE_UNKNOWN = 8;
+}
+
+message ProcessIdentityV1 {
+  string protocol_revision = 1;
+  string invocation_id = 2;
+  string dispatch_attempt_id = 3;
+  string executor_revision = 4;
+  bytes prepared_digest = 5;
+  bytes vm_configuration_digest = 6;
+  bytes workload_digest = 7;
+}
+
+message MacOSProcessVMPlanV1 {
+  string kernel_url = 1;
+  bytes kernel_digest = 2;
+  string initial_ramdisk_url = 3;
+  bytes initial_ramdisk_digest = 4;
+  string root_disk_url = 5;
+  bytes root_disk_digest = 6;
+  string workspace_url = 7;
+  ProcessWorkspaceModeV1 workspace_mode = 8;
+  uint64 cpu_count = 9;
+  uint64 memory_size_bytes = 10;
+  uint64 control_timeout_milliseconds = 11;
+}
+
+message ProcessEnvironmentEntryV1 {
+  string key = 1;
+  string value = 2;
+}
+
+message ProcessWorkloadV1 {
+  string lane = 1;
+  string executable = 2;
+  repeated string argv = 3;
+  string working_directory = 4;
+  repeated ProcessEnvironmentEntryV1 environment = 5;
+  uint64 max_output_bytes = 6;
+  uint64 timeout_milliseconds = 7;
+  uint32 max_processes = 8;
+  uint32 max_open_files = 9;
+  ProcessWorkspaceModeV1 workspace_mode = 10;
+}
+
+message ProcessDispatchV1 {
+  ProcessIdentityV1 identity = 1;
+  MacOSProcessVMPlanV1 vm_plan = 2;
+  ProcessWorkloadV1 workload = 3;
+}
+
+message ProcessIdentityRequestV1 {
+  ProcessIdentityV1 identity = 1;
+}
+
+message ProcessAcknowledgeRequestV1 {
+  ProcessIdentityV1 identity = 1;
+  bytes receipt_digest = 2;
+}
+
+message ProcessHostRequestV1 {
+  oneof command {
+    ProcessDispatchV1 preflight = 1;
+    ProcessDispatchV1 start = 2;
+    ProcessIdentityRequestV1 query = 3;
+    ProcessIdentityRequestV1 terminate = 4;
+    ProcessAcknowledgeRequestV1 acknowledge = 5;
+  }
+}
+
+message ProcessPreflightedV1 {
+  ProcessIdentityV1 identity = 1;
+}
+
+message ProcessExitV1 {
+  oneof classification {
+    sint32 code = 1;
+    sint32 signal = 2;
+    bool timed_out = 3;
+  }
+}
+
+message ProcessTerminalReceiptV1 {
+  ProcessIdentityV1 identity = 1;
+  ProcessExitV1 exit = 2;
+  bytes stdout = 3;
+  bytes stderr = 4;
+  bool truncated = 5;
+  bool process_tree_terminated = 6;
+  bytes receipt_digest = 7;
+}
+
+message ProcessStatusV1 {
+  ProcessIdentityV1 identity = 1;
+  ProcessServiceStateV1 state = 2;
+  ProcessTerminalReceiptV1 terminal = 3;
+}
+
+message ProcessProtocolErrorV1 {
+  ProcessProtocolFailureV1 failure = 1;
+}
+
+message ProcessHostResponseV1 {
+  oneof result {
+    ProcessPreflightedV1 preflighted = 1;
+    ProcessStatusV1 status = 2;
+    ProcessTerminalReceiptV1 terminal = 3;
+    ProcessProtocolErrorV1 error = 4;
+  }
+}
+
+message ProcessGuestHelloV1 {
+  ProcessIdentityV1 identity = 1;
+  bytes challenge = 2;
+}
+
+message ProcessGuestReadyV1 {
+  ProcessIdentityV1 identity = 1;
+  bytes challenge = 2;
+  string guest_agent_revision = 3;
+}
+
+message ProcessGuestExecuteV1 {
+  ProcessIdentityV1 identity = 1;
+  ProcessWorkloadV1 workload = 2;
+}
+
+message ProcessGuestRequestV1 {
+  oneof command {
+    ProcessGuestHelloV1 hello = 1;
+    ProcessGuestExecuteV1 execute = 2;
+    ProcessIdentityRequestV1 terminate = 3;
+  }
+}
+
+message ProcessGuestResponseV1 {
+  oneof result {
+    ProcessGuestReadyV1 ready = 1;
+    ProcessTerminalReceiptV1 terminal = 2;
+    ProcessProtocolErrorV1 error = 3;
+  }
+}
