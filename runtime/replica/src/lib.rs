@@ -42,6 +42,7 @@ mod native_executor;
 mod observability_runtime;
 mod plan_carry_forward;
 mod plan_dispatch_runtime;
+mod plan_proposal_execution;
 mod plan_proposal_runtime;
 mod plan_recovery;
 mod plan_runtime;
@@ -229,6 +230,9 @@ pub use plan_dispatch_runtime::{
     dispatch_plan_step_once, CataloguePlanStepDispatchFactory, PlanDispatchError,
     PlanDispatchOutcome, PlanDispatchTick, PlanStepDispatchFactory, PlanStepDispatchInput,
     PreparedPlanStepDispatch,
+};
+pub use plan_proposal_execution::{
+    bind_completed_plan_proposal_result, BoundPlanProposalResult, PlanProposalBindingError,
 };
 pub use plan_proposal_runtime::{
     propose_initial_goal_plan_once, PlanProposalContent, PlanProposalFuture, PlanProposalPort,
