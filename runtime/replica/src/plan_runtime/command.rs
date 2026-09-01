@@ -678,7 +678,7 @@ pub fn plan_start_step_execution(
 }
 
 /// Atomically suspends one running step and its Plan around one C6 continuation.
-pub fn plan_suspend_step_and_plan(
+pub(crate) fn plan_suspend_step_and_plan(
     current: &PlanRuntimeState,
     expected_state_version: u64,
     context: &PlanCommandContext,
@@ -707,7 +707,7 @@ pub fn plan_suspend_step_and_plan(
 }
 
 /// Atomically resumes Plan/step state around one already planned C6 continuation.
-pub fn plan_resume_step_execution(
+pub(crate) fn plan_resume_step_execution(
     current: &PlanRuntimeState,
     expected_state_version: u64,
     context: &PlanCommandContext,

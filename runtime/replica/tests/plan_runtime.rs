@@ -19,18 +19,17 @@ use garive_plan::{
 use garive_runtime::{
     commit_goal_command, commit_plan_command, commit_plan_replacement, commit_planned_turn,
     get_turn, plan_activate_goal_from_authoritative_plan, plan_adopt_plan, plan_complete_plan,
-    plan_continue_turn, plan_core_terminal, plan_goal_transition,
+    plan_continue_owned_plan_turn, plan_continue_turn, plan_core_terminal, plan_goal_transition,
     plan_next_turn_cancellation_for_goal, plan_plan_replacement, plan_plan_transition,
-    plan_propose_plan, plan_resume_goal_from_continued_turn, plan_resume_step_execution,
-    plan_start_step_execution, plan_start_turn, plan_succeed_goal_from_completed_plan,
-    plan_suspend_goal_from_owned_turn, plan_suspend_step_and_plan,
-    reconstruct_execution_work_binding, reconstruct_goal, reconstruct_plan, reconstruct_plan_graph,
-    reconstruct_suspended_turn, verify_plan_carry_forward, ContinuationInput, ContinueTurnCommand,
-    CoreTerminalContext, EffectiveRuntimeLimits, GetTurnQuery, GoalCommandContext,
-    GoalPlanCoordinationError, GoalRuntimeError, GoalRuntimeTransition,
-    InteractionInputRepresentation, PlanCommandContext, PlanRetryPosture, PlanRuntimeError,
-    PlanRuntimeState, PlanRuntimeTransition, PlanStepContinuation, PlanStepExecutionStart,
-    PlanStepSuspension, RuntimeCommandId, SqliteLedger, StartTurnCommand,
+    plan_propose_plan, plan_resume_goal_from_continued_turn, plan_start_step_execution,
+    plan_start_turn, plan_succeed_goal_from_completed_plan, plan_suspend_goal_from_owned_turn,
+    plan_suspend_owned_plan_from_turn, reconstruct_execution_work_binding, reconstruct_goal,
+    reconstruct_plan, reconstruct_plan_graph, reconstruct_suspended_turn,
+    verify_plan_carry_forward, ContinuationInput, ContinueTurnCommand, CoreTerminalContext,
+    EffectiveRuntimeLimits, GetTurnQuery, GoalCommandContext, GoalPlanCoordinationError,
+    GoalRuntimeError, GoalRuntimeTransition, InteractionInputRepresentation, PlanCommandContext,
+    PlanRetryPosture, PlanRuntimeError, PlanRuntimeState, PlanRuntimeTransition,
+    PlanStepExecutionStart, RuntimeCommandId, SqliteLedger, StartTurnCommand,
 };
 use serde_json::json;
 use sha2::{Digest, Sha256};
@@ -788,17 +787,13 @@ fn step_start_and_c6_execution_commit_as_one_restart_safe_command() {
         .commit(session.clone(), recovered.session_version + 1, terminal)
         .unwrap();
     let running = recover(&ledger, &session);
-    let plan_suspension = plan_suspend_step_and_plan(
-        &running,
-        running.state_version,
+    let plan_suspension = plan_suspend_owned_plan_from_turn(
+        &ledger,
+        &session,
+        "goal-1",
+        running.session_version,
+        2,
         &context("suspend-plan-from-turn"),
-        PlanStepSuspension {
-            step_id: step_id("prepare"),
-            attempt_id: "atomic-attempt".into(),
-            execution_id: execution_id.as_str().into(),
-            continuation_kind: "interaction".into(),
-            continuation_reference: "suspension-external-input".into(),
-        },
     )
     .unwrap();
     commit_plan_command(
@@ -887,19 +882,15 @@ fn step_start_and_c6_execution_commit_as_one_restart_safe_command() {
     )
     .unwrap();
     let continued_execution_id = continuation.execution_id.clone().unwrap();
-    let plan_continuation = plan_resume_step_execution(
-        &plan_awaiting_resume,
-        plan_awaiting_resume.state_version,
+    let plan_continuation = plan_continue_owned_plan_turn(
+        &ledger,
+        &session,
+        "goal-1",
+        plan_awaiting_resume.session_version,
         &PlanCommandContext {
             command_id: "continue-goal-owned-turn".into(),
             actor_reference: "runtime:goal-plan-coordinator".into(),
             recorded_at: "2026-08-31T00:00:01Z".into(),
-        },
-        PlanStepContinuation {
-            step_id: step_id("prepare"),
-            attempt_id: "atomic-attempt".into(),
-            prior_execution_id: execution_id.as_str().into(),
-            resolved_continuation_reference: suspended_turn.suspension_id.clone(),
         },
         &continuation,
     )

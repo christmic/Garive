@@ -8,9 +8,9 @@ mod command;
 
 pub use command::{
     commit_plan_command, plan_adopt_plan, plan_complete_plan, plan_plan_transition,
-    plan_propose_plan, plan_resume_step_execution, plan_start_step_execution,
-    plan_suspend_step_and_plan,
+    plan_propose_plan, plan_start_step_execution,
 };
+pub(crate) use command::{plan_resume_step_execution, plan_suspend_step_and_plan};
 
 pub(crate) fn validate_goal_anchor_binding(
     definition: &PlanDefinitionV1,

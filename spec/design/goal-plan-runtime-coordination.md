@@ -170,6 +170,9 @@ Plan completion evidence is not a boolean shortcut around Goal verification.
   suspension reference.
 - Runtime first commits the matching `plan.step.suspended` and
   `plan.suspended`; Goal suspension requires that authoritative Plan posture.
+- Public coordination accepts no step, attempt, Execution or continuation
+  binding. Runtime derives all four through the exact Goal-owned Plan/Turn
+  chain; the lower Plan composition functions are crate-private.
 - Goal suspension does not invent a second continuation identity.
 - The coordinator proves ownership through the authoritative Plan's exact
   `plan.step.started -> execution.started -> Turn` chain and reconstructs the
