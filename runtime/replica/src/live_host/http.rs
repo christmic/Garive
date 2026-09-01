@@ -17,7 +17,8 @@ use tokio::net::TcpListener;
 
 use super::{
     validate_key, CancelGoalBody, CancelTurnBody, ContinueTurnBody, CreateGoalBody,
-    CreateSessionBody, ErrorBody, LiveHost, LiveHostError, LiveHostEvent, StartTurnBody,
+    CreateSessionBody, ErrorBody, LiveHost, LiveHostError, LiveHostEvent, ReviseGoalBody,
+    StartTurnBody,
 };
 use crate::{LiveOutputReceiveError, LiveOutputSubscriber};
 
@@ -302,18 +303,30 @@ async fn mutate_goal(
 ) -> Response {
     let result = async {
         let key = idempotency_key(&headers)?;
-        let Some(goal_id) = operation.strip_suffix(":cancel") else {
-            return Err(LiveHostError::InvalidRequest);
-        };
-        let body: CancelGoalBody = decode_body(&host, body).await?;
-        host.cancel_goal(
-            key,
-            &body.session_id,
-            goal_id,
-            body.expected_session_version,
-            body.expected_revision,
-            &body.reason,
-        )
+        if let Some(goal_id) = operation.strip_suffix(":cancel") {
+            let body: CancelGoalBody = decode_body(&host, body).await?;
+            host.cancel_goal(
+                key,
+                &body.session_id,
+                goal_id,
+                body.expected_session_version,
+                body.expected_revision,
+                &body.reason,
+            )
+        } else if let Some(goal_id) = operation.strip_suffix(":revise") {
+            let body: ReviseGoalBody = decode_body(&host, body).await?;
+            host.revise_goal(
+                key,
+                &body.session_id,
+                goal_id,
+                body.expected_session_version,
+                body.expected_revision,
+                &body.definition_json,
+                &body.replacement_reason,
+            )
+        } else {
+            Err(LiveHostError::InvalidRequest)
+        }
     }
     .await;
     command_response(result)

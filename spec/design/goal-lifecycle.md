@@ -269,6 +269,14 @@ private actor reference; Rust and Kotlin L0 validators reject missing actors.
 Exact cancellation replay returns its original fact-bound receipt without
 reauthorization, while changed reason, identity or expected revision conflicts.
 
+`POST /v1/goals/{goal_id}:revise` additionally binds the complete replacement
+definition and replacement reason. Host rejects a definition for another Goal
+before policy evaluation. The authority rechecks every grant-bearing field
+against the current durable Goal; a successful revision returns to Draft at the
+next Goal and Session revisions. Replay is reconstructed from the original
+`goal.revised` fact and requires exact definition bytes, prior revision and
+reason.
+
 ## Stable failures
 
 `goal_invalid`, `goal_command_conflict`, `goal_revision_conflict`,

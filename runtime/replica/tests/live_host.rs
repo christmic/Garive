@@ -296,17 +296,44 @@ fn public_goal_create_requires_authority_and_exactly_replays_without_reauthoriza
         host.create_goal("create-public-goal", &session.session_id, 1, &changed,),
         Err(LiveHostError::CommandConflict)
     );
+    let revised = host
+        .revise_goal(
+            "revise-public-goal",
+            &session.session_id,
+            "goal-public",
+            2,
+            1,
+            &changed,
+            "objective_refined",
+        )
+        .unwrap();
+    assert_eq!(revised.revision, 2);
+    assert_eq!(revised.state, "draft");
+    assert_eq!(
+        revised,
+        host.revise_goal(
+            "revise-public-goal",
+            &session.session_id,
+            "goal-public",
+            2,
+            1,
+            &changed,
+            "objective_refined",
+        )
+        .unwrap()
+    );
+    assert_eq!(*authority.transition_calls.lock().unwrap(), 1);
     let cancelled = host
         .cancel_goal(
             "cancel-public-goal",
             &session.session_id,
             "goal-public",
+            3,
             2,
-            1,
             "operator_cancelled",
         )
         .unwrap();
-    assert_eq!(cancelled.revision, 2);
+    assert_eq!(cancelled.revision, 3);
     assert_eq!(cancelled.state, "cancelled");
     assert_eq!(
         cancelled,
@@ -314,20 +341,20 @@ fn public_goal_create_requires_authority_and_exactly_replays_without_reauthoriza
             "cancel-public-goal",
             &session.session_id,
             "goal-public",
+            3,
             2,
-            1,
             "operator_cancelled",
         )
         .unwrap()
     );
-    assert_eq!(*authority.transition_calls.lock().unwrap(), 1);
+    assert_eq!(*authority.transition_calls.lock().unwrap(), 2);
     assert_eq!(
         host.cancel_goal(
             "cancel-public-goal",
             &session.session_id,
             "goal-public",
+            3,
             2,
-            1,
             "changed_reason",
         ),
         Err(LiveHostError::CommandConflict)

@@ -858,6 +858,16 @@ pub(crate) struct CancelGoalBody {
     pub reason: String,
 }
 
+#[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct ReviseGoalBody {
+    pub session_id: String,
+    pub expected_session_version: u64,
+    pub expected_revision: u64,
+    pub definition_json: String,
+    pub replacement_reason: String,
+}
+
 #[derive(Serialize)]
 pub(crate) struct ErrorBody {
     pub code: &'static str,
