@@ -266,10 +266,14 @@ surfaces stay tight. Agent prose remains on the terminal background. Public posi
 stable keys, opaque IDs, and repeated `Conversation` titles do not appear in
 ordinary transcript chrome.
 
-`ActivityStack` paints at most one active safe row plus the latest completed
-safe label and a supplemental completed count. Compact width retains the active
-label first, then a display-width-budgeted `✓N` suffix; CJK and emoji cannot
-silently consume that counter. The Composer run rail omits its generic
+`ActivityStack` is a semantic operation group rather than a list of equal-weight
+status rows. At widths `>=52`, one tone-bearing bullet and lifecycle heading own
+the group state; muted `├`/`└` branches carry the latest completed and active
+safe labels. Older completed siblings become `+N earlier`, not another success
+icon. At widths `<52`, the group collapses to the active label first and a
+display-width-budgeted `✓N` suffix; CJK and emoji cannot silently consume that
+counter. The heading and branches use terminal background only—no card, rule,
+or filled rail. The Composer run rail omits its generic
 execution phrase whenever a live answer or active Activity already owns the
 work signal, while retaining its cancel control.
 Expanding details opens Inspector or an overlay; it does not insert a

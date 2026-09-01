@@ -6,9 +6,9 @@ expression: "frame(&activities, Theme::Mono, 100, 24)"
 
 › Verify the release candidate.
 
-  ✓  Read file · +1 completed
-  ●  Reading file
-
+• Working
+  ├ Read file · +1 earlier
+  └ Reading file
 
 
 

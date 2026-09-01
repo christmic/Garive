@@ -5,7 +5,7 @@ expression: matrix
 ===== compact mono 40x8 =====
 ↓ 12 newer updates ·  End follow latest
 › Summarize the release plan.
-  ✓ Agent action · completed
+  ✓ Read file
 ## Release plan
 
   • Verify the Runtime
@@ -17,7 +17,8 @@ expression: matrix
 
 › Summarize the release plan.
 
-  ✓  Agent action · completed
+• Completed
+  └ Read file
 
 ## Release plan
 
@@ -25,7 +26,6 @@ expression: matrix
   • Ship with evidence
 
   cargo test passes.
-
 
 
 
@@ -42,7 +42,8 @@ expression: matrix
 
 › Summarize the release plan.
 
-  ✓  Agent action · completed
+• Completed
+  └ Read file
 
 ## Release plan
 
@@ -50,7 +51,6 @@ expression: matrix
   • Ship with evidence
 
   cargo test passes.
-
 
 
 

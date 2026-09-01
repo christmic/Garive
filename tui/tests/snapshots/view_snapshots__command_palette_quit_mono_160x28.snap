@@ -6,7 +6,8 @@ expression: "frame(&palette, Theme::Mono, 160, 28)"
 
 › Summarize the release plan.
 
-  ✓  Agent action · completed
+• Completed
+  └ Read file
 
 ## Release plan
 
@@ -14,7 +15,6 @@ expression: "frame(&palette, Theme::Mono, 160, 28)"
   • Ship with evidence
 
   cargo test passes.
-
 
  Command palette · 14–21/21 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 Search  type to search

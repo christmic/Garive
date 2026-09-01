@@ -460,6 +460,19 @@ blank row separates `ActivityStack` from the live or committed answer. The
 40–51 column linear mode stays tight so hierarchy cannot consume the minimum
 working viewport. This is spacing ownership, not a card or inferred phase.
 
+Pinned Codex `tui/src/exec_cell/render.rs:255-350` provides the stronger
+operation-group grammar: one dynamic `Exploring`/`Explored` heading owns the
+lifecycle, while `Read`, `List`, `Search`, or `Run` details sit under a muted
+tree branch. Its command path similarly changes `Running` to `Ran` at
+`render.rs:352-390` instead of placing an independent state icon beside every
+detail. Garive adopts that hierarchy but cannot copy Codex command/path detail:
+H3 exposes only an admitted public `label_key`, lifecycle state, and optional
+closed safe code. Standard widths therefore render one `ActivityStack` heading
+plus `├`/`└` safe-label rows; compact widths retain one lifecycle phrase and
+count. Unknown keys remain `Tool action` or `Activity`, never guessed from raw
+payload text. Garive additionally preserves the latest completed sibling beside
+the active one, which Codex's homogeneous exploration grouping does not need.
+
 Codex also keeps shortcut reference content action-only. The pinned
 `bottom_pane/footer.rs:733-749,880-949` projects `FooterMode::ShortcutOverlay`
 into a two-column list plus one customization action; the reviewed

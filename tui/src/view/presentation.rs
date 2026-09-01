@@ -112,17 +112,14 @@ pub(crate) fn activity_copy(
     state: &str,
     safe_code: Option<&str>,
 ) -> (String, TimelineTone) {
-    let admitted_tool_copy = match (kind, label_key, state) {
-        ("tool", "agent.activity.read_file", "running") => Some("Reading file"),
-        ("tool", "agent.activity.read_file", "completed") => Some("Read file"),
-        _ => None,
-    };
-    let label = match (kind, label_key) {
-        ("interaction", "agent.activity.approval") => "Approval",
-        ("interaction", "agent.activity.external_input") => "Input request",
-        ("tool", "agent.activity.read_file") => "Read file",
-        ("tool", _) => "Agent action",
-        _ => "Activity updated",
+    let label = match label_key {
+        "agent.activity.read_file" => "Read file",
+        "agent.activity.write_file" => "Write file",
+        "agent.activity.approval" => "Approval",
+        "agent.activity.external_input" => "Input request",
+        "agent.activity.tool_rejected" => "Tool request",
+        _ if kind == "tool" => "Tool action",
+        _ => "Activity",
     };
     let (state_label, tone) = match state {
         "prepared" | "authorized" => ("prepared", TimelineTone::Neutral),
@@ -139,7 +136,17 @@ pub(crate) fn activity_copy(
     let code = safe_code
         .map(|value| format!(" · {value}"))
         .unwrap_or_default();
-    let text = admitted_tool_copy.map_or_else(|| format!("{label} · {state_label}"), str::to_owned);
+    let lifecycle_label = match (label_key, state) {
+        ("agent.activity.read_file", "running") => "Reading file",
+        ("agent.activity.write_file", "running") => "Writing file",
+        ("agent.activity.write_file", "completed") => "Wrote file",
+        _ => label,
+    };
+    let text = if matches!(state, "running" | "completed") {
+        lifecycle_label.to_owned()
+    } else {
+        format!("{label} · {state_label}")
+    };
     (format!("{text}{code}"), tone)
 }
 
@@ -168,7 +175,7 @@ mod tests {
     #[test]
     fn activity_copy_never_exposes_unknown_localization_keys() {
         let (text, tone) = activity_copy("future", "private.tool.name", "future", None);
-        assert_eq!(text, "Activity updated · updated");
+        assert_eq!(text, "Activity · updated");
         assert_eq!(tone, TimelineTone::Neutral);
     }
 
@@ -185,5 +192,30 @@ mod tests {
                 (expected.into(), tone)
             );
         }
+    }
+
+    #[test]
+    fn admitted_activity_labels_are_stable_details_under_the_group_lifecycle() {
+        for (key, running, completed) in [
+            ("agent.activity.write_file", "Writing file", "Wrote file"),
+            ("agent.activity.approval", "Approval", "Approval"),
+            (
+                "agent.activity.external_input",
+                "Input request",
+                "Input request",
+            ),
+            (
+                "agent.activity.tool_rejected",
+                "Tool request",
+                "Tool request",
+            ),
+        ] {
+            assert_eq!(activity_copy("tool", key, "running", None).0, running);
+            assert_eq!(activity_copy("tool", key, "completed", None).0, completed);
+        }
+        assert_eq!(
+            activity_copy("tool", "agent.activity.future", "running", None).0,
+            "Tool action"
+        );
     }
 }

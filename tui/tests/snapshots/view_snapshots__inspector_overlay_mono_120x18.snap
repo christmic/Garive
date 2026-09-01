@@ -6,16 +6,16 @@ expression: "inspector_frame(theme, 120)"
 
             › Summarize the release plan.
 
-              ✓  Agent action · completed
+            • Completed
+              └ Read file
 
             ## Release plan
 
               • Verify the Runtime
               • Ship with evidence
-
-              cargo test passes.
              Inspector · Activity ──────────────────────────────────────────────────────────────────────────
-            › ✓ Agent action · completed
+            › ✓ Read file
+                Completed
             ↑↓ select · Enter jump · Esc close
             • Working…
             › Ask a follow-up…

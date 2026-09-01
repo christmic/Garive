@@ -6,7 +6,8 @@ expression: "command_suggestion_frame(Theme::Light)"
 
 › Summarize the release plan.
 
-  ✓  Agent action · completed
+• Completed
+  └ Read file
 
 ## Release plan
 
@@ -14,7 +15,6 @@ expression: "command_suggestion_frame(Theme::Light)"
   • Ship with evidence
 
   cargo test passes.
-
 
 
 

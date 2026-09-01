@@ -3,10 +3,10 @@ source: tui/tests/view_snapshots.rs
 expression: rendered
 ---
 
-
 › Summarize the release plan.
 
-  ✓  Agent action · completed
+• Completed
+  └ Read file
 
 ## Release plan
 

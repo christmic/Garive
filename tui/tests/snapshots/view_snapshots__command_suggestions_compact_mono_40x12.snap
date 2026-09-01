@@ -3,7 +3,7 @@ source: tui/tests/view_snapshots.rs
 expression: "command_suggestion_frame_at(Theme::Mono, 40, 12)"
 ---
 
-  ✓ Agent action · completed
+  ✓ Read file
 ## Release plan
 
  Commands ──────────────────────────────

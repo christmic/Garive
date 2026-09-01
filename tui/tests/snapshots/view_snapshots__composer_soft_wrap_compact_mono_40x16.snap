@@ -4,7 +4,7 @@ expression: "frame(&wrapped, Theme::Mono, 40, 16)"
 ---
 
 › Summarize the release plan.
-  ✓ Agent action · completed
+  ✓ Read file
 ## Release plan
 
   • Verify the Runtime

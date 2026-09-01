@@ -467,7 +467,7 @@ fn assert_responsive_frame(rendered: &str, width: u16, height: u16) {
     }
     for required in [
         "Summarize the release plan.",
-        "Agent action · completed",
+        "Read file",
         "cargo test passes.",
         "Ask a follow-up…",
     ] {
@@ -536,13 +536,7 @@ fn product_model() -> AppModel {
         observed_position: 42,
         ..Default::default()
     };
-    let mut activity = item(
-        "activity",
-        4,
-        TimelineRole::Status,
-        "Agent action · completed",
-    );
-    activity.tone = TimelineTone::Success;
+    let activity = read_file_activity("activity", 4, "completed");
     for item in [
         item("user", 2, TimelineRole::User, "Summarize the release plan."),
         activity,

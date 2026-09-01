@@ -717,19 +717,27 @@ no cursor-addressed popup.
 
 ### Activity and suspension
 
-H3 public activities project into the owning Turn's `ActivityStack`. The active
-safe activity occupies one row. The latest completed safe label remains
-legible; older completed siblings collapse into a supplemental count and
-expand only through an explicit Inspector or
-transcript action. Unknown activity kinds use `Activity updated` and cannot
-mutate Turn state. Default activity copy omits durable positions. Tool
+H3 public activities project into the owning Turn's `ActivityStack`. At widths
+`>=52`, the component owns one lifecycle heading (`Working`, `Completed`,
+`Attention`, `Failed`, or neutral `Activity`) and one tree of admitted detail
+rows. A single semantic bullet belongs to the heading; details use `├` and `└`
+to express order without repeating competing state glyphs. The active safe
+activity and latest completed safe label remain legible; older completed
+siblings collapse into an `+N earlier` suffix and expand only through an
+explicit Inspector or transcript action. Widths `<52` collapse the group to one
+line, prioritizing the active lifecycle phrase and a display-budgeted `✓N`
+counter. Unknown tool keys use `Tool action`; other unknown activity uses
+`Activity`. Neither can mutate Turn state. Default activity copy omits durable
+positions. Tool
 arguments, raw paths, hidden reasoning, provider values, and internal facts are
 absent.
 Presentation consumes the admitted H3 `label_key` and state rather than
 discarding them into one generic phrase. The currently admitted
 `agent.activity.read_file` lifecycle renders `Reading file` while running and
-`Read file` after completion. Unknown keys remain a generic safe action; the
-client never guesses tool semantics from payload text.
+`Read file` after completion. The shared admitted catalogue also maps
+`write_file`, approval, external input, and tool rejection to bounded public
+copy. Unknown keys remain a generic safe action; the client never guesses tool
+semantics from payload text.
 
 An admitted H2 suspension overlay renders only the public title/message and
 response schema. The current native controls cover strictly admitted strings,
