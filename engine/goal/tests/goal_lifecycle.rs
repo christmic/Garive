@@ -150,6 +150,64 @@ fn definition(goal_id: &str, objective: &str) -> GoalDefinitionV1 {
     .unwrap()
 }
 
+#[test]
+fn child_goal_can_only_narrow_its_parent_grant() {
+    let parent = definition("parent", "Parent objective");
+    let child = GoalDefinitionV1::new(
+        GoalId::new("child").unwrap(),
+        "Child objective",
+        criteria(),
+        GoalScopeV1::new(None, ["workspace-1".into()]).unwrap(),
+        GoalBoundsV1::new(2, 3, 1, Some(5_000), Some(30_000)).unwrap(),
+        Some(GoalId::new("parent").unwrap()),
+        capabilities(),
+    )
+    .unwrap();
+    child.validate_child_of(&parent).unwrap();
+
+    for wider in [
+        GoalDefinitionV1::new(
+            GoalId::new("wrong-session").unwrap(),
+            "Child objective",
+            criteria(),
+            GoalScopeV1::new(Some("session-2".into()), ["workspace-1".into()]).unwrap(),
+            bounds(),
+            Some(GoalId::new("parent").unwrap()),
+            capabilities(),
+        )
+        .unwrap(),
+        GoalDefinitionV1::new(
+            GoalId::new("extra-workspace").unwrap(),
+            "Child objective",
+            criteria(),
+            GoalScopeV1::new(
+                Some("session-1".into()),
+                ["workspace-1".into(), "workspace-2".into()],
+            )
+            .unwrap(),
+            bounds(),
+            Some(GoalId::new("parent").unwrap()),
+            capabilities(),
+        )
+        .unwrap(),
+        GoalDefinitionV1::new(
+            GoalId::new("unbounded-token").unwrap(),
+            "Child objective",
+            criteria(),
+            scope(),
+            GoalBoundsV1::new(2, 3, 1, None, Some(30_000)).unwrap(),
+            Some(GoalId::new("parent").unwrap()),
+            capabilities(),
+        )
+        .unwrap(),
+    ] {
+        assert_eq!(
+            wider.validate_child_of(&parent).unwrap_err().code(),
+            GoalErrorCode::GoalScopeExceeded
+        );
+    }
+}
+
 fn evidence() -> GoalEvidenceV1 {
     GoalEvidenceV1::new(
         GoalEvidenceId::new("evidence-1").unwrap(),
@@ -160,6 +218,25 @@ fn evidence() -> GoalEvidenceV1 {
         5,
     )
     .unwrap()
+}
+
+fn criteria() -> Vec<GoalCriterion> {
+    vec![GoalCriterion::UserAcceptance {
+        criterion_id: GoalCriterionId::new("accepted").unwrap(),
+        response_schema_digest: digest('a'),
+    }]
+}
+
+fn scope() -> GoalScopeV1 {
+    GoalScopeV1::new(Some("session-1".into()), ["workspace-1".into()]).unwrap()
+}
+
+fn bounds() -> GoalBoundsV1 {
+    GoalBoundsV1::new(3, 4, 2, Some(10_000), Some(60_000)).unwrap()
+}
+
+fn capabilities() -> [GoalCapabilityReference; 1] {
+    [GoalCapabilityReference::new("tools", "catalogue-v1").unwrap()]
 }
 
 fn digest(character: char) -> String {

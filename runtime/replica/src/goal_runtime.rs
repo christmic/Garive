@@ -98,6 +98,8 @@ pub enum GoalRuntimeError {
     TransitionInvalid,
     /// Success lacks exact complete criterion evidence.
     EvidenceInsufficient,
+    /// Child scope, capability, parent identity, or bound exceeds its parent.
+    ScopeExceeded,
     /// Persisted Goal facts cannot reconstruct one legal contiguous history.
     RecoveryCorrupt,
     /// SQLite or Ledger durability failed.
@@ -347,6 +349,7 @@ fn map_goal(error: garive_goal::GoalError) -> GoalRuntimeError {
         GoalErrorCode::GoalRevisionConflict => GoalRuntimeError::RevisionConflict,
         GoalErrorCode::GoalTransitionInvalid => GoalRuntimeError::TransitionInvalid,
         GoalErrorCode::GoalEvidenceInsufficient => GoalRuntimeError::EvidenceInsufficient,
+        GoalErrorCode::GoalScopeExceeded => GoalRuntimeError::ScopeExceeded,
         GoalErrorCode::GoalInvalid => GoalRuntimeError::Invalid,
     }
 }

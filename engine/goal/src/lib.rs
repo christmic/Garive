@@ -56,6 +56,8 @@ pub enum GoalErrorCode {
     GoalTransitionInvalid,
     /// Success does not carry complete verified criterion evidence.
     GoalEvidenceInsufficient,
+    /// Child scope, capability, parent identity, or bound exceeds its parent.
+    GoalScopeExceeded,
 }
 
 /// Typed portable Goal failure.
@@ -129,6 +131,13 @@ impl GoalScopeV1 {
             workspace_capability_ids: unique,
         })
     }
+
+    fn is_within(&self, parent: &Self) -> bool {
+        (self.session_id.is_none() || self.session_id == parent.session_id)
+            && self
+                .workspace_capability_ids
+                .is_subset(&parent.workspace_capability_ids)
+    }
 }
 
 /// Explicit non-zero hard bounds for one Goal definition.
@@ -171,6 +180,14 @@ impl GoalBoundsV1 {
     /// Returns the hard limit on distinct attempts started from Draft.
     pub const fn max_attempts(&self) -> u32 {
         self.max_attempts
+    }
+
+    fn is_within(&self, parent: &Self) -> bool {
+        self.max_attempts <= parent.max_attempts
+            && self.max_plan_revisions <= parent.max_plan_revisions
+            && self.max_child_goals <= parent.max_child_goals
+            && optional_bound_within(self.token_budget, parent.token_budget)
+            && optional_bound_within(self.duration_budget_ms, parent.duration_budget_ms)
     }
 }
 
@@ -331,6 +348,21 @@ impl GoalDefinitionV1 {
         &self.bounds
     }
 
+    /// Proves that this child definition only narrows one exact parent grant.
+    pub fn validate_child_of(&self, parent: &Self) -> Result<(), GoalError> {
+        if self.parent_goal_id.as_ref() != Some(parent.goal_id())
+            || !self.scope.is_within(&parent.scope)
+            || !self.bounds.is_within(&parent.bounds)
+            || !self
+                .capability_references
+                .is_subset(&parent.capability_references)
+        {
+            Err(GoalError::new(GoalErrorCode::GoalScopeExceeded))
+        } else {
+            Ok(())
+        }
+    }
+
     /// Reconstructs and revalidates one exact canonical definition document.
     pub fn from_canonical_json(json: &str) -> Result<Self, GoalError> {
         let raw: RawGoalDefinitionV1 =
@@ -393,4 +425,12 @@ fn valid_digest(value: &str) -> bool {
         && value
             .bytes()
             .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase())
+}
+
+const fn optional_bound_within(child: Option<u64>, parent: Option<u64>) -> bool {
+    match (child, parent) {
+        (_, None) => true,
+        (Some(child), Some(parent)) => child <= parent,
+        (None, Some(_)) => false,
+    }
 }

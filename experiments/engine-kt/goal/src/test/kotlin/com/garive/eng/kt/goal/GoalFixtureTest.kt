@@ -71,6 +71,34 @@ class GoalFixtureTest {
         }
     }
 
+    @Test
+    fun childGoalCanOnlyNarrowItsParentGrant() {
+        val child = GoalDefinitionV1.create(
+            GoalId.create("child").value(),
+            "Child objective",
+            definition.criteria,
+            GoalScopeV1.create(null, listOf("workspace-1")).value(),
+            GoalBoundsV1.create(2, 3, 1, 5_000, 30_000).value(),
+            definition.goalId,
+            definition.capabilityReferences,
+        ).value()
+        assertIs<GoalResult.Success<Unit>>(child.validateChildOf(definition))
+
+        val wider = GoalDefinitionV1.create(
+            GoalId.create("wider").value(),
+            "Wider objective",
+            definition.criteria,
+            GoalScopeV1.create("session-2", listOf("workspace-1")).value(),
+            GoalBoundsV1.create(3, 4, 2, null, 60_000).value(),
+            definition.goalId,
+            definition.capabilityReferences,
+        ).value()
+        assertEquals(
+            GoalErrorCode.GOAL_SCOPE_EXCEEDED,
+            assertIs<GoalResult.Failure>(wider.validateChildOf(definition)).error.code,
+        )
+    }
+
     private fun definition(value: JsonObject): GoalDefinitionV1 {
         val criterion = value.getValue("criteria").jsonArray.single().jsonObject
         val scope = value.getValue("scope").jsonObject

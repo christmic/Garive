@@ -17,6 +17,8 @@ public enum class GoalErrorCode(public val wireName: String) {
     GOAL_TRANSITION_INVALID("goal_transition_invalid"),
     /** Success evidence is incomplete or mismatched. */
     GOAL_EVIDENCE_INSUFFICIENT("goal_evidence_insufficient"),
+    /** Child scope, capability, parent identity, or bound exceeds its parent. */
+    GOAL_SCOPE_EXCEEDED("goal_scope_exceeded"),
 }
 
 /** Typed portable Goal failure. */
@@ -185,6 +187,25 @@ public class GoalDefinitionV1 private constructor(
     /** Canonical unique exact capability references. */
     public val capabilityReferences: List<GoalCapabilityReference> = capabilityReferences.toList()
 
+    /** Proves that this child definition only narrows one exact parent grant. */
+    public fun validateChildOf(parent: GoalDefinitionV1): GoalResult<Unit> {
+        val sessionWithin = scope.sessionId == null || scope.sessionId == parent.scope.sessionId
+        val workspaceWithin = parent.scope.workspaceCapabilityIds.containsAll(scope.workspaceCapabilityIds)
+        val boundsWithin = bounds.maxAttempts <= parent.bounds.maxAttempts &&
+            bounds.maxPlanRevisions <= parent.bounds.maxPlanRevisions &&
+            bounds.maxChildGoals <= parent.bounds.maxChildGoals &&
+            optionalBoundWithin(bounds.tokenBudget, parent.bounds.tokenBudget) &&
+            optionalBoundWithin(bounds.durationBudgetMs, parent.bounds.durationBudgetMs)
+        val capabilitiesWithin = parent.capabilityReferences.containsAll(capabilityReferences)
+        return if (parentGoalId == parent.goalId && sessionWithin && workspaceWithin &&
+            boundsWithin && capabilitiesWithin
+        ) {
+            GoalResult.Success(Unit)
+        } else {
+            failure(GoalErrorCode.GOAL_SCOPE_EXCEEDED)
+        }
+    }
+
     /** Returns lowercase SHA-256 over the RFC 8785 canonical definition. */
     public fun digest(): GoalResult<String> = runCatching {
         MessageDigest.getInstance("SHA-256").digest(JsonCanonicalizer(canonicalJson().toString()).encodedUTF8)
@@ -296,5 +317,11 @@ private fun criterionJson(value: GoalCriterion): JsonObject = when (value) {
 
 internal fun validDigest(value: String): Boolean =
     value.length == 64 && value.all { it in '0'..'9' || it in 'a'..'f' }
+
+private fun optionalBoundWithin(child: Long?, parent: Long?): Boolean = when {
+    parent == null -> true
+    child == null -> false
+    else -> child <= parent
+}
 
 internal fun failure(code: GoalErrorCode): GoalResult.Failure = GoalResult.Failure(GoalError(code))
