@@ -326,6 +326,48 @@ async fn goal_page_is_typed_ordered_and_graph_checked() {
 }
 
 #[tokio::test]
+async fn plan_page_is_typed_ordered_and_count_checked() {
+    let fixture = fixture();
+    let plan = serde_json::json!({
+        "api_version":"v1","plan_id":"plan-a","revision":1,"state":"running",
+        "definition_digest":"a".repeat(64),"goal_id":"goal-a","goal_revision":2,
+        "state_version":4,"steps_total":3,"steps_ready":1,"steps_active":1,
+        "steps_completed":1,"steps_failed":0,"total_attempts":2
+    });
+    let valid = serde_json::json!({
+        "api_version":"v1","session_id":"session-plans","plans":[plan.clone()],
+        "session_version":4,"observed_max_position":4
+    });
+    let mut invalid_plan = plan;
+    invalid_plan["steps_failed"] = serde_json::json!(2);
+    let invalid = serde_json::json!({
+        "api_version":"v1","session_id":"session-plans","plans":[invalid_plan],
+        "session_version":4,"observed_max_position":4
+    });
+    let requests = Arc::new(Mutex::new(Vec::new()));
+    let (base_url, server) = serve(
+        vec![
+            http_json(200, &valid.to_string()),
+            http_json(200, &invalid.to_string()),
+        ],
+        Arc::clone(&requests),
+    )
+    .await;
+    let client = LiveHostClient::new(&base_url, limits(&fixture)).expect("client");
+
+    let page = client.get_plans("session-plans").await.expect("plans");
+    assert_eq!(page.plans[0].state, "running");
+    assert_eq!(
+        client.get_plans("session-plans").await.unwrap_err().code,
+        HostClientErrorCode::InvalidEvent
+    );
+    server.await.expect("server task");
+    assert!(
+        requests.lock().await[0].starts_with("GET /v1/sessions/session-plans/plans HTTP/1.1\r\n")
+    );
+}
+
+#[tokio::test]
 async fn live_delta_accepts_max_raw_text_after_json_escaping() {
     let fixture = fixture();
     let text = "\0".repeat(32 * 1_024);

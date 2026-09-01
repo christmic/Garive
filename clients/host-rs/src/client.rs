@@ -11,8 +11,9 @@ use tokio::time::{timeout, Duration};
 use crate::{
     reduce_host_events, reducer::validate_activity, AgentDefinitionPage, ClientLimits,
     CreateSessionResponse, GoalPage, GoalSummary, HostClientError, HostClientErrorCode, HostEvent,
-    HostView, LiveOutputEndReason, LiveOutputEvent, LiveOutputEventKind, SessionPage,
-    SessionSummary, SessionView, SuspensionView, TurnCommandResponse, TurnTimelinePage,
+    HostView, LiveOutputEndReason, LiveOutputEvent, LiveOutputEventKind, PlanPage, PlanSummary,
+    SessionPage, SessionSummary, SessionView, SuspensionView, TurnCommandResponse,
+    TurnTimelinePage,
 };
 
 const KNOWN_HOST_ERRORS: [&str; 8] = [
@@ -156,6 +157,19 @@ impl LiveHostClient {
         let path = format!("v1/sessions/{}/goals", encode_segment(session_id));
         let page: GoalPage = decode(self.get(&path).await?)?;
         if !valid_goal_page(&page, session_id, self.limits.max_events) {
+            return Err(invalid_event());
+        }
+        Ok(page)
+    }
+
+    /// Reads the complete bounded Plan graph at one durable Session watermark.
+    pub async fn get_plans(&self, session_id: &str) -> Result<PlanPage, HostClientError> {
+        if session_id.is_empty() {
+            return Err(HostClientError::new(HostClientErrorCode::InvalidCommand));
+        }
+        let path = format!("v1/sessions/{}/plans", encode_segment(session_id));
+        let page: PlanPage = decode(self.get(&path).await?)?;
+        if !valid_plan_page(&page, session_id, self.limits.max_events) {
             return Err(invalid_event());
         }
         Ok(page)
@@ -937,6 +951,48 @@ fn valid_goal(goal: &GoalSummary) -> bool {
         })
         && u64::from(goal.attempt_number) <= goal.revision
         && terminal_evidence_valid
+}
+
+fn valid_plan_page(page: &PlanPage, session_id: &str, max_plans: usize) -> bool {
+    page.api_version == "v1"
+        && page.session_id == session_id
+        && page.session_version > 0
+        && page.observed_max_position > 0
+        && page.plans.len() <= max_plans
+        && !page.plans.windows(2).any(|pair| {
+            (&pair[0].plan_id, pair[0].revision) >= (&pair[1].plan_id, pair[1].revision)
+        })
+        && page.plans.iter().all(valid_plan)
+}
+
+fn valid_plan(plan: &PlanSummary) -> bool {
+    let classified = plan
+        .steps_ready
+        .checked_add(plan.steps_active)
+        .and_then(|value| value.checked_add(plan.steps_completed))
+        .and_then(|value| value.checked_add(plan.steps_failed));
+    plan.api_version == "v1"
+        && !plan.plan_id.is_empty()
+        && plan.plan_id.len() <= 256
+        && plan.revision > 0
+        && matches!(
+            plan.state.as_str(),
+            "proposed"
+                | "adopted"
+                | "running"
+                | "suspended"
+                | "completed"
+                | "failed"
+                | "superseded"
+                | "rejected"
+        )
+        && valid_digest(&plan.definition_digest)
+        && !plan.goal_id.is_empty()
+        && plan.goal_id.len() <= 256
+        && plan.goal_revision > 0
+        && plan.state_version > 0
+        && plan.steps_total > 0
+        && classified.is_some_and(|value| value <= plan.steps_total)
 }
 
 fn valid_state(value: &str) -> bool {

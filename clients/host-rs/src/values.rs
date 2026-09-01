@@ -300,6 +300,54 @@ pub struct GoalPage {
     pub observed_max_position: u64,
 }
 
+/// One bounded redacted durable Plan revision projection.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
+pub struct PlanSummary {
+    /// Exact Host API version.
+    pub api_version: String,
+    /// Stable Plan identity.
+    pub plan_id: String,
+    /// Immutable Plan revision.
+    pub revision: u64,
+    /// Stable public lifecycle state.
+    pub state: String,
+    /// Lowercase SHA-256 of the private definition.
+    pub definition_digest: String,
+    /// Bound Goal identity.
+    pub goal_id: String,
+    /// Bound Goal revision.
+    pub goal_revision: u64,
+    /// Contiguous mutable Plan state version.
+    pub state_version: u64,
+    /// Total declared steps.
+    pub steps_total: u32,
+    /// Steps currently ready to claim.
+    pub steps_ready: u32,
+    /// Claimed, running or suspended steps.
+    pub steps_active: u32,
+    /// Verified completed steps.
+    pub steps_completed: u32,
+    /// Steps whose latest attempt failed.
+    pub steps_failed: u32,
+    /// Total attempts started across the revision.
+    pub total_attempts: u32,
+}
+
+/// Complete bounded Plan revision page at one Session watermark.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
+pub struct PlanPage {
+    /// Exact Host API version.
+    pub api_version: String,
+    /// Owning Session identity.
+    pub session_id: String,
+    /// Plan revisions in stable identity then revision order.
+    pub plans: Vec<PlanSummary>,
+    /// Session version used for optimistic commands.
+    pub session_version: u64,
+    /// Highest durable position included in this response.
+    pub observed_max_position: u64,
+}
+
 /// Restart-safe coordinates and public schemas for one suspension.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
 pub struct SuspensionView {

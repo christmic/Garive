@@ -12,7 +12,7 @@ pub use reducer::reduce_host_events;
 pub use values::{
     AgentDefinitionPage, AgentDefinitionSummary, ClientLimits, CreateSessionResponse, GoalPage,
     GoalSummary, HostActivity, HostClientError, HostClientErrorCode, HostEvent, HostTerminal,
-    HostView, LiveOutputEndReason, LiveOutputEvent, LiveOutputEventKind, SessionPage,
-    SessionSummary, SessionView, SuspensionView, TurnCommandResponse, TurnTimelineItem,
-    TurnTimelinePage, HOST_CLIENT_FAILURES,
+    HostView, LiveOutputEndReason, LiveOutputEvent, LiveOutputEventKind, PlanPage, PlanSummary,
+    SessionPage, SessionSummary, SessionView, SuspensionView, TurnCommandResponse,
+    TurnTimelineItem, TurnTimelinePage, HOST_CLIENT_FAILURES,
 };
