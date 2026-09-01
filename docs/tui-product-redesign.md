@@ -173,8 +173,8 @@ the Ledger.
 
 | Width | Composition |
 |---:|---|
-| `>= 120` | centered transcript plus optional 32-column inspector |
-| `80..119` | centered transcript; inspector becomes overlay |
+| `>= 129` | 96-column transcript plus gap and optional 32-column inspector |
+| `80..128` | centered transcript; inspector becomes overlay |
 | `52..79` | full-width transcript; metadata collapses to compact labels |
 | `40..51` | linear transcript; activity summary and single-line hint |
 | `< 40` | explicit minimum-size view; composer draft remains recoverable |

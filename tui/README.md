@@ -57,7 +57,8 @@ Useful launch options:
   viewport; new durable or live updates do not steal it, and `End` resumes
   latest-follow. `/jump [filter]` opens the bounded public Turn navigator.
 - `/inspect [activity|recovery|details|close]` opens the safe Inspector. At
-  120 columns and wider it shares the surface without widening the answer;
+  129 columns and wider it shares the surface without narrowing the 96-column
+  answer; 120–128 columns retain that answer measure and use an overlay;
   narrower terminals use the same projection in an overlay.
 - `/help` lists commands. `/retry` repeats the exact persisted command identity;
   `/copy last`, `/copy selection`, and `/copy session-id` use a bounded OSC 52

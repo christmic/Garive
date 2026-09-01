@@ -77,8 +77,8 @@ frames.
 | `<40` | minimum | safe minimum-size view; no raw IDs or content echo; the draft remains in memory |
 | `40..=51` | linear | full-width transcript, collapsed activity summary, and at most one hint |
 | `52..=79` | compact | full-width transcript with compact metadata; all secondary surfaces are overlays |
-| `80..=119` | standard | centered bounded transcript; Session and Inspector surfaces are overlays |
-| `>=120` | wide | centered bounded transcript plus an optional explicit 32-column Inspector |
+| `80..=128` | standard | centered bounded transcript; Session and Inspector surfaces are overlays |
+| `>=129` | wide | 96-column transcript, one-cell gap, and optional explicit 32-column Inspector |
 
 Height below eight rows shows a safe minimum-size view. Height pressure removes
 ambient context, secondary hints, and collapsed history before reducing the
@@ -389,9 +389,9 @@ discoverable with that reason.
 safe recovery entry exists, otherwise Activity when public activity exists,
 otherwise Details. Only the open/closed bit is persisted. Variant, selection,
 and visible window are transient; selection is retained by stable internal
-entry identity across resize. At `>=120` cells an open Inspector is a bordered
+entry identity across resize. At `>=129` cells an open Inspector is a bordered
 32-column region, including its border, beside a transcript whose measure is
-at most 96 cells. At `40..=119` it is the top-level bounded overlay. Below 40
+at most 96 cells. At `40..=128` it is the top-level bounded overlay. Below 40
 cells it remains open in model state but the minimum-size view takes priority.
 
 Activity contains only H3 public labels and states. Recovery contains only
@@ -634,12 +634,18 @@ no cursor-addressed popup.
 ### Activity and suspension
 
 H3 public activities project into the owning Turn's `ActivityStack`. The active
-safe activity occupies one row. Completed siblings collapse into one summary
-such as `3 actions · 8s` and expand only through an explicit Inspector or
+safe activity occupies one row. The latest completed safe label remains
+legible; older completed siblings collapse into a supplemental count and
+expand only through an explicit Inspector or
 transcript action. Unknown activity kinds use `Activity updated` and cannot
 mutate Turn state. Default activity copy omits durable positions. Tool
 arguments, raw paths, hidden reasoning, provider values, and internal facts are
 absent.
+Presentation consumes the admitted H3 `label_key` and state rather than
+discarding them into one generic phrase. The currently admitted
+`agent.activity.read_file` lifecycle renders `Reading file` while running and
+`Read file` after completion. Unknown keys remain a generic safe action; the
+client never guesses tool semantics from payload text.
 
 An admitted H2 suspension overlay renders only the public title/message and
 response schema. The current native controls cover strictly admitted strings,
