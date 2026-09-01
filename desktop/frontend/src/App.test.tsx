@@ -37,6 +37,8 @@ vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn(async (command: string, a
       committed_position: 1 };
     case "get_product_timeline": return { api_version: "v1", session_id: "session-1", items: [],
       scanned_through_position: 1, observed_max_position: 1, has_more: false };
+    case "get_product_goals": return { api_version: "v1", session_id: "session-1", goals: [],
+      session_version: 1, observed_max_position: 1 };
     case "start_product_turn": return { session_id: "session-1", turn_id: "turn-1",
       execution_id: "execution-1", committed_position: 4 };
     case "get_session_events": return { events: [{ api_version: "v1", session_id: "session-1",
@@ -52,7 +54,7 @@ vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn(async (command: string, a
   }
 }) }));
 
-import { App, CommittedActivity, TurnActivityDisclosure, TurnProgress, UserMessage,
+import { App, CommittedActivity, selectDisplayedGoal, TurnActivityDisclosure, TurnProgress, UserMessage,
   WorkspaceLoading } from "./App";
 import { createTranslator } from "./i18n";
 import type { WorkState } from "./state/workspace";
@@ -60,6 +62,16 @@ import type { WorkState } from "./state/workspace";
 afterEach(cleanup);
 
 describe("Desktop product experience", () => {
+  it("selects the most specific actionable Goal from the durable graph", () => {
+    const base = { api_version: "v1" as const, revision: 1, state: "active" as const,
+      definition_digest: "a".repeat(64), objective_truncated: false, attempt_number: 1,
+      criteria_total: 1, criteria_satisfied: 0 };
+    const parent = { ...base, goal_id: "goal-parent", objective: "Ship the product" };
+    const child = { ...base, goal_id: "goal-child", parent_goal_id: "goal-parent",
+      objective: "Verify the desktop" };
+    expect(selectDisplayedGoal([parent, child])?.goal_id).toBe("goal-child");
+  });
+
   beforeEach(() => {
     commands.length = 0; storedPending = null; configured = true; artifactItems = [];
     completedText = "Durable product answer";
@@ -476,7 +488,9 @@ describe("Desktop product experience", () => {
   it("renders progressive work from admitted Activity instead of invented stages", () => {
     const open = vi.fn();
     const view = render(<TurnProgress t={createTranslator("en")} onOpen={open}
-      goal="Prepare the launch decision memo" activities={[{
+      goal={{ api_version: "v1", goal_id: "goal-1", revision: 2, state: "active",
+        definition_digest: "a".repeat(64), objective: "Prepare the launch decision memo",
+        objective_truncated: false, attempt_number: 1, criteria_total: 3, criteria_satisfied: 1 }} activities={[{
       api_version: "v1", activity_id: "read-1", kind: "tool",
       label_key: "agent.activity.read_file", state: "completed", source_position: 4,
       terminal: true,
@@ -486,13 +500,14 @@ describe("Desktop product experience", () => {
     }]} />);
     expect(screen.getByText("Pursuing goal")).toBeTruthy();
     expect(screen.getByText("Prepare the launch decision memo")).toBeTruthy();
+    expect(screen.getByText("1 / 3 criteria")).toBeTruthy();
     const rail = view.container.querySelector(".turn-progress");
     expect(rail?.getAttribute("data-composer-rail-item")).toBe("present");
     expect(rail?.getAttribute("data-composer-rail-placement")).toBe("above");
     expect(rail?.getAttribute("data-composer-rail-variant")).toBe("controls");
     expect(screen.getByText("Read scoped file")).toBeTruthy();
     expect(screen.getByText("Write scoped file")).toBeTruthy();
-    expect(view.container.querySelector(".progress-state")).toBeNull();
+    expect(view.container.querySelector(".progress-state")?.textContent).toBe("1 / 3 criteria");
     expect(view.container.querySelector(".sr-only")?.textContent).toContain("Running");
     fireEvent.click(screen.getByRole("button", { name: "Open activity" }));
     expect(open).toHaveBeenCalledOnce();
@@ -539,7 +554,10 @@ describe("Desktop product experience", () => {
 
   it("keeps the goal rail visible when durable work needs input", () => {
     const view = render(<TurnProgress t={createTranslator("en")} onOpen={() => undefined}
-      goal="Prepare the launch decision memo" status="Needs input" activities={[]} />);
+      goal={{ api_version: "v1", goal_id: "goal-1", revision: 3, state: "suspended",
+        definition_digest: "a".repeat(64), objective: "Prepare the launch decision memo",
+        objective_truncated: false, attempt_number: 1, criteria_total: 3, criteria_satisfied: 1 }}
+      status="Needs input" activities={[]} />);
     expect(view.container.querySelector(".turn-progress.attention")).not.toBeNull();
     expect(view.container.querySelector(".progress-state")?.textContent).toBe("Needs input");
     expect(screen.getByText("Prepare the launch decision memo")).toBeTruthy();
@@ -550,7 +568,7 @@ describe("Desktop product experience", () => {
       capabilities: { configured: true, agent_definition_id: "definition-main", multi_turn: true,
         durable_navigation: true, activity: true, setup: false, workspaces: true,
         artifacts: true, updater: false }, sessionId: "session-1", messages: [], artifacts: [],
-      activities: [{ api_version: "v1", activity_id: "write-1", kind: "tool",
+      goals: [], activities: [{ api_version: "v1", activity_id: "write-1", kind: "tool",
         label_key: "agent.activity.write_file", state: "running", source_position: 7,
         terminal: false }], workspaces: [{ api_version: "v1", session_id: "session-1",
         workspace_id: "workspace-1", display_name: "Launch materials", grant_revision: 2,

@@ -82,6 +82,8 @@ pub use desktop_menu::{
 pub use garive_runtime::AgentDefinitionPageV1 as DesktopDefinitionPage;
 /// Exact durable Session command receipt exposed to Desktop clients.
 pub use garive_runtime::CreateSessionResponse as DesktopCreateSessionReceipt;
+/// Bounded verified Goal projection exposed to product clients.
+pub use garive_runtime::GoalPageV1 as DesktopGoalPage;
 /// Immutable committed Artifact projection exposed to Desktop clients.
 pub use garive_runtime::HostArtifact as DesktopArtifact;
 /// Bounded committed Artifact page exposed to Desktop clients.
@@ -578,6 +580,13 @@ impl DesktopHost {
     ) -> Result<DesktopProductTimelinePage, DesktopHostError> {
         self.host
             .get_timeline(session_id, after_position, limit)
+            .map_err(|_| DesktopHostError::ProjectionFailure)
+    }
+
+    /// Reads the verified Goal graph at one Session watermark.
+    pub fn goals(&self, session_id: &str) -> Result<DesktopGoalPage, DesktopHostError> {
+        self.host
+            .get_goals(session_id)
             .map_err(|_| DesktopHostError::ProjectionFailure)
     }
 
@@ -1270,6 +1279,11 @@ impl DesktopState {
     ) -> Result<DesktopProductTimelinePage, DesktopHostError> {
         self.installed_host()?
             .product_timeline(session_id, after_position, limit)
+    }
+
+    /// Reads the verified Goal graph for one installed Session.
+    pub fn goals(&self, session_id: &str) -> Result<DesktopGoalPage, DesktopHostError> {
+        self.installed_host()?.goals(session_id)
     }
 
     /// Subscribes to one installed Session's bounded ephemeral output.

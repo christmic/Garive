@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   cancelProductTurn, createProductSession, getProductDefinitions, getProductEvents,
-  getProductSessions, getProductTimeline, startProductTurn, continueProductApproval,
+  getProductGoals, getProductSessions, getProductTimeline, startProductTurn, continueProductApproval,
   startProductTurnWithWorkspaceContext,
 } from "./productHost";
 
@@ -12,13 +12,17 @@ describe("product Host IPC", () => {
       calls.push(command);
       if (command === "get_agent_definitions") return { api_version: "v1", definitions: [] } as T;
       if (command === "get_product_sessions") return { api_version: "v1", sessions: [] } as T;
+      if (command === "get_product_goals") return { api_version: "v1", session_id: "session-1",
+        goals: [], session_version: 1, observed_max_position: 0 } as T;
       return { api_version: "v1", session_id: "session-1", items: [],
         scanned_through_position: 0, observed_max_position: 0, has_more: false } as T;
     };
     expect((await getProductDefinitions(invoke)).definitions).toEqual([]);
     expect((await getProductSessions(invoke)).sessions).toEqual([]);
     expect((await getProductTimeline("session-1", 0, invoke)).items).toEqual([]);
-    expect(calls).toEqual(["get_agent_definitions", "get_product_sessions", "get_product_timeline"]);
+    expect((await getProductGoals("session-1", invoke)).goals).toEqual([]);
+    expect(calls).toEqual(["get_agent_definitions", "get_product_sessions", "get_product_timeline",
+      "get_product_goals"]);
   });
 
   it("binds every mutation to caller-owned exact coordinates", async () => {

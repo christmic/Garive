@@ -47,6 +47,7 @@
     "allow-get-agent-definitions",
     "allow-get-product-sessions",
     "allow-get-product-timeline",
+    "allow-get-product-goals",
     "allow-create-product-session",
     "allow-start-product-turn",
     "allow-start-product-turn-with-workspace-context",

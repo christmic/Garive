@@ -641,6 +641,16 @@ fn get_product_timeline(
 }
 
 #[tauri::command]
+fn get_product_goals(
+    state: tauri::State<'_, garive_desktop::DesktopState>,
+    session_id: String,
+) -> Result<garive_desktop::DesktopGoalPage, String> {
+    state
+        .goals(&session_id)
+        .map_err(|error| error.code().to_owned())
+}
+
+#[tauri::command]
 fn create_product_session(
     state: tauri::State<'_, garive_desktop::DesktopState>,
     command_id: String,
@@ -930,6 +940,7 @@ fn main() {
             get_agent_definitions,
             get_product_sessions,
             get_product_timeline,
+            get_product_goals,
             create_product_session,
             start_product_turn,
             start_product_turn_with_workspace_context,

@@ -40,6 +40,7 @@ fn main() {
             "get_agent_definitions",
             "get_product_sessions",
             "get_product_timeline",
+            "get_product_goals",
             "create_product_session",
             "start_product_turn",
             "start_product_turn_with_workspace_context",

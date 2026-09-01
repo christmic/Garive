@@ -1340,6 +1340,34 @@ one semantic heading, the quiet composer and three adjacent starters. At
 480×720 selecting a starter focuses the composer, removes the starter surface
 and leaves the send action reachable without horizontal overflow.
 
+### XLV. Goal rail is a durable projection, not chat inference
+
+Installed Codex `app-initial-B6Gk5KCN.js` defines the Composer-adjacent Goal
+summary as a status label plus objective and a trailing factual measure. Its
+states include `Pursuing goal`, paused, stalled, usage-limited, budget-limited
+and achieved. The trailing value selects token usage when a budget exists and
+otherwise uses elapsed time. The shared Composer-rail implementation in the
+same bundle owns presence/exiting state, above/below placement, overlap, tuck,
+border and reduced-motion behavior. These are direct source facts.
+
+Garive already used the same visual rail grammar but derived its displayed
+“goal” from the latest user message. That was a presentation inference, not a
+Runtime fact. The Desktop Host now exposes the existing bounded `GoalPageV1`
+through one main-window-only Tauri command. The shared client strictly decodes
+Goal state, objective, revision and verified criteria counts, scopes the page
+to the selected Session, and stores it beside Artifact and Workspace
+projections. Each optional projection commits independently so a failed Goal
+read cannot suppress a successful Artifact or Workspace read.
+
+The rail selects only an active or suspended durable Goal. It displays the
+Host objective and verified `{satisfied} / {total}` criteria progress; a
+suspended Goal uses the paused treatment. Sessions without a Goal fall back to
+neutral `Working` and Runtime activity copy. Garive deliberately does not copy
+Codex's elapsed-time or token display because `GoalPageV1` does not expose
+those facts. The 1280×800 running fixture proves the compact source-shaped rail
+with one active Goal and `1 / 3 criteria`; the narrow fixture verifies the same
+facts without clipping the Composer controls.
+
 ## Gate 1 — Codex fidelity
 
 This gate passes only when both Desktop and Web show:

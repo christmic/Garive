@@ -1,4 +1,4 @@
-import type { DesktopCapabilities, HostActivity, HostArtifact, HostArtifactPage, HostResult, HostSuspension, HostTimelinePage, WorkspaceAttachment } from "../ipc/host";
+import type { DesktopCapabilities, HostActivity, HostArtifact, HostArtifactPage, HostGoalPage, HostGoalSummary, HostResult, HostSuspension, HostTimelinePage, WorkspaceAttachment } from "../ipc/host";
 import type { ActivityItem, AppViewState } from "./controller";
 
 export type BootState = "loading" | "ready" | "unavailable";
@@ -22,6 +22,7 @@ export interface WorkState {
   readonly sessionId?: string;
   readonly messages: readonly WorkMessage[];
   readonly activities: readonly HostActivity[];
+  readonly goals: readonly HostGoalSummary[];
   readonly artifacts: readonly HostArtifact[];
   readonly workspaces: readonly WorkspaceAttachment[];
   readonly livePreview?: AppViewState["livePreview"];
@@ -41,6 +42,7 @@ export type WorkEvent =
   | { readonly type: "session_loaded"; readonly timeline: HostTimelinePage }
   | { readonly type: "product_projected"; readonly view: AppViewState }
   | { readonly type: "artifacts_loaded"; readonly page: HostArtifactPage }
+  | { readonly type: "goals_loaded"; readonly page: HostGoalPage }
   | { readonly type: "workspaces_loaded"; readonly sessionId: string;
     readonly workspaces: readonly WorkspaceAttachment[] }
   | { readonly type: "new_work" }
@@ -54,6 +56,7 @@ export const initialWorkState: WorkState = {
   execution: "idle",
   messages: [],
   activities: [],
+  goals: [],
   artifacts: [],
   workspaces: [],
   livePreview: undefined,
@@ -104,6 +107,7 @@ export function reduceWork(state: WorkState, event: WorkEvent): WorkState {
         sessionId: event.timeline.session_id,
         messages: timelineMessages(event.timeline),
         activities: event.timeline.items.flatMap((item) => item.activities),
+        goals: [],
         artifacts: [],
         workspaces: [],
         livePreview: undefined,
@@ -115,6 +119,10 @@ export function reduceWork(state: WorkState, event: WorkEvent): WorkState {
     case "artifacts_loaded":
       return event.page.session_id === state.sessionId
         ? { ...state, artifacts: event.page.items }
+        : state;
+    case "goals_loaded":
+      return event.page.session_id === state.sessionId
+        ? { ...state, goals: event.page.goals }
         : state;
     case "workspaces_loaded":
       return event.sessionId === state.sessionId
@@ -149,7 +157,8 @@ function projectProduct(state: WorkState, view: AppViewState): WorkState {
     execution: view.execution,
     sessionId, draft, messages: productMessages(view), livePreview: view.livePreview,
     activities: projectActivities(view.activities),
-    artifacts: sameSession ? state.artifacts : [], workspaces: sameSession ? state.workspaces : [],
+    artifacts: sameSession ? state.artifacts : [], goals: sameSession ? state.goals : [],
+    workspaces: sameSession ? state.workspaces : [],
     error: view.notice?.code };
 }
 

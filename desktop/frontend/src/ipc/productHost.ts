@@ -2,8 +2,8 @@ import { Channel, invoke as tauriInvoke } from "@tauri-apps/api/core";
 import type { LiveOutputItem } from "../state/controller";
 import { decodeLiveOutput } from "../state/liveOutput";
 import {
-  decodeHostDefinitionPage, decodeHostEvent, decodeHostSessionPage, decodeHostTimelinePage,
-  type HostDefinitionPage, type HostEvent, type HostSessionPage, type HostTimelinePage, type Invoke,
+  decodeHostDefinitionPage, decodeHostEvent, decodeHostGoalPage, decodeHostSessionPage, decodeHostTimelinePage,
+  type HostDefinitionPage, type HostEvent, type HostGoalPage, type HostSessionPage, type HostTimelinePage, type Invoke,
 } from "./host";
 
 export interface CreateSessionReceipt {
@@ -35,6 +35,15 @@ export async function getProductTimeline(
   return decodeHostTimelinePage(await invoke<unknown>("get_product_timeline", {
     sessionId, afterPosition: safePosition(afterPosition), limit: 64,
   }));
+}
+
+export async function getProductGoals(
+  sessionId: string, invoke: Invoke = tauriInvoke,
+): Promise<HostGoalPage> {
+  required(sessionId);
+  const page = decodeHostGoalPage(await invoke<unknown>("get_product_goals", { sessionId }));
+  if (page.session_id !== sessionId) invalid();
+  return page;
 }
 
 export async function getProductEvents(

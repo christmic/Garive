@@ -89,6 +89,21 @@ describe("Desktop work state", () => {
       .toEqual(["activity-1"]);
   });
 
+  it("admits Goal progress only from the matching durable Session projection", () => {
+    const loaded = reduceWork(initialWorkState, { type: "session_loaded", timeline: {
+      api_version: "v1", session_id: "session-1", scanned_through_position: 1,
+      observed_max_position: 1, has_more: false, items: [] } });
+    const page = { api_version: "v1" as const, session_id: "session-1", session_version: 3,
+      observed_max_position: 7, goals: [{ api_version: "v1" as const, goal_id: "goal-1",
+        revision: 2, state: "active" as const, definition_digest: "a".repeat(64),
+        objective: "Deliver the desktop", objective_truncated: false, attempt_number: 1,
+        criteria_total: 3, criteria_satisfied: 1 }] };
+    const stale = reduceWork(loaded, { type: "goals_loaded", page: { ...page,
+      session_id: "session-old" } });
+    expect(stale.goals).toEqual([]);
+    expect(reduceWork(loaded, { type: "goals_loaded", page }).goals).toEqual(page.goals);
+  });
+
   it("admits Artifact projections only for the currently loaded Session", () => {
     const loaded = reduceWork(initialWorkState, { type: "session_loaded", timeline: {
       api_version: "v1", session_id: "session-1", scanned_through_position: 1,

@@ -8,9 +8,22 @@ import {
   commitArtifactExport, getArtifactPreview, listAllArtifacts, listArtifacts, prepareArtifactExport,
   reauthorizeWorkspace, resolveTurnApproval, revokeWorkspace,
   runAgentTurn, runAgentTurnWithWorkspaceContext, setDesktopMenuLocale, verifyWorkspace,
+  decodeHostGoalPage,
 } from "./host";
 
 describe("desktop Host IPC", () => {
+  it("decodes one bounded durable Goal projection without private definition fields", () => {
+    const page = decodeHostGoalPage({ api_version: "v1", session_id: "session-1",
+      session_version: 7, observed_max_position: 12, goals: [{ api_version: "v1",
+        goal_id: "goal-1", revision: 2, state: "active", definition_digest: "a".repeat(64),
+        objective: "Ship the desktop client", objective_truncated: false, attempt_number: 1,
+        criteria_total: 3, criteria_satisfied: 1 }] });
+    expect(page.goals[0]).toMatchObject({ objective: "Ship the desktop client",
+      state: "active", criteria_satisfied: 1 });
+    expect(() => decodeHostGoalPage({ ...page, goals: [{ ...page.goals[0], state: "working" }] }))
+      .toThrow("invalid_host_value");
+  });
+
   it("synchronizes only a resolved data-free native menu locale", async () => {
     const calls: Array<{ command: string; args: Record<string, unknown> }> = [];
     await setDesktopMenuLocale("zh-Hans", async <T>(

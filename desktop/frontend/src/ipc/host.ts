@@ -54,6 +54,20 @@ export interface HostSessionPage {
   readonly api_version: "v1"; readonly sessions: readonly HostSessionSummary[]; readonly next_before?: string;
 }
 
+export type HostGoalState = "draft" | "active" | "suspended" | "succeeded" | "failed" | "cancelled";
+/** One bounded, redacted Goal reconstructed from the durable ledger. */
+export interface HostGoalSummary {
+  readonly api_version: "v1"; readonly goal_id: string; readonly revision: number;
+  readonly state: HostGoalState; readonly definition_digest: string; readonly objective: string;
+  readonly objective_truncated: boolean; readonly parent_goal_id?: string;
+  readonly attempt_number: number; readonly criteria_total: number; readonly criteria_satisfied: number;
+}
+/** Complete Goal graph at one verified Session watermark. */
+export interface HostGoalPage {
+  readonly api_version: "v1"; readonly session_id: string; readonly goals: readonly HostGoalSummary[];
+  readonly session_version: number; readonly observed_max_position: number;
+}
+
 /** One public H1/H3 event; unknown event names remain strings. */
 export interface HostEvent {
   readonly api_version: "v1"; readonly session_id: string; readonly position: number;
@@ -161,6 +175,23 @@ export function decodeHostSessionPage(raw: unknown): HostSessionPage {
     }), next_before: optionalText(value.next_before) };
 }
 
+/** Strictly maps one untrusted durable Goal page. */
+export function decodeHostGoalPage(raw: unknown): HostGoalPage {
+  const value = object(raw); return { api_version: apiVersion(value.api_version),
+    session_id: text(value.session_id), goals: array(value.goals).map((rawGoal) => {
+      const goal = object(rawGoal); const criteriaTotal = position(goal.criteria_total);
+      const criteriaSatisfied = position(goal.criteria_satisfied);
+      if (criteriaSatisfied > criteriaTotal) throw new Error("invalid_host_value");
+      return { api_version: apiVersion(goal.api_version),
+        goal_id: text(goal.goal_id), revision: position(goal.revision), state: goalState(goal.state),
+        definition_digest: text(goal.definition_digest), objective: text(goal.objective),
+        objective_truncated: boolean(goal.objective_truncated),
+        parent_goal_id: optionalText(goal.parent_goal_id), attempt_number: position(goal.attempt_number),
+        criteria_total: criteriaTotal, criteria_satisfied: criteriaSatisfied };
+    }), session_version: position(value.session_version),
+    observed_max_position: position(value.observed_max_position) };
+}
+
 /** Strictly maps one untrusted H1/H3 event. */
 export function decodeHostEvent(raw: unknown): HostEvent {
   const value = object(raw); return { api_version: apiVersion(value.api_version), session_id: text(value.session_id),
@@ -227,6 +258,13 @@ function turnState(value: unknown): NonNullable<HostSessionSummary["latest_turn_
 }
 function optionalTurnState(value: unknown): HostSessionSummary["latest_turn_state"] {
   return value === undefined ? undefined : turnState(value);
+}
+function goalState(value: unknown): HostGoalState {
+  const parsed = text(value);
+  if (!["draft", "active", "suspended", "succeeded", "failed", "cancelled"].includes(parsed)) {
+    throw new Error("invalid_host_value");
+  }
+  return parsed as HostGoalState;
 }
 export interface SetupProfile {
   readonly profile_id: string; readonly display_name_key: string;

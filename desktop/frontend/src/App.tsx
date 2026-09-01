@@ -11,11 +11,11 @@ import {
   listWorkspaceAuthorizations, reauthorizeWorkspace,
   revokeWorkspace, setDesktopMenuLocale, commitArtifactExport,
   prepareArtifactExport, type ArtifactExportReceipt, type ArtifactPreview,
-  type HostActivity, type HostArtifact, type HostArtifactPage, type HostTimelinePage,
+  type HostActivity, type HostArtifact, type HostArtifactPage, type HostGoalSummary, type HostTimelinePage,
   type WorkspaceAuthorization,
   type WorkspaceAttachment, type WorkspaceEntry, type WorkspaceGrant, type WorkspaceRecoveryStatus,
 } from "./ipc/host";
-import { startProductTurnWithWorkspaceContext } from "./ipc/productHost";
+import { getProductGoals, startProductTurnWithWorkspaceContext } from "./ipc/productHost";
 import type { DesktopUpdateClient } from "./ipc/desktop-update";
 import { canSubmit, initialWorkState, reduceWork, type WorkState } from "./state/workspace";
 import type { DesktopUpdateState } from "./state/desktop-update";
@@ -304,11 +304,12 @@ export function App({ client = "desktop", webCapabilities, createProductPort,
   };
 
   const loadSessionExtras = useCallback(async (sessionId: string) => {
-    const [artifacts, workspaces] = await Promise.all([
-      listAllArtifacts(sessionId), getSessionWorkspaces(sessionId),
+    await Promise.all([
+      listAllArtifacts(sessionId).then((page) => dispatch({ type: "artifacts_loaded", page })),
+      getSessionWorkspaces(sessionId).then((workspaces) =>
+        dispatch({ type: "workspaces_loaded", sessionId, workspaces })),
+      getProductGoals(sessionId).then((page) => dispatch({ type: "goals_loaded", page })),
     ]);
-    dispatch({ type: "artifacts_loaded", page: artifacts });
-    dispatch({ type: "workspaces_loaded", sessionId, workspaces });
   }, []);
 
   useEffect(() => {
@@ -464,6 +465,12 @@ export function App({ client = "desktop", webCapabilities, createProductPort,
               activity_id: "draft-memo", kind: "tool", label_key: "agent.activity.write_file",
               state: "running", source_position: 9, terminal: false }] }],
         } });
+        dispatch({ type: "goals_loaded", page: { api_version: "v1", session_id: "visual-running",
+          session_version: 7, observed_max_position: 9, goals: [{ api_version: "v1",
+            goal_id: "visual-goal", revision: 2, state: "active", definition_digest: "a".repeat(64),
+            objective: "Compare the launch research and prepare a decision memo",
+            objective_truncated: false, attempt_number: 1, criteria_total: 3,
+            criteria_satisfied: 1 }] } });
         dispatch({ type: "submission_started" });
       }
       if (visualTestMode === "long-request") dispatch({ type: "session_loaded", timeline: {
@@ -1111,7 +1118,7 @@ function WorkSurface({ state, composer, submit, startSuggestion, dispatch, conte
 
   const disconnected = state.execution === "disconnected";
   const reconnecting = state.execution === "reconnecting";
-  const activeGoal = [...state.messages].reverse().find((message) => message.role === "user")?.text;
+  const activeGoal = selectDisplayedGoal(state.goals);
   return <section className={state.messages.length ? "work-surface" : "work-surface new-work-surface"}>
     <div ref={conversation} onScroll={readScrollPosition}
       onWheel={(event) => markUserScroll(event.deltaY < 0 ? "away"
@@ -1397,18 +1404,23 @@ function livePhaseCopy(key: string | undefined, t: (key: MessageKey) => string):
   return t(labels[key ?? ""] ?? "timeline.working");
 }
 
-export function TurnProgress({ goal, status, activities, onOpen, t }: { goal?: string; status?: string;
+export function TurnProgress({ goal, status, activities, onOpen, t }: { goal?: HostGoalSummary; status?: string;
   activities: WorkState["activities"];
   onOpen: () => void; t: (key: MessageKey) => string }) {
   const recent = activities.slice(-3);
   const current = [...recent].reverse().find((activity) => !activity.terminal) ?? recent.at(-1);
-  return <article className={status ? "turn-progress attention" : "turn-progress"}
+  const title = goal ? t(goal.state === "suspended" ? "timeline.progressPaused" : "timeline.progressTitle")
+    : t("timeline.progressWorking");
+  const criteria = goal && goal.criteria_total > 0
+    ? t("timeline.criteriaProgress").replace("{satisfied}", String(goal.criteria_satisfied))
+      .replace("{total}", String(goal.criteria_total)) : undefined;
+  return <article className={status || goal?.state === "suspended" ? "turn-progress attention" : "turn-progress"}
     data-composer-rail-item="present" data-composer-rail-placement="above"
     data-composer-rail-variant="controls"
     aria-label={t("timeline.progressTitle")}>
     <div className="turn-progress-head"><span className="live-pulse" aria-hidden="true"><span /></span><div className="progress-summary">
-      <strong>{t("timeline.progressTitle")}</strong><p>{goal || t("timeline.progressBody")}</p></div>
-      {status && <span className="progress-state">{status}</span>}
+      <strong>{title}</strong><p>{goal?.objective || t("timeline.progressBody")}</p></div>
+      {(status || criteria) && <span className="progress-state" aria-label={criteria}>{status || criteria}</span>}
       <Tooltip label={t("timeline.openActivity")} side="top" align="end"><button type="button" onClick={onOpen}
         aria-label={t("timeline.openActivity")}><Icon name="activity" /></button></Tooltip></div>
     {recent.length > 0 && <div className="sr-only">{recent.map((activity) =>
@@ -1416,6 +1428,12 @@ export function TurnProgress({ goal, status, activities, onOpen, t }: { goal?: s
         <strong>{activityLabel(activity.label_key, t)}</strong><small>{activityState(activity.state, t)}</small>
       </div>)}</div>}
   </article>;
+}
+
+export function selectDisplayedGoal(goals: readonly HostGoalSummary[]): HostGoalSummary | undefined {
+  const actionable = goals.filter((goal) => goal.state === "active" || goal.state === "suspended");
+  return actionable.find((goal) => !actionable.some((child) => child.parent_goal_id === goal.goal_id))
+    ?? actionable.at(-1);
 }
 
 function Inspector({ state, dispatch, onAddContext, canAddContext, workspaceSplitPx,
