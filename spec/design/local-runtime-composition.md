@@ -27,6 +27,7 @@ LocalReplicaConfig {
   model_target_id, deployment_id, recovery_policy_revision
   request/output/context limits
   worker_owner_id, execution_lease_duration_ms, dispatch_queue_capacity
+  optional constructed topology-only Plan proposal port
   optional constructed Plan admission policy
 }
 ```
@@ -39,6 +40,7 @@ configuration enter only through the constructed model port. R1 reads no
 process environment and performs no implicit config-file or credential-store
 lookup. Debug/error output contains stable codes and non-secret identities only.
 An absent Plan admission policy denies automatic proposal adoption.
+An absent Plan proposal port leaves a Goal at the explicit planning boundary.
 
 ## Commit and dispatch ordering
 

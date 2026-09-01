@@ -15,13 +15,14 @@ use garive_ledger::SessionId;
 use garive_llm::ModelPort;
 use garive_runtime::{
     advance_goal_plan_once, advance_goal_plan_with_admission_once, local_dispatch_queue,
-    CatalogueBoundGovernedExecutionFactory, CataloguePlanStepDispatchFactory,
-    GoalPlanAdvanceOutcome, GoalPlanCoordinationTick, HostClock, HostContinuationInput,
-    HostEventPage, HostWorkspaceContextEntry, LiveHost, LiveHostEvent, LiveHostLimits,
-    LiveOutputHub, LiveOutputLimits, LiveOutputSubscriber, LocalCapabilityPreparationFactory,
-    LocalDispatchQueue, LocalExecutionAttempt, LocalExecutionPolicy, LocalExecutionWorker,
-    LocalGovernedExecutionFactory, LocalTurnDispatcher, PlanAdmissionPolicy, PlanDispatchOutcome,
-    PlanDispatchTick, RuntimeAgentCatalogue, SqliteLedger,
+    propose_initial_goal_plan_once, CatalogueBoundGovernedExecutionFactory,
+    CataloguePlanStepDispatchFactory, GoalPlanAdvanceOutcome, GoalPlanCoordinationTick, HostClock,
+    HostContinuationInput, HostEventPage, HostWorkspaceContextEntry, LiveHost, LiveHostEvent,
+    LiveHostLimits, LiveOutputHub, LiveOutputLimits, LiveOutputSubscriber,
+    LocalCapabilityPreparationFactory, LocalDispatchQueue, LocalExecutionAttempt,
+    LocalExecutionPolicy, LocalExecutionWorker, LocalGovernedExecutionFactory, LocalTurnDispatcher,
+    PlanAdmissionPolicy, PlanDispatchOutcome, PlanDispatchTick, PlanProposalPort,
+    RuntimeAgentCatalogue, SqliteLedger,
 };
 use serde::Serialize;
 use tokio::sync::Mutex;
@@ -170,6 +171,8 @@ pub struct DesktopHostConfig {
     pub model: Arc<dyn ModelPort>,
     /// Optional explicit Plan admission policy; absence denies automatic adoption.
     pub plan_admission_policy: Option<Arc<dyn PlanAdmissionPolicy>>,
+    /// Optional topology-only Plan proposer; absence leaves Goals awaiting planning.
+    pub plan_proposal_port: Option<Arc<dyn PlanProposalPort>>,
     /// Backend-owned command, lease and execution clock source.
     pub operations: Arc<dyn DesktopOperations>,
 }
@@ -283,6 +286,7 @@ pub struct DesktopHost {
     queue: Mutex<LocalDispatchQueue>,
     operations: Arc<dyn DesktopOperations>,
     plan_admission_policy: Option<Arc<dyn PlanAdmissionPolicy>>,
+    plan_proposal_port: Option<Arc<dyn PlanProposalPort>>,
     startup_recovery_pending: AtomicBool,
 }
 
@@ -397,6 +401,7 @@ impl DesktopHost {
             queue: Mutex::new(queue),
             operations: config.operations,
             plan_admission_policy: config.plan_admission_policy,
+            plan_proposal_port: config.plan_proposal_port,
             startup_recovery_pending: AtomicBool::new(startup_recovery_pending),
         })
     }
@@ -671,7 +676,7 @@ impl DesktopHost {
                 self.database_path.clone(),
                 self.agent_catalogue.clone(),
             );
-            let outcome = match self.plan_admission_policy.as_deref() {
+            let mut outcome = match self.plan_admission_policy.as_deref() {
                 Some(policy) => advance_goal_plan_with_admission_once(
                     &mut ledger,
                     &session,
@@ -693,6 +698,29 @@ impl DesktopHost {
             .map_err(|_| DesktopHostError::ExecutionFailure)?;
             advances += 1;
             drop(ledger);
+
+            if matches!(
+                &outcome,
+                GoalPlanAdvanceOutcome::AwaitingPolicy(
+                    garive_runtime::GoalPlanDecision::ProposePlan
+                )
+            ) {
+                if let Some(port) = self.plan_proposal_port.as_deref() {
+                    propose_initial_goal_plan_once(
+                        &self.database_path,
+                        &session,
+                        goal_id,
+                        &attempt.recorded_at,
+                        self.agent_catalogue.clone(),
+                        port,
+                    )
+                    .await
+                    .map_err(|_| DesktopHostError::ExecutionFailure)?;
+                    outcome = GoalPlanAdvanceOutcome::Committed(
+                        garive_runtime::GoalPlanDecision::ProposePlan,
+                    );
+                }
+            }
 
             if matches!(
                 &outcome,

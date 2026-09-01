@@ -1,13 +1,12 @@
+#[cfg(unix)]
+use std::{fs, os::unix::fs::PermissionsExt};
 use std::{
-    collections::BTreeSet,
     path::Path,
     sync::{
         atomic::{AtomicU64, Ordering},
         Arc,
     },
 };
-#[cfg(unix)]
-use std::{fs, os::unix::fs::PermissionsExt};
 
 use garive_core::{
     MissingUsagePolicy, ModelRecoveryPolicy, OutputLimitAction, TerminalRecoveryAction,
@@ -28,16 +27,16 @@ use garive_llm::{
     ModelRequest, ModelStopReason, ModelStreamEvent, ModelUsage, ObserverDecision, TextMode,
     TokenCount, UsageSource,
 };
-use garive_plan::{PlanBoundsV1, PlanDefinitionV1, PlanId, PlanStepId, PlanStepV1};
+use garive_plan::{PlanBoundsV1, PlanStepId, PlanStepV1};
 use garive_runtime::{
-    commit_goal_command, commit_plan_command, plan_create_goal, plan_propose_plan,
-    reconstruct_goal, CataloguePlanStepDispatchFactory, CommittedTurn, GoalCommandContext,
-    HostClock, LiveHostLimits, LiveOutputEventKind, LocalExecutionAttempt, LocalExecutionPolicy,
-    LocalGovernedExecution, LocalGovernedExecutionFactory, LocalWorkerError, PlanAdmissionDecision,
-    PlanAdmissionInput, PlanAdmissionPolicy, PlanCommandContext, PlanStepDispatchFactory,
-    PlanStepDispatchInput, ProcessBackendHostConfig, ProcessExecutable, ProcessLane,
-    ProcessLaneRegistry, RuntimeAgentCatalogue, SafetyFuture, SafetyPort, SqliteLedger,
-    T1HostSystemConfig,
+    commit_goal_command, plan_create_goal, reconstruct_goal, CataloguePlanStepDispatchFactory,
+    CommittedTurn, GoalCommandContext, HostClock, LiveHostLimits, LiveOutputEventKind,
+    LocalExecutionAttempt, LocalExecutionPolicy, LocalGovernedExecution,
+    LocalGovernedExecutionFactory, LocalWorkerError, PlanAdmissionDecision, PlanAdmissionInput,
+    PlanAdmissionPolicy, PlanProposalContent, PlanProposalFuture, PlanProposalPort,
+    PlanStepDispatchFactory, PlanStepDispatchInput, ProcessBackendHostConfig, ProcessExecutable,
+    ProcessLane, ProcessLaneRegistry, RuntimeAgentCatalogue, SafetyFuture, SafetyPort,
+    SqliteLedger, T1HostSystemConfig,
 };
 use garive_tools::{T1_APPLY_PATCH, T1_READ_TEXT};
 use sha2::{Digest, Sha256};
@@ -187,7 +186,7 @@ async fn desktop_goal_pump_activates_dispatches_and_closes_one_plan() {
     let database = directory.path().join("goal-pump.sqlite3");
     let mut config = desktop_host_config(&database, Arc::new(CompletingModel));
     config.plan_admission_policy = Some(Arc::new(AdoptExactProposal));
-    let catalogue = config.agent_catalogue.clone();
+    config.plan_proposal_port = Some(Arc::new(SingleStepProposal));
     let governed = DesktopWorkspaceExecutionFactory::new(
         database.clone(),
         DesktopWorkspaceService::default(),
@@ -197,7 +196,6 @@ async fn desktop_goal_pump_activates_dispatches_and_closes_one_plan() {
     let host = DesktopHost::new_governed(config, Arc::new(governed)).unwrap();
     let session_id = host.create_session("definition-main").unwrap();
     let session = SessionId::try_from(session_id.as_str()).unwrap();
-    let installation = catalogue.get("definition-main").unwrap();
     let mut ledger = SqliteLedger::open(&database).unwrap();
     let opened = ledger.read_facts(&session, 0, 1, None).unwrap().remove(0);
     let criterion_id = GoalCriterionId::new("session-opened").unwrap();
@@ -215,7 +213,6 @@ async fn desktop_goal_pump_activates_dispatches_and_closes_one_plan() {
         [],
     )
     .unwrap();
-    let goal_digest = goal.digest().unwrap();
     let created = plan_create_goal(
         &ledger,
         &session,
@@ -228,49 +225,11 @@ async fn desktop_goal_pump_activates_dispatches_and_closes_one_plan() {
     )
     .unwrap();
     commit_goal_command(&mut ledger, session.clone(), 1, &created).unwrap();
-    let required = BTreeSet::from([criterion_id.as_str().to_owned()]);
-    let plan = PlanDefinitionV1::new(
-        PlanId::new("plan-pump").unwrap(),
-        1,
-        "goal-pump",
-        1,
-        goal_digest,
-        installation.snapshot().snapshot_digest(),
-        installation.tool_catalogue_digest(),
-        &installation.snapshot().governance().exact_revision,
-        vec![PlanStepV1::new(
-            PlanStepId::new("complete").unwrap(),
-            "Complete the bounded objective",
-            [],
-            required.iter().cloned(),
-            [],
-            Vec::<String>::new(),
-            1,
-        )
-        .unwrap()],
-        PlanBoundsV1::new(1, 1, 1, None, None).unwrap(),
-        &required,
-        &BTreeSet::new(),
-        &BTreeSet::new(),
-    )
-    .unwrap();
-    let proposed = plan_propose_plan(
-        &ledger,
-        &session,
-        &PlanCommandContext {
-            command_id: "plan-pump-propose".into(),
-            actor_reference: "planner:test".into(),
-            recorded_at: "2026-08-29T00:00:00Z".into(),
-        },
-        plan,
-    )
-    .unwrap();
-    commit_plan_command(&mut ledger, session.clone(), 2, &proposed).unwrap();
     drop(ledger);
 
-    let admission = host.drive_goal(&session_id, "goal-pump", 1).await.unwrap();
-    assert_eq!(admission.executions, 0);
-    assert!(admission.exhausted);
+    let proposal = host.drive_goal(&session_id, "goal-pump", 1).await.unwrap();
+    assert_eq!(proposal.executions, 0);
+    assert!(proposal.exhausted);
     let report = host.drive_goal(&session_id, "goal-pump", 8).await.unwrap();
     assert_eq!(report.executions, 1);
     assert!(!report.exhausted);
@@ -289,11 +248,42 @@ impl PlanAdmissionPolicy for AdoptExactProposal {
     fn decide(&self, input: &PlanAdmissionInput) -> PlanAdmissionDecision {
         assert_eq!(input.goal_id, "goal-pump");
         assert_eq!(input.goal_revision, 1);
-        assert_eq!(input.plan_id, "plan-pump");
+        assert!(input.plan_id.starts_with("g2-plan-"));
         assert_eq!(input.plan_revision, 1);
         PlanAdmissionDecision::Adopt {
             policy_reference: "policy:test-v1".into(),
         }
+    }
+}
+
+struct SingleStepProposal;
+impl PlanProposalPort for SingleStepProposal {
+    fn proposer_reference(&self) -> &str {
+        "planner:test-v1"
+    }
+
+    fn propose<'a>(
+        &'a self,
+        request: &'a garive_runtime::PlanProposalRequest,
+    ) -> PlanProposalFuture<'a> {
+        Box::pin(async move {
+            assert_eq!(request.goal_id, "goal-pump");
+            assert_eq!(request.goal_revision, 1);
+            assert_eq!(request.objective, "Complete one installed Plan");
+            Ok(PlanProposalContent {
+                steps: vec![PlanStepV1::new(
+                    PlanStepId::new("complete").unwrap(),
+                    request.objective.clone(),
+                    [],
+                    request.criterion_ids.iter().cloned(),
+                    [],
+                    Vec::<String>::new(),
+                    1,
+                )
+                .unwrap()],
+                bounds: PlanBoundsV1::new(1, 1, 1, None, None).unwrap(),
+            })
+        })
     }
 }
 
@@ -555,6 +545,7 @@ fn desktop_host_config(database: &Path, model: Arc<dyn ModelPort>) -> DesktopHos
         host_clock: Arc::new(FixedHostClock),
         model,
         plan_admission_policy: None,
+        plan_proposal_port: None,
         operations: Arc::new(Operations(AtomicU64::new(1))),
     }
 }

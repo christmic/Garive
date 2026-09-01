@@ -331,12 +331,23 @@ closed as `ambiguous_plan_proposals`. Suspended work and failed Steps likewise
 stop at explicit continuation/failure-policy reasons. Suspension continuation
 and failed-Step retry/replan selection remain explicit policy gaps.
 
+For initial planning, the constructed asynchronous proposal port receives only
+the fixed Goal objective, ordered criterion identities, Goal-admitted
+capabilities and attempt ceiling. It returns `steps + PlanBounds` and receives
+no Ledger, Plan identity, Agent snapshot, Tool catalogue or Safety revision.
+Runtime derives the deterministic initial Plan identity/revision, resolves the
+exact `session.opened` installation from the immutable catalogue and supplies
+all frozen execution bindings. It releases SQLite before awaiting the port,
+then reopens and rechecks the complete Session/Goal watermark before proposal
+commit. Missing proposal configuration remains `AwaitingPolicy`; a stale Goal
+or concurrent Plan lineage invalidates the result.
+
 Plan admission may Adopt, Reject or Defer one exact proposal. Adopt records the
 policy revision in `plan.adopted`; Reject records the same revision plus the
 authenticated Runtime actor and a stable reason in `plan.rejected`. Both
 commands re-read the complete Goal prefix before planning and again at commit.
 No policy receives a write-capable Ledger, and no model-supplied policy identity
-is authoritative. Runtime supplies the policy only a fixed-prefix read-only
+is authoritative. Runtime supplies the admission policy only a fixed-prefix read-only
 Goal/Plan digest input, then independently reopens and commits the exact
 proposal. Desktop accepts this policy only as an explicitly constructed Host
 configuration value; absence is the default deny posture.
