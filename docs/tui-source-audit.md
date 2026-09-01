@@ -453,6 +453,13 @@ and the shared pulse moves to the live caret. Ended and unavailable previews
 keep their truthful `Saving…` or unavailability phase. This removes three
 simultaneous work markers without inventing status prose.
 
+That same reviewed VT100 snapshot separates its preamble, `Explored` operation
+group, and following task-status group with blank rows. Garive adopts the
+semantic rhythm rather than the labels: at standard and wide widths exactly one
+blank row separates `ActivityStack` from the live or committed answer. The
+40–51 column linear mode stays tight so hierarchy cannot consume the minimum
+working viewport. This is spacing ownership, not a card or inferred phase.
+
 Codex also keeps shortcut reference content action-only. The pinned
 `bottom_pane/footer.rs:733-749,880-949` projects `FooterMode::ShortcutOverlay`
 into a two-column list plus one customization action; the reviewed

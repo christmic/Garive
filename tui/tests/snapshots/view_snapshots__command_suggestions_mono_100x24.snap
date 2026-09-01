@@ -5,13 +5,13 @@ expression: "command_suggestion_frame(Theme::Mono)"
 
 › Summarize the release plan.
   ✓  Agent action · completed
+
 ## Release plan
 
   • Verify the Runtime
   • Ship with evidence
 
   cargo test passes.
-
 
 
 

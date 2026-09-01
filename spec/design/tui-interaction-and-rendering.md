@@ -83,6 +83,8 @@ presentation types; a renderer never infers one from another. User content has
 a role marker but no full-width card. Agent prose uses the terminal background.
 Only modal boundaries and an explicitly opened Inspector keep frames. A
 Markdown heading is self-marking and never receives an additional Agent bullet.
+At standard and wide widths, exactly one blank row separates `ActivityStack`
+from the answer; linear 40–51 column layout omits that optional rhythm row.
 
 ### Responsive modes
 

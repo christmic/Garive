@@ -113,6 +113,7 @@ pub(super) fn rendered_cell_height(
         model,
         cursor,
         model.live_answer.current().is_some(),
+        width,
     );
     wrapped_height(&cell, width).max(1)
 }
@@ -135,10 +136,83 @@ pub(super) fn append_block_gap(
     model: &AppModel,
     cursor: CellCursor,
     live_answer_follows: bool,
+    width: u16,
 ) {
-    let ends_turn = cursor.slot + 1 == block_cells(&model.turn_blocks[cursor.block]).len()
+    let cells = block_cells(&model.turn_blocks[cursor.block]);
+    let current_is_activity = matches!(cells.get(cursor.slot), Some(BlockCell::Activities(_)));
+    let durable_answer_follows = matches!(
+        cells.get(cursor.slot + 1),
+        Some(BlockCell::Item(item)) if item.role == crate::application::TimelineRole::Agent
+    );
+    let live_answer_follows_activity = cursor.slot + 1 == cells.len()
+        && cursor.block + 1 == model.turn_blocks.len()
+        && live_answer_follows;
+    if width >= 52
+        && current_is_activity
+        && (durable_answer_follows || live_answer_follows_activity)
+    {
+        cell.push(Line::default());
+        return;
+    }
+    let ends_turn = cursor.slot + 1 == cells.len()
         && !(cursor.block + 1 == model.turn_blocks.len() && live_answer_follows);
     if ends_turn {
         cell.push(Line::default());
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::application::{TimelineItem, TimelineRole, TimelineTone};
+
+    fn item(key: &str, role: TimelineRole, text: &str) -> TimelineItem {
+        TimelineItem {
+            stable_key: key.into(),
+            position: 1,
+            role,
+            tone: TimelineTone::Active,
+            text: text.into(),
+        }
+    }
+
+    #[test]
+    fn activity_group_breathes_before_durable_or_live_answer() {
+        let mut durable = AppModel::default();
+        durable.push_test_timeline_item(item("user", TimelineRole::User, "request"));
+        durable.push_test_timeline_item(item("activity", TimelineRole::Status, "reading"));
+        durable.push_test_timeline_item(item("answer", TimelineRole::Agent, "done"));
+        let mut durable_lines = vec![Line::from("activity")];
+        append_block_gap(
+            &mut durable_lines,
+            &durable,
+            CellCursor { block: 0, slot: 1 },
+            false,
+            80,
+        );
+        assert_eq!(durable_lines, vec![Line::from("activity"), Line::default()]);
+
+        let mut live = AppModel::default();
+        live.push_test_timeline_item(item("user", TimelineRole::User, "request"));
+        live.push_test_timeline_item(item("activity", TimelineRole::Status, "reading"));
+        let mut live_lines = vec![Line::from("activity")];
+        append_block_gap(
+            &mut live_lines,
+            &live,
+            CellCursor { block: 0, slot: 1 },
+            true,
+            80,
+        );
+        assert_eq!(live_lines, vec![Line::from("activity"), Line::default()]);
+
+        let mut compact_lines = vec![Line::from("activity")];
+        append_block_gap(
+            &mut compact_lines,
+            &live,
+            CellCursor { block: 0, slot: 1 },
+            true,
+            40,
+        );
+        assert_eq!(compact_lines, vec![Line::from("activity")]);
     }
 }

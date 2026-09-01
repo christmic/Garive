@@ -126,6 +126,7 @@ fn conversation_window(
                 model,
                 current,
                 model.live_answer.current().is_some(),
+                width,
             );
             measured_height = measured_height.saturating_add(wrapped_height(&cell, width));
             cells.push_front(cell);
@@ -152,6 +153,7 @@ fn conversation_window(
                 model,
                 current,
                 model.live_answer.current().is_some(),
+                width,
             );
             measured_height = measured_height.saturating_add(wrapped_height(&cell, width));
             cells.push_back(cell);

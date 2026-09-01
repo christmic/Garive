@@ -5,13 +5,13 @@ expression: "frame(&palette, Theme::Light, 160, 28)"
 
 › Summarize the release plan.
   ✓  Agent action · completed
+
 ## Release plan
 
   • Verify the Runtime
   • Ship with evidence
 
   cargo test passes.
-
 
 
 

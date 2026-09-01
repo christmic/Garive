@@ -246,11 +246,13 @@ screen-reader presentation emits the title, filter, result count, selected
 marker, ordinal, preview, and available actions in semantic order. No variant
 shows a Turn ID, stable key, hidden activity, or full prompt in popup chrome.
 
-`TurnBlock` uses spacing as its primary separator: one blank row between Turns
-and none between tightly related activity and answer rows. User content uses
-the compact `RequestSurface`: one low-contrast fill, a left role marker, and no
-separate `You` header or surrounding border. Agent prose remains on the
-terminal background. Public positions,
+`TurnBlock` uses spacing as its primary separator: one blank row between Turns.
+At widths `>=52`, one additional rhythm row separates an `ActivityStack` from
+the live or committed answer so operation metadata cannot merge visually with
+Agent prose; the 40–51 column linear mode keeps that boundary tight. User
+content uses the compact `RequestSurface`: one low-contrast fill, a left role
+marker, and no separate `You` header or surrounding border. Agent prose remains
+on the terminal background. Public positions,
 stable keys, opaque IDs, and repeated `Conversation` titles do not appear in
 ordinary transcript chrome.
 

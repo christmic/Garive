@@ -5,12 +5,12 @@ expression: "frame(&turns, Theme::Light, 100, 24)"
 
 › Summarize the release plan.
   ✓  Agent action · completed
+
 ## Release plan
 
   • Verify the Runtime
   • Ship with evidence
 
-  cargo test passes.
  Jump to a Turn ────────────────────────────────────────────────────────────────────────────────────
 Search  release
    1  release checkpoint 00 with verified evidence
