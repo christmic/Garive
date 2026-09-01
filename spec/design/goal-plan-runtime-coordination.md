@@ -165,6 +165,37 @@ Plan completion does not imply Goal success. The Goal verifier independently
 resolves every declared criterion against the fixed ledger prefix. Conversely,
 a completed Turn does not imply a completed step, Plan or Goal.
 
+### Durable model Planner execution
+
+A model-backed Planner is an internal Runtime Execution, not an unrecorded
+helper call and not a public user Turn. Runtime atomically commits this ordered
+start batch before model dispatch:
+
+```text
+plan.proposal.requested
+turn.started(kind=start)
+turn.input(input_kind=trusted_system)
+execution.started
+```
+
+`plan.proposal.requested` has no Turn or Execution envelope identities. Its
+closed payload binds the command, Goal ID/revision/definition digest, expected
+Session version, fixed prefix, proposer revision, canonical request digest,
+output-schema digest and the Runtime-derived Turn/Execution identities.
+
+The local Worker admits `trusted_system` only when all four facts are
+contiguous, the ownership payload binds that exact Turn/Execution/request and
+the expected Session version becomes the committed version. It projects the
+input as one required developer instruction. A public `trusted_user` start
+continues to use the ordinary path; an unowned or workspace-bearing internal
+start fails before model preflight.
+
+Exact replay returns the original positions. Recovery reconstructs the same
+Execution from the committed prefix. After model terminal, Runtime must commit
+a separate result-binding fact that names the request fact, terminal fact and
+canonical result digest. Only that bound result may enter the topology parser;
+live stream output and process-local return values have no proposal authority.
+
 ### Completed Turn reduction
 
 For a Plan-owned Execution, the local worker performs one bounded reduction
@@ -351,10 +382,10 @@ then reopens and rechecks the complete Session/Goal watermark before proposal
 commit. Missing proposal configuration remains `AwaitingPolicy`; a stale Goal
 or concurrent Plan lineage invalidates the result.
 
-A future model-backed proposal composition is not permitted to call ModelPort
-as an unrecorded helper. Planning dispatch must first gain its own durable
-C6/model lifecycle and recoverable result binding; only that committed result
-may feed the topology-only proposal port.
+A model-backed proposal composition is not permitted to call ModelPort as an
+unrecorded helper. Its durable ownership plus C6 start is implemented; model
+terminal result binding and topology consumption remain required before this
+composition can replace the configured topology-only proposal port.
 
 Plan admission may Adopt, Reject or Defer one exact proposal. Adopt records the
 policy revision in `plan.adopted`; Reject records the same revision plus the
