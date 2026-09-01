@@ -28,7 +28,7 @@ pub(super) fn render(
             {
                 first.spans.remove(0);
             }
-            first.spans.insert(0, RoleMarker::Agent.span(colors));
+            RoleMarker::Agent.prepend_to(first, colors);
         }
         if let Some(last) = rendered.last_mut() {
             LiveCaret::for_output(true, answer.ended, reduced_motion).append_to(last, colors);

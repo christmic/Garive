@@ -2,7 +2,7 @@ use ratatui::{
     buffer::Buffer,
     layout::Rect,
     text::{Line, Span},
-    widgets::Widget,
+    widgets::{Paragraph, Widget},
 };
 
 use crate::{
@@ -38,9 +38,44 @@ pub(super) fn render_footer(model: &AppModel, theme: Theme, area: Rect, buffer: 
             Span::styled(" ● ", tone.style(colors)),
             Span::styled(text, colors.normal),
         ]),
-        None => Line::default(),
+        None => {
+            render_ambient_footer(model, colors, area, buffer);
+            return;
+        }
     };
     hint.render(area, buffer);
+}
+
+fn render_ambient_footer(
+    model: &AppModel,
+    colors: super::style::Palette,
+    area: Rect,
+    buffer: &mut Buffer,
+) {
+    let session = model
+        .selected_session
+        .as_deref()
+        .and_then(|selected| {
+            model
+                .sessions
+                .iter()
+                .position(|session| session.session_id == selected)
+        })
+        .map_or_else(
+            || "New conversation".to_owned(),
+            |index| format!("Session {}", index + 1),
+        );
+    let product = if model.definitions.is_empty() && model.selected_session.is_none() {
+        "Garive"
+    } else {
+        "Agent"
+    };
+    let left = Line::from(vec![
+        Span::styled("  ", colors.muted),
+        Span::styled(product, colors.normal),
+        Span::styled(format!(" · {session}"), colors.muted),
+    ]);
+    Paragraph::new(left).render(area, buffer);
 }
 
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]

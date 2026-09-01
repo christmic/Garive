@@ -6,12 +6,14 @@ use crate::application::BootState;
 
 use super::super::style::Palette;
 
-pub(super) fn render(boot: BootState, width: u16, colors: Palette) -> Vec<Line<'static>> {
+pub(super) fn render(boot: BootState, _width: u16, colors: Palette) -> Vec<Line<'static>> {
     match boot {
-        BootState::Cold | BootState::Loading => {
-            welcome_anchor("Starting workspace…", width, colors)
-        }
-        BootState::Ready => welcome_anchor("/ commands  ·  ? help", width, colors),
+        BootState::Cold | BootState::Loading => welcome("Starting workspace…", None, colors),
+        BootState::Ready => welcome(
+            "Ask, plan, or run work from this terminal.",
+            Some("/ commands  ·  ? help"),
+            colors,
+        ),
         BootState::NotConfigured => message(
             "No Agent is installed",
             "Install an Agent definition before starting a conversation.",
@@ -25,42 +27,20 @@ pub(super) fn render(boot: BootState, width: u16, colors: Palette) -> Vec<Line<'
     }
 }
 
-fn welcome_anchor(detail: &'static str, width: u16, colors: Palette) -> Vec<Line<'static>> {
-    let border = colors.border_set();
-    let pane_width = width.saturating_sub(2).clamp(28, 46);
-    let inner_width = usize::from(pane_width.saturating_sub(2));
-    let row = |content: &'static str, style: ratatui::style::Style| {
-        let padding = inner_width.saturating_sub(content.chars().count().saturating_add(2));
-        Line::from(vec![
-            ratatui::text::Span::styled(border.vertical_left, colors.border),
-            ratatui::text::Span::raw("  "),
-            ratatui::text::Span::styled(content, style),
-            ratatui::text::Span::raw(" ".repeat(padding)),
-            ratatui::text::Span::styled(border.vertical_right, colors.border),
-        ])
-    };
-    vec![
-        Line::styled(
-            format!(
-                "{}{}{}",
-                border.top_left,
-                border.horizontal_top.repeat(inner_width),
-                border.top_right
-            ),
-            colors.border,
-        ),
-        row(">_ Garive", colors.empty_title),
-        row(detail, colors.muted),
-        Line::styled(
-            format!(
-                "{}{}{}",
-                border.bottom_left,
-                border.horizontal_bottom.repeat(inner_width),
-                border.bottom_right
-            ),
-            colors.border,
-        ),
-    ]
+fn welcome(
+    detail: &'static str,
+    discovery: Option<&'static str>,
+    colors: Palette,
+) -> Vec<Line<'static>> {
+    let mut lines = vec![
+        Line::default(),
+        Line::styled("  Garive", colors.empty_title),
+        Line::styled(format!("  {detail}"), colors.muted),
+    ];
+    if let Some(discovery) = discovery {
+        lines.push(Line::styled(format!("  {discovery}"), colors.muted));
+    }
+    lines
 }
 
 fn message(title: &'static str, detail: &'static str, colors: Palette) -> Vec<Line<'static>> {
@@ -87,6 +67,8 @@ mod tests {
                 .join("\n");
             assert!(rendered.contains("Garive"));
             assert_eq!(rendered.matches("Garive").count(), 1);
+            assert!(!rendered.contains('╭'));
+            assert!(!rendered.contains('│'));
         }
     }
 

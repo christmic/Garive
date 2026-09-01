@@ -27,7 +27,7 @@ fn responsive_product_frames_match_reviewed_snapshots() {
     let model = product_model();
     let compact = frame(&model, Theme::Mono, 40, 12);
     assert_eq!(compact.matches("Working…").count(), 1);
-    assert!(compact.contains("Esc interrupt"));
+    assert!(compact.contains("esc to interrupt"));
     insta::assert_snapshot!("compact_40x12", frame(&model, Theme::Mono, 40, 12));
     let mut wrapped = product_model();
     wrapped
@@ -40,7 +40,7 @@ fn responsive_product_frames_match_reviewed_snapshots() {
     );
     let standard = frame(&model, Theme::Dark, 100, 24);
     assert_eq!(standard.matches("Working…").count(), 1);
-    assert!(standard.contains("Esc interrupt"));
+    assert!(standard.contains("esc to interrupt"));
     insta::assert_snapshot!("standard_100x24", frame(&model, Theme::Dark, 100, 24));
     let activities = activity_stack_model();
     insta::assert_snapshot!(
@@ -62,7 +62,7 @@ fn responsive_product_frames_match_reviewed_snapshots() {
     let active = frame(&activities, Theme::Mono, 40, 18);
     assert_eq!(active.matches("Working…").count(), 1);
     assert!(active.contains("Reading file"));
-    assert!(active.contains("Esc interrupt"));
+    assert!(active.contains("esc to interrupt"));
     let completed = frame(&completed_activity_stack_model(), Theme::Mono, 40, 18);
     assert!(completed.contains("✓ Read file · +2"));
     insta::assert_snapshot!("activity_stack_completed_compact_mono_40x18", completed);

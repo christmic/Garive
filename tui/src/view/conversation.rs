@@ -316,9 +316,7 @@ fn render_timeline_item(
                 {
                     first.spans.remove(0);
                 }
-                first
-                    .spans
-                    .insert(0, super::primitives::RoleMarker::Agent.span(colors));
+                super::primitives::RoleMarker::Agent.prepend_to(first, colors);
             }
             lines.extend(answer);
         }

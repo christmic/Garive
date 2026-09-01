@@ -2,8 +2,8 @@
 
 use ratatui::{
     buffer::Buffer,
-    layout::{Alignment, Rect},
-    text::Line,
+    layout::Rect,
+    text::{Line, Span},
     widgets::{Paragraph, Widget},
 };
 
@@ -46,9 +46,7 @@ pub(super) fn render(
         return;
     }
     if let Some(line) = line(model, colors, motion) {
-        Paragraph::new(line)
-            .alignment(Alignment::Right)
-            .render(area, buffer);
+        Paragraph::new(line).render(area, buffer);
     }
 }
 
@@ -104,7 +102,10 @@ fn line(model: &AppModel, colors: Palette, _motion: MotionFrame) -> Option<Line<
             TurnControlState::CancelOutcomeUnknown => ("Cancel status unknown", colors.warning),
             TurnControlState::Running { .. } => unreachable!("running state handled above"),
         };
-        return Some(Line::styled(label, colors.title.patch(tone)));
+        return Some(Line::from(vec![
+            Span::styled("• ", tone),
+            Span::styled(label, colors.title.patch(tone)),
+        ]));
     }
     let TurnControlState::Running { cancel_available } = state else {
         unreachable!("cancellation states handled above")
@@ -112,11 +113,15 @@ fn line(model: &AppModel, colors: Palette, _motion: MotionFrame) -> Option<Line<
     let label = running_label(model);
     if cancel_available {
         Some(Line::from(vec![
-            ratatui::text::Span::styled(label, colors.accent),
-            ratatui::text::Span::styled("  ·  Esc interrupt", colors.muted),
+            Span::styled("• ", colors.accent),
+            Span::styled(label, colors.accent),
+            Span::styled("  ·  esc to interrupt", colors.muted),
         ]))
     } else {
-        Some(Line::styled(label, colors.accent))
+        Some(Line::from(vec![
+            Span::styled("• ", colors.accent),
+            Span::styled(label, colors.accent),
+        ]))
     }
 }
 
@@ -155,7 +160,7 @@ mod tests {
             line(&model, colors, MotionFrame::reduced())
                 .unwrap()
                 .to_string(),
-            "Working…  ·  Esc interrupt"
+            "• Working…  ·  esc to interrupt"
         );
 
         model.push_test_timeline_item(TimelineItem {
@@ -176,7 +181,7 @@ mod tests {
             line(&model, colors, MotionFrame::reduced())
                 .unwrap()
                 .to_string(),
-            "Working…  ·  Esc interrupt"
+            "• Working…  ·  esc to interrupt"
         );
 
         model.overlay = Some(Overlay::Help);
@@ -184,21 +189,21 @@ mod tests {
             line(&model, colors, MotionFrame::reduced())
                 .unwrap()
                 .to_string(),
-            "Working…"
+            "• Working…"
         );
         model.turn_blocks.clear();
         assert_eq!(
             line(&model, colors, MotionFrame::reduced())
                 .unwrap()
                 .to_string(),
-            "Working…"
+            "• Working…"
         );
         model.overlay = None;
         assert_eq!(
             line(&model, colors, MotionFrame::reduced())
                 .unwrap()
                 .to_string(),
-            "Working…  ·  Esc interrupt"
+            "• Working…  ·  esc to interrupt"
         );
     }
 
@@ -219,14 +224,14 @@ mod tests {
             line(&model, colors, MotionFrame::reduced())
                 .unwrap()
                 .to_string(),
-            "Cancelling…"
+            "• Cancelling…"
         );
         model.cancel_requests.mark_accepted("command");
         assert_eq!(
             line(&model, colors, MotionFrame::reduced())
                 .unwrap()
                 .to_string(),
-            "Stopping…"
+            "• Stopping…"
         );
     }
 }

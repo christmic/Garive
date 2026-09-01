@@ -23,6 +23,14 @@ impl RoleMarker {
             Self::Agent => Span::styled("• ", colors.agent),
         }
     }
+
+    pub(super) fn prepend_to(self, line: &mut Line<'static>, colors: Palette) {
+        let self_marking_heading =
+            self == Self::Agent && line.to_string().trim_start().starts_with('#');
+        if !self_marking_heading {
+            line.spans.insert(0, self.span(colors));
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -316,6 +324,14 @@ mod tests {
         let colors = super::super::palette(crate::Theme::Dark);
         assert_eq!(RoleMarker::User.span(colors).content, "› ");
         assert_eq!(RoleMarker::Agent.span(colors).content, "• ");
+
+        let mut heading = Line::raw("## Release plan");
+        RoleMarker::Agent.prepend_to(&mut heading, colors);
+        assert_eq!(heading.to_string(), "## Release plan");
+
+        let mut prose = Line::raw("Release is ready.");
+        RoleMarker::Agent.prepend_to(&mut prose, colors);
+        assert_eq!(prose.to_string(), "• Release is ready.");
 
         let mut active = Line::raw("answer");
         LiveCaret::for_output(true, false, false).append_to(&mut active, colors);

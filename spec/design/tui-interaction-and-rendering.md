@@ -49,18 +49,22 @@ remote authentication remain unavailable until their owning slices exist.
 ```
 
 The frame has four semantic regions: an exceptional-only `ContextLine`, the
-conversation transcript, the persistent `Composer`, and an optional one-row
-`HintLine`. In a healthy conversation the ContextLine has zero height; Session
-identity is available through the terminal title and switcher instead of a
-permanent toolbar. Transcript and Composer share the terminal's left axis.
+conversation transcript, the persistent `Composer`, and one reserved footer
+row. The footer shows at most one actionable `HintLine`; otherwise it falls
+back to muted public Agent/Session context. In a healthy conversation the
+ContextLine has zero height; Session identity is available through the terminal
+title, footer, and switcher instead of a permanent toolbar. Transcript, run
+state, and Composer share the terminal's left axis.
 A permanent navigation rail, bordered toolbar, conversation frame, centered
 application island, and second status bar are prohibited. Session navigation,
-commands, recovery, and decisions use bounded overlays. At wide sizes an
+commands, Help, Inspector, recovery, and decisions use bounded secondary
+surfaces selected by semantics. At wide sizes an
 explicitly opened `Inspector` may share the work surface without changing
 transcript truth.
 
-Selection surfaces that originate from composition are a `BottomPane`, not a
-desktop modal. The command palette and slash suggestions inherit the Composer's
+Selection surfaces that do not block a durable decision are a `BottomPane`,
+not a desktop modal. The command palette, slash suggestions,
+Session/Turn/history selectors, and narrow/standard Inspector inherit the Composer's
 left axis and usable width, meet it without a floating gap, clear only their own
 rows, and use one quiet top rule instead of a surrounding box or dimmed
 workspace. They grow only with visible content and show at most eight command
@@ -76,8 +80,8 @@ request, its `ActivityStack`, one `LiveAnswer` or committed `MarkdownAnswer`,
 and its terminal outcome. Durable, ephemeral, and local values remain separate
 presentation types; a renderer never infers one from another. User content has
 a role marker but no full-width card. Agent prose uses the terminal background.
-Only the Composer, modal boundaries, and an explicitly opened Inspector keep
-frames.
+Only modal boundaries and an explicitly opened Inspector keep frames. A
+Markdown heading is self-marking and never receives an additional Agent bullet.
 
 ### Responsive modes
 
@@ -317,9 +321,10 @@ While the selected Turn is running, the Composer remains an explicit retained-
 draft editor, not a submit or queue affordance. Its placeholder names that
 state. `Enter` keeps the exact draft and emits a visible `Current Turn is
 running · draft retained` notice; it never fails silently and does not claim a
-durable queue. With no overlay, the Composer status row owns `Agent running`
-plus the `Esc` cancel control, or only that control when live output or an
-active Activity already exposes work. With an overlay, it follows the input-
+durable queue. With no overlay, the Composer status row owns one left-aligned
+`• phase · esc to interrupt` line. An Activity may still name the concrete
+operation in the transcript; it does not relocate this global lifecycle state.
+With an overlay, the rail follows the input-
 ownership rule above. Cancellation therefore cannot monopolize `HintLine`;
 byte-limit, selection, suggestion, recovery, and notice feedback remain
 available by their normal priority.
@@ -369,7 +374,8 @@ frozen behind the pending command and cannot be edited into a different retry.
 The key router resolves overlay, editor, focused region, then global bindings
 in that order. A key is consumed by at most one owner. `HintLine` exposes only
 the highest-priority currently resolved binding or recovery action and may be
-absent; it is never a permanent shortcut legend. Visual help, the running-Turn
+absent; its ambient fallback is identity, never a permanent shortcut legend.
+Visual help, the running-Turn
 rail, and the linear screen-reader projection derive the same active owner: an
 open Help overlay says `Esc close guide`, never `Esc cancel Turn`, and the
 linear composer status says that the active overlay owns input.

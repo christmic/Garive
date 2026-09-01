@@ -29,7 +29,9 @@ not depend on the terminal default being light or dark.
 | `KeyHint` | visually distinct keycap plus verb; ordered by current action priority |
 | `SelectionRow` | explicit marker-only or full-area policy plus stable cursor; reverse video in mono |
 | `ComposerDock` | open low-contrast input body, semantic status row, shared cursor/hit geometry |
+| `AmbientFooter` | one muted identity row below the Composer; displaced by actionable feedback |
 | `CenteredColumn` | caps readable transcript width without changing model state |
+| `BottomPane` | one Composer-aligned top rule; content-driven height; no backdrop dimming or side/bottom border |
 | `ModalFrame` | dims retained workspace, clears popup bounds, rounded focus border, safe padding |
 | `AnchoredMenu` | clears only its bounded area, attaches above its owner, preserves page context and owner cursor |
 | `RoleMarker` | restrained non-color User or Agent identity; never a full-width card border |
@@ -40,10 +42,10 @@ identity: dark/light use the low-contrast `request_surface`, mono uses the
 terminal background, and focus changes only the non-color `›` lead and terminal
 caret. Its reserved row is blank during ordinary editing and carries `Draft
 locked`, `Action response`, or the running Turn rail only when that state is
-true. The running rail combines the nearby work state and cancel control; when
-the transcript already shows a live answer or active Activity, it keeps only
-the control and does not repeat the work state. No Composer variant adds a
-persistent surrounding border. `RequestSurface` renders User input as an unbordered,
+true. The running rail combines the nearby work state and cancel control and
+starts on the shared left axis as `• phase · esc to interrupt`; it never
+strands the primary state at the terminal's right edge. No Composer variant
+adds a persistent surrounding border. `RequestSurface` renders User input as an unbordered,
 low-contrast terminal-width row with the same non-color `›` identity and a
 two-cell hanging indent. Its wrapper measures sanitized grapheme display width,
 so CJK and combining sequences cannot split or shift later components.
@@ -53,16 +55,20 @@ Higher-level renderers must reuse these primitives for equivalent behavior.
 `SelectionRow` requires an explicit extent. CommandPalette uses `MarkerOnly`;
 single-line lists and anchored menus use `FullArea`; Inspector applies
 `FullArea` to its content-driven one- or two-row entry rectangle.
-`RoleMarker` is the only source for the User `›` and Agent `◆ Garive` identity,
-so committed and live answers cannot diverge. `LiveCaret` alone combines
+`RoleMarker` is the only source for the User `›` and Agent `•` identity, so
+committed and live answers cannot diverge. A Markdown heading already carries
+its own leading structure and suppresses the Agent marker; `• ##` is
+prohibited. `LiveCaret` alone combines
 availability, terminal state, and reduced motion before emitting its one-cell
 cue; answer renderers cannot append a private caret glyph.
 `ModalFrame` alone computes modal inner padding and paints the retained-workspace
 backdrop, full-width same-height quiet band, cleared popup, title, and rounded
 border. The quiet band removes horizontally clipped transcript fragments while
 leaving the rows above and below the modal available as dimmed context.
-CommandPalette, generic overlays, and the overlay Inspector cannot reproduce
-any part of that chrome locally.
+Blocking decisions, recovery confirmations, and the reference Help surface
+consume `ModalFrame`. CommandPalette, navigation selectors, and the
+narrow/standard Inspector consume `BottomPane` and cannot reproduce modal
+chrome locally.
 The shared Session identity/state presentation lives in `view/session.rs`;
 SessionSwitcher and Inspector may change density, but cannot invent separate
 labels, glyphs, or state wording. Their visible windows also define pointer hit
@@ -70,8 +76,9 @@ boxes; controllers do not duplicate layout coordinates. `ContextLine` and
 `HintLine` derive their copy from the same Session, execution, connection,
 focus, and recovery state used by input routing. `ContextLine` has no frame or
 background fill. `HintLine` renders at most one highest-priority action and may
-be absent. At supported heights of nine rows or more, an absent `HintLine`
-retains its one-row layout slot so selection, notices, and Host events never
+be absent. Its reserved slot then renders the muted `AmbientFooter` with public
+Agent/Session identity, never a permanent shortcut legend. At supported heights
+of nine rows or more, the slot remains allocated so selection, notices, and Host events never
 move the Composer hit geometry; tiny layouts below nine rows remove the slot as
 part of their explicit degradation.
 The composer lives in `view/composer.rs`. It consumes the editor's admitted
@@ -174,11 +181,12 @@ owner. Brand background fills, padded status chips, clocks, raw IDs, and a
 second persistent status row are prohibited.
 
 An empty ready conversation is not an unanchored blank terminal. It renders one
-compact, left-aligned `WelcomeAnchor` near the transcript origin with the
-Garive name and the two truthful discovery affordances (`/` commands and `?`
-help). It has the density of Codex's welcome block, never expands into a hero,
-does not repeat the Composer invitation, and disappears as soon as a Turn or
-live answer exists. Loading and blocked states keep their own truthful copy.
+compact, left-aligned, unframed `WelcomeAnchor` near the transcript origin with
+the Garive name and the two truthful discovery affordances (`/` commands and
+`?` help). It has the density of Codex's welcome block, never expands into a
+hero or card, does not repeat the Composer invitation, and disappears as soon
+as a Turn or live answer exists. Loading and blocked states keep their own
+truthful copy.
 
 Spacing is the transcript's primary structure. Borders are reserved for modal
 boundaries and an explicitly opened Inspector. The ComposerDock is an open
@@ -203,6 +211,11 @@ uses a right-aligned ordinal gutter and one sanitized prompt line. The selected
 row is always visible and remains identifiable in mono through reverse video
 and a marker. Empty search results retain the title and filter and render
 `No matching Turns` in the normal muted text role.
+
+`Help` is a bounded reference surface rather than a selection list. Standard
+width packs the canonical key catalogue into bounded rows and retains the safe
+terminal notes. Its complete spoken labels and notes remain available through
+the linear screen-reader projection when height pressure clips visual notes.
 
 Wide and compact layouts bound the pane to available terminal height; previews
 truncate on grapheme/display-cell boundaries with a
