@@ -21,6 +21,7 @@ mod inspector;
 mod layout;
 mod linear;
 mod live_answer;
+mod markdown_heading;
 mod markdown_syntax;
 mod markdown_table;
 mod markdown_wrap;

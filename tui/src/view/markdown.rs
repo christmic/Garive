@@ -1,4 +1,4 @@
-use pulldown_cmark::{CodeBlockKind, Event, HeadingLevel, Options, Parser, Tag, TagEnd};
+use pulldown_cmark::{CodeBlockKind, Event, Options, Parser, Tag, TagEnd};
 use ratatui::{
     style::{Modifier, Style},
     text::{Line, Span},
@@ -6,6 +6,7 @@ use ratatui::{
 use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::UnicodeWidthStr;
 
+use super::markdown_heading::{heading_marker, heading_style};
 use super::markdown_syntax::{CodeHighlighter, SyntaxPalette};
 use super::markdown_table::TableBuilder;
 use super::markdown_wrap::wrap_styled;
@@ -425,25 +426,6 @@ impl<'a> Renderer<'a> {
     fn finish(mut self) -> Vec<Line<'static>> {
         self.flush();
         self.lines
-    }
-}
-
-fn heading_marker(level: HeadingLevel) -> &'static str {
-    match level {
-        HeadingLevel::H1 => "# ",
-        HeadingLevel::H2 => "## ",
-        HeadingLevel::H3 => "### ",
-        HeadingLevel::H4 => "#### ",
-        HeadingLevel::H5 => "##### ",
-        HeadingLevel::H6 => "###### ",
-    }
-}
-
-fn heading_style(level: HeadingLevel, accent: Style) -> Style {
-    match level {
-        HeadingLevel::H1 => accent.add_modifier(Modifier::BOLD | Modifier::UNDERLINED),
-        HeadingLevel::H2 => accent.add_modifier(Modifier::BOLD),
-        _ => accent.add_modifier(Modifier::ITALIC),
     }
 }
 
