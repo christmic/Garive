@@ -1,0 +1,250 @@
+//! Fixed-prefix Goal/Plan coordination decisions.
+
+use garive_goal::GoalState;
+use garive_ledger::SessionId;
+use garive_plan::{PlanState, PlanStepId, StepState};
+
+use crate::{reconstruct_goal, reconstruct_plan_graph, GoalPlanCoordinationError, SqliteLedger};
+
+/// One bounded Runtime coordination decision over a verified Session prefix.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum GoalPlanDecision {
+    /// The Goal/Plan lineage currently needs no coordinator mutation.
+    NoAction,
+    /// A planning policy must produce a bounded Plan proposal.
+    ProposePlan,
+    /// The adopted Plan may activate its exact Draft Goal revision.
+    ActivateGoal {
+        /// Exact authoritative Plan identity.
+        plan_id: String,
+        /// Exact authoritative Plan revision.
+        plan_revision: u64,
+    },
+    /// The first declaration-ordered Ready Step may enter bounded dispatch.
+    DispatchReadyStep {
+        /// Exact authoritative Plan identity.
+        plan_id: String,
+        /// Exact authoritative Plan revision.
+        plan_revision: u64,
+        /// Runtime-selected Ready Step.
+        step_id: PlanStepId,
+    },
+    /// Every Step is complete and Runtime may verify the Plan terminal.
+    CompletePlan {
+        /// Exact authoritative Plan identity.
+        plan_id: String,
+        /// Exact authoritative Plan revision.
+        plan_revision: u64,
+    },
+    /// A unique completed Plan may be independently reduced to Goal success.
+    SucceedGoal {
+        /// Exact completed Plan identity.
+        plan_id: String,
+        /// Exact completed Plan revision.
+        plan_revision: u64,
+    },
+    /// A unique failed Plan may be independently reduced to Goal failure.
+    FailGoal {
+        /// Exact failed Plan identity.
+        plan_id: String,
+        /// Exact failed Plan revision.
+        plan_revision: u64,
+    },
+    /// Runtime cannot progress without an admitted policy or reconciliation.
+    NeedsOperator {
+        /// Stable secret-free reason code.
+        reason: &'static str,
+    },
+}
+
+/// Frozen coordinates and exactly one decision from a single ledger watermark.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct GoalPlanCoordinationSnapshot {
+    /// Highest durable position included in every reconstructed projection.
+    pub through_position: u64,
+    /// Session version at the same durable prefix.
+    pub session_version: u64,
+    /// Exact Goal identity.
+    pub goal_id: String,
+    /// Current Goal lifecycle revision.
+    pub goal_revision: u64,
+    /// Canonical immutable Goal definition digest.
+    pub goal_definition_digest: String,
+    /// Single bounded coordination decision.
+    pub decision: GoalPlanDecision,
+}
+
+/// Evaluates one Goal lineage without mutating durable state.
+pub fn evaluate_goal_plan_once(
+    ledger: &SqliteLedger,
+    session_id: &SessionId,
+    goal_id: &str,
+) -> Result<GoalPlanCoordinationSnapshot, GoalPlanCoordinationError> {
+    let goal =
+        reconstruct_goal(ledger, session_id, goal_id).map_err(GoalPlanCoordinationError::Goal)?;
+    let plans = reconstruct_plan_graph(ledger, session_id)
+        .map_err(|_| GoalPlanCoordinationError::CorruptState)?;
+    if plans.values().any(|plan| {
+        plan.session_version != goal.session_version
+            || plan.through_position != goal.through_position
+    }) {
+        return Err(GoalPlanCoordinationError::ConcurrentModification);
+    }
+    let goal_digest = goal
+        .snapshot
+        .definition()
+        .digest()
+        .map_err(|_| GoalPlanCoordinationError::CorruptState)?;
+    let related = plans
+        .values()
+        .filter(|plan| {
+            let definition = plan.snapshot.definition();
+            definition.goal_id() == goal_id
+                && definition.goal_definition_digest() == goal_digest
+                && definition.goal_revision() <= goal.snapshot.revision()
+        })
+        .collect::<Vec<_>>();
+    let decision = decide(&goal, &related)?;
+    Ok(GoalPlanCoordinationSnapshot {
+        through_position: goal.through_position,
+        session_version: goal.session_version,
+        goal_id: goal_id.into(),
+        goal_revision: goal.snapshot.revision(),
+        goal_definition_digest: goal_digest,
+        decision,
+    })
+}
+
+fn decide(
+    goal: &crate::GoalRuntimeState,
+    plans: &[&crate::PlanRuntimeState],
+) -> Result<GoalPlanDecision, GoalPlanCoordinationError> {
+    if matches!(
+        goal.snapshot.state(),
+        GoalState::Succeeded | GoalState::Failed | GoalState::Cancelled
+    ) {
+        return Ok(GoalPlanDecision::NoAction);
+    }
+    let authoritative = plans
+        .iter()
+        .copied()
+        .filter(|plan| {
+            matches!(
+                plan.snapshot.state(),
+                PlanState::Adopted | PlanState::Running | PlanState::Suspended
+            )
+        })
+        .collect::<Vec<_>>();
+    if authoritative.len() > 1 {
+        return Err(GoalPlanCoordinationError::CorruptState);
+    }
+    if let Some(plan) = authoritative.first().copied() {
+        return decide_authoritative(goal, plan);
+    }
+    let terminals = plans
+        .iter()
+        .copied()
+        .filter(|plan| {
+            matches!(
+                plan.snapshot.state(),
+                PlanState::Completed | PlanState::Failed
+            )
+        })
+        .collect::<Vec<_>>();
+    if terminals.len() > 1 {
+        return Err(GoalPlanCoordinationError::CorruptState);
+    }
+    if let Some(plan) = terminals.first().copied() {
+        let definition = plan.snapshot.definition();
+        return Ok(match plan.snapshot.state() {
+            PlanState::Completed if goal.snapshot.state() == GoalState::Active => {
+                GoalPlanDecision::SucceedGoal {
+                    plan_id: definition.plan_id().as_str().into(),
+                    plan_revision: definition.plan_revision(),
+                }
+            }
+            PlanState::Failed if goal.snapshot.state() == GoalState::Active => {
+                GoalPlanDecision::FailGoal {
+                    plan_id: definition.plan_id().as_str().into(),
+                    plan_revision: definition.plan_revision(),
+                }
+            }
+            _ => GoalPlanDecision::NoAction,
+        });
+    }
+    let proposed = plans
+        .iter()
+        .filter(|plan| plan.snapshot.state() == PlanState::Proposed)
+        .count();
+    Ok(
+        if proposed == 0 && goal.snapshot.state() == GoalState::Draft {
+            GoalPlanDecision::ProposePlan
+        } else if proposed > 0 {
+            GoalPlanDecision::NeedsOperator {
+                reason: "plan_admission_required",
+            }
+        } else {
+            GoalPlanDecision::NeedsOperator {
+                reason: "authoritative_plan_unavailable",
+            }
+        },
+    )
+}
+
+fn decide_authoritative(
+    goal: &crate::GoalRuntimeState,
+    plan: &crate::PlanRuntimeState,
+) -> Result<GoalPlanDecision, GoalPlanCoordinationError> {
+    let definition = plan.snapshot.definition();
+    let plan_id = definition.plan_id().as_str().to_owned();
+    let plan_revision = definition.plan_revision();
+    if goal.snapshot.state() == GoalState::Draft {
+        return Ok(GoalPlanDecision::ActivateGoal {
+            plan_id,
+            plan_revision,
+        });
+    }
+    if goal.snapshot.state() == GoalState::Suspended {
+        return Ok(GoalPlanDecision::NoAction);
+    }
+    if plan.snapshot.state() == PlanState::Suspended {
+        return Ok(GoalPlanDecision::NeedsOperator {
+            reason: "plan_continuation_required",
+        });
+    }
+    if plan.snapshot.definition().steps().iter().all(|step| {
+        plan.snapshot
+            .step(step.step_id())
+            .map(|value| value.state())
+            == Some(StepState::Completed)
+    }) {
+        return Ok(GoalPlanDecision::CompletePlan {
+            plan_id,
+            plan_revision,
+        });
+    }
+    if !plan.active_claims.is_empty() {
+        return Ok(GoalPlanDecision::NoAction);
+    }
+    if let Some(step_id) = plan.snapshot.ready_steps().first().copied().cloned() {
+        return Ok(GoalPlanDecision::DispatchReadyStep {
+            plan_id,
+            plan_revision,
+            step_id,
+        });
+    }
+    Ok(
+        if plan.snapshot.definition().steps().iter().any(|step| {
+            plan.snapshot
+                .step(step.step_id())
+                .map(|value| value.state())
+                == Some(StepState::Failed)
+        }) {
+            GoalPlanDecision::NeedsOperator {
+                reason: "plan_failure_policy_required",
+            }
+        } else {
+            GoalPlanDecision::NoAction
+        },
+    )
+}

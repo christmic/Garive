@@ -27,7 +27,8 @@ use garive_plan::{
 };
 use garive_runtime::{
     commit_goal_command, commit_plan_command, commit_plan_replacement, commit_planned_turn,
-    dispatch_plan_step_once, get_turn, plan_activate_goal_from_authoritative_plan, plan_adopt_plan,
+    dispatch_plan_step_once, evaluate_goal_plan_once, get_turn,
+    plan_activate_goal_from_authoritative_plan, plan_adopt_plan,
     plan_complete_owned_step_from_turn, plan_complete_plan, plan_continue_owned_plan_turn,
     plan_continue_turn, plan_core_terminal, plan_fail_owned_step_from_turn, plan_goal_transition,
     plan_next_turn_cancellation_for_goal, plan_plan_replacement, plan_plan_transition,
@@ -37,12 +38,12 @@ use garive_runtime::{
     reconstruct_plan, reconstruct_plan_graph, reconstruct_suspended_turn,
     verify_plan_carry_forward, ContinuationInput, ContinueTurnCommand, CoreTerminalContext,
     EffectiveRuntimeLimits, GetTurnQuery, GoalCommandContext, GoalPlanCoordinationError,
-    GoalRuntimeError, GoalRuntimeTransition, InteractionInputRepresentation, LocalExecutionAttempt,
-    LocalExecutionPolicy, LocalExecutionWorker, LocalWorkerDisposition, PlanCommandContext,
-    PlanDispatchError, PlanDispatchOutcome, PlanDispatchTick, PlanRuntimeError, PlanRuntimeState,
-    PlanRuntimeTransition, PlanStepDispatchFactory, PlanStepDispatchInput, PlanStepExecutionStart,
-    PreparedPlanStepDispatch, RuntimeCommandId, SqliteLedger, StartTurnCommand, TurnDispatchError,
-    TurnDispatcher,
+    GoalPlanDecision, GoalRuntimeError, GoalRuntimeTransition, InteractionInputRepresentation,
+    LocalExecutionAttempt, LocalExecutionPolicy, LocalExecutionWorker, LocalWorkerDisposition,
+    PlanCommandContext, PlanDispatchError, PlanDispatchOutcome, PlanDispatchTick, PlanRuntimeError,
+    PlanRuntimeState, PlanRuntimeTransition, PlanStepDispatchFactory, PlanStepDispatchInput,
+    PlanStepExecutionStart, PreparedPlanStepDispatch, RuntimeCommandId, SqliteLedger,
+    StartTurnCommand, TurnDispatchError, TurnDispatcher,
 };
 use serde_json::json;
 use sha2::{Digest, Sha256};
@@ -602,6 +603,79 @@ fn bounded_dispatch_resumes_claim_and_starts_exactly_one_execution() {
         PlanDispatchOutcome::ClaimBusy
     );
     assert_eq!(dispatcher.committed.lock().unwrap().len(), 1);
+}
+
+#[test]
+fn coordinator_selects_one_action_from_one_ledger_prefix() {
+    let directory = tempdir().unwrap();
+    let path = directory.path().join("goal-plan-coordinator.sqlite3");
+    let session = SessionId::try_from("session-1").unwrap();
+    let mut ledger = SqliteLedger::open(&path).unwrap();
+    open_session(&mut ledger, &session);
+
+    let before_plan = evaluate_goal_plan_once(&ledger, &session, "goal-1").unwrap();
+    assert_eq!(
+        before_plan.decision,
+        GoalPlanDecision::NeedsOperator {
+            reason: "authoritative_plan_unavailable"
+        }
+    );
+
+    let proposed = plan_propose_plan(
+        &ledger,
+        &session,
+        &context("coordinate-propose"),
+        definition(),
+    )
+    .unwrap();
+    commit_plan_command(
+        &mut ledger,
+        session.clone(),
+        before_plan.session_version,
+        &proposed,
+    )
+    .unwrap();
+    let proposed_only = evaluate_goal_plan_once(&ledger, &session, "goal-1").unwrap();
+    assert_eq!(
+        proposed_only.decision,
+        GoalPlanDecision::NeedsOperator {
+            reason: "plan_admission_required"
+        }
+    );
+
+    let proposal = recover(&ledger, &session);
+    let adopted = plan_adopt_plan(
+        &ledger,
+        &session,
+        &proposal,
+        proposal.state_version,
+        &context("coordinate-adopt"),
+        PlanRuntimeTransition::Adopt {
+            expected_goal_revision: 2,
+            expected_prior_plan_revision: None,
+            policy_reference: "plan-policy-v1".into(),
+            carry_forward_evidence: evidence(),
+        },
+    )
+    .unwrap();
+    commit_plan_command(
+        &mut ledger,
+        session.clone(),
+        proposal.session_version,
+        &adopted,
+    )
+    .unwrap();
+    let dispatch = evaluate_goal_plan_once(&ledger, &session, "goal-1").unwrap();
+    assert_eq!(
+        dispatch.decision,
+        GoalPlanDecision::DispatchReadyStep {
+            plan_id: "plan-1".into(),
+            plan_revision: 1,
+            step_id: step_id("prepare"),
+        }
+    );
+    assert_eq!(dispatch.through_position, 5);
+    assert_eq!(dispatch.session_version, 3);
 }
 
 #[tokio::test]

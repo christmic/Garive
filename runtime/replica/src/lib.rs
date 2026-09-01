@@ -22,6 +22,7 @@ mod execution_work_binding;
 mod executor_router;
 mod goal_evidence;
 mod goal_plan_coordination;
+mod goal_plan_coordinator;
 mod goal_recovery;
 mod goal_runtime;
 mod live_host;
@@ -138,6 +139,9 @@ pub use goal_plan_coordination::{
     plan_next_turn_cancellation_for_goal, plan_resume_goal_from_continued_turn,
     plan_succeed_goal_from_completed_plan, plan_suspend_goal_from_owned_turn,
     plan_suspend_owned_plan_from_turn, GoalPlanCoordinationError, PlannedGoalTurnCancellation,
+};
+pub use goal_plan_coordinator::{
+    evaluate_goal_plan_once, GoalPlanCoordinationSnapshot, GoalPlanDecision,
 };
 pub use goal_recovery::reconstruct_goal;
 pub use goal_runtime::{
