@@ -59,8 +59,10 @@ The fullscreen frame has four vertical regions:
   in a heavy full-width card.
 - Activity belongs between request and answer. The active item is one visible
   row; completed siblings collapse into a summary such as `3 actions · 8s`.
-- The composer is the only persistent framed surface. Its border, cursor, and
-  footer share one focus state and never create a second status bar.
+- The ordinary composer is an open `ComposerDock`: one low-contrast input
+  surface, one `›` lead, and one contextual footer. It reclaims transcript
+  height and does not compete with modal boundaries. Frozen and action modes
+  use a separate semantic status row without changing input geometry.
 - Overlays are centered, bounded components for selection or confirmation.
   They do not permanently divide the transcript into panes.
 - An ordinary empty transcript is intentionally silent. `ContextLine` owns
@@ -80,7 +82,7 @@ Each component owns semantics, layout, render, hit regions, and snapshots:
 | `ActivityStack` | active safe activity plus collapsed completed summary |
 | `LiveAnswer` | ephemeral received text, live caret, gap/overflow state |
 | `MarkdownAnswer` | canonical committed answer and code/table rendering |
-| `Composer` | multiline draft, selection, attachments, modes, submission |
+| `ComposerDock` | multiline draft, selection, status row, modes, submission |
 | `CommandPalette` | slash discovery, global actions, exact typed intents |
 | `DecisionSheet` | approval, typed response, destructive confirmation |
 | `SessionSwitcher` | recent Sessions, lifecycle, search, resume |
@@ -94,8 +96,9 @@ SQLite, classify Host errors, or infer a Turn terminal.
 
 - Spacing is the primary separator: one blank row between Turns, none between
   tightly related activity rows, and one row above the composer.
-- Borders are reserved for focus, modal boundaries, and the composer. Repeated
-  transcript cards and nested boxes are prohibited.
+- Borders are reserved for modal boundaries and an explicitly opened
+  Inspector. The ordinary ComposerDock and transcript stay open; repeated
+  cards and nested boxes are prohibited.
 - Color encodes role or state, never structure alone. Every state also has a
   word, glyph, or placement distinction and remains legible in mono mode.
 - The accent color appears on the insertion caret, current selection, active

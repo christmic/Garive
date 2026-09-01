@@ -66,6 +66,15 @@ reverse-engineered tree because provenance and version parity are unverified.
   and hanging continuation indent. Garive adopts that density baseline, then
   strengthens it with grapheme/display-width wrapping, explicit light/dark/mono
   semantic styles, and a separate linear `You` announcement.
+- **CX-V2 — open composer density.**
+  `/Users/christmix/OraculoSpace/codex/codex-rs/tui/src/bottom_pane/chat_composer.rs:4420-4458`
+  derives height from textarea plus footer rather than a surrounding border;
+  `:4751-4780` applies the prompt surface and paints one `›` lead. Reviewed
+  snapshots `footer_mode_hidden_while_typing` and
+  `footer_collapse_empty_mode_only` keep the input open and reserve compact
+  footer context. Garive adapts this density into `ComposerDock`, while
+  retaining its own Host truth, Unicode editor, selection, frozen-state row,
+  and pointer geometry.
 - **CX-R1 — provider retry is not subscription resume.**
   `/Users/christmix/OraculoSpace/codex/codex-rs/core/src/responses_retry.rs:15-16`
   sets 5 s initial and 60 s maximum connection delay.
@@ -128,6 +137,7 @@ reverse-engineered tree because provenance and version parity are unverified.
 | Composer navigation | **Adapt** | Up/Down traverses wrapped visual rows before history; Garive retains its documented Unicode/grapheme and logical-line contracts. | CC-I1; implementation source unavailable |
 | Selection styling | **Adapt** | Keep accent on one textual selection marker, bold grapheme-safe match spans, and reverse only the marker in mono so selection never depends on blue or floods the row. | CC-I1, CC-A1 |
 | User request hierarchy | **Adapt** | Use one low-contrast, unbordered request surface with a non-color marker and hanging Unicode indent; keep screen-reader role wording explicit. | CX-V1 |
+| Composer density | **Adapt** | Use an open low-contrast ComposerDock with one lead and separate contextual row; frozen/action truth changes wording and tone without adding a permanent frame. | CX-V2 |
 | Screen-reader projection | **Adapt** | Keep Garive's linear presenter and semantic announcements; suppress decorative animation and per-delta transcript chatter. | CC-A1; executable `claude --help` behavior |
 | Reconnect status | **Adopt** | A continuing failure is persistent, names the state, exposes details safely, and offers an explicit retry; it is not toast-only. | CX-R1, CC-R1 |
 | H1/H4 reconnect algorithm | **Reject** | Do not copy provider sampling retry or remote-session behavior. H1 resumes from its typed durable cursor; H4 reconnects by generation/sequence snapshot rules and never advances H1. | CX-R1, CC-R1; neither exposes Garive cursor semantics |

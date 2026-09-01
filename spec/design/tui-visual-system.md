@@ -28,18 +28,19 @@ not depend on the terminal default being light or dark.
 | `StatusChip` | padded icon/text span; semantic state style; never color-only |
 | `KeyHint` | visually distinct keycap plus verb; ordered by current action priority |
 | `SelectionRow` | explicit marker-only or full-area policy plus stable cursor; reverse video in mono |
-| `FocusFrame` | stable Composer or modal boundary; focus style never changes geometry or moves on Host events |
+| `ComposerDock` | open low-contrast input body, semantic status row, shared cursor/hit geometry |
 | `CenteredColumn` | caps readable transcript width without changing model state |
 | `ModalFrame` | dims retained workspace, clears popup bounds, rounded focus border, safe padding |
 | `AnchoredMenu` | clears only its bounded area, attaches above its owner, preserves page context and owner cursor |
 | `RoleMarker` | restrained non-color User or Agent identity; never a full-width card border |
 | `LiveCaret` | single-cell active-output cue; hidden for reduced motion, unavailable preview, and terminal state |
 
-`FocusFrame` keeps one neutral rounded boundary in idle and focused states. A
-focused Composer adds only the accent `›` input marker to that boundary; it does
-not recolor the complete frame. Warning and action variants may replace the
-marker and border tone with their admitted semantic state without changing the
-inner rectangle. `RequestSurface` renders User input as an unbordered,
+`ComposerDock` reuses the submitted-request visual grammar without copying its
+identity: dark/light use the low-contrast `request_surface`, mono uses the
+terminal background, and focus changes only the non-color `›` lead and terminal
+caret. Its reserved row is blank during ordinary editing and carries `Draft
+locked` or `Action response` only when that state is true. No Composer variant
+adds a persistent surrounding border. `RequestSurface` renders User input as an unbordered,
 low-contrast terminal-width row with the same non-color `›` identity and a
 two-cell hanging indent. Its wrapper measures sanitized grapheme display width,
 so CJK and combining sequences cannot split or shift later components.
@@ -69,7 +70,7 @@ retains its one-row layout slot so selection, notices, and Host events never
 move the Composer hit geometry; tiny layouts below nine rows remove the slot as
 part of their explicit degradation.
 The composer lives in `view/composer.rs`. It consumes the editor's admitted
-byte range, styles whole rendered graphemes, and owns its frame, viewport, and
+byte range, styles whole rendered graphemes, and owns its dock, viewport, and
 cursor geometry. Dark/light selection uses the semantic selection surface;
 mono uses reverse video. Selection may not be communicated by color alone.
 Its private `EditorLayout` is the single source for rendered rows, selection
@@ -84,13 +85,13 @@ pointer hit testing, and vertical navigation therefore cannot disagree about
 where a row begins or ends.
 Home/End targets are component-owned visual-row edges from the same result;
 controllers may not reinterpret them as newline-delimited logical edges.
-At non-tiny heights the composer frame grows from three to at most seven rows
+At non-tiny heights the ComposerDock grows from two to at most six rows
 using the layout's visual row count, including an exact-width cursor
 continuation row. It does not grow from logical newline count. Below the
-height breakpoint it remains three rows and follows the cursor so conversation
+height breakpoint it remains two rows and follows the cursor so conversation
 and the highest-priority hint survive.
 When mouse capture is enabled, composer pointer placement and drag selection
-must call the same component geometry. The border and padding are inert; CJK
+must call the same component geometry. The status/separator row is inert; CJK
 double-cell glyphs expose stable before/after insertion points, and selection
 remains the same semantic style used by keyboard selection.
 Private kill/yank state has no persistent badge, counter, or preview. The
@@ -165,10 +166,9 @@ execution may add one compact semantic phrase. Brand background fills, padded
 status chips, clocks, raw IDs, and a second persistent status row are
 prohibited.
 
-Spacing is the transcript's primary structure. Borders are reserved for the
-Composer, modal boundaries, and an explicitly opened Inspector. The Composer
-is the only persistent framed surface; focus changes its semantic border or
-caret styling without switching border shape or moving content. Accent is
+Spacing is the transcript's primary structure. Borders are reserved for modal
+boundaries and an explicitly opened Inspector. The ComposerDock is an open
+surface; focus changes its lead/caret styling without moving content. Accent is
 limited to the insertion caret, current selection, active work cue, and primary
 decision. Large accent fills and repeated nested boxes are prohibited.
 
@@ -258,7 +258,7 @@ Modal geometry reserves the semantic ContextLine and Composer/HintLine
 boundary on standard terminals. The reservation contracts responsively on
 short terminals so at least the selected row and its actions remain visible. A modal may clear
 only its rectangle plus a two-cell same-height horizontal halo; it must not
-erase rows above or below, splice the composer frame, or hide the command
+erase rows above or below, splice the ComposerDock, or hide the command
 palette action row. The command palette uses compact vertical chrome and a
 fixed command column so all admitted rows fit at `160x28`. Its selected state
 uses only the shared two-cell `SelectionMarker`; the command and detail remain
