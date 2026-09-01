@@ -104,6 +104,7 @@ essential label is clipped or replaced by an icon.
 | material | `--blur-lg` 16 px; floating transparency only |
 | desktop chrome | `--height-toolbar` 46, `--height-toolbar-sm` 36, `--height-toolbar-pane` 40 px |
 | conversation rhythm | `--conversation-item-gap` 16, `--conversation-grouped-item-gap` 4 px |
+| thread entry | `--thread-content-top-inset` 32 px |
 | navigation fade | `--sidebar-scroll-fade-distance` 40 px |
 
 Desktop controls are at least 32 px high; primary actions and touch-capable

@@ -1027,6 +1027,19 @@ Home rows at 672x40 px with zero document overflow. Reduced motion freezes the
 pulse. This is a Garive product mapping of source-supported structure, not a
 claim that Codex exposes Garive's Runtime wording or starter prompts.
 
+### XXXII. Thread entry uses the scroll-layout inset
+
+Installed source in `thread-scroll-layout-B1Q-zWDJ.js` assigns the Electron
+thread viewport `--thread-content-top-inset: calc(var(--spacing) * 8)`. Its
+4px spacing unit resolves this to 32px. Garive previously hard-coded 40px, so
+the first durable Turn sat eight pixels lower even though the toolbar and
+content rail already followed the installed source.
+
+Desktop and Web now consume a shared `--thread-content-top-inset: 32px` token.
+It belongs to scroll layout rather than an individual page or message, so a
+future thread renderer cannot silently re-estimate the entry position from a
+screenshot.
+
 ## Gate 1 — Codex fidelity
 
 This gate passes only when both Desktop and Web show:

@@ -46,6 +46,7 @@ describe("Desktop visual accessibility contract", () => {
     expect(TOKENS).toContain("--thread-content-margin: 16px");
     expect(TOKENS).toContain("--radius-user-message: 22px");
     expect(TOKENS).toContain("--thread-content-max-width: 672px");
+    expect(TOKENS).toContain("--thread-content-top-inset: 32px");
     expect(TOKENS).toContain("--sidebar-preferred-width: 275px");
     expect(CSS).toContain("--sidebar-width: clamp(240px, var(--sidebar-preferred-width), min(520px, calc(100vw - 320px)))");
     expect(TOKENS).toContain("--sidebar-scroll-fade-distance: 40px");
@@ -111,6 +112,7 @@ describe("Desktop visual accessibility contract", () => {
     expect(CSS).toContain("grid-template-columns: minmax(0, 1fr); grid-template-rows: var(--height-window-bar) minmax(0, 1fr)");
     expect(CSS).toContain(".sidebar-resizer { position: absolute; z-index: 11; top: var(--height-toolbar-sm);");
     expect(CSS).toContain(".timeline { width: min(var(--thread-content-max-width), calc(100% - 48px));");
+    expect(CSS).toContain("padding: var(--thread-content-top-inset) 0 174px;");
     expect(CSS).toContain(".navigation-collapsed > .sidebar { display: none; }");
     expect(CSS).toContain(".task-groups { display: grid; align-content: start; gap: 8px;");
     expect(CSS).toContain('.task-groups[data-fade-top="true"][data-fade-bottom="true"]');
