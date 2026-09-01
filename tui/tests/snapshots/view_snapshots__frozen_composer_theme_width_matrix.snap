@@ -4,13 +4,13 @@ expression: frozen_composer_matrix()
 ---
 theme=Dark width=40 marker=Style::new().yellow().bg(Color::Reset).underline_color(Color::Reset) cursor=None
 
-    ✓ Agent action · completed
-  • ## Release plan
+  ✓ Agent action · completed
+• ## Release plan
 
-    • Verify the Runtime
-    • Ship with evidence
+  • Verify the Runtime
+  • Ship with evidence
 
-    cargo test passes.
+  cargo test passes.
 
  ! Draft locked · read only
 › Retained pending draft
@@ -18,13 +18,13 @@ theme=Dark width=40 marker=Style::new().yellow().bg(Color::Reset).underline_colo
 
 theme=Dark width=100 marker=Style::new().yellow().bg(Color::Reset).underline_color(Color::Reset) cursor=None
 
-    ✓  Agent action · completed
-  • ## Release plan
+  ✓  Agent action · completed
+• ## Release plan
 
-    • Verify the Runtime
-    • Ship with evidence
+  • Verify the Runtime
+  • Ship with evidence
 
-    cargo test passes.
+  cargo test passes.
 
  ! Draft locked · read only
 › Retained pending draft
@@ -32,13 +32,13 @@ theme=Dark width=100 marker=Style::new().yellow().bg(Color::Reset).underline_col
 
 theme=Light width=40 marker=Style::new().yellow().bg(Color::Reset).underline_color(Color::Reset) cursor=None
 
-    ✓ Agent action · completed
-  • ## Release plan
+  ✓ Agent action · completed
+• ## Release plan
 
-    • Verify the Runtime
-    • Ship with evidence
+  • Verify the Runtime
+  • Ship with evidence
 
-    cargo test passes.
+  cargo test passes.
 
  ! Draft locked · read only
 › Retained pending draft
@@ -46,13 +46,13 @@ theme=Light width=40 marker=Style::new().yellow().bg(Color::Reset).underline_col
 
 theme=Light width=100 marker=Style::new().yellow().bg(Color::Reset).underline_color(Color::Reset) cursor=None
 
-    ✓  Agent action · completed
-  • ## Release plan
+  ✓  Agent action · completed
+• ## Release plan
 
-    • Verify the Runtime
-    • Ship with evidence
+  • Verify the Runtime
+  • Ship with evidence
 
-    cargo test passes.
+  cargo test passes.
 
  ! Draft locked · read only
 › Retained pending draft
@@ -60,13 +60,13 @@ theme=Light width=100 marker=Style::new().yellow().bg(Color::Reset).underline_co
 
 theme=Mono width=40 marker=Style::new().fg(Color::Reset).bg(Color::Reset).underline_color(Color::Reset) cursor=None
 
-    ✓ Agent action · completed
-  • ## Release plan
+  ✓ Agent action · completed
+• ## Release plan
 
-    • Verify the Runtime
-    • Ship with evidence
+  • Verify the Runtime
+  • Ship with evidence
 
-    cargo test passes.
+  cargo test passes.
 
  ! Draft locked · read only
 › Retained pending draft
@@ -74,13 +74,13 @@ theme=Mono width=40 marker=Style::new().fg(Color::Reset).bg(Color::Reset).underl
 
 theme=Mono width=100 marker=Style::new().fg(Color::Reset).bg(Color::Reset).underline_color(Color::Reset) cursor=None
 
-    ✓  Agent action · completed
-  • ## Release plan
+  ✓  Agent action · completed
+• ## Release plan
 
-    • Verify the Runtime
-    • Ship with evidence
+  • Verify the Runtime
+  • Ship with evidence
 
-    cargo test passes.
+  cargo test passes.
 
  ! Draft locked · read only
 › Retained pending draft

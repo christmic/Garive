@@ -4,26 +4,24 @@ expression: matrix
 ---
 ===== compact mono 40x8 =====
 ↓ 12 newer updates ·  End follow latest
-  › Summarize the release plan.
-    ✓ Agent action · completed
-  • ## Release plan
+› Summarize the release plan.
+  ✓ Agent action · completed
+• ## Release plan
 
-    • Verify the Runtime
-• Working… ·  Esc interrupt
+  • Verify the Runtime
+• Working… (esc to interrupt)
 › Ask a follow-up…
 ===== standard dark 100x24 =====
                               ↓ 12 newer updates ·  End follow latest
 
-  › Summarize the release plan.
-    ✓  Agent action · completed
-  • ## Release plan
+› Summarize the release plan.
+  ✓  Agent action · completed
+• ## Release plan
 
-    • Verify the Runtime
-    • Ship with evidence
+  • Verify the Runtime
+  • Ship with evidence
 
-    cargo test passes.
-
-
+  cargo test passes.
 
 
 
@@ -33,22 +31,22 @@ expression: matrix
 
 
 
-• Working… ·  Esc interrupt
+
+
+• Working… (esc to interrupt)
 › Ask a follow-up…
 
 ===== wide light 160x28 =====
                                                             ↓ 12 newer updates ·  End follow latest
 
-  › Summarize the release plan.
-    ✓  Agent action · completed
-  • ## Release plan
+› Summarize the release plan.
+  ✓  Agent action · completed
+• ## Release plan
 
-    • Verify the Runtime
-    • Ship with evidence
+  • Verify the Runtime
+  • Ship with evidence
 
-    cargo test passes.
-
-
+  cargo test passes.
 
 
 
@@ -62,13 +60,15 @@ expression: matrix
 
 
 
-• Working… ·  Esc interrupt
+
+
+• Working… (esc to interrupt)
 › Ask a follow-up…
 
 ===== overlay owns input =====
                                          ↓ 12 newer updates
 
-  › Summarize the release plan.
+› Summarize the release plan.
               ╭ Keyboard guide ──────────────────────────────────────────────────────╮
               │                                                                      │
               │    Enter send   Ctrl+J new line   Ctrl+N new Session                 │

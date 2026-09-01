@@ -4,8 +4,7 @@ expression: filmstrip
 ---
 ===== preparing =====
 
-  › Show every verified streaming stage.
-  • Preparing context
+› Show every verified streaming stage.
 
 
 
@@ -24,15 +23,15 @@ expression: filmstrip
 
 
 
- Esc interrupt
+
+• Preparing… (esc to interrupt)
 › A retained follow-up draft
 
 
 ===== first presented delta =====
 
-  › Show every verified streaming stage.
-  • Preparing context
-    The first visible▍
+› Show every verified streaming stage.
+• The first visible▍
 
 
 
@@ -50,16 +49,16 @@ expression: filmstrip
 
 
 
- Esc interrupt
+
+• Preparing… (esc to interrupt)
 › A retained follow-up draft
 
 
 ===== second delta with activity =====
 
-  › Show every verified streaming stage.
-    ●  Verifying streamed output
-  • Writing…
-    The first visible streaming frame arrives.▍
+› Show every verified streaming stage.
+  ●  Verifying streamed output
+• The first visible streaming frame arrives.▍
 
 
 
@@ -76,7 +75,8 @@ expression: filmstrip
 
 
 
- Esc interrupt
+
+• Writing… (esc to interrupt)
 › A retained follow-up draft
 
 
@@ -102,16 +102,15 @@ expression: filmstrip
              │                                                                        │
              │    ↑/↓ select   Home/End edge   Enter run   Esc close                  │
              ╰────────────────────────────────────────────────────────────────────────╯
-
+• Writing…
 › A retained follow-up draft
 
 
 ===== stream restored after overlay =====
 
-  › Show every verified streaming stage.
-    ●  Verifying streamed output
-  • Writing…
-    The first visible streaming frame arrives.▍
+› Show every verified streaming stage.
+  ●  Verifying streamed output
+• The first visible streaming frame arrives.▍
 
 
 
@@ -128,16 +127,16 @@ expression: filmstrip
 
 
 
- Esc interrupt
+
+• Writing… (esc to interrupt)
 › A retained follow-up draft
 
 
 ===== finalizing =====
 
-  › Show every verified streaming stage.
-    ●  Verifying streamed output
-  • Finishing…
-    The first visible streaming frame arrives.▍
+› Show every verified streaming stage.
+  ●  Verifying streamed output
+• The first visible streaming frame arrives.▍
 
 
 
@@ -154,16 +153,16 @@ expression: filmstrip
 
 
 
- Esc interrupt
+
+• Finishing… (esc to interrupt)
 › A retained follow-up draft
 
 
 ===== ended awaiting durable =====
 
-  › Show every verified streaming stage.
-    ●  Verifying streamed output
-  • Waiting for durable result
-    The first visible streaming frame arrives.
+› Show every verified streaming stage.
+  ●  Verifying streamed output
+• The first visible streaming frame arrives.
 
 
 
@@ -180,15 +179,16 @@ expression: filmstrip
 
 
 
- Esc interrupt
+
+• Saving… (esc to interrupt)
 › A retained follow-up draft
 
 
 ===== durable takeover =====
 
-  › Show every verified streaming stage.
-    ●  Verifying streamed output
-  • Saved streaming answer.
+› Show every verified streaming stage.
+  ●  Verifying streamed output
+• Saved streaming answer.
 
 
 

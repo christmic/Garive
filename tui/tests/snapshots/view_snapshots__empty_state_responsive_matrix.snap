@@ -19,7 +19,7 @@ New conversation              connecting
 
 
 
-› Ask Garive anything  ·  / commands
+› Ask Garive anything
 
 
 ===== loading standard · Dark · 80x18 =====
@@ -39,7 +39,7 @@ New conversation  ·  Garive                                           connectin
 
 
 
-› Ask Garive anything  ·  / commands
+› Ask Garive anything
 
 
 ===== loading wide · Light · 120x18 =====
@@ -59,7 +59,7 @@ New conversation  ·  Garive                                                    
 
 
 
-› Ask Garive anything  ·  / commands
+› Ask Garive anything
 
 
 ===== ready · Dark · 100x18 =====
@@ -79,14 +79,14 @@ New conversation  ·  Garive                                                    
 
 
 
-› Ask Garive anything  ·  / commands
+› Ask Garive anything
 
 
 ===== not configured · Mono · 100x18 =====
 
 
-    No Agent is installed
-    Install an Agent definition before starting a conversation.
+  No Agent is installed
+  Install an Agent definition before starting a conversation.
 
 
 
@@ -99,15 +99,15 @@ New conversation  ·  Garive                                                    
 
 
 
-› Ask Garive anything  ·  / commands
+› Ask Garive anything
 
 
 ===== degraded · Dark · 100x18 =====
 New conversation  ·  Garive                                                              unavailable
 
 
-    Recovery details are available
-    Open /status to inspect the safe failure and reconnect.
+  Recovery details are available
+  Open /status to inspect the safe failure and reconnect.
 
 
 
@@ -119,5 +119,5 @@ New conversation  ·  Garive                                                    
 
 
 
-› Ask Garive anything  ·  / commands
+› Ask Garive anything
   /reconnect try again safely  ·  Durable Session truth unavailable

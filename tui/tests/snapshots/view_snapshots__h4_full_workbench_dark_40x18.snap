@@ -4,9 +4,7 @@ expression: compact
 ---
 ===== preparing =====
 
-  › Show every verified streaming
-    stage.
-  • Preparing context
+› Show every verified streaming stage.
 
 
 
@@ -18,16 +16,16 @@ expression: compact
 
 
 
- Esc interrupt
+
+
+• Preparing… (esc to interrupt)
 › A retained follow-up draft
 
 
 ===== first presented delta =====
 
-  › Show every verified streaming
-    stage.
-  • Preparing context
-    The first visible▍
+› Show every verified streaming stage.
+• The first visible▍
 
 
 
@@ -38,18 +36,18 @@ expression: compact
 
 
 
- Esc interrupt
+
+
+• Preparing… (esc to interrupt)
 › A retained follow-up draft
 
 
 ===== second delta with activity =====
 
-  › Show every verified streaming
-    stage.
-    ● Verifying streamed output
-  • Writing…
-    The first visible streaming frame
-    arrives.▍
+› Show every verified streaming stage.
+  ● Verifying streamed output
+• The first visible streaming frame
+  arrives.▍
 
 
 
@@ -58,7 +56,9 @@ expression: compact
 
 
 
- Esc interrupt
+
+
+• Writing… (esc to interrupt)
 › A retained follow-up draft
 
 
@@ -84,12 +84,10 @@ expression: compact
 
 ===== stream restored after overlay =====
 
-  › Show every verified streaming
-    stage.
-    ● Verifying streamed output
-  • Writing…
-    The first visible streaming frame
-    arrives.▍
+› Show every verified streaming stage.
+  ● Verifying streamed output
+• The first visible streaming frame
+  arrives.▍
 
 
 
@@ -98,18 +96,18 @@ expression: compact
 
 
 
- Esc interrupt
+
+
+• Writing… (esc to interrupt)
 › A retained follow-up draft
 
 
 ===== finalizing =====
 
-  › Show every verified streaming
-    stage.
-    ● Verifying streamed output
-  • Finishing…
-    The first visible streaming frame
-    arrives.▍
+› Show every verified streaming stage.
+  ● Verifying streamed output
+• The first visible streaming frame
+  arrives.▍
 
 
 
@@ -118,18 +116,18 @@ expression: compact
 
 
 
- Esc interrupt
+
+
+• Finishing… (esc to interrupt)
 › A retained follow-up draft
 
 
 ===== ended awaiting durable =====
 
-  › Show every verified streaming
-    stage.
-    ● Verifying streamed output
-  • Awaiting saved result
-    The first visible streaming frame
-    arrives.
+› Show every verified streaming stage.
+  ● Verifying streamed output
+• The first visible streaming frame
+  arrives.
 
 
 
@@ -138,16 +136,18 @@ expression: compact
 
 
 
- Esc interrupt
+
+
+• Saving… (esc to interrupt)
 › A retained follow-up draft
 
 
 ===== durable takeover =====
 
-  › Show every verified streaming
-    stage.
-    ● Verifying streamed output
-  • Saved streaming answer.
+› Show every verified streaming stage.
+  ● Verifying streamed output
+• Saved streaming answer.
+
 
 
 
