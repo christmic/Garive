@@ -59,14 +59,7 @@ fn ordered_lists_and_fenced_code_keep_semantic_structure() {
 
     assert_eq!(
         text(&lines),
-        vec![
-            "3. first",
-            "4. second",
-            "",
-            "╭─ CODE · rust",
-            "│ fn main() {}",
-            "╰─",
-        ]
+        vec!["3. first", "4. second", "", "  rust", "│ fn main() {}",]
     );
 
     let heading = render_markdown(
@@ -207,8 +200,11 @@ fn fenced_code_highlights_known_languages_and_preserves_unknown_ones() {
         syntax(),
         80,
     );
+    assert_eq!(text(&unknown)[0], "  garive-unknown");
     assert_eq!(text(&unknown)[1], "│ value = 42");
     assert_eq!(unknown[1].spans.len(), 2, "gutter plus one plain span");
+    assert!(text(&unknown).iter().all(|line| !line.contains("CODE")));
+    assert!(text(&unknown).iter().all(|line| !line.contains('╰')));
 }
 
 #[test]

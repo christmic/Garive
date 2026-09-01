@@ -383,9 +383,11 @@ Markdown styling is compositional rather than a single mutable flag: ending an
 inner emphasis cannot erase an enclosing strong, link, or heading style.
 Headings return to normal body style at their boundary. Explicit links render
 their label and a bounded sanitized destination without emitting OSC 8.
-Fenced code uses one semantic frame, retains its first bounded language token,
-expands tabs to four cells for display, and clips by grapheme/display width with
-an explicit `…`; source text remains unchanged for copy.
+Fenced code uses a quiet block: an optional muted language label aligned to the
+content and one muted left guide, with no generic `CODE` heading, top rule, or
+bottom rule. It retains the first bounded language token, expands tabs to four
+cells for display, and clips by grapheme/display width with an explicit `…`;
+source text remains unchanged for copy.
 
 Agent Markdown owns physical wrapping before the outer transcript paragraph.
 Its two-cell Agent gutter repeats on every physical row, including CJK, emoji,
@@ -404,8 +406,8 @@ fenced languages map parser scopes to `normal`, `comment`, `string`,
 Those roles consume only palette styles: dark and light use polarity-safe
 colors, while mono distinguishes roles with weight, italic, underline, and
 muted punctuation. No state may be color-only. Unlabeled or unknown languages
-render plain code and remain visually framed; Garive never guesses a language
-from content.
+render plain code and retain the left guide; unlabeled blocks omit the metadata
+row. Garive never guesses a language from content.
 
 Markdown tables are one component with two presentations. When every column
 can retain at least six display cells, a compact content-aware grid uses bold

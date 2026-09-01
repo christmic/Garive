@@ -588,13 +588,22 @@ optional Markdown theme capability in `packages/tui/src/components/markdown.ts`
 and validates the fenced language before calling highlight.js in
 `packages/coding-agent/src/utils/syntax-highlight.ts`; it explicitly rejects
 automatic language detection because prose is misclassified, and catches
-errors as plain code. The audited Codex Markdown renderer records fenced
-languages but provides no equivalent syntax-coloring path. These are distinct
-findings, not an inferred shared implementation.
+errors as plain code. Codex also buffers known-language fenced content and
+highlights it at block close in `markdown_render.rs:666-675,850-891`; it does
+not soft-wrap code (`markdown_render.rs:1877-1900`) so whitespace remains
+copyable. These are distinct findings, not an inferred shared implementation.
+
+Codex's reviewed
+`chatwidget_markdown_code_blocks_vt100_snapshot.snap` renders code as quiet,
+indented content without a generic `CODE` heading or enclosing top/bottom
+rules. Garive adopts that low visual weight, while retaining an optional muted
+language label, one left guide, and its semantic syntax palette. The label is
+metadata rather than a competing heading, and an unlabeled block starts
+directly with code.
 
 Garive adopts the bounded component boundaries that its transcript needs:
 compositional inline styles, visible sanitized link destinations, ordered-list
-indices, semantic fenced-code frames/language labels, stateful Syntect parsing
+indices, quiet fenced-code guides/language labels, stateful Syntect parsing
 for recognized labels, terminal-palette token mapping, and width-aware
 grapheme-safe code clipping. Unlabeled/unknown code stays plain; a 16 KiB line
 or 64 KiB block budget disables highlighting for the remainder of that block

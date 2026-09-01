@@ -571,9 +571,11 @@ declared starting index. Explicit links render as underlined semantic label
 plus a sanitized, 120-character-bounded destination when it differs from the
 label. They are visible text, not an active OSC 8 escape.
 
-Code blocks preserve indentation inside a semantic frame, show the first
-bounded fenced-language token, expand tabs to four display cells, and use
-grapheme-aware horizontal clipping with an explicit `…` overflow marker.
+Code blocks preserve indentation behind one muted left guide. A fenced block
+shows its first bounded language token as an optional muted metadata row; it
+has no generic `CODE` heading and no enclosing top or bottom rule. Tabs expand
+to four display cells, and grapheme-aware horizontal clipping uses an explicit
+`…` overflow marker.
 Recognized labels select a bundled grammar by extension or case-insensitive
 name. Highlighting is stateful across lines so multiline strings/comments
 remain coherent, but no label is auto-detected. Parser scopes map through the
@@ -581,7 +583,7 @@ Garive semantic palette; raw syntax-theme colors and backgrounds cannot reach
 the terminal. Unknown labels, parser errors, lines above 16 KiB, or blocks above
 64 KiB fall back to plain semantic code; crossing either budget disables
 highlighting for the rest of that block. Copy operates on source text, not
-clipped cells, language labels, token spans, or border glyphs.
+clipped cells, language labels, token spans, or the guide glyph.
 
 Tables are parsed into bounded header, row, cell, alignment, and styled-span
 state before presentation. At usable widths they render as a content-aware

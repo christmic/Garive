@@ -180,12 +180,11 @@ impl<'a> Renderer<'a> {
                     CodeBlockKind::Fenced(value) => bounded_label(&safe_text(&value)),
                     CodeBlockKind::Indented => None,
                 };
-                self.push("╭─ CODE", self.accent);
                 if let Some(language) = language.as_deref() {
-                    self.push(" · ", self.muted);
-                    self.push(language, self.accent);
+                    self.push("  ", self.muted);
+                    self.push(language, self.muted.add_modifier(Modifier::BOLD));
+                    self.flush();
                 }
-                self.flush();
                 self.code_block = true;
                 self.code_highlighter = language
                     .as_deref()
@@ -272,8 +271,6 @@ impl<'a> Renderer<'a> {
                 self.code_block = false;
                 self.code_highlighter = None;
                 self.block_style = self.normal;
-                self.push("╰─", self.muted);
-                self.flush();
             }
             TagEnd::Link => self.end_link(),
             TagEnd::Table => self.finish_table(),
