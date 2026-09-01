@@ -18,9 +18,9 @@ expression: compact
 
 
 
-            Preparing…  ·  Esc interrupt
+• Preparing…  ·  esc to interrupt
 › A retained follow-up draft
-
+  Agent · New conversation
 
 ===== first presented delta =====
 
@@ -38,9 +38,9 @@ expression: compact
 
 
 
-            Preparing…  ·  Esc interrupt
+• Preparing…  ·  esc to interrupt
 › A retained follow-up draft
-
+  Agent · New conversation
 
 ===== second delta with activity =====
 
@@ -58,9 +58,9 @@ expression: compact
 
 
 
-              Writing…  ·  Esc interrupt
+• Writing…  ·  esc to interrupt
 › A retained follow-up draft
-
+  Agent · New conversation
 
 ===== overlay while streaming =====
 
@@ -78,9 +78,9 @@ Showing 1–8 / 21 · ↓13
   /reconnect        Resume event stream
   ↑/↓ select   Home/End edge
   Enter run   Esc close
-                                Writing…
+• Writing…
 › A retained follow-up draft
-
+  Agent · New conversation
 
 ===== stream restored after overlay =====
 
@@ -98,9 +98,9 @@ Showing 1–8 / 21 · ↓13
 
 
 
-              Writing…  ·  Esc interrupt
+• Writing…  ·  esc to interrupt
 › A retained follow-up draft
-
+  Agent · New conversation
 
 ===== finalizing =====
 
@@ -118,9 +118,9 @@ Showing 1–8 / 21 · ↓13
 
 
 
-            Finishing…  ·  Esc interrupt
+• Finishing…  ·  esc to interrupt
 › A retained follow-up draft
-
+  Agent · New conversation
 
 ===== ended awaiting durable =====
 
@@ -138,9 +138,9 @@ Showing 1–8 / 21 · ↓13
 
 
 
-               Saving…  ·  Esc interrupt
+• Saving…  ·  esc to interrupt
 › A retained follow-up draft
-
+  Agent · New conversation
 
 ===== durable takeover =====
 
@@ -160,3 +160,4 @@ Showing 1–8 / 21 · ↓13
 
 
 › A retained follow-up draft
+  Agent · New conversation

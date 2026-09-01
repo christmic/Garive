@@ -24,9 +24,9 @@ expression: wide
 
 
 
-                                                                                                                                    Preparing…  ·  Esc interrupt
+• Preparing…  ·  esc to interrupt
 › A retained follow-up draft
-
+  Agent · New conversation
 
 ===== first presented delta =====
 
@@ -50,9 +50,9 @@ expression: wide
 
 
 
-                                                                                                                                    Preparing…  ·  Esc interrupt
+• Preparing…  ·  esc to interrupt
 › A retained follow-up draft
-
+  Agent · New conversation
 
 ===== second delta with activity =====
 
@@ -76,9 +76,9 @@ expression: wide
 
 
 
-                                                                                                                                      Writing…  ·  Esc interrupt
+• Writing…  ·  esc to interrupt
 › A retained follow-up draft
-
+  Agent · New conversation
 
 ===== overlay while streaming =====
 
@@ -102,9 +102,9 @@ Search  type to search
   /retry              unavailable · no unknown command
   /reconnect          Resume event stream
   ↑/↓ select   Home/End edge   Enter run   Esc close
-                                                                                                                                                        Writing…
+• Writing…
 › A retained follow-up draft
-
+  Agent · New conversation
 
 ===== stream restored after overlay =====
 
@@ -128,9 +128,9 @@ Search  type to search
 
 
 
-                                                                                                                                      Writing…  ·  Esc interrupt
+• Writing…  ·  esc to interrupt
 › A retained follow-up draft
-
+  Agent · New conversation
 
 ===== finalizing =====
 
@@ -154,9 +154,9 @@ Search  type to search
 
 
 
-                                                                                                                                    Finishing…  ·  Esc interrupt
+• Finishing…  ·  esc to interrupt
 › A retained follow-up draft
-
+  Agent · New conversation
 
 ===== ended awaiting durable =====
 
@@ -180,9 +180,9 @@ Search  type to search
 
 
 
-                                                                                                                                       Saving…  ·  Esc interrupt
+• Saving…  ·  esc to interrupt
 › A retained follow-up draft
-
+  Agent · New conversation
 
 ===== durable takeover =====
 
@@ -208,3 +208,4 @@ Search  type to search
 
 
 › A retained follow-up draft
+  Agent · New conversation

@@ -5,7 +5,7 @@ expression: "inspector_frame(theme, 120)"
 
             › Summarize the release plan.
               ✓  Agent action · completed
-            • ## Release plan
+            ## Release plan
 
               • Verify the Runtime
               • Ship with evidence
@@ -17,5 +17,6 @@ expression: "inspector_frame(theme, 120)"
              Inspector · Activity ──────────────────────────────────────────────────────────────────────────
             › ✓ Agent action · completed
             ↑↓ select · Enter jump · Esc close
-                                                                                                    Working…
+            • Working…
             › Ask a follow-up…
+              Agent · Session 1

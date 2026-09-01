@@ -5,7 +5,7 @@ expression: frozen_composer_matrix()
 theme=Dark width=40 marker=Style::new().yellow().bg(Color::Reset).underline_color(Color::Reset) cursor=None
 
   ✓ Agent action · completed
-• ## Release plan
+## Release plan
 
   • Verify the Runtime
   • Ship with evidence
@@ -19,7 +19,7 @@ theme=Dark width=40 marker=Style::new().yellow().bg(Color::Reset).underline_colo
 theme=Dark width=100 marker=Style::new().yellow().bg(Color::Reset).underline_color(Color::Reset) cursor=None
 
   ✓  Agent action · completed
-• ## Release plan
+## Release plan
 
   • Verify the Runtime
   • Ship with evidence
@@ -33,7 +33,7 @@ theme=Dark width=100 marker=Style::new().yellow().bg(Color::Reset).underline_col
 theme=Light width=40 marker=Style::new().yellow().bg(Color::Reset).underline_color(Color::Reset) cursor=None
 
   ✓ Agent action · completed
-• ## Release plan
+## Release plan
 
   • Verify the Runtime
   • Ship with evidence
@@ -47,7 +47,7 @@ theme=Light width=40 marker=Style::new().yellow().bg(Color::Reset).underline_col
 theme=Light width=100 marker=Style::new().yellow().bg(Color::Reset).underline_color(Color::Reset) cursor=None
 
   ✓  Agent action · completed
-• ## Release plan
+## Release plan
 
   • Verify the Runtime
   • Ship with evidence
@@ -61,7 +61,7 @@ theme=Light width=100 marker=Style::new().yellow().bg(Color::Reset).underline_co
 theme=Mono width=40 marker=Style::new().fg(Color::Reset).bg(Color::Reset).underline_color(Color::Reset) cursor=None
 
   ✓ Agent action · completed
-• ## Release plan
+## Release plan
 
   • Verify the Runtime
   • Ship with evidence
@@ -75,7 +75,7 @@ theme=Mono width=40 marker=Style::new().fg(Color::Reset).bg(Color::Reset).underl
 theme=Mono width=100 marker=Style::new().fg(Color::Reset).bg(Color::Reset).underline_color(Color::Reset) cursor=None
 
   ✓  Agent action · completed
-• ## Release plan
+## Release plan
 
   • Verify the Runtime
   • Ship with evidence
