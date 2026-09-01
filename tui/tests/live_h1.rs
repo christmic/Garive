@@ -33,8 +33,7 @@ fn system_theme_uses_paired_terminal_colors_in_a_real_pty() {
                 spawn -noecho /bin/sh -c {stty rows 24 columns 100; exec "$GARIVE_TUI_BIN" --host "$GARIVE_TUI_HOST" --state-dir "$GARIVE_TUI_STATE" --theme system --mouse off}
                 expect -exact "\033]10;?\033\\\033]11;?\033\\"
                 send "\033]11;rgb:f5/f5/f5\007\033]10;rgb:11/11/11\033\\"
-                expect -exact "\033\[6n"
-                send "\033\[1;1R"
+                expect -exact "\033\[2J"
                 expect { "Garive" {} timeout { exit 2 } }
                 send "\021"
                 expect { "Garive?" {} timeout { exit 3 } }
@@ -50,12 +49,16 @@ fn system_theme_uses_paired_terminal_colors_in_a_real_pty() {
     let text = String::from_utf8_lossy(&output);
     assert!(text.contains("\x1b]10;?\x1b\\\x1b]11;?\x1b\\"));
     assert!(
+        !text.contains("\x1b[6n"),
+        "fullscreen startup must not query the cursor position"
+    );
+    assert!(
         text.contains("\x1b[38;5;4;49m"),
         "light palette blue accent rendered"
     );
     assert!(
-        text.contains("\x1b[38;5;0;48;2;235;238;244m"),
-        "light palette dark text and surface rendered"
+        text.contains("\x1b[38;5;0;48;5;255m"),
+        "xterm-256color palette emitted indexed dark text and surface"
     );
     assert!(text.contains("\x1b[?1049l"), "terminal restored");
 }
@@ -87,8 +90,7 @@ fn shipping_tui_boots_and_restores_a_real_pty() {
                 set timeout 5
                 log_file -noappend $env(GARIVE_TUI_LOG)
                 spawn -noecho /bin/sh -c {stty rows 24 columns 100; exec "$GARIVE_TUI_BIN" --host "$GARIVE_TUI_HOST" --state-dir "$GARIVE_TUI_STATE" --theme mono $GARIVE_TUI_MOTION}
-                expect -exact "\033\[6n"
-                send "\033\[1;1R"
+                expect -exact "\033\[2J"
                 expect { "Garive" {} timeout { exit 2 } }
                 send "\003"
                 after 100
@@ -144,8 +146,7 @@ fn session_picker_loads_and_selects_a_deduplicated_typed_host_page() {
             log_file -noappend $env(GARIVE_TUI_LOG)
             spawn -noecho /bin/sh -c {stty rows 24 columns 100; exec "$GARIVE_TUI_BIN" --host "$GARIVE_TUI_HOST" --state-dir "$GARIVE_TUI_STATE" --theme mono --mouse off}
             fconfigure $spawn_id -encoding utf-8
-            expect -exact "\033\[6n"
-            send "\033\[1;1R"
+            expect -exact "\033\[2J"
             expect "first page session"
             expect "Agent"
             send "\023"
@@ -200,8 +201,7 @@ fn mouse_command_reconfigures_the_current_full_screen_pty_and_persists_auto() {
             }
             log_file -noappend $env(GARIVE_TUI_LOG)
             spawn -noecho /bin/sh -c {stty rows 24 columns 100; exec "$GARIVE_TUI_BIN" --host "$GARIVE_TUI_HOST" --state-dir "$GARIVE_TUI_STATE" --theme mono --mouse off}
-            must_expect "\033\[6n" 10
-            send "\033\[1;1R"
+            must_expect "\033\[2J" 10
             must_expect "Garive" 11
             send "/mouse on\r\r"
             must_expect "\033\[?1000h" 12
@@ -255,8 +255,7 @@ fn mouse_click_activates_the_visible_overlay_row_without_background_routing() {
                 set timeout 5
                 log_file -noappend $env(GARIVE_TUI_LOG)
                 spawn -noecho /bin/sh -c {stty rows 24 columns 100; exec "$GARIVE_TUI_BIN" --host "$GARIVE_TUI_HOST" --state-dir "$GARIVE_TUI_STATE" --theme mono --mouse on}
-                expect -exact "\033\[6n"
-                send "\033\[1;1R"
+                expect -exact "\033\[2J"
                 expect "Garive"
                 send "\020"
                 expect "/help"
@@ -304,8 +303,7 @@ fn inspector_survives_live_width_breakpoints_and_escape_restores_the_composer() 
             }
             log_file -noappend $env(GARIVE_TUI_LOG)
             spawn -noecho /bin/sh -c {stty rows 24 columns 120; exec "$GARIVE_TUI_BIN" --host "$GARIVE_TUI_HOST" --state-dir "$GARIVE_TUI_STATE" --theme mono}
-            must_expect "\033\[6n" 80
-            send "\033\[1;1R"
+            must_expect "\033\[2J" 80
             must_expect "Garive" 81
             send "/status \r"
             must_expect "None selected" 82
@@ -362,8 +360,7 @@ fn slash_prefix_opens_adjacent_suggestions_and_tab_completes_in_a_real_pty() {
             set timeout 5
             log_file -noappend $env(GARIVE_TUI_LOG)
             spawn -noecho /bin/sh -c {stty rows 24 columns 100; exec "$GARIVE_TUI_BIN" --host "$GARIVE_TUI_HOST" --state-dir "$GARIVE_TUI_STATE" --theme mono}
-            expect -exact "\033\[6n"
-            send "\033\[1;1R"
+            expect -exact "\033\[2J"
             expect "Garive"
             send "/theme d"
             expect "Use dark theme"
@@ -402,8 +399,7 @@ fn slash_suggestion_mouse_click_completes_only_the_visible_row() {
             set timeout 5
             log_file -noappend $env(GARIVE_TUI_LOG)
             spawn -noecho /bin/sh -c {stty rows 24 columns 100; exec "$GARIVE_TUI_BIN" --host "$GARIVE_TUI_HOST" --state-dir "$GARIVE_TUI_STATE" --theme mono --mouse on}
-            expect -exact "\033\[6n"
-            send "\033\[1;1R"
+            expect -exact "\033\[2J"
             expect "Garive"
             send "/theme d"
             expect "Use dark theme"
@@ -442,8 +438,7 @@ fn shift_selection_is_visible_in_a_real_mono_pty() {
             set timeout 5
             log_file -noappend $env(GARIVE_TUI_LOG)
             spawn -noecho /bin/sh -c {stty rows 24 columns 100; exec "$GARIVE_TUI_BIN" --host "$GARIVE_TUI_HOST" --state-dir "$GARIVE_TUI_STATE" --theme mono --mouse off}
-            expect -exact "\033\[6n"
-            send "\033\[1;1R"
+            expect -exact "\033\[2J"
             expect "Garive"
             send "a界b"
             after 100
@@ -482,8 +477,7 @@ fn alt_c_copies_only_the_composer_selection_in_a_real_pty() {
             set timeout 5
             log_file -noappend $env(GARIVE_TUI_LOG)
             spawn -noecho /bin/sh -c {stty rows 24 columns 100; exec "$GARIVE_TUI_BIN" --host "$GARIVE_TUI_HOST" --state-dir "$GARIVE_TUI_STATE" --theme mono --mouse off}
-            expect -exact "\033\[6n"
-            send "\033\[1;1R"
+            expect -exact "\033\[2J"
             expect "Garive"
             send "alpha beta"
             after 100
@@ -521,8 +515,7 @@ fn up_moves_across_a_soft_wrapped_visual_row_in_a_real_pty() {
             set timeout 5
             log_file -noappend $env(GARIVE_TUI_LOG)
             spawn -noecho /bin/sh -c {stty rows 16 columns 40; exec "$GARIVE_TUI_BIN" --host "$GARIVE_TUI_HOST" --state-dir "$GARIVE_TUI_STATE" --theme mono --mouse off}
-            expect -exact "\033\[6n"
-            send "\033\[1;1R"
+            expect -exact "\033\[2J"
             expect "Garive"
             send "hello wonderful world crosses the boundary"
             after 100
@@ -559,8 +552,7 @@ fn end_stays_on_the_current_soft_wrapped_row_in_a_real_pty() {
             set timeout 5
             log_file -noappend $env(GARIVE_TUI_LOG)
             spawn -noecho /bin/sh -c {stty rows 16 columns 40; exec "$GARIVE_TUI_BIN" --host "$GARIVE_TUI_HOST" --state-dir "$GARIVE_TUI_STATE" --theme mono --mouse off}
-            expect -exact "\033\[6n"
-            send "\033\[1;1R"
+            expect -exact "\033\[2J"
             expect "Garive"
             send "hello wonderful world crosses the boundary"
             after 100
@@ -613,8 +605,7 @@ fn boundary_history_browsing_restores_the_draft_cursor_in_a_real_pty() {
             set timeout 5
             log_file -noappend $env(GARIVE_TUI_LOG)
             spawn -noecho /bin/sh -c {stty rows 16 columns 40; exec "$GARIVE_TUI_BIN" --host "$GARIVE_TUI_HOST" --state-dir "$GARIVE_TUI_STATE" --theme mono --mouse off}
-            expect -exact "\033\[6n"
-            send "\033\[1;1R"
+            expect -exact "\033\[2J"
             expect "Garive"
             send "work"
             send "\033\[D\033\[D"
@@ -678,8 +669,7 @@ fn mouse_drag_selects_composer_graphemes_in_a_real_mono_pty() {
             set timeout 5
             log_file -noappend $env(GARIVE_TUI_LOG)
             spawn -noecho /bin/sh -c {stty rows 24 columns 100; exec "$GARIVE_TUI_BIN" --host "$GARIVE_TUI_HOST" --state-dir "$GARIVE_TUI_STATE" --theme mono --mouse on}
-            expect -exact "\033\[6n"
-            send "\033\[1;1R"
+            expect -exact "\033\[2J"
             expect "Garive"
             send "a界b"
             after 100
@@ -720,8 +710,7 @@ fn double_and_triple_click_replace_a_word_then_the_line_in_a_real_pty() {
             set timeout 5
             log_file -noappend $env(GARIVE_TUI_LOG)
             spawn -noecho /bin/sh -c {stty rows 24 columns 100; exec "$GARIVE_TUI_BIN" --host "$GARIVE_TUI_HOST" --state-dir "$GARIVE_TUI_STATE" --theme mono --mouse on}
-            expect -exact "\033\[6n"
-            send "\033\[1;1R"
+            expect -exact "\033\[2J"
             expect "Garive"
             send "alpha beta"
             after 100
@@ -769,8 +758,7 @@ fn composer_kill_yank_undo_and_redo_work_in_a_real_pty() {
             set timeout 5
             log_file -noappend $env(GARIVE_TUI_LOG)
             spawn -noecho /bin/sh -c {stty rows 24 columns 100; exec "$GARIVE_TUI_BIN" --host "$GARIVE_TUI_HOST" --state-dir "$GARIVE_TUI_STATE" --theme mono}
-            expect -exact "\033\[6n"
-            send "\033\[1;1R"
+            expect -exact "\033\[2J"
             expect "Garive"
             send "alpha\012beta"
             expect "beta"
@@ -812,8 +800,7 @@ fn typed_editor_aliases_drive_the_shipping_composer() {
             set timeout 5
             log_file -noappend $env(GARIVE_TUI_LOG)
             spawn -noecho /bin/sh -c {stty rows 24 columns 100; exec "$GARIVE_TUI_BIN" --host "$GARIVE_TUI_HOST" --state-dir "$GARIVE_TUI_STATE" --theme mono}
-            expect -exact "\033\[6n"
-            send "\033\[1;1R"
+            expect -exact "\033\[2J"
             expect "Garive"
             send "abc def"
             send "\001X\005Y\027\010\002\004"
@@ -958,8 +945,7 @@ exit 7
             }
             log_file -noappend $env(GARIVE_TUI_LOG)
             spawn -noecho /bin/sh -c {stty rows 24 columns 100; exec "$GARIVE_TUI_BIN" --host "$GARIVE_TUI_HOST" --state-dir "$GARIVE_TUI_STATE" --theme mono --mouse on}
-            must_expect "\033\[6n" 40
-            send "\033\[1;1R"
+            must_expect "\033\[2J" 40
             must_expect "Garive" 41
             send "\033\[Z"
             after 100
@@ -973,8 +959,7 @@ exit 7
             send "\007"
             must_expect "Garive paused." 42
             must_expect "EDITOR_TTY=yes" 43
-            must_expect "\033\[6n" 44
-            send "\033\[1;1R"
+            must_expect "\033\[2J" 44
             must_expect "edited" 45
             must_expect "line" 46
             send "\032"
@@ -983,8 +968,7 @@ exit 7
             send "\007"
             must_expect "Garive paused." 48
             must_expect "EDITOR_FAILURE" 49
-            must_expect "\033\[6n" 50
-            send "\033\[1;1R"
+            must_expect "\033\[2J" 50
             must_expect "seed" 51
             must_expect "exited" 52
             must_expect "unsuccessfully" 53
@@ -1031,8 +1015,7 @@ fn turn_navigator_filters_commits_only_on_activation_and_shares_mouse_geometry()
             log_user 0
             log_file -noappend $env(GARIVE_TUI_LOG)
             spawn -noecho /bin/sh -c {stty rows 24 columns 100; exec "$GARIVE_TUI_BIN" --host "$GARIVE_TUI_HOST" --session session-rail --state-dir "$GARIVE_TUI_STATE" --theme mono --mouse on}
-            must_expect "\033\[6n" 70
-            send "\033\[1;1R"
+            must_expect "\033\[2J" 70
             must_expect "question-19" 71
             send "/jump \r"
             must_expect "Jump to a Turn" 72
@@ -1087,8 +1070,7 @@ fn termination_signal_restores_the_shipping_terminal() {
             set timeout 5
             log_file -noappend $env(GARIVE_TUI_LOG)
             spawn -noecho /bin/sh -c {stty rows 24 columns 100; exec "$GARIVE_TUI_BIN" --host "$GARIVE_TUI_HOST" --state-dir "$GARIVE_TUI_STATE" --theme mono}
-            expect -exact "\033\[6n"
-            send "\033\[1;1R"
+            expect -exact "\033\[2J"
             expect "Garive"
             set child $spawn_id
             exec kill -TERM [exp_pid -i $child]
@@ -1156,8 +1138,7 @@ fn live_resize_crosses_layout_breakpoints_without_losing_draft() {
             set timeout 5
             log_file -noappend $env(GARIVE_TUI_LOG)
             spawn -noecho /bin/sh -c {stty rows 24 columns 100; exec "$GARIVE_TUI_BIN" --host "$GARIVE_TUI_HOST" --state-dir "$GARIVE_TUI_STATE" --theme mono}
-            expect -exact "\033\[6n"
-            send "\033\[1;1R"
+            expect -exact "\033\[2J"
             expect "Garive"
             send "draft survives"
             exec stty rows 7 columns 19 < $spawn_out(slave,name)

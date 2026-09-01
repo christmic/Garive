@@ -80,6 +80,7 @@ pub async fn run(config: LaunchConfig) -> Result<(), TuiError> {
         std::env::var("TERM").ok().as_deref(),
         no_color,
     );
+    crate::view::terminal_profile::install(crate::view::terminal_profile::detect_process());
     crossterm::style::force_color_output(config.theme != crate::Theme::Mono);
     let client = LiveHostClient::new(&config.host, LIMITS).map_err(|_| TuiError::InvalidHost)?;
     let restored = RestoredState {
@@ -111,7 +112,7 @@ pub async fn run(config: LaunchConfig) -> Result<(), TuiError> {
         Ok(terminal) => terminal,
         Err(_) => return Err(terminal_setup_failure(&mut guard, &mut shutdown).await),
     };
-    if terminal.clear().is_err() {
+    if clear_fullscreen(&mut terminal).is_err() {
         return Err(terminal_setup_failure(&mut guard, &mut shutdown).await);
     }
     let (sender, mut receiver) = mpsc::channel(256);
@@ -165,7 +166,7 @@ pub async fn run(config: LaunchConfig) -> Result<(), TuiError> {
                         },
                     )
                     .map_err(map_terminal_error)?;
-                    terminal.clear().map_err(|_| TuiError::TerminalIo)?;
+                    clear_fullscreen(&mut terminal)?;
                     external_editor::apply(&mut state, request, result);
                     // The paused clear already invalidated Ratatui's back buffer.
                     // Do not issue a second cursor query after input resumes.
@@ -305,7 +306,7 @@ fn draw(
             .map_err(|_| TuiError::TerminalIo)?;
     }
     if std::mem::take(&mut state.force_redraw) {
-        terminal.clear().map_err(|_| TuiError::TerminalIo)?;
+        clear_fullscreen(terminal)?;
     }
     terminal
         .draw(|frame| {
@@ -341,6 +342,11 @@ fn draw(
         })
         .map(|_| ())
         .map_err(|_| TuiError::TerminalIo)
+}
+
+fn clear_fullscreen(terminal: &mut Terminal<CrosstermBackend<io::Stderr>>) -> Result<(), TuiError> {
+    let area = terminal.size().map_err(|_| TuiError::TerminalIo)?.into();
+    terminal.resize(area).map_err(|_| TuiError::TerminalIo)
 }
 
 fn map_terminal_error(error: TerminalError) -> TuiError {

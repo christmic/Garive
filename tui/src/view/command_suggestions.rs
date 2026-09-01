@@ -2,7 +2,7 @@ use ratatui::{
     buffer::Buffer,
     layout::Rect,
     text::{Line, Span},
-    widgets::{Block, BorderType, Borders, Clear, Padding, Paragraph, Widget},
+    widgets::{Block, Borders, Clear, Padding, Paragraph, Widget},
 };
 use unicode_width::UnicodeWidthStr;
 
@@ -32,7 +32,7 @@ pub(super) fn render(model: &AppModel, composer: Rect, colors: Palette, buffer: 
     let block = Block::default()
         .title(Line::styled(" Commands ", colors.title))
         .borders(Borders::ALL)
-        .border_type(BorderType::Rounded)
+        .border_set(colors.border_set())
         .border_style(colors.overlay_border)
         .padding(Padding::horizontal(1));
     let inner = inner_area(area);
