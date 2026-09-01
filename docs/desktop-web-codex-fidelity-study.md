@@ -983,6 +983,26 @@ Workspace context and selected next-Turn context also require multiline
 disclosure. This preserves a stable input row and authority/action footer
 without inventing Codex controls or labels.
 
+### XXX. Footer labels collapse by their own container
+
+Installed CSS in `app-initial-NNCUNt29.css` marks responsive Composer footers
+with the named `composer-footer` inline-size container. Secondary and small
+labels disappear at 440 px; Electron adds the same secondary-label collapse
+through 480 px. Icons and controls remain. This is independent of the viewport
+breakpoint and therefore still works when an Artifact split narrows only the
+thread pane. The source does not discard the underlying control or status
+semantics when the visible label is removed.
+
+Garive maps this to the admitted execution-scope label only. The shared
+Composer establishes the same named inline-size container. At or below 440 px
+Web clips `Local · text only`, resume, file-count or output-enabled text to the
+standard accessible one-pixel representation while retaining the shield and
+semantic text; Desktop uses the source-backed 480 px threshold. No model,
+permission level or billing label is added. Browser evidence proves the label
+visible at 672 px, visually clipped but present in the accessibility snapshot
+at a 342 px Artifact split, and clipped at a 432 px Composer in a 480 px Web
+viewport with zero document overflow.
+
 ## Gate 1 — Codex fidelity
 
 This gate passes only when both Desktop and Web show:

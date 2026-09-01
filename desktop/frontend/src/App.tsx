@@ -1190,9 +1190,9 @@ function WorkSurface({ state, composer, submit, startSuggestion, dispatch, conte
             onClick={() => void openContext()}><Icon name="plus" /></button>
             {context?.grant.access === "enumerate" && <button type="button" disabled={state.phase === "submitting"}
               onClick={() => void authorizeOutputs()}><Icon name="shield" /><span>{t("work.composer.allowOutputs")}</span></button>}
-            <span className="access-pill"><Icon name="shield" />{needsInput ? t("work.composer.resume")
+            <span className="access-pill"><Icon name="shield" /><span className="access-pill-label">{needsInput ? t("work.composer.resume")
               : context?.grant.access === "read_write" ? t("work.composer.outputEnabled")
-                : context ? `${context.entries.length} ${t(context.entries.length === 1 ? "workspace.file" : "workspace.filesPlural")}` : t("work.composer.localText")}</span></div>
+                : context ? `${context.entries.length} ${t(context.entries.length === 1 ? "workspace.file" : "workspace.filesPlural")}` : t("work.composer.localText")}</span></span></div>
           {state.phase === "submitting" && !reconnecting
             ? <button className="composer-stop-button" type="button" aria-label={t("work.composer.requestStop")}
               title={t("work.composer.requestStop")} onClick={() => void cancelTurn()}><Icon name="stop" /></button>

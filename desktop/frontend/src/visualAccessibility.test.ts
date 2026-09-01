@@ -188,6 +188,10 @@ describe("Desktop visual accessibility contract", () => {
     expect(CSS).toContain(".composer textarea { min-height: 30px; max-height: 168px; padding: 6px 12px 0;");
     expect(CSS).toContain(".composer-toolbar { min-height: var(--size-composer-action); padding: 0 8px 8px;");
     expect(CSS).toContain(".composer-tools { gap: 5px; }");
+    expect(CSS).toContain(".composer { container: composer-footer / inline-size;");
+    expect(CSS).toContain("@container composer-footer (width <= 440px)");
+    expect(CSS).toContain("@container composer-footer (width <= 480px)");
+    expect(CSS).toContain("html[data-client=\"desktop\"] .access-pill-label");
     expect(CSS).toContain("width: var(--size-composer-action); height: var(--size-composer-action);");
     expect(CSS).toContain('.composer[data-layout="single-line"] {');
     expect(CSS).toContain("grid-template-columns: auto minmax(0, 1fr) auto");

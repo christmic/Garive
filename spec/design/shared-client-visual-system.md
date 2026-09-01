@@ -463,6 +463,14 @@ relaxed/snappy token and resolves to zero under reduced motion. Desktop and Web
 must use the same pure admission function and DOM; platform adapters may not
 decide layout independently.
 
+The Composer is a named `composer-footer` inline-size container. Secondary
+execution-scope text remains visible at ordinary width, then is visually
+clipped at 440 px on Web and 480 px on Desktop while its icon and accessible
+text remain. The rule responds to the Composer itself, not the viewport, so a
+resized Artifact split receives the same progression. It must not use
+`display:none`, remove the status from the accessibility tree, or abbreviate
+the admitted fact into an invented label.
+
 The running/suspended Turn uses a source-backed attached Utility Rail. Its
 container is inset 13px from both Composer edges, tucks 4px beneath the
 Composer, and uses 20px top corners with square hidden lower corners. The rail

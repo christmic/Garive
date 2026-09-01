@@ -794,6 +794,7 @@ kbd { font-size: var(--text-2xs); }
 
 .composer-wrap { padding: 24px 24px 8px; background: linear-gradient(transparent, var(--surface-canvas) 24%, var(--surface-canvas)); }
 .composer { width: min(var(--thread-content-max-width), 100%); border: 0; border-radius: var(--radius-composer); background: var(--surface-composer); box-shadow: var(--shadow-composer); transition: border-radius var(--motion-relaxed) var(--ease-enter-snappy), box-shadow var(--motion-basic) var(--ease-basic); }
+.composer { container: composer-footer / inline-size; }
 .composer.busy { opacity: 1; }
 .composer:focus-within { box-shadow: var(--shadow-composer); }
 .composer textarea { min-height: 30px; max-height: 168px; padding: 6px 12px 0; font-size: var(--text-md); line-height: 1.5; }
@@ -818,6 +819,12 @@ kbd { font-size: var(--text-2xs); }
 .composer[data-layout="single-line"] .composer-tools { grid-column: 1; grid-row: 1; flex-wrap: nowrap; }
 .composer[data-layout="single-line"] .access-pill { white-space: nowrap; }
 .composer[data-layout="single-line"] :is(.send-button, .composer-stop-button) { grid-column: 3; grid-row: 1; }
+@container composer-footer (width <= 440px) {
+  .access-pill-label { position: absolute; width: 1px; height: 1px; padding: 0; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+}
+@container composer-footer (width <= 480px) {
+  html[data-client="desktop"] .access-pill-label { position: absolute; width: 1px; height: 1px; padding: 0; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+}
 @supports (corner-shape: superellipse(1.5)) { .composer { corner-shape: superellipse(1.5); } }
 .error-banner { bottom: 136px; }
 .approval-card { border-color: var(--border-subtle); border-left-color: var(--state-attention); color: var(--text-primary); background: color-mix(in srgb, var(--state-attention-surface) 22%, var(--surface-raised)); }

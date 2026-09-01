@@ -265,6 +265,7 @@ describe("Desktop product experience", () => {
     expect(composer.closest(".composer")?.getAttribute("data-layout")).toBe("single-line");
     expect(composer.getAttribute("aria-describedby")).toBe("composer-commit-note");
     expect(screen.getByRole("button", { name: "Add context" }).textContent).toBe("");
+    expect(view.container.querySelector(".access-pill-label")?.textContent).toBe("Local · text only");
     expect(document.querySelector("#composer-commit-note")?.classList.contains("sr-only")).toBe(true);
     expect(view.container.querySelectorAll(".nav-item.selected, .recent-item.selected")).toHaveLength(1);
     expect(view.container.querySelector(".nav-item.selected")?.textContent).toContain("Work");
