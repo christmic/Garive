@@ -47,7 +47,23 @@ pub(super) fn render(items: &[TimelineItem], theme: Theme, width: u16) -> Vec<Li
                 )
             }
             (Some(item), _) => format!("{} {}", icon(item.tone), safe_text(&item.text)),
-            (None, Some(done)) => format!("✓ {done}"),
+            (None, Some(done)) => {
+                let additional = completed.saturating_sub(1);
+                if additional == 0 {
+                    format!("✓ {done}")
+                } else {
+                    let suffix = format!(" · +{additional}");
+                    let leading = format!("✓ {done}");
+                    format!(
+                        "{}{}",
+                        truncate_display(
+                            &leading,
+                            available.saturating_sub(UnicodeWidthStr::width(suffix.as_str()))
+                        ),
+                        suffix
+                    )
+                }
+            }
             (None, None) => return Vec::new(),
         };
         return vec![Line::styled(
@@ -163,5 +179,22 @@ mod tests {
         let line = render(&items, Theme::Mono, 40)[0].to_string();
         assert!(line.ends_with(" · ✓2"));
         assert!(UnicodeWidthStr::width(line.as_str()) <= 40);
+    }
+
+    #[test]
+    fn compact_completed_stack_keeps_the_latest_label_and_sibling_count() {
+        let items = vec![
+            item("a", TimelineTone::Success, "Read config"),
+            item(
+                "b",
+                TimelineTone::Success,
+                "检查界面 🦀 and verify the final output",
+            ),
+        ];
+
+        let line = render(&items, Theme::Mono, 24)[0].to_string();
+        assert!(line.ends_with(" · +1"));
+        assert!(line.contains("检查界面"));
+        assert!(UnicodeWidthStr::width(line.as_str()) <= 24);
     }
 }
