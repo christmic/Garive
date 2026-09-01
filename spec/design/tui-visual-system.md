@@ -49,6 +49,10 @@ Higher-level renderers must reuse these primitives for equivalent behavior.
 `SelectionRow` requires an explicit extent. CommandPalette uses `MarkerOnly`;
 single-line lists and anchored menus use `FullArea`; Inspector applies
 `FullArea` to its content-driven one- or two-row entry rectangle.
+`RoleMarker` is the only source for the User `›` and Agent `◆ Garive` identity,
+so committed and live answers cannot diverge. `LiveCaret` alone combines
+availability, terminal state, and reduced motion before emitting its one-cell
+cue; answer renderers cannot append a private caret glyph.
 `ModalFrame` alone computes modal inner padding and paints the retained-workspace
 backdrop, two-cell horizontal halo, cleared popup, title, and rounded border.
 CommandPalette, generic overlays, and the overlay Inspector cannot reproduce

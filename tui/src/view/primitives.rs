@@ -17,6 +17,40 @@ pub(super) enum FocusFrameTone {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) enum RoleMarker {
+    User,
+    Agent,
+}
+
+impl RoleMarker {
+    pub(super) fn span(self, colors: Palette) -> Span<'static> {
+        match self {
+            Self::User => Span::styled("› ", colors.request_marker),
+            Self::Agent => Span::styled("◆ Garive", colors.agent),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) struct LiveCaret {
+    visible: bool,
+}
+
+impl LiveCaret {
+    pub(super) const fn for_output(available: bool, ended: bool, reduced_motion: bool) -> Self {
+        Self {
+            visible: available && !ended && !reduced_motion,
+        }
+    }
+
+    pub(super) fn append_to(self, line: &mut Line<'static>, colors: Palette) {
+        if self.visible {
+            line.spans.push(Span::styled("▍", colors.accent));
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) enum SelectionExtent {
     MarkerOnly,
     FullArea,
@@ -237,5 +271,19 @@ mod tests {
         assert!(area_buffer[(2, 2)]
             .modifier
             .contains(ratatui::style::Modifier::REVERSED));
+    }
+
+    #[test]
+    fn role_markers_and_live_caret_preserve_non_color_identity() {
+        let colors = super::super::palette(crate::Theme::Dark);
+        assert_eq!(RoleMarker::User.span(colors).content, "› ");
+        assert_eq!(RoleMarker::Agent.span(colors).content, "◆ Garive");
+
+        let mut active = Line::raw("answer");
+        LiveCaret::for_output(true, false, false).append_to(&mut active, colors);
+        assert_eq!(active.to_string(), "answer▍");
+        let mut reduced = Line::raw("answer");
+        LiveCaret::for_output(true, false, true).append_to(&mut reduced, colors);
+        assert_eq!(reduced.to_string(), "answer");
     }
 }

@@ -62,10 +62,6 @@ pub(crate) struct LiveAnswer {
 }
 
 impl LiveAnswer {
-    pub(crate) const fn caret_visible(&self) -> bool {
-        !self.ended && matches!(self.availability, LiveAnswerAvailability::Available)
-    }
-
     fn from_initial(event: &LiveOutputEvent) -> Self {
         Self {
             key: LiveAnswerKey {

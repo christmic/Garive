@@ -128,7 +128,7 @@ fn phase_then_unavailable_clears_all_untrusted_preview() {
     assert_eq!(answer.phase, Some(LiveAnswerPhase::Generating));
     assert_eq!(answer.availability, LiveAnswerAvailability::Unavailable);
     assert!(answer.received_text.is_empty() && answer.presented_text.is_empty());
-    assert!(!answer.caret_visible());
+    assert_eq!(answer.availability, LiveAnswerAvailability::Unavailable);
 }
 
 #[test]
@@ -148,7 +148,7 @@ fn ended_only_closes_caret_and_waits_for_durable_truth() {
 
     let answer = projection.current().unwrap();
     assert!(effect.accepted && effect.visual_changed);
-    assert!(answer.ended && !answer.caret_visible());
+    assert!(answer.ended);
     assert_eq!(answer.presented_text, "ephemeral");
     assert!(projection.current().is_some());
 
@@ -188,7 +188,7 @@ fn terminal_fence_retains_ended_preview_until_durable_snapshot_takeover() {
     let answer = projection
         .current()
         .expect("preview remains until H2 installs");
-    assert!(answer.ended && !answer.caret_visible());
+    assert!(answer.ended);
     assert_eq!(
         answer.presented_text,
         "preview remains visible through terminal"

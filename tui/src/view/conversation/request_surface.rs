@@ -4,9 +4,8 @@ use unicode_width::UnicodeWidthStr;
 
 use crate::Theme;
 
-use super::super::{palette, safe_text};
+use super::super::{palette, primitives::RoleMarker, safe_text};
 
-const MARKER: &str = "› ";
 const HANGING_INDENT: &str = "  ";
 
 pub(super) fn render(source: &str, theme: Theme, width: u16) -> Vec<Line<'static>> {
@@ -24,11 +23,15 @@ pub(super) fn render(source: &str, theme: Theme, width: u16) -> Vec<Line<'static
     rows.into_iter()
         .enumerate()
         .map(|(index, content)| {
-            let prefix = if index == 0 { MARKER } else { HANGING_INDENT };
+            let prefix = if index == 0 { "› " } else { HANGING_INDENT };
             let used = UnicodeWidthStr::width(prefix) + UnicodeWidthStr::width(content.as_str());
             let padding = " ".repeat(width.saturating_sub(used));
             Line::from(vec![
-                Span::styled(prefix.to_owned(), colors.request_marker),
+                if index == 0 {
+                    RoleMarker::User.span(colors)
+                } else {
+                    Span::styled(HANGING_INDENT, colors.request_marker)
+                },
                 Span::styled(content, colors.request_surface),
                 Span::styled(padding, colors.request_surface),
             ])
