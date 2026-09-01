@@ -7,6 +7,7 @@ use std::{
 
 use garive_config::EffectiveAgentSnapshot;
 use garive_core::AgentToolCapabilities;
+use garive_tools::tool_catalogue_digest;
 
 use crate::{
     CommittedTurn, EffectiveRuntimeLimits, InstalledActivityCatalogue, InstalledActivityDescriptor,
@@ -32,6 +33,7 @@ pub struct RuntimeAgentInstallation {
     snapshot: EffectiveAgentSnapshot,
     installed: InstalledAgent,
     tools: AgentToolCapabilities,
+    tool_catalogue_digest: String,
 }
 
 /// Immutable Host catalogue containing one exact installed revision per Definition.
@@ -220,10 +222,13 @@ impl RuntimeAgentInstallation {
         let tools = AgentToolCapabilities {
             definitions: snapshot.capabilities().tools.clone(),
         };
+        let tool_catalogue_digest = tool_catalogue_digest(&tools.definitions)
+            .map_err(|_| RuntimeAgentInstallationError::InvalidProjection)?;
         Ok(Self {
             snapshot,
             installed,
             tools,
+            tool_catalogue_digest,
         })
     }
 
@@ -240,6 +245,11 @@ impl RuntimeAgentInstallation {
     /// Returns the exact C4 definitions supplied to one Core execution.
     pub const fn tool_capabilities(&self) -> &AgentToolCapabilities {
         &self.tools
+    }
+
+    /// Returns the canonical digest of the installed Tool catalogue.
+    pub fn tool_catalogue_digest(&self) -> &str {
+        &self.tool_catalogue_digest
     }
 
     /// Produces an owned Host projection for composition roots.
@@ -304,6 +314,7 @@ mod tests {
             snapshot.snapshot_digest()
         );
         assert_eq!(installation.tool_capabilities().definitions.len(), 1);
+        assert_eq!(installation.tool_catalogue_digest().len(), 64);
         installation
             .validate_tool_capabilities(installation.tool_capabilities())
             .unwrap();

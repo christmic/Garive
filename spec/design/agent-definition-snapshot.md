@@ -195,6 +195,23 @@ composition must not accept a separately entered definition revision or
 snapshot digest, and an execution factory must not invent, remove, reorder, or
 revise Tool definitions after installation.
 
+The installed Tool catalogue digest is lowercase SHA-256 over RFC 8785
+canonical bytes of this versioned preimage:
+
+```json
+{
+  "contract": "garive.tool-catalogue",
+  "version": 1,
+  "definitions": []
+}
+```
+
+Definitions are unique by Tool name and sorted by that name before encoding;
+each full exact `ToolDefinition` value is included. Input order therefore does
+not change the digest, while any schema, requirement, replay, access or sandbox
+meaning change does. Runtime derives the digest from the same installed values
+passed to Core and never accepts a separately entered digest.
+
 Executor instances and provider clients are Runtime system resources. Runtime
 binds each installed Tool definition to a compatible executor using explicit
 host configuration, then proves the executor catalogue exactly matches the

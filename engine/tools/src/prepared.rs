@@ -421,6 +421,29 @@ pub struct ToolCatalog {
     definitions: BTreeMap<String, ToolDefinition>,
 }
 
+/// Returns the canonical digest of one exact immutable Tool catalogue.
+pub fn tool_catalogue_digest(definitions: &[ToolDefinition]) -> Result<String, PreparationError> {
+    let mut ordered = BTreeMap::new();
+    for definition in definitions {
+        if ordered
+            .insert(definition.name().to_owned(), definition)
+            .is_some()
+        {
+            return Err(PreparationError::new(
+                PreparationErrorCode::InvalidToolDefinition,
+            ));
+        }
+    }
+    let preimage = json!({
+        "contract": "garive.tool-catalogue",
+        "version": 1,
+        "definitions": ordered.into_values().collect::<Vec<_>>(),
+    });
+    let canonical = serde_jcs::to_vec(&preimage)
+        .map_err(|_| PreparationError::new(PreparationErrorCode::NonCanonicalValue))?;
+    Ok(format!("{:x}", Sha256::digest(canonical)))
+}
+
 impl ToolCatalog {
     /// Rejects duplicate names and constructs an immutable catalog.
     pub fn new(

@@ -52,8 +52,9 @@ pub use governed_types::{
     InteractionResolution, InvocationGrant, ReceiptId, TerminalClassification, ToolInvocationId,
 };
 pub use prepared::{
-    ExecutionCapability, ExecutionRequirements, PreparationError, PreparationErrorCode,
-    PreparedToolCall, ReplayClass, SchemaFailure, ToolCatalog, ToolDefinition, ToolIntent,
+    tool_catalogue_digest, ExecutionCapability, ExecutionRequirements, PreparationError,
+    PreparationErrorCode, PreparedToolCall, ReplayClass, SchemaFailure, ToolCatalog,
+    ToolDefinition, ToolIntent,
 };
 pub use sandbox::{SandboxControl, SandboxRequirementsV1};
 pub use schema::{validate_portable_value, validate_portable_value_schema};
