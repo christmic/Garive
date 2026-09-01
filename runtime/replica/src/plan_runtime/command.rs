@@ -594,6 +594,41 @@ pub fn commit_plan_command(
     expected_session_version: u64,
     planned: &PlannedPlanCommand,
 ) -> Result<CommitResult, PlanRuntimeError> {
+    let watermark = ledger
+        .session_watermark(&session_id)
+        .map_err(map_ledger)?
+        .ok_or(PlanRuntimeError::BindingStale)?;
+    let existing = ledger
+        .read_facts(&session_id, 0, watermark.max_position, None)
+        .map_err(map_ledger)?;
+    if planned
+        .facts
+        .iter()
+        .any(|draft| existing.iter().any(|fact| fact.fact_id == draft.fact_id))
+    {
+        return ledger
+            .commit(session_id, expected_session_version, planned.facts.clone())
+            .map_err(map_ledger);
+    }
+    if planned.facts.iter().any(|fact| {
+        matches!(
+            fact.kind.as_str(),
+            "plan.adopted"
+                | "plan.resumed"
+                | "plan.step.claimed"
+                | "plan.step.resumed"
+                | "plan.step.started"
+        )
+    }) {
+        if expected_session_version != watermark.session_version
+            || planned.next.session_version != watermark.session_version
+            || planned.next.through_position != watermark.max_position
+        {
+            return Err(PlanRuntimeError::RevisionConflict);
+        }
+        let prefix = goal_prefix(ledger, &session_id)?;
+        validate_goal_binding(planned.next.snapshot.definition(), &prefix.graph)?;
+    }
     ledger
         .commit(session_id, expected_session_version, planned.facts.clone())
         .map_err(map_ledger)

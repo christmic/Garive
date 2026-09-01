@@ -346,11 +346,29 @@ fn competing_sqlite_claims_have_one_winner_and_exact_command_replay() {
     let winner = claim(&state, "claim-a", 1, 10, 20, "race-winner");
     let loser = claim(&state, "claim-b", 1, 10, 20, "race-loser");
     let mut second = SqliteLedger::open(&path).unwrap();
-    commit_plan_command(&mut first, session.clone(), state.session_version, &winner).unwrap();
+    let winner_commit =
+        commit_plan_command(&mut first, session.clone(), state.session_version, &winner).unwrap();
     assert_eq!(
         commit_plan_command(&mut second, session.clone(), state.session_version, &loser),
         Err(PlanRuntimeError::RevisionConflict)
     );
+    first
+        .commit(
+            session.clone(),
+            winner_commit.session_version,
+            vec![session_fact(
+                "race-goal-cancel",
+                "goal.cancelled",
+                json!({
+                    "command_id":"race-goal-cancel",
+                    "goal_id":"goal-1",
+                    "revision":3,
+                    "reason":"user_request",
+                    "actor_reference":"user:fixture",
+                }),
+            )],
+        )
+        .unwrap();
     assert!(commit_plan_command(&mut first, session, 0, &winner).is_ok());
 }
 
@@ -383,10 +401,33 @@ fn proposal_and_adoption_require_the_current_durable_goal_binding() {
         garive_ledger::CommitDisposition::Replayed
     );
 
+    let draft = recover(&ledger, &session);
+    let adopted = plan_adopt_plan(
+        &ledger,
+        &session,
+        &draft,
+        draft.state_version,
+        &context("bound-adopt"),
+        PlanRuntimeTransition::Adopt {
+            expected_goal_revision: 2,
+            expected_prior_plan_revision: None,
+            policy_reference: "plan-policy-v1".into(),
+            carry_forward_evidence: evidence(),
+        },
+    )
+    .unwrap();
+    commit_plan_command(
+        &mut ledger,
+        session.clone(),
+        draft.session_version,
+        &adopted,
+    )
+    .unwrap();
+
     ledger
         .commit(
             session.clone(),
-            2,
+            3,
             vec![session_fact(
                 "goal-cancel",
                 "goal.cancelled",
@@ -417,6 +458,28 @@ fn proposal_and_adoption_require_the_current_durable_goal_binding() {
         ),
         Err(PlanRuntimeError::BindingStale)
     );
+    let post_cancel_claim = claim(
+        &state,
+        "post-cancel-claim",
+        1,
+        10,
+        20,
+        "claim-terminal-goal",
+    );
+    assert_eq!(
+        commit_plan_command(
+            &mut ledger,
+            session.clone(),
+            state.session_version,
+            &post_cancel_claim,
+        ),
+        Err(PlanRuntimeError::BindingStale)
+    );
+    assert!(ledger
+        .read_facts(&session, 0, u64::MAX, None)
+        .unwrap()
+        .iter()
+        .all(|fact| fact.fact_id.as_str() != "claim-terminal-goal"));
 }
 
 #[test]

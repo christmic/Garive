@@ -184,6 +184,12 @@ must durably request cancellation of related live Turn/Execution work and stop
 new claims. Already-started effects follow C5 uncertainty/reconciliation; a
 terminal Goal does not erase or rewrite their facts.
 
+The Plan commit boundary revalidates the exact current Goal binding before any
+Adopt/Resume/Claim/Start fact can commit. This fence also applies when a caller
+reconstructs a Plan after cancellation; pure readiness alone is not authority.
+Exact facts committed before cancellation remain replayable, while changed or
+new work cannot use replay handling to cross the terminal Goal boundary.
+
 ## Idempotency and crash recovery
 
 Every coordinator mutation uses a deterministic command identity derived from
