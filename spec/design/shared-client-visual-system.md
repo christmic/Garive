@@ -692,6 +692,11 @@ product admits those actions.
   and the Electron −4 px optical offset. The action group, not terminal
   evidence, owns progressive opacity. Copy is first; admitted product actions
   follow. Timestamp stays absent until a durable sent-time fact exists.
+- The thread footer exposes `data-thread-scroll-footer` and is measured with a
+  resize observer. Timeline bottom padding is the current footer height plus a
+  16 px safe gap, never a state-specific constant. System resize may preserve
+  tail attachment or reading distance; the first user movement away cancels a
+  pending footer correction so layout cannot steal scroll ownership.
 - Collapse state may be local to the mounted Turn. Clients must not claim
   cross-session persistence until Runtime or preferences admit that contract.
 - User requests collapse only after rendered measurement exceeds 20 lines.

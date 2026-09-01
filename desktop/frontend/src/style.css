@@ -710,7 +710,7 @@ kbd { font-size: var(--text-2xs); }
 @keyframes workspace-loading-pulse { 50% { opacity: .35; transform: scale(.72); } }
 @media (prefers-reduced-motion: reduce) { .workspace-loading-dot { animation: none; } }
 
-.timeline { width: min(var(--thread-content-max-width), calc(100% - 48px)); padding: var(--thread-content-top-inset) 0 174px; transition: transform var(--motion-relaxed) var(--ease-enter); }
+.timeline { width: min(var(--thread-content-max-width), calc(100% - 48px)); padding: var(--thread-content-top-inset) 0 var(--thread-scroll-padding-bottom, 174px); transition: transform var(--motion-relaxed) var(--ease-enter); }
 .message { margin: 0; }
 .message:not(:first-child) { margin-top: var(--conversation-item-gap); }
 .user-turn { display: flex; width: 100%; flex-direction: column; align-items: flex-end; gap: 4px; }

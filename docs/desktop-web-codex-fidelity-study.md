@@ -1511,6 +1511,25 @@ artifact action only when a committed artifact exists. The 1280×800 live page
 measures an exact 672×20 px row, reports zero horizontal overflow, and exposes
 the actions at opacity 1 when keyboard focus enters the first action.
 
+### LII. The thread footer is measured, never guessed
+
+The installed Codex `26.825.51511` `thread-scroll-layout` source observes the
+live footer height and writes `--thread-scroll-padding-bottom` as that measured
+height plus exactly 16 px. Its scroll controller distinguishes system layout
+movement from user movement, preserves an older reading distance and cancels
+automatic tail movement when the reader moves away. A fixed transcript bottom
+padding cannot satisfy the same contract because Composer rails, Workspace
+chips, governed approval and multiline input all change footer height.
+
+Garive previously reserved 174 px in every thread. It now marks the shared
+Desktop/Web footer and scroll container explicitly, observes the real footer,
+and drives Timeline padding through the same CSS variable and 16 px safe gap.
+An away-scroll immediately cancels a pending footer correction, preventing a
+layout frame from pulling the reader back to the tail. In the live 1280×720
+fixture, Running measures 145/161 px footer/reserve and Approval measures
+299.34/315.34 px. Both remain at distance zero from the tail when attached and
+report zero horizontal overflow.
+
 ## Gate 1 — Codex fidelity
 
 This gate passes only when both Desktop and Web show:

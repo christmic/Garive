@@ -132,7 +132,7 @@ describe("Desktop visual accessibility contract", () => {
     expect(CSS).toContain(".workspace-resizer { position: absolute; z-index: 4; top: var(--height-active-thread-toolbar);");
     expect(CSS).toContain(".sidebar-resizer { position: absolute; z-index: 11; top: var(--height-toolbar-sm);");
     expect(CSS).toContain(".timeline { width: min(var(--thread-content-max-width), calc(100% - 48px));");
-    expect(CSS).toContain("padding: var(--thread-content-top-inset) 0 174px;");
+    expect(CSS).toContain("padding: var(--thread-content-top-inset) 0 var(--thread-scroll-padding-bottom, 174px);");
     expect(CSS).toContain(".navigation-collapsed > .sidebar { display: none; }");
     expect(CSS).toContain(".task-groups { display: grid; align-content: start; gap: 8px;");
     expect(CSS).toContain('.task-groups[data-fade-top="true"][data-fade-bottom="true"]');

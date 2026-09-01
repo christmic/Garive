@@ -42,6 +42,7 @@ import { conversationDistanceFromTail, conversationScrollDirectionForKey,
 import { visibleScrollEdges } from "./scrollEdges";
 import { nextDesktopZoom } from "./zoom";
 import { formatThreadMarkdown } from "./threadExport";
+import { threadScrollPaddingBottom } from "./threadFooter";
 import { canNavigate, createNavigationHistory, moveNavigation, pushNavigation,
   type AppDestination, type SettingsDestination } from "./navigationHistory";
 import { useDesktopProduct } from "./app/useDesktopProduct";
@@ -1048,6 +1049,7 @@ function WorkSurface({ state, composer, submit, startSuggestion, dispatch, conte
   t: (key: MessageKey) => string;
 }) {
   const conversation = useRef<HTMLDivElement>(null);
+  const composerFooter = useRef<HTMLDivElement>(null);
   const [followingTail, setFollowingTail] = useState(true);
   const [newOutputBelow, setNewOutputBelow] = useState(false);
   const [scrolledFromTop, setScrolledFromTop] = useState(false);
@@ -1060,6 +1062,7 @@ function WorkSurface({ state, composer, submit, startSuggestion, dispatch, conte
   const layoutMetrics = useRef<ConversationScrollMetrics | undefined>(undefined);
   const userScrollIntent = useRef<{ direction?: ConversationScrollDirection; at: number } | undefined>(undefined);
   const touchStartY = useRef<number | undefined>(undefined);
+  const footerLayoutFrame = useRef<number | undefined>(undefined);
   const previousSessionId = useRef(state.sessionId);
   const tailRevision = `${state.messages.length}:${state.messages.at(-1)?.text.length ?? 0}:${state.livePreview?.sequence ?? -1}:${state.phase}`;
   const previousTailRevision = useRef(tailRevision);
@@ -1144,6 +1147,46 @@ function WorkSurface({ state, composer, submit, startSuggestion, dispatch, conte
     };
   }, [state.sessionId, state.messages.length === 0]);
 
+  useLayoutEffect(() => {
+    const element = conversation.current;
+    const footer = composerFooter.current;
+    if (!element || !footer || state.messages.length === 0) {
+      element?.style.removeProperty("--thread-scroll-padding-bottom");
+      return;
+    }
+    let lastHeight = -1;
+    const synchronize = () => {
+      const height = footer.getBoundingClientRect().height;
+      if (height === lastHeight) return;
+      lastHeight = height;
+      const previous = { scrollTop: element.scrollTop, scrollHeight: element.scrollHeight,
+        clientHeight: element.clientHeight };
+      element.style.setProperty("--thread-scroll-padding-bottom",
+        `${threadScrollPaddingBottom(height)}px`);
+      if (footerLayoutFrame.current !== undefined) cancelAnimationFrame(footerLayoutFrame.current);
+      footerLayoutFrame.current = requestAnimationFrame(() => {
+        footerLayoutFrame.current = undefined;
+        element.scrollTop = followingTailRef.current ? element.scrollHeight
+          : preserveConversationDistanceFromTail(previous, element.scrollHeight,
+            element.clientHeight);
+        layoutMetrics.current = { scrollTop: element.scrollTop,
+          scrollHeight: element.scrollHeight, clientHeight: element.clientHeight };
+        lastScrollDistance.current = conversationDistanceFromTail(layoutMetrics.current);
+      });
+    };
+    synchronize();
+    if (typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(synchronize);
+    observer.observe(footer);
+    return () => {
+      observer.disconnect();
+      if (footerLayoutFrame.current !== undefined) {
+        cancelAnimationFrame(footerLayoutFrame.current);
+        footerLayoutFrame.current = undefined;
+      }
+    };
+  }, [state.messages.length === 0]);
+
   useEffect(() => {
     if (previousTailRevision.current === tailRevision) return;
     previousTailRevision.current = tailRevision;
@@ -1168,6 +1211,10 @@ function WorkSurface({ state, composer, submit, startSuggestion, dispatch, conte
   }, [tailRevision]);
 
   const markUserScroll = (direction?: ConversationScrollDirection) => {
+    if (direction === "away" && footerLayoutFrame.current !== undefined) {
+      cancelAnimationFrame(footerLayoutFrame.current);
+      footerLayoutFrame.current = undefined;
+    }
     userScrollIntent.current = { direction, at: performance.now() };
   };
 
@@ -1248,7 +1295,8 @@ function WorkSurface({ state, composer, submit, startSuggestion, dispatch, conte
           : conversationScrollDirectionForKey(event.key, event.shiftKey);
         if (direction) markUserScroll(direction);
       }}
-      className={state.messages.length ? "conversation" : "conversation empty-conversation"}>
+      className={state.messages.length ? "conversation" : "conversation empty-conversation"}
+      data-thread-scroll-container="">
       {state.messages.length === 0 ? <h1 className="sr-only">{t("work.welcome.title")}</h1>
         : <Timeline state={state} dispatch={dispatch} t={t} />}
     </div>
@@ -1261,7 +1309,7 @@ function WorkSurface({ state, composer, submit, startSuggestion, dispatch, conte
       {state.error === "mutation_outcome_unknown" && <button className="error-action" type="button" onClick={retryPending}>{t("workspace.retry")}</button>}
       {state.error && <button type="button" onClick={() => dispatch({ type: "error_dismissed" })}
         aria-label={t("error.dismiss")}><Icon name="close" /></button>}</div>}
-    <div className="composer-wrap">
+    <div ref={composerFooter} className="composer-wrap" data-thread-scroll-footer="true">
       {!followingTail && <button className={newOutputBelow
         ? "conversation-tail-button unread" : "conversation-tail-button"} type="button"
         aria-label={t(newOutputBelow ? "timeline.newOutput" : "timeline.jumpLatest")}
