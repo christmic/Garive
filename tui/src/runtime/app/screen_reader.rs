@@ -17,8 +17,9 @@ use super::{
         controller::handle_terminal, external_editor, terminal_events::TerminalEventReader,
         SystemTerminal, TerminalGuard, TerminalOptions,
     },
-    handle_host, map_terminal_error, wait_for_external_editor, RestoredState, RuntimeState,
-    ShutdownSignal,
+    handle_host, map_terminal_error,
+    scheduling::{self, FairScheduler, ResizeCoalescer, Scheduled, ShutdownSignal},
+    wait_for_external_editor, RestoredState, RuntimeState,
 };
 
 pub(super) async fn run(
@@ -49,6 +50,8 @@ pub(super) async fn run(
     let mut last_status = String::new();
     let mut last_overlay = String::new();
     let mut last_composer = String::new();
+    let mut scheduler = FairScheduler::default();
+    let mut resize = ResizeCoalescer::default();
     write_linear("Garive. Connecting to durable workspace.")?;
     loop {
         state.advance_graceful_quit();
@@ -95,34 +98,58 @@ pub(super) async fn run(
         if std::mem::take(&mut state.bell_requested) {
             write_linear_bell()?;
         }
-        emit_linear_changes(
-            &state,
-            &mut emitted,
-            &mut last_status,
-            &mut last_overlay,
-            &mut last_composer,
-        )?;
+        if !resize.is_pending() {
+            emit_linear_changes(
+                &state,
+                &mut emitted,
+                &mut last_status,
+                &mut last_overlay,
+                &mut last_composer,
+            )?;
+        }
         if state.model.quit_requested {
             break;
         }
-        tokio::select! {
-            biased;
-            signal = shutdown.recv() => {
+        let scheduled = scheduling::select_next(
+            &mut scheduler,
+            shutdown.recv(),
+            events.recv(),
+            action_receiver.recv(),
+            std::future::pending::<()>(),
+            std::future::pending::<()>(),
+            receiver.recv(),
+            resize.wait(),
+            false,
+            false,
+            resize.is_pending(),
+        )
+        .await;
+        match scheduled {
+            Scheduled::Shutdown(signal) => {
                 interrupted = Some(signal);
                 break;
             }
-            event = events.recv() => match event {
+            Scheduled::Terminal(event) => match event {
+                Some(Ok(crossterm::event::Event::Resize(width, height))) => {
+                    resize.push(width, height, tokio::time::Instant::now());
+                }
                 Some(Ok(event)) => handle_terminal(event, &mut state),
                 Some(Err(_)) | None => return Err(TuiError::TerminalIo),
             },
-            action = action_receiver.recv() => match action {
+            Scheduled::Action(action) => match action {
                 Some(action) => state.dispatch(action),
                 None => break,
             },
-            message = receiver.recv() => match message {
+            Scheduled::Host(message) => match message {
                 Some(message) => handle_host(message, &mut state),
                 None => break,
             },
+            Scheduled::ResizeDeadline => {
+                if let Some(event) = resize.take() {
+                    handle_terminal(event, &mut state);
+                }
+            }
+            Scheduled::Motion | Scheduled::LiveFrame => unreachable!(),
         }
     }
     state.stop_tasks();

@@ -457,6 +457,8 @@ async fn shipping_tui_round_trips_through_production_sqlite_runtime() {
         assert!(first.contains("\x1b]0;Garive · Workspace · Connecting · Ready\x07"));
         assert!(first.contains("· Online · Running\x07"));
         assert!(first.contains("\x1b]0;Garive\x07"));
+        assert!(first.contains("Agent"));
+        assert!(!first.contains("definition-main"));
         assert!(first.contains("retained draftX"));
         assert!(!first.contains("BLOCKED"));
 
@@ -556,6 +558,7 @@ async fn shipping_tui_round_trips_through_production_sqlite_runtime() {
             true
         ));
         let restarted = fs::read_to_string(restart_log).unwrap();
+        assert!(!restarted.contains("definition-main"));
         assert!(restarted.contains("You: hello durable\n耐久 tui"));
         assert!(restarted.contains("Garive: first-live-fragment final-fragment"));
         assert!(restarted.contains("· Online · Ready\x07"));
@@ -604,7 +607,7 @@ fn run_expect(
             fconfigure $spawn_id -encoding utf-8
             expect -exact "\033\[6n"
             send "\033\[1;1R"
-            expect "definition-m"
+            expect "Agent"
             send -- "\033\[200~"
             send -- "hello durable\n\u8010\u4e45 tuX"
             send -- "\033\[201~"

@@ -17,6 +17,10 @@ use file_io::{
     validate_private_file_if_present, with_lock, MAX_FILE_BYTES,
 };
 
+#[cfg(test)]
+#[allow(unused_imports)]
+pub(crate) use file_io::{set_injected_fault, FaultPoint};
+
 const MAX_DIAGNOSTIC_BYTES: u64 = 1_024 * 1_024;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

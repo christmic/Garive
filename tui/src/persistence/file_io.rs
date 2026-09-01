@@ -21,6 +21,44 @@ mod windows;
 pub(super) const MAX_FILE_BYTES: u64 = 2 * 1_024 * 1_024;
 const DIAGNOSTIC_GENERATIONS: usize = 4;
 
+#[cfg(test)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum FaultPoint {
+    Write,
+    FileSync,
+    Rename,
+    DirectorySync,
+    QuarantineRename,
+    QuarantineDirectorySync,
+}
+
+#[cfg(test)]
+#[allow(dead_code)]
+pub(crate) fn set_injected_fault(point: FaultPoint) {
+    INJECTED_FAULT.set(Some(point));
+}
+
+#[cfg(test)]
+thread_local! {
+    static INJECTED_FAULT: std::cell::Cell<Option<FaultPoint>> = const {
+        std::cell::Cell::new(None)
+    };
+}
+
+#[cfg(test)]
+fn inject(point: FaultPoint) -> Result<(), StateError> {
+    if INJECTED_FAULT.get() == Some(point) {
+        INJECTED_FAULT.set(None);
+        return Err(StateError::Unavailable);
+    }
+    Ok(())
+}
+
+#[cfg(not(test))]
+fn inject(_point: ()) -> Result<(), StateError> {
+    Ok(())
+}
+
 pub(super) fn atomic_write(root: &Path, relative: &str, bytes: &[u8]) -> Result<(), StateError> {
     let destination = root.join(relative);
     if let Some(parent) = destination.parent() {
@@ -29,11 +67,13 @@ pub(super) fn atomic_write(root: &Path, relative: &str, bytes: &[u8]) -> Result<
     validate_private_file_if_present(&destination)?;
     let temporary = destination.with_extension(format!("tmp-{}", Uuid::new_v4()));
     let mut file = private_create_new(&temporary)?;
-    let result = file
-        .write_all(bytes)
-        .and_then(|_| file.sync_all())
-        .map_err(|_| StateError::Unavailable)
+    let result = inject_write()
+        .and_then(|_| file.write_all(bytes).map_err(|_| StateError::Unavailable))
+        .and_then(|_| inject_file_sync())
+        .and_then(|_| file.sync_all().map_err(|_| StateError::Unavailable))
+        .and_then(|_| inject_rename())
         .and_then(|_| durable_rename(&temporary, &destination, true))
+        .and_then(|_| inject_directory_sync())
         .and_then(|_| sync_directory(destination.parent().unwrap_or(root)));
     if result.is_err() {
         let _ = fs::remove_file(temporary);
@@ -77,8 +117,70 @@ pub(super) fn quarantine(root: &Path, path: &Path, category: &str) -> Result<(),
     let target = root
         .join("quarantine")
         .join(format!("{category}-{}.json", Uuid::new_v4()));
+    inject_quarantine_rename()?;
     durable_rename(path, &target, false)?;
+    inject_quarantine_directory_sync()?;
     sync_directory(&root.join("quarantine"))
+}
+
+#[cfg(test)]
+fn inject_write() -> Result<(), StateError> {
+    inject(FaultPoint::Write)
+}
+
+#[cfg(not(test))]
+fn inject_write() -> Result<(), StateError> {
+    inject(())
+}
+
+#[cfg(test)]
+fn inject_file_sync() -> Result<(), StateError> {
+    inject(FaultPoint::FileSync)
+}
+
+#[cfg(not(test))]
+fn inject_file_sync() -> Result<(), StateError> {
+    inject(())
+}
+
+#[cfg(test)]
+fn inject_rename() -> Result<(), StateError> {
+    inject(FaultPoint::Rename)
+}
+
+#[cfg(not(test))]
+fn inject_rename() -> Result<(), StateError> {
+    inject(())
+}
+
+#[cfg(test)]
+fn inject_directory_sync() -> Result<(), StateError> {
+    inject(FaultPoint::DirectorySync)
+}
+
+#[cfg(not(test))]
+fn inject_directory_sync() -> Result<(), StateError> {
+    inject(())
+}
+
+#[cfg(test)]
+fn inject_quarantine_rename() -> Result<(), StateError> {
+    inject(FaultPoint::QuarantineRename)
+}
+
+#[cfg(not(test))]
+fn inject_quarantine_rename() -> Result<(), StateError> {
+    inject(())
+}
+
+#[cfg(test)]
+fn inject_quarantine_directory_sync() -> Result<(), StateError> {
+    inject(FaultPoint::QuarantineDirectorySync)
+}
+
+#[cfg(not(test))]
+fn inject_quarantine_directory_sync() -> Result<(), StateError> {
+    inject(())
 }
 
 pub(super) fn with_lock<T>(

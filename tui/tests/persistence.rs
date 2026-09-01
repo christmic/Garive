@@ -15,7 +15,7 @@ use std::fs;
 use std::os::unix::fs::PermissionsExt;
 
 use serde_json::json;
-use store::{DiagnosticEvent, StateError, StateStore};
+use store::{set_injected_fault, DiagnosticEvent, FaultPoint, StateError, StateStore};
 
 #[test]
 fn preferences_round_trip_atomically_with_private_permissions() {
@@ -32,6 +32,81 @@ fn preferences_round_trip_atomically_with_private_permissions() {
     assert_private(&root);
     assert_private(&root.join("preferences.v1.json"));
     assert!(fs::read_dir(&root).unwrap().all(|entry| !entry
+        .unwrap()
+        .file_name()
+        .to_string_lossy()
+        .contains("tmp-")));
+}
+
+#[test]
+fn atomic_write_reports_each_durability_boundary_without_leaking_a_temp() {
+    for point in [FaultPoint::Write, FaultPoint::FileSync, FaultPoint::Rename] {
+        let temporary = tempfile::tempdir().unwrap();
+        let root = temporary.path().join("state");
+        let store = StateStore::open(Some(root.clone()), false).unwrap();
+        let mut old = Preferences::default();
+        store.save_preferences(&mut old).unwrap();
+        let before = fs::read(root.join("preferences.v1.json")).unwrap();
+        let mut replacement = old.clone();
+        replacement.theme = Theme::Dark;
+        set_injected_fault(point);
+
+        assert_eq!(
+            store.save_preferences(&mut replacement),
+            Err(StateError::Unavailable),
+            "{point:?}"
+        );
+        assert_eq!(
+            fs::read(root.join("preferences.v1.json")).unwrap(),
+            before,
+            "{point:?}"
+        );
+        assert_no_owned_temp(&root);
+    }
+
+    let temporary = tempfile::tempdir().unwrap();
+    let root = temporary.path().join("state");
+    let store = StateStore::open(Some(root.clone()), false).unwrap();
+    let mut old = Preferences::default();
+    store.save_preferences(&mut old).unwrap();
+    let mut replacement = old;
+    replacement.theme = Theme::Dark;
+    set_injected_fault(FaultPoint::DirectorySync);
+
+    assert_eq!(
+        store.save_preferences(&mut replacement),
+        Err(StateError::Unavailable)
+    );
+    assert_eq!(store.load_preferences().unwrap().theme, Theme::Dark);
+    assert_no_owned_temp(&root);
+}
+
+#[test]
+fn quarantine_reports_rename_and_directory_sync_boundaries_exactly() {
+    for (point, source_remains, quarantined) in [
+        (FaultPoint::QuarantineRename, true, 0),
+        (FaultPoint::QuarantineDirectorySync, false, 1),
+    ] {
+        let temporary = tempfile::tempdir().unwrap();
+        let root = temporary.path().join("state");
+        let store = StateStore::open(Some(root.clone()), false).unwrap();
+        let path = root.join("preferences.v1.json");
+        fs::write(&path, b"{broken}").unwrap();
+        make_private_fixture(&path);
+        set_injected_fault(point);
+
+        assert_eq!(store.load_preferences(), Err(StateError::Unavailable));
+        assert_eq!(path.exists(), source_remains, "{point:?}");
+        assert_eq!(
+            fs::read_dir(root.join("quarantine")).unwrap().count(),
+            quarantined,
+            "{point:?}"
+        );
+    }
+}
+
+fn assert_no_owned_temp(root: &std::path::Path) {
+    assert!(fs::read_dir(root).unwrap().all(|entry| !entry
         .unwrap()
         .file_name()
         .to_string_lossy()

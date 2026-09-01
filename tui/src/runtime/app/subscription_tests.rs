@@ -228,3 +228,6 @@ async fn live_follow_rejects_old_same_session_messages() {
     assert!(state.model.live_answer.current().is_some());
     state.stop_tasks();
 }
+
+#[path = "subscription_acceptance_tests.rs"]
+mod acceptance;

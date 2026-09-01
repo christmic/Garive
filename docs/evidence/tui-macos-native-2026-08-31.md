@@ -573,3 +573,21 @@ final rebase.
 These reviewed semantic buffers and real ANSI PTY transcripts still do not
 satisfy physical Apple Terminal or iTerm2-class PNG admission. That gallery
 remains open while the macOS login UI is locked.
+
+## TUI v2 final automated checkpoint — 2026-09-01
+
+The final feature candidate adds deterministic persistence failures for write,
+file sync, rename, directory sync, quarantine rename, and quarantine directory
+sync; five-attempt reconnect and fifth-follow eviction bounds; fair shared
+fullscreen/screen-reader scheduling; fixed-window resize coalescing; and a real
+Host-backed typed Session pagination PTY. The production file/SQLite/Host/PTTY
+round trip passes after restart in 121.66 seconds, including durable H4 takeover,
+background Session activity, cancellation, draft preservation, and terminal
+restoration.
+
+The post-change gates pass: persistence 15/15, terminal restoration 9/9, view
+81/81, reviewed snapshots 58/58, visual consistency 53/53, strict all-target/
+all-feature Clippy, formatting, and diff checks. Earlier in the same complete
+package run, library 104/104, real H1 22/22, H4 recovery 1/1, and performance
+53/53 also passed. The remaining physical Apple Terminal and iTerm2-class image
+admission is unchanged and cannot be inferred from these automated results.
