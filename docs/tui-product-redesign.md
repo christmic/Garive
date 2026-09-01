@@ -63,6 +63,11 @@ The fullscreen frame has four vertical regions:
   footer share one focus state and never create a second status bar.
 - Overlays are centered, bounded components for selection or confirmation.
   They do not permanently divide the transcript into panes.
+- An ordinary empty transcript is intentionally silent. `ContextLine` owns
+  loading/connection state and `Composer` owns the invitation to act, so the
+  body does not repeat either. Only blocking empty states render body copy:
+  missing configuration names the Agent-install path and degraded Host access
+  names `/status` as the recovery path.
 
 ## Component system
 
@@ -242,6 +247,13 @@ resolves every render/reflow path and later `/theme system` through the same
 process-local value, and deterministically falls back to dark. A shipping
 macOS PTY proves reverse-order light replies and emitted light-palette bytes;
 screen-reader mode emits no appearance query.
+
+Fullscreen clear and redraw use Ratatui's known fullscreen viewport instead of
+querying the terminal cursor with `CSI 6n`; startup, `Ctrl+L`, resize recovery,
+and external-editor return therefore cannot inherit Crossterm's cursor-query
+timeout. A startup profile separately admits truecolor only from
+`COLORTERM=truecolor|24bit`, ANSI256 from `TERM=*256color`, basic ANSI
+otherwise, and monochrome for `TERM=dumb`. Non-UTF-8 locales use ASCII borders.
 
 This is not physical gallery closeout. Native macOS tests and real PTY
 transcripts are admitted, but Apple Terminal and iTerm2-class screenshots remain

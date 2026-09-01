@@ -1,5 +1,5 @@
 use crate::{
-    application::{AppModel, BootState, TerminalSize},
+    application::{AppModel, TerminalSize},
     Theme,
 };
 #[cfg(test)]
@@ -266,22 +266,6 @@ pub(super) fn safe_text(value: &str) -> String {
 
 const fn agent_label() -> &'static str {
     "Agent"
-}
-fn empty_title(value: BootState) -> &'static str {
-    match value {
-        BootState::Cold | BootState::Loading => "  Connecting to your durable workspace…",
-        BootState::NotConfigured => "  No Agent is installed",
-        BootState::Degraded => "  Garive Host is unavailable",
-        BootState::Ready => "  A quiet place to get things done",
-    }
-}
-fn empty_detail(value: BootState) -> &'static str {
-    match value {
-        BootState::Cold | BootState::Loading => "  Sessions and activity will appear here.",
-        BootState::NotConfigured => "  Install an Agent definition before creating a Session.",
-        BootState::Degraded => "  Open /status for safe recovery details.",
-        BootState::Ready => "  Write below, or press Ctrl+N for a fresh Session.",
-    }
 }
 
 mod markdown;

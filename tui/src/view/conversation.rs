@@ -12,11 +12,10 @@ use crate::{
     Theme,
 };
 
-use super::{
-    empty_detail, empty_title, markdown::render_markdown, palette, safe_text, MotionFrame,
-};
+use super::{markdown::render_markdown, palette, safe_text, MotionFrame};
 
 mod block;
+mod empty_state;
 pub(super) mod live_cache;
 mod request_surface;
 mod scroll;
@@ -44,9 +43,7 @@ pub(super) fn render_conversation(
     let mut lines = Vec::new();
     let mut scroll = 0;
     if model.turn_blocks.is_empty() && model.live_answer.current().is_none() {
-        lines.push(Line::default());
-        lines.push(Line::styled(empty_title(model.boot), colors.empty_title));
-        lines.push(Line::styled(empty_detail(model.boot), colors.muted));
+        lines = empty_state::render(model.boot, colors);
     } else if let Some(window) = window {
         lines = window.lines;
         scroll = window.scroll;

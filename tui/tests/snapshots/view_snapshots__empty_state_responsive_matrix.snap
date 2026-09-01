@@ -1,0 +1,123 @@
+---
+source: tui/tests/view_snapshots.rs
+expression: matrix
+---
+===== loading compact · Mono · 40x18 =====
+New conversation              connecting
+
+
+
+
+
+
+
+
+
+
+
+
+
+╭ › ───────────────────────────────────╮
+│ Message Garive  ·  / for commands    │
+╰──────────────────────────────────────╯
+
+
+===== loading standard · Dark · 80x18 =====
+New conversation  ·  Garive                                           connecting
+
+
+
+
+
+
+
+
+
+
+
+
+
+╭ › ───────────────────────────────────────────────────────────────────────────╮
+│ Message Garive  ·  / for commands                                            │
+╰──────────────────────────────────────────────────────────────────────────────╯
+
+
+===== loading wide · Light · 120x18 =====
+            New conversation  ·  Garive                                                           connecting
+
+
+
+
+
+
+
+
+
+
+
+
+
+            ╭ › ───────────────────────────────────────────────────────────────────────────────────────────╮
+            │ Message Garive  ·  / for commands                                                            │
+            ╰──────────────────────────────────────────────────────────────────────────────────────────────╯
+
+
+===== ready · Dark · 100x18 =====
+  New conversation  ·  Garive
+
+
+
+
+
+
+
+
+
+
+
+
+
+  ╭ › ───────────────────────────────────────────────────────────────────────────────────────────╮
+  │ Message Garive  ·  / for commands                                                            │
+  ╰──────────────────────────────────────────────────────────────────────────────────────────────╯
+
+
+===== not configured · Mono · 100x18 =====
+  New conversation  ·  Garive
+
+
+      No Agent is installed
+      Install an Agent definition before starting a conversation.
+
+
+
+
+
+
+
+
+
+  ╭ › ───────────────────────────────────────────────────────────────────────────────────────────╮
+  │ Message Garive  ·  / for commands                                                            │
+  ╰──────────────────────────────────────────────────────────────────────────────────────────────╯
+
+
+===== degraded · Dark · 100x18 =====
+  New conversation  ·  Garive                                                          unavailable
+
+
+      Recovery details are available
+      Open /status to inspect the safe failure and reconnect.
+
+
+
+
+
+
+
+
+
+  ╭ › ───────────────────────────────────────────────────────────────────────────────────────────╮
+  │ Message Garive  ·  / for commands                                                            │
+  ╰──────────────────────────────────────────────────────────────────────────────────────────────╯
+    /reconnect try again safely  ·  Durable Session truth unavailable
