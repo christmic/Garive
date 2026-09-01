@@ -260,7 +260,10 @@ modal backdrop.
 height, choice hit testing, and action hit testing. Tone glyphs share the first
 consequence row and consume its width budget. Normal height keeps one blank row
 before actions; compact height removes that spacer before it removes the
-selected control or either primary/safe-exit action. Scalar input shows a
+selected control or either primary/safe-exit action. When compact height folds
+unselected choices, the selected row reserves a bounded `N/T ↑↓` suffix before
+Unicode-safe label truncation; the suffix is not a synthetic choice hit target.
+Scalar input shows a
 grapheme-safe visible caret, and enum labels are sanitized and clipped without
 changing the submitted value. Linear presentation consumes the same typed
 title, body, response state, and action bindings.

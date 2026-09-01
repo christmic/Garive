@@ -386,9 +386,16 @@ fn decision_sheet_spec(
                     ])
                 }
                 decision_sheet::DecisionRow::Choice {
-                    value, selected, ..
+                    value,
+                    selected,
+                    compact_position,
+                    ..
                 } => {
-                    let mut content = format!("{} {value}", if selected { "›" } else { " " });
+                    let suffix = compact_position
+                        .map(decision_sheet::compact_choice_suffix)
+                        .unwrap_or_default();
+                    let mut content =
+                        format!("{} {value}{suffix}", if selected { "›" } else { " " });
                     if selected {
                         content.extend(std::iter::repeat_n(
                             ' ',

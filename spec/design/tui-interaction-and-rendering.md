@@ -672,7 +672,11 @@ linear screen-reader text, key bindings, and controller intents. A shared
 display-cell row layout owns word/grapheme wrapping, selected choice rows, and
 per-action pointer rectangles. On short terminals it may cover the Composer
 visually while preserving its draft, but it must retain the title, active
-control, primary action, and safe-leave action. Unknown-result abandonment
+control, primary action, and safe-leave action. If compact height cannot retain
+every choice, the selected row must expose its one-based ordinal, total choice
+count, and `↑↓` navigation; showing one choice without disclosing the remaining
+selection model is forbidden. Linear presentation names the same choices,
+selection, and Up/Down navigation. Unknown-result abandonment
 requires a second confirmation and never implies that the durable outcome is
 known. `Ctrl+Q` opens a reversible safe-quit confirmation; `Escape` returns to
 the suspension only while that exact suspension still exists.

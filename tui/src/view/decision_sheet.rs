@@ -53,6 +53,7 @@ pub(crate) enum DecisionRow {
         index: usize,
         value: String,
         selected: bool,
+        compact_position: Option<(usize, usize)>,
     },
     Blank,
     Label(&'static str),
@@ -105,15 +106,23 @@ pub(crate) fn layout(spec: &DecisionSheetSpec, width: u16, height: usize) -> Dec
                             usize::from(width.saturating_sub(3)),
                         ),
                         selected: index == *selected,
+                        compact_position: None,
                     }
                 }));
-                primary = choices.get(*selected).map(|choice| DecisionRow::Choice {
-                    index: *selected,
-                    value: truncate_display(
-                        &super::safe_text(choice),
-                        usize::from(width.saturating_sub(3)),
-                    ),
-                    selected: true,
+                primary = choices.get(*selected).map(|choice| {
+                    let position = (*selected + 1, choices.len());
+                    let suffix = compact_choice_suffix(position);
+                    DecisionRow::Choice {
+                        index: *selected,
+                        value: truncate_display(
+                            &super::safe_text(choice),
+                            usize::from(width)
+                                .saturating_sub(2)
+                                .saturating_sub(suffix.width()),
+                        ),
+                        selected: true,
+                        compact_position: Some(position),
+                    }
                 });
                 ("Choose", *guidance)
             }
@@ -156,6 +165,10 @@ pub(crate) fn layout(spec: &DecisionSheetSpec, width: u16, height: usize) -> Dec
     }
     rows.extend(actions);
     DecisionLayout { rows }
+}
+
+pub(crate) fn compact_choice_suffix(position: (usize, usize)) -> String {
+    format!(" · {}/{} ↑↓", position.0, position.1)
 }
 
 pub(crate) fn project(model: &AppModel, overlay: Overlay) -> Option<DecisionSheetSpec> {
@@ -428,5 +441,37 @@ mod tests {
                 .count(),
             2
         );
+    }
+
+    #[test]
+    fn compact_choice_reserves_navigation_before_wide_label_truncation() {
+        let spec = DecisionSheetSpec {
+            title: "Decision".into(),
+            body: vec!["Consequence".into()],
+            response: Some(DecisionResponseSpec::Choices {
+                guidance: "Choose one.",
+                choices: vec![
+                    "第一项👨‍👩‍👧‍👦非常长的选择标签".into(),
+                    "第二项".into(),
+                    "third".into(),
+                ],
+                selected: 0,
+            }),
+            tone: DecisionSheetTone::Warning,
+            actions: Vec::new(),
+        };
+        let layout = layout(&spec, 20, 2);
+        let DecisionRow::Choice {
+            value,
+            compact_position: Some(position),
+            ..
+        } = &layout.rows[1]
+        else {
+            panic!("compact selected choice must remain visible");
+        };
+        let rendered = format!("› {value}{}", compact_choice_suffix(*position));
+        assert!(rendered.contains("1/3 ↑↓"));
+        assert!(rendered.width() <= 20);
+        assert!(!value.contains('👨') || value.contains("👨‍👩‍👧‍👦"));
     }
 }

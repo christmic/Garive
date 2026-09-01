@@ -266,15 +266,36 @@ fn boolean_suspension_projects_one_shared_keyboard_and_screen_reader_choice() {
         ..Default::default()
     };
     model.reconcile_suspension_response();
+    let first = frame(&model, 40, 8);
+    assert!(first.contains("› true · 1/2 ↑↓"));
     model.suspension_response.as_mut().unwrap().choice_selection = 1;
     let visual = frame(&model, 100, 24);
     let linear = view::linear_overlay(&model);
     assert!(visual.contains("› false"));
     assert!(visual.contains("Enter submit response"));
     assert!(linear.contains("Selected: false"));
+    assert!(linear.contains("Use Up or Down to select"));
     let short = frame(&model, 40, 8);
     assert!(short.contains("› false"));
+    assert!(short.contains("2/2 ↑↓"));
     assert!(short.contains("Enter submit response"));
+
+    let choice_row = short
+        .lines()
+        .position(|line| line.contains("› false"))
+        .expect("selected compact choice row");
+    model.terminal_size = application::TerminalSize {
+        width: 40,
+        height: 8,
+    };
+    assert_eq!(
+        view::decision_choice_hit_test(&model, 5, choice_row as u16),
+        Some(1)
+    );
+    assert_eq!(
+        view::decision_choice_hit_test(&model, 5, choice_row.saturating_sub(1) as u16),
+        None
+    );
 }
 
 #[test]
