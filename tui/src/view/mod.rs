@@ -23,6 +23,7 @@ mod linear;
 mod live_answer;
 mod markdown_syntax;
 mod markdown_table;
+mod markdown_wrap;
 mod minimum;
 mod motion;
 mod overlay;

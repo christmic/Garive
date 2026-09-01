@@ -29,18 +29,16 @@ pub(super) fn render(
             colors.muted,
         )),
         LiveAnswerAvailability::Available => {
-            if answer.presented_text.is_empty() {
-                lines.push(Line::styled("  ", colors.normal));
-            } else {
+            if !answer.presented_text.is_empty() {
                 lines.extend(cache.render_markdown(answer, theme, width));
-            }
-            if let Some(line) = lines.last_mut() {
-                LiveCaret::for_output(
-                    answer.availability == LiveAnswerAvailability::Available,
-                    answer.ended,
-                    reduced_motion,
-                )
-                .append_to(line, colors);
+                if let Some(line) = lines.last_mut() {
+                    LiveCaret::for_output(
+                        answer.availability == LiveAnswerAvailability::Available,
+                        answer.ended,
+                        reduced_motion,
+                    )
+                    .append_to(line, colors);
+                }
             }
         }
     }
@@ -57,5 +55,97 @@ fn phase_copy(answer: &LiveAnswer) -> &'static str {
         Some(LiveAnswerPhase::Generating) => " · Generating response",
         Some(LiveAnswerPhase::Finalizing) => " · Finalizing response",
         None => " · Working",
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::application::{LiveAnswerExpectation, LiveAnswerProjection};
+    use garive_host_client::{LiveOutputEvent, LiveOutputEventKind};
+
+    #[test]
+    fn awaiting_first_delta_has_status_without_orphan_caret() {
+        let mut projection = LiveAnswerProjection::default();
+        projection.apply(
+            event(
+                1,
+                LiveOutputEventKind::Snapshot {
+                    text: String::new(),
+                    through_sequence: 1,
+                },
+            ),
+            expectation(),
+        );
+        projection.apply(
+            event(
+                2,
+                LiveOutputEventKind::PhaseChanged {
+                    phase: "preparing".into(),
+                    label_key: "agent.live.preparing".into(),
+                },
+            ),
+            expectation(),
+        );
+
+        let mut cache = LiveRenderCache::default();
+        let awaiting = render(
+            projection.current().unwrap(),
+            Theme::Dark,
+            40,
+            false,
+            &mut cache,
+        );
+        let awaiting_text = line_text(&awaiting);
+        assert_eq!(awaiting_text.len(), 2, "status plus turn gap");
+        assert!(awaiting_text[0].contains("Preparing context"));
+        assert!(!awaiting_text.join("\n").contains('▍'));
+
+        projection.apply(
+            event(3, LiveOutputEventKind::TextDelta { text: "A".into() }),
+            expectation(),
+        );
+        projection.advance_frame(false);
+        let visible = render(
+            projection.current().unwrap(),
+            Theme::Dark,
+            40,
+            false,
+            &mut cache,
+        );
+        assert_eq!(line_text(&visible).join("\n").matches('▍').count(), 1);
+    }
+
+    fn line_text(lines: &[Line<'static>]) -> Vec<String> {
+        lines
+            .iter()
+            .map(|line| {
+                line.spans
+                    .iter()
+                    .map(|span| span.content.as_ref())
+                    .collect()
+            })
+            .collect()
+    }
+
+    fn event(sequence: u64, kind: LiveOutputEventKind) -> LiveOutputEvent {
+        LiveOutputEvent {
+            api_version: "v1".into(),
+            session_id: "session-a".into(),
+            turn_id: "turn-a".into(),
+            execution_id: "execution-a".into(),
+            stream_id: "00000000-0000-4000-8000-000000000001".into(),
+            sequence,
+            kind,
+        }
+    }
+
+    fn expectation() -> LiveAnswerExpectation<'static> {
+        LiveAnswerExpectation {
+            selected_session: "session-a",
+            active_turn: Some("turn-a"),
+            active_execution: Some("execution-a"),
+            detached: false,
+        }
     }
 }

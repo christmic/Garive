@@ -8,11 +8,11 @@ expression: "frame(&sessions, Theme::Mono, 100, 24)"
       ✓  Agent ac  ╭ Switch session ────────────────────────────────────────────╮
     ◆ Garive       │                                                            │
       ## Release   │  Filter  type to search                                    │
-      • Verify th  │    Session 4 · Agent   ● running                           │
-      • Ship with  │    Session 5 · Agent   ● running                           │
-      cargo test   │    Session 6 · Agent   ● running                           │
+                   │    Session 4 · Agent   ● running                           │
+      • Verify th  │    Session 5 · Agent   ● running                           │
+      • Ship with  │    Session 6 · Agent   ● running                           │
                    │    Session 7 · Agent   ● running                           │
-                   │    Session 8 · Agent   ● running                           │
+      cargo test   │    Session 8 · Agent   ● running                           │
                    │    Session 9 · Agent   ● running                           │
                    │    Session 10 · Agent   ● running                          │
                    │    Session 11 · Agent   ● running                          │

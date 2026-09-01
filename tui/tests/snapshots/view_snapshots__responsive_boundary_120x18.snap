@@ -8,11 +8,11 @@ expression: rendered
                 ✓  Agent action · completed
               ◆ Garive
                 ## Release plan
+
                 • Verify the Runtime
                 • Ship with evidence
+
                 cargo test passes.
-
-
 
 
 

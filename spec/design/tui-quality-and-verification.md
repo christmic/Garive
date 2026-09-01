@@ -636,6 +636,27 @@ all-feature Clippy, formatting, and diff checks pass after rebasing onto the
 current mainline; that rebase changed only Desktop/spec inputs outside TUI.
 Physical Apple Terminal and iTerm2-class screenshot admission remains open.
 
+## Streamed-answer typography evidence
+
+Implementation `4adf0bef`, component extraction `56153f7d`, and normative/source
+evidence `145b5c6b` establish the conversation reading contract. The Markdown
+renderer reserves the Agent gutter before physical reflow, repeats it on every
+wrapped Unicode row, applies marker-width hanging indentation, and owns one-row
+top-level block rhythm. Stable-prefix plus mutable-tail rendering is asserted
+equal to monolithic rendering. Awaiting-first-delta shows its safe phase without
+an empty answer row or orphan caret; the caret appears only with real visible H4
+text. Reviewed snapshots include the `40x12` compact boundary, `100x24` product
+frame, rich Markdown across dark/light/mono, Inspector widths, and the complete
+H4 filmstrip.
+
+On native macOS arm64, the candidate passes 134 library, 82 reviewed snapshot,
+103 view, 75 visual-consistency, 3 architecture, all 23 shipping PTY, and the H4
+disconnect/recovery PTY tests. The production SQLite/HTTP/runtime PTY passes in
+135.87 seconds and visibly observes `first-live-fragment` before
+`final-fragment`, then durable takeover. Strict all-target/all-feature Clippy,
+formatting, and diff checks pass. Physical Apple Terminal and iTerm2-class
+screenshot admission remains open.
+
 ## Completion rule
 
 The TUI is complete only when:

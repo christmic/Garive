@@ -8,11 +8,11 @@ expression: "frame(&turns, Theme::Dark, 100, 24)"
       ✓  Age  │                                                                      │
     ◆ Garive  │  Search  release                                                     │
       ## Rel  │     1  release checkpoint 00 with verified evidence                  │
-      • Veri  │     2  release checkpoint 01 with verified evidence                  │
-      • Ship  │  ›  3  release checkpoint 02 with verified evidence                  │
-      cargo   │     4  release checkpoint 03 with verified evidence                  │
+              │     2  release checkpoint 01 with verified evidence                  │
+      • Veri  │  ›  3  release checkpoint 02 with verified evidence                  │
+      • Ship  │     4  release checkpoint 03 with verified evidence                  │
               │     5  release checkpoint 04 with verified evidence                  │
-              │     6  release 界 面  keeps a display-width bounded preview across …   │
+      cargo   │     6  release 界 面  keeps a display-width bounded preview across …   │
               │     7  release checkpoint 06 with verified evidence                  │
               │     8  release checkpoint 07 with verified evidence                  │
               │     9  release checkpoint 08 with verified evidence                  │
