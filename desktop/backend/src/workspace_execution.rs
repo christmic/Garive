@@ -292,12 +292,12 @@ struct WorkspaceSandbox {
 impl SandboxAdmissionPort for WorkspaceSandbox {
     fn admit(
         &mut self,
-        _: SandboxAdmissionRequest<'_>,
+        request: SandboxAdmissionRequest<'_>,
     ) -> Result<SandboxAdmission, garive_runtime::GovernedRuntimePortError> {
-        let nonce = Uuid::new_v4();
+        let invocation = request.safety_request.invocation_id();
         Ok(SandboxAdmission {
             binding: SandboxBindingV1::new(
-                format!("workspace-binding-{nonce}"),
+                workspace_governance_id("binding", invocation),
                 "desktop-workspace-set",
                 "desktop.workspace.atomic-create",
                 self.executor_revision.clone(),
@@ -310,8 +310,8 @@ impl SandboxAdmissionPort for WorkspaceSandbox {
                 .enforcement
                 .digest()
                 .map_err(|_| garive_runtime::GovernedRuntimePortError::InvalidBinding)?,
-            preflight_id: format!("workspace-preflight-{nonce}"),
-            dispatch_attempt_id: format!("workspace-dispatch-{nonce}"),
+            preflight_id: workspace_governance_id("preflight", invocation),
+            dispatch_attempt_id: workspace_governance_id("dispatch", invocation),
         })
     }
 }
@@ -468,7 +468,7 @@ struct WorkspaceExecutor {
 impl ExecutorPort for WorkspaceExecutor {
     fn prepare(
         &mut self,
-        _: &garive_tools::ToolInvocationId,
+        invocation_id: &garive_tools::ToolInvocationId,
         prepared: &garive_tools::PreparedToolCall,
         _: &garive_tools::InvocationGrant,
     ) -> Result<PreparedExecution, String> {
@@ -477,7 +477,7 @@ impl ExecutorPort for WorkspaceExecutor {
         Ok(PreparedExecution {
             executor_id: "desktop.workspace.atomic-create".into(),
             executor_revision: self.tool_revision.clone(),
-            dispatch_attempt_id: format!("workspace-write-{}", Uuid::new_v4()),
+            dispatch_attempt_id: workspace_governance_id("dispatch", invocation_id),
         })
     }
 
@@ -534,6 +534,13 @@ impl ExecutorPort for WorkspaceExecutor {
             })
         })
     }
+}
+
+fn workspace_governance_id(kind: &str, invocation: &garive_tools::ToolInvocationId) -> String {
+    format!(
+        "workspace-{kind}-{:x}",
+        Sha256::digest(format!("{}:{kind}", invocation.as_str()).as_bytes())
+    )
 }
 
 impl WorkspaceExecutor {

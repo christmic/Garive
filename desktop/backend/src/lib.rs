@@ -3,7 +3,13 @@
 #![forbid(unsafe_code)]
 #![deny(missing_docs)]
 
-use std::{path::PathBuf, sync::Arc};
+use std::{
+    path::{Path, PathBuf},
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc,
+    },
+};
 
 use garive_llm::ModelPort;
 use garive_runtime::{
@@ -11,7 +17,7 @@ use garive_runtime::{
     HostEventPage, HostWorkspaceContextEntry, LiveHost, LiveHostEvent, LiveHostLimits,
     LiveOutputHub, LiveOutputLimits, LiveOutputSubscriber, LocalCapabilityPreparationFactory,
     LocalDispatchQueue, LocalExecutionAttempt, LocalExecutionPolicy, LocalExecutionWorker,
-    LocalGovernedExecutionFactory, RuntimeAgentCatalogue,
+    LocalGovernedExecutionFactory, RuntimeAgentCatalogue, SqliteLedger,
 };
 use serde::Serialize;
 use tokio::sync::Mutex;
@@ -31,6 +37,10 @@ mod workspace;
 mod workspace_bookmark;
 mod workspace_execution;
 mod workspace_t1_execution;
+
+const STARTUP_MAX_RECOVERIES_PER_TURN: u64 = 3;
+const STARTUP_MAX_RECOVERABLE_TURNS: usize = 64;
+const STARTUP_MAX_ARGUMENT_BYTES: usize = 1024 * 1024;
 
 pub use artifact_export::{
     DesktopArtifactExportError, DesktopArtifactExportReceipt, DesktopArtifactExportService,
@@ -224,6 +234,8 @@ pub enum DesktopHostError {
     ExecutionFailure,
     /// Durable events did not contain one exact terminal for the Turn.
     ProjectionFailure,
+    /// Durable startup work must be recovered before accepting new execution.
+    StartupRecoveryRequired,
 }
 
 impl DesktopHostError {
@@ -235,6 +247,7 @@ impl DesktopHostError {
             Self::HostFailure => "host_failure",
             Self::ExecutionFailure => "execution_failure",
             Self::ProjectionFailure => "projection_failure",
+            Self::StartupRecoveryRequired => "startup_recovery_required",
         }
     }
 }
@@ -246,6 +259,7 @@ pub struct DesktopHost {
     worker: LocalExecutionWorker,
     queue: Mutex<LocalDispatchQueue>,
     operations: Arc<dyn DesktopOperations>,
+    startup_recovery_pending: AtomicBool,
 }
 
 impl DesktopHost {
@@ -284,6 +298,7 @@ impl DesktopHost {
         {
             return Err(DesktopHostError::InvalidConfiguration);
         }
+        let startup_recovery_pending = database_has_recoverable_turns(&config.database_path)?;
         let definition_id = config.default_agent_definition_id;
         let (dispatcher, queue) = local_dispatch_queue(config.dispatch_capacity)
             .map_err(|_| DesktopHostError::InvalidConfiguration)?;
@@ -331,7 +346,51 @@ impl DesktopHost {
             worker,
             queue: Mutex::new(queue),
             operations: config.operations,
+            startup_recovery_pending: AtomicBool::new(startup_recovery_pending),
         })
+    }
+
+    fn ensure_startup_recovered(&self) -> Result<(), DesktopHostError> {
+        if self.startup_recovery_pending.load(Ordering::Acquire) {
+            Err(DesktopHostError::StartupRecoveryRequired)
+        } else {
+            Ok(())
+        }
+    }
+
+    /// Recovers bounded durable startup work before admitting new execution.
+    pub async fn recover_startup(&self) -> Result<usize, DesktopHostError> {
+        if !self.startup_recovery_pending.load(Ordering::Acquire) {
+            return Ok(0);
+        }
+        let _queue = self.queue.lock().await;
+        if !self.startup_recovery_pending.load(Ordering::Acquire) {
+            return Ok(0);
+        }
+        let recovery_attempt = self.operations.execution_attempt()?;
+        let report = self
+            .worker
+            .recover_startup(
+                STARTUP_MAX_RECOVERIES_PER_TURN,
+                STARTUP_MAX_RECOVERABLE_TURNS,
+                STARTUP_MAX_ARGUMENT_BYTES,
+                &recovery_attempt.recorded_at,
+            )
+            .map_err(|_| DesktopHostError::ExecutionFailure)?;
+        let recovered = report.dispatches.len();
+        for committed in report.dispatches {
+            let attempt = self.operations.execution_attempt()?;
+            self.worker
+                .execute(&committed, &attempt)
+                .await
+                .map_err(|_| DesktopHostError::ExecutionFailure)?;
+        }
+        if report.has_more {
+            return Err(DesktopHostError::StartupRecoveryRequired);
+        }
+        self.startup_recovery_pending
+            .store(false, Ordering::Release);
+        Ok(recovered)
     }
 
     fn supports_activity(&self) -> bool {
@@ -386,6 +445,7 @@ impl DesktopHost {
         session_id: &str,
         input: &str,
     ) -> Result<DesktopTurnCommandReceipt, DesktopHostError> {
+        self.ensure_startup_recovered()?;
         self.host
             .start_turn(command_id, session_id, input)
             .map_err(|_| DesktopHostError::HostFailure)
@@ -399,6 +459,7 @@ impl DesktopHost {
         input: &str,
         context: &[DesktopWorkspaceContextFile],
     ) -> Result<DesktopTurnCommandReceipt, DesktopHostError> {
+        self.ensure_startup_recovered()?;
         let first = context.first().ok_or(DesktopHostError::HostFailure)?;
         if context.iter().any(|file| {
             file.workspace_id != first.workspace_id || file.grant_revision != first.grant_revision
@@ -435,6 +496,7 @@ impl DesktopHost {
         turn_id: &str,
         requested_through_position: u64,
     ) -> Result<DesktopTurnCommandReceipt, DesktopHostError> {
+        self.ensure_startup_recovered()?;
         self.host
             .cancel_turn(command_id, session_id, turn_id, requested_through_position)
             .map_err(|_| DesktopHostError::HostFailure)
@@ -450,6 +512,7 @@ impl DesktopHost {
         session_version: u64,
         input: &str,
     ) -> Result<DesktopTurnCommandReceipt, DesktopHostError> {
+        self.ensure_startup_recovered()?;
         self.host
             .continue_turn(
                 command_id,
@@ -472,6 +535,7 @@ impl DesktopHost {
         session_version: u64,
         approved: bool,
     ) -> Result<DesktopTurnCommandReceipt, DesktopHostError> {
+        self.ensure_startup_recovered()?;
         self.host
             .continue_turn(
                 command_id,
@@ -513,6 +577,7 @@ impl DesktopHost {
 
     /// Drives at most one committed local dispatch without blocking when the queue is empty.
     pub async fn drive_pending(&self) -> Result<bool, DesktopHostError> {
+        self.ensure_startup_recovered()?;
         let attempt = self.operations.execution_attempt()?;
         match self
             .queue
@@ -523,7 +588,10 @@ impl DesktopHost {
         {
             Ok(_) => Ok(true),
             Err(garive_runtime::LocalWorkerError::QueueEmpty) => Ok(false),
-            Err(_) => Err(DesktopHostError::ExecutionFailure),
+            Err(_) => {
+                self.startup_recovery_pending.store(true, Ordering::Release);
+                Err(DesktopHostError::ExecutionFailure)
+            }
         }
     }
 
@@ -614,6 +682,7 @@ impl DesktopHost {
         session_id: Option<&str>,
         input: &str,
     ) -> Result<DesktopTurnResult, DesktopHostError> {
+        self.ensure_startup_recovered()?;
         let session_id = if let Some(session_id) = session_id {
             session_id.to_owned()
         } else {
@@ -639,6 +708,7 @@ impl DesktopHost {
         input: &str,
         context: &[DesktopWorkspaceContextFile],
     ) -> Result<DesktopTurnResult, DesktopHostError> {
+        self.ensure_startup_recovered()?;
         if definition_id != self.definition_id {
             return Err(DesktopHostError::HostFailure);
         }
@@ -693,6 +763,7 @@ impl DesktopHost {
         session_version: u64,
         input: HostContinuationInput<'_>,
     ) -> Result<DesktopTurnResult, DesktopHostError> {
+        self.ensure_startup_recovered()?;
         let command_id = self.operations.command_id("continue")?;
         let turn = self
             .host
@@ -719,7 +790,10 @@ impl DesktopHost {
             .await
             .try_run_next(&self.worker, &attempt)
             .await
-            .map_err(|_| DesktopHostError::ExecutionFailure)?;
+            .map_err(|_| {
+                self.startup_recovery_pending.store(true, Ordering::Release);
+                DesktopHostError::ExecutionFailure
+            })?;
         let page = self
             .host
             .read_event_page(&session_id, turn.committed_position)
@@ -760,6 +834,23 @@ impl DesktopHost {
             .read_timeline(session_id, after_position, limit)
             .map_err(|_| DesktopHostError::ProjectionFailure)
     }
+}
+
+fn database_has_recoverable_turns(path: &Path) -> Result<bool, DesktopHostError> {
+    let ledger = SqliteLedger::open(path).map_err(|_| DesktopHostError::InvalidConfiguration)?;
+    for session in ledger
+        .list_sessions()
+        .map_err(|_| DesktopHostError::InvalidConfiguration)?
+    {
+        if !ledger
+            .list_recoverable_turns(&session)
+            .map_err(|_| DesktopHostError::InvalidConfiguration)?
+            .is_empty()
+        {
+            return Ok(true);
+        }
+    }
+    Ok(false)
 }
 
 fn terminal(event: &str) -> Option<DesktopTerminal> {
@@ -1069,6 +1160,11 @@ impl DesktopState {
         }
         *slot = Some(Arc::new(host));
         Ok(())
+    }
+
+    /// Completes bounded durable Runtime recovery for the installed Host.
+    pub async fn recover_startup(&self) -> Result<usize, DesktopHostError> {
+        self.installed_host()?.recover_startup().await
     }
 
     /// Creates one durable empty Session for context attachment.

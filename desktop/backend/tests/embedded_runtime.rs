@@ -19,15 +19,16 @@ use garive_desktop::{
 };
 use garive_ledger::SessionId;
 use garive_llm::{
-    InterruptionKind, InvokeOutcome, ModelCancellation, ModelCapability, ModelFuture, ModelItem,
-    ModelObserver, ModelOutputKind, ModelOutputSettings, ModelPort, ModelRequest, ModelStopReason,
-    ModelStreamEvent, ModelUsage, ObserverDecision, TextMode, TokenCount, UsageSource,
+    InterruptionKind, InvokeOutcome, ModelCancellation, ModelCapability, ModelFuture,
+    ModelInputItem, ModelItem, ModelObserver, ModelOutputKind, ModelOutputSettings, ModelPort,
+    ModelRequest, ModelStopReason, ModelStreamEvent, ModelUsage, ObserverDecision, TextMode,
+    TokenCount, UsageSource,
 };
 use garive_runtime::{
     CommittedTurn, HostClock, LiveHostLimits, LiveOutputEventKind, LocalExecutionAttempt,
     LocalExecutionPolicy, LocalGovernedExecution, LocalGovernedExecutionFactory, LocalWorkerError,
-    ProcessExecutable, ProcessLane, ProcessLaneRegistry, RuntimeAgentCatalogue, SqliteLedger,
-    T1HostSystemConfig,
+    ProcessExecutable, ProcessLane, ProcessLaneRegistry, RuntimeAgentCatalogue, SafetyFuture,
+    SafetyPort, SqliteLedger, T1HostSystemConfig,
 };
 use garive_tools::{T1_APPLY_PATCH, T1_READ_TEXT};
 use sha2::{Digest, Sha256};
@@ -107,6 +108,27 @@ impl ModelPort for CompletingModel {
     }
 }
 
+struct UnavailableSafety;
+
+impl SafetyPort for UnavailableSafety {
+    fn decide<'a>(&'a mut self, _: &'a garive_runtime::SafetyRequestV1) -> SafetyFuture<'a> {
+        Box::pin(async { Err(garive_runtime::GovernedRuntimePortError::AuthorityUnavailable) })
+    }
+}
+
+struct SafetyUnavailableFactory(DesktopWorkspaceExecutionFactory);
+
+impl LocalGovernedExecutionFactory for SafetyUnavailableFactory {
+    fn create(
+        &self,
+        committed: &CommittedTurn,
+    ) -> Result<LocalGovernedExecution, LocalWorkerError> {
+        let mut execution = self.0.create(committed)?;
+        execution.f0.safety = Box::new(UnavailableSafety);
+        Ok(execution)
+    }
+}
+
 struct MismatchedFactory(DesktopWorkspaceExecutionFactory);
 
 impl LocalGovernedExecutionFactory for MismatchedFactory {
@@ -160,12 +182,19 @@ struct WorkspaceReadingModel(AtomicU64);
 impl ModelPort for WorkspaceReadingModel {
     fn invoke<'a>(
         &'a self,
-        _: &'a ModelRequest,
+        request: &'a ModelRequest,
         _: &'a mut dyn ModelObserver,
         _: &'a dyn ModelCancellation,
     ) -> ModelFuture<'a> {
         Box::pin(async move {
             let call = self.0.fetch_add(1, Ordering::SeqCst);
+            if call > 0 {
+                assert!(request.input_items.iter().any(|item| matches!(
+                    item,
+                    ModelInputItem::ToolObservation { model_call_id, .. }
+                        if model_call_id == "read-call-1"
+                )));
+            }
             Ok(InvokeOutcome::Completed {
                 items: if call == 0 {
                     vec![ModelItem::ToolIntent {
@@ -363,6 +392,154 @@ async fn installed_snapshot_rejects_a_different_executor_catalogue() {
             .await
             .unwrap_err(),
         garive_desktop::DesktopHostError::ExecutionFailure
+    );
+}
+
+#[tokio::test]
+async fn restart_blocks_new_execution_until_durable_startup_work_is_recovered() {
+    let directory = tempdir().unwrap();
+    let database = directory.path().join("startup-recovery.db");
+    let original = desktop_host(&database, Arc::new(CompletingModel));
+    let session_id = original.create_session("definition-main").unwrap();
+    let committed = original
+        .live_host()
+        .start_turn("lost-turn", &session_id, "recover me")
+        .unwrap();
+    drop(original);
+
+    let restarted = desktop_host_with_ordinal(&database, Arc::new(CompletingModel), 100);
+    assert_eq!(
+        restarted
+            .start_turn_command("must-wait", &session_id, "new work")
+            .unwrap_err(),
+        garive_desktop::DesktopHostError::StartupRecoveryRequired
+    );
+    assert_eq!(restarted.recover_startup().await.unwrap(), 1);
+
+    let timeline = restarted.session_timeline(&session_id, 0, 8).unwrap();
+    assert_eq!(timeline.items[0].turn_id, committed.turn_id);
+    assert_eq!(timeline.items[0].state, "completed");
+    let ledger = SqliteLedger::open(&database).unwrap();
+    let session = SessionId::try_from(session_id.as_str()).unwrap();
+    let watermark = ledger.session_watermark(&session).unwrap().unwrap();
+    assert!(ledger
+        .read_facts(&session, 0, watermark.max_position, None)
+        .unwrap()
+        .iter()
+        .any(|fact| fact.kind.as_str() == "execution.abandoned"));
+    let next = restarted
+        .run_turn_in_session("definition-main", Some(&session_id), "new work")
+        .await
+        .unwrap();
+    assert_eq!(next.terminal, DesktopTerminal::Completed);
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn desktop_restart_resumes_the_same_prepared_v3_workspace_invocation() {
+    let directory = tempdir().unwrap();
+    let workspace_path = directory.path().join("Workspace");
+    fs::create_dir(&workspace_path).unwrap();
+    fs::write(workspace_path.join("note.txt"), "restart-safe content").unwrap();
+    let workspaces = DesktopWorkspaceService::default();
+    let selected = workspaces.admit_selected(&workspace_path, "main").unwrap();
+    let writable = workspaces
+        .authorize_writes(&selected.workspace_id, &workspace_path, "main")
+        .unwrap();
+    let t1 = t1_host(directory.path());
+    let database = directory.path().join("desktop-f0-recovery.db");
+    let mut config = desktop_host_config(
+        &database,
+        Arc::new(WorkspaceReadingModel(AtomicU64::new(0))),
+    );
+    config.agent_catalogue = Arc::new(
+        RuntimeAgentCatalogue::new([
+            builtin_desktop_agent_installation("definition-main", "desktop-main").unwrap(),
+            builtin_desktop_workspace_agent_installation(
+                "definition-workspace",
+                "desktop-workspace",
+                &t1.tool_capabilities().unwrap(),
+            )
+            .unwrap(),
+        ])
+        .unwrap(),
+    );
+    config.t1_host_system_config = Some(t1.clone());
+    let failing_factory =
+        DesktopWorkspaceExecutionFactory::new(database.clone(), workspaces.clone(), "main")
+            .unwrap()
+            .with_t1_host_system_config(t1.clone());
+    let original =
+        DesktopHost::new_governed(config, Arc::new(SafetyUnavailableFactory(failing_factory)))
+            .unwrap();
+    let session_id = original.create_session("definition-workspace").unwrap();
+    original.attach_workspace(&session_id, &writable).unwrap();
+    assert_eq!(
+        original
+            .run_turn_in_session("definition-workspace", Some(&session_id), "read note.txt",)
+            .await
+            .unwrap_err(),
+        garive_desktop::DesktopHostError::ExecutionFailure
+    );
+    assert_eq!(
+        original
+            .start_turn_command("must-recover", &session_id, "new work")
+            .unwrap_err(),
+        garive_desktop::DesktopHostError::StartupRecoveryRequired
+    );
+    drop(original);
+
+    let mut restart_config = desktop_host_config(
+        &database,
+        Arc::new(WorkspaceReadingModel(AtomicU64::new(1))),
+    );
+    restart_config.agent_catalogue = Arc::new(
+        RuntimeAgentCatalogue::new([
+            builtin_desktop_agent_installation("definition-main", "desktop-main").unwrap(),
+            builtin_desktop_workspace_agent_installation(
+                "definition-workspace",
+                "desktop-workspace",
+                &t1.tool_capabilities().unwrap(),
+            )
+            .unwrap(),
+        ])
+        .unwrap(),
+    );
+    restart_config.t1_host_system_config = Some(t1.clone());
+    restart_config.operations = Arc::new(Operations(AtomicU64::new(100)));
+    let restart_factory =
+        DesktopWorkspaceExecutionFactory::new(database.clone(), workspaces, "main")
+            .unwrap()
+            .with_t1_host_system_config(t1);
+    let restarted = DesktopHost::new_governed(restart_config, Arc::new(restart_factory)).unwrap();
+    assert_eq!(restarted.recover_startup().await.unwrap(), 1);
+
+    let ledger = SqliteLedger::open(&database).unwrap();
+    let session = SessionId::try_from(session_id.as_str()).unwrap();
+    let watermark = ledger.session_watermark(&session).unwrap().unwrap();
+    let facts = ledger
+        .read_facts(&session, 0, watermark.max_position, None)
+        .unwrap();
+    for kind in [
+        "effect.prepared",
+        "safety.decided",
+        "effect.authorized",
+        "sandbox.bound",
+        "sandbox.preflighted",
+        "effect.started",
+    ] {
+        assert_eq!(
+            facts
+                .iter()
+                .filter(|fact| fact.kind.as_str() == kind)
+                .count(),
+            1,
+            "{kind}"
+        );
+    }
+    assert_eq!(
+        restarted.session_timeline(&session_id, 0, 8).unwrap().items[0].state,
+        "completed"
     );
 }
 

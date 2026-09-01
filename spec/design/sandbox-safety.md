@@ -281,6 +281,17 @@ binding through `interaction.requested`, `execution.suspended` and
 `turn.suspended`, reports estimated unknown recovery usage, and emits no
 replacement dispatch. Startup never fabricates provider token usage.
 
+Safety or Sandbox dependency failure after `effect.prepared.v3` and before
+`effect.started` is a recoverable Runtime interruption, not a Core terminal
+`turn.failed`. The active recovery classifier accepts durable
+`execution.iteration_started` and `execution.effect_batch_planned` markers as
+valid execution progress. After the missing F0 suffix and observation commit,
+the replacement enters Core as a continuation with the last safe position.
+Runtime verifies the observation content binding and supplies the neutral tool
+result to the model before another inference. Durable abandonment fences the
+old execution lease, allowing the replacement to acquire immediately without
+weakening same-execution lease exclusion.
+
 Policy or binding changes after Started never authorize a new replay under the
 old invocation.
 
@@ -313,5 +324,5 @@ old invocation.
 ## Meta
 
 - Owner: `@christmic`
-- Last reviewed: 2026-08-31
+- Last reviewed: 2026-09-01
 - Status: accepted

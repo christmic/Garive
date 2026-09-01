@@ -14,10 +14,10 @@ model-only execution worker and restart discovery. The standalone local Host
 and Tauri backend may embed the same composition. Other Apps remain Host API
 consumers and never construct Provider secrets.
 
-The first slice is model-only. Merely installing Tool, Memory, Knowledge,
-Skill, Scheduler or delegation modules neither grants authority nor advertises
-them to a model; each requires its accepted Runtime port in a later composition
-increment.
+Installing Tool, Memory, Knowledge, Skill, Scheduler or delegation modules
+neither grants authority nor advertises them to a model. Each capability enters
+through its accepted Runtime port; tool-capable composition additionally
+requires the complete F0 governance bundle.
 
 ## Explicit configuration
 
@@ -48,7 +48,10 @@ before commit.
 The worker acquires the C6 execution lease before Core starts. One Turn has at
 most one active worker. Duplicate delivery is harmless: a terminal Execution
 is ignored and a lease conflict is left for bounded recovery rather than run
-concurrently.
+concurrently. A replacement Execution may fence a non-expired lease only after
+the same recovery transaction has durably terminalized the old Execution as
+`execution.abandoned`; a second owner of the same active Execution cannot use
+this rule.
 
 ## Fixed-prefix reconstruction
 
@@ -65,11 +68,19 @@ prefix through `committed_position`. It requires exact matching:
 The input content digest is rechecked. HTTP/caller values cannot replace
 persisted identities, limits or content. Start creates `AgentEntry::Start`
 with cursor `(0, 0)`; continuation uses the existing C6 typed continuation
-state and is a separate implementation increment.
+state. A recovery replacement for an original Start is reconstructed as
+`AgentEntry::Continue(ResourceReady)` with the persisted completed-iteration
+count and last safe position; it is never converted back into a zero-cursor
+Start.
 
-The context port derives only from admitted durable fact projections. V1
-includes trusted `turn.input` as required user input and never scans past the
-frozen prefix. Telemetry and public Host events are never Agent truth.
+The context port derives only from admitted durable fact projections. It
+includes the trusted `turn.input` as required user input. The durable execution
+wrapper additionally projects every canonical `effect.observation` belonging
+to the same Turn through the current committed position as a required neutral
+`ToolObservation`, ordered by Ledger position and correlated by
+`model_call_id`. It verifies the observation content binding before model
+admission. This projection is refreshed between Agent iterations and after
+restart. Telemetry and public Host events are never Agent truth.
 
 ## Worker ports and terminal publication
 
@@ -85,11 +96,17 @@ only from committed facts. R1 never invents replayable token deltas.
 ## Restart and shutdown
 
 Startup discovers Open Turns from SQLite and applies the accepted C6 recovery
-classifier before dispatch. It never blindly repeats an uncertain model
-attempt. Even when only the start transaction exists, restart cannot prove that
-the lost process did no work: C6 atomically abandons that Execution and creates
-a replacement before it is queued. Shutdown stops admission, performs an
-explicitly bounded drain and leaves unfinished durable work discoverable.
+classifier before dispatch. Product execution admission remains closed while
+this bounded scan or any returned replacement dispatch is pending. It never
+blindly repeats an uncertain model attempt. Even when only the start
+transaction exists, restart cannot prove that the lost process did no work: C6
+atomically abandons that Execution and creates a replacement before it is
+queued. A Prepared-v3 pre-dispatch interruption remains non-terminal, resumes
+the same invocation through the configured F0 brokers, commits its observation,
+then creates and executes the continuation. Startup limits both inspected Turns
+and reconstructed argument bytes and reports unfinished work instead of opening
+admission. Shutdown stops admission, performs an explicitly bounded drain and
+leaves unfinished durable work discoverable.
 
 ## Stable local failures
 
@@ -108,11 +125,14 @@ credential text and never become an Agent outcome outside accepted C6 mapping.
 - bounded queue, duplicate dispatch, lease conflict and shutdown tests;
 - separate-process restart tests before dispatch, after model start and after
   terminal commit;
+- Desktop restart tests proving new work is rejected until recovery completes,
+  one Prepared-v3 invocation resumes without duplicate governance/dispatch
+  facts, and its durable observation reaches the replacement model request;
 - one loopback H1 + H1-T protocol fixture flow with no external network;
 - strict Rust gates. Kotlin has no R1 Runtime parity claim.
 
 ## Meta
 
 - Owner: `@christmic`
-- Last reviewed: 2026-08-29
+- Last reviewed: 2026-09-01
 - Status: accepted

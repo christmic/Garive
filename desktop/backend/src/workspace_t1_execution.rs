@@ -18,7 +18,6 @@ use garive_tools::{
 };
 use serde_json::json;
 use sha2::{Digest, Sha256};
-use uuid::Uuid;
 
 const WRITE_TOOL: &str = "write_file";
 
@@ -285,10 +284,11 @@ impl SandboxAdmissionPort for T1Sandbox {
             .profiles
             .get(request.safety_request.tool_name())
             .ok_or(GovernedRuntimePortError::InvalidBinding)?;
-        let nonce = Uuid::new_v4();
+        let binding_id = stable_t1_id("binding", request.safety_request.invocation_id());
+        let preflight_id = stable_t1_id("preflight", request.safety_request.invocation_id());
         Ok(SandboxAdmission {
             binding: SandboxBindingV1::new(
-                format!("workspace-t1-binding-{nonce}"),
+                binding_id,
                 self.workspace_capability_id.clone(),
                 profile.executor_id,
                 profile.executor_revision.clone(),
@@ -301,7 +301,7 @@ impl SandboxAdmissionPort for T1Sandbox {
                 .sandbox
                 .digest()
                 .map_err(|_| GovernedRuntimePortError::InvalidBinding)?,
-            preflight_id: format!("workspace-t1-preflight-{nonce}"),
+            preflight_id,
             dispatch_attempt_id: t1_dispatch_attempt_id(
                 profile.executor_id,
                 request.safety_request.invocation_id(),
@@ -309,6 +309,13 @@ impl SandboxAdmissionPort for T1Sandbox {
             .ok_or(GovernedRuntimePortError::InvalidBinding)?,
         })
     }
+}
+
+fn stable_t1_id(kind: &str, invocation: &ToolInvocationId) -> String {
+    format!(
+        "workspace-t1-{kind}-{:x}",
+        Sha256::digest(format!("{}:{kind}", invocation.as_str()).as_bytes())
+    )
 }
 
 struct ExecutorRouter {
