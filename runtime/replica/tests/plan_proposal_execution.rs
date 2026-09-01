@@ -34,6 +34,10 @@ fn bound(topology: Value) -> BoundPlanProposalResult {
     BoundPlanProposalResult {
         binding_fact_id: "binding-1".into(),
         binding_position: 1,
+        goal_id: "goal-1".into(),
+        goal_revision: 1,
+        goal_definition_digest: "a".repeat(64),
+        proposer_reference: "planner-v1".into(),
         result_digest: response.sha256().into(),
         response_items_json: response.as_json().into(),
     }

@@ -11,10 +11,12 @@ use garive_plan::{PlanBoundsV1, PlanCapabilityReference, PlanDefinitionV1, PlanI
 use sha2::{Digest, Sha256};
 
 use crate::{
-    commit_plan_command, commit_planned_turn, plan_proposal_output_schema, plan_propose_plan,
-    plan_start_plan_proposal_execution, reconstruct_goal, reconstruct_plan_graph, CommittedTurn,
-    PlanCommandContext, PlanRuntimeError, RuntimeAgentCatalogue, RuntimeCommandId, SqliteLedger,
-    StartPlanProposalExecutionCommand, StartTurnCommand,
+    bind_completed_plan_proposal_result, commit_plan_command, commit_planned_turn,
+    parse_bound_plan_proposal_result, plan_proposal_output_schema, plan_propose_plan,
+    plan_start_plan_proposal_execution, reconstruct_goal, reconstruct_plan_graph,
+    BoundPlanProposalResult, CommittedTurn, PlanCommandContext, PlanRuntimeError,
+    RuntimeAgentCatalogue, RuntimeCommandId, SqliteLedger, StartPlanProposalExecutionCommand,
+    StartTurnCommand,
 };
 
 /// Read-only Goal content and ceilings exposed to a configured planner.
@@ -91,6 +93,71 @@ pub enum PlanProposalRuntimeError {
     ProposalFailed,
     /// Portable Plan planning or optimistic durability failed.
     Plan(PlanRuntimeError),
+}
+
+/// Binds, parses and commits one completed model Planner result as a Plan proposal.
+pub async fn commit_completed_plan_proposal_once(
+    database_path: &Path,
+    session_id: &SessionId,
+    goal_id: &str,
+    planner_turn_id: &TurnId,
+    recorded_at: &str,
+    catalogue: Arc<RuntimeAgentCatalogue>,
+) -> Result<ProposedGoalPlan, PlanProposalRuntimeError> {
+    let mut ledger =
+        SqliteLedger::open(database_path).map_err(|_| PlanProposalRuntimeError::CorruptState)?;
+    let watermark = ledger
+        .session_watermark(session_id)
+        .map_err(|_| PlanProposalRuntimeError::CorruptState)?
+        .ok_or(PlanProposalRuntimeError::CorruptState)?;
+    let bound = bind_completed_plan_proposal_result(
+        &mut ledger,
+        session_id,
+        planner_turn_id,
+        watermark.session_version,
+        recorded_at,
+    )
+    .map_err(|_| PlanProposalRuntimeError::CorruptState)?;
+    drop(ledger);
+    if bound.goal_id != goal_id {
+        return Err(PlanProposalRuntimeError::CorruptState);
+    }
+    let content = parse_bound_plan_proposal_result(&bound)
+        .map_err(|_| PlanProposalRuntimeError::ProposalFailed)?;
+    let port = BoundResultPort { bound, content };
+    propose_initial_goal_plan_once(
+        database_path,
+        session_id,
+        goal_id,
+        recorded_at,
+        catalogue,
+        &port,
+    )
+    .await
+}
+
+struct BoundResultPort {
+    bound: BoundPlanProposalResult,
+    content: PlanProposalContent,
+}
+
+impl PlanProposalPort for BoundResultPort {
+    fn proposer_reference(&self) -> &str {
+        &self.bound.proposer_reference
+    }
+
+    fn propose<'a>(&'a self, request: &'a PlanProposalRequest) -> PlanProposalFuture<'a> {
+        Box::pin(async move {
+            if request.goal_id != self.bound.goal_id
+                || request.goal_revision != self.bound.goal_revision
+                || request.goal_definition_digest != self.bound.goal_definition_digest
+            {
+                Err(PlanProposalPortError::InvalidOutput)
+            } else {
+                Ok(self.content.clone())
+            }
+        })
+    }
 }
 
 /// Starts or reconstructs one durable model-backed initial proposal Execution.

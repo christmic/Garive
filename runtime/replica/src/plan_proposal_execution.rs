@@ -20,6 +20,14 @@ pub struct BoundPlanProposalResult {
     pub binding_fact_id: String,
     /// Position of the existing or newly committed binding.
     pub binding_position: u64,
+    /// Goal identity frozen by the original Planner request.
+    pub goal_id: String,
+    /// Goal lifecycle revision frozen by the original request.
+    pub goal_revision: u64,
+    /// Immutable Goal definition digest frozen by the original request.
+    pub goal_definition_digest: String,
+    /// Stable secret-free Planner revision frozen by the original request.
+    pub proposer_reference: String,
     /// Digest shared by both C6 completed terminals.
     pub result_digest: String,
     /// Canonical model-item array read from the durable terminal fact.
@@ -325,7 +333,7 @@ pub fn bind_completed_plan_proposal_result(
         {
             return Err(PlanProposalBindingError::CorruptState);
         }
-        return result(bound, result_digest, response_items_json);
+        return result(bound, &request_value, result_digest, response_items_json);
     }
     if watermark.session_version != expected_session_version {
         return Err(PlanProposalBindingError::ConcurrentModification);
@@ -376,6 +384,10 @@ pub fn bind_completed_plan_proposal_result(
     Ok(BoundPlanProposalResult {
         binding_fact_id: fact.fact_id.as_str().into(),
         binding_position: committed.positions[0],
+        goal_id: text(&request_value, "goal_id")?.into(),
+        goal_revision: number(&request_value, "goal_revision")?,
+        goal_definition_digest: text(&request_value, "goal_definition_digest")?.into(),
+        proposer_reference: text(&request_value, "proposer_reference")?.into(),
         result_digest: result_digest.into(),
         response_items_json: response_items_json.into(),
     })
@@ -383,12 +395,17 @@ pub fn bind_completed_plan_proposal_result(
 
 fn result(
     fact: &DurableFact,
+    request: &Value,
     digest: &str,
     json: &str,
 ) -> Result<BoundPlanProposalResult, PlanProposalBindingError> {
     Ok(BoundPlanProposalResult {
         binding_fact_id: fact.fact_id.as_str().into(),
         binding_position: fact.position,
+        goal_id: text(request, "goal_id")?.into(),
+        goal_revision: number(request, "goal_revision")?,
+        goal_definition_digest: text(request, "goal_definition_digest")?.into(),
+        proposer_reference: text(request, "proposer_reference")?.into(),
         result_digest: digest.into(),
         response_items_json: json.into(),
     })

@@ -237,9 +237,10 @@ pub use plan_proposal_execution::{
     PlanProposalOutputSchema, PlanProposalResultError,
 };
 pub use plan_proposal_runtime::{
-    propose_initial_goal_plan_once, start_initial_goal_plan_proposal_execution,
-    PlanProposalContent, PlanProposalFuture, PlanProposalPort, PlanProposalPortError,
-    PlanProposalRequest, PlanProposalRuntimeError, ProposedGoalPlan,
+    commit_completed_plan_proposal_once, propose_initial_goal_plan_once,
+    start_initial_goal_plan_proposal_execution, PlanProposalContent, PlanProposalFuture,
+    PlanProposalPort, PlanProposalPortError, PlanProposalRequest, PlanProposalRuntimeError,
+    ProposedGoalPlan,
 };
 pub use plan_recovery::{reconstruct_plan, reconstruct_plan_graph};
 pub use plan_runtime::{
