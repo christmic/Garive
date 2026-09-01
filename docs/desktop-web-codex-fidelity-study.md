@@ -1068,6 +1068,29 @@ It belongs to scroll layout rather than an individual page or message, so a
 future thread renderer cannot silently re-estimate the entry position from a
 screenshot.
 
+### XXXIII. Toolbar actions use product-owned tooltips
+
+Installed Codex source does not leave split-thread actions as unrelated native
+browser titles. `thread-app-shell-chrome-DQMbICmE.js` registers them through
+compact `HeaderToolbar.Actions`; the shared control sources repeatedly pass
+`tooltipContent` through a Tooltip wrapper, including focusable explanations
+for disabled controls and zero-delay contextual disclosures. These are direct
+component-composition facts. They do not establish one universal delay for
+every Codex surface.
+
+Garive formerly used 22 browser-native `title` attributes, so delay, material,
+placement and keyboard disclosure differed by host. Desktop and Web now share
+one semantic Tooltip primitive for the high-frequency thread title, result,
+Composer, progress and pane actions. It keeps the trigger's accessible name,
+binds a `role=tooltip` description, supports an optional shortcut and owns
+top/bottom/right plus edge alignment. Garive chooses a quiet 350ms pointer delay
+and immediate focus disclosure; that timing is a documented Garive interaction
+decision rather than a fabricated Codex constant.
+
+Live Web evidence at 1280×720 verifies immediate keyboard disclosure in 20ms,
+the separate `⌘⇧A` hint, removal of the native title, in-viewport placement for
+thread, Composer and file-tab edges, and zero document/main/workspace overflow.
+
 ## Gate 1 — Codex fidelity
 
 This gate passes only when both Desktop and Web show:

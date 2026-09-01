@@ -390,13 +390,13 @@ describe("Desktop product experience", () => {
     fireEvent.click(screen.getByRole("button", { name: "Rendered" }));
     expect(await screen.findByRole("heading", { name: "Verified memo" })).toBeTruthy();
     expect(screen.getAllByRole("button", { name: "Close Artifact preview" })).toHaveLength(1);
-    expect(view.container.querySelector(".workspace-panel > header > .icon-button")).toBeNull();
+    expect(view.container.querySelector(".workspace-panel > header .icon-button")).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Close Artifact preview" }));
     expect(await screen.findByRole("heading", { name: "Deliverables" })).toBeTruthy();
     expect(view.container.querySelector(".artifact-row")).not.toBeNull();
     expect(view.container.querySelector(".artifact-card")).toBeNull();
     expect(screen.getByRole("button", { name: "Close inspector" })).toBeTruthy();
-    expect(view.container.querySelector(".workspace-panel > header > .icon-button")).not.toBeNull();
+    expect(view.container.querySelector(".workspace-panel > header .icon-button")).not.toBeNull();
   });
 
   it("renders fenced output as a labeled copyable workbench block", async () => {

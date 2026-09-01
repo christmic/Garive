@@ -686,6 +686,21 @@ kbd { font-size: var(--text-2xs); }
 .app-shell:has(.workspace-panel) .topbar-text-action { display: grid; place-items: center; width: 30px; padding: 0; }
 .app-shell:has(.workspace-panel) .topbar-text-action span { display: none; }
 .app-shell:has(.workspace-panel) .topbar-actions .icon-button { width: 30px; height: 30px; }
+.ui-tooltip-anchor { position: relative; display: inline-flex; min-width: 0; }
+.ui-tooltip { pointer-events: none; position: absolute; z-index: 30; display: flex; align-items: center; gap: 8px; width: max-content; max-width: min(260px, calc(100vw - 16px)); min-height: 24px; padding: 3px 7px; visibility: hidden; border: 1px solid var(--border-subtle); border-radius: 6px; color: var(--text-primary); background: var(--surface-overlay); box-shadow: var(--shadow-raised); opacity: 0; transform: translateY(-2px); transition: opacity var(--motion-basic) var(--ease-basic), transform var(--motion-basic) var(--ease-enter); transition-delay: 350ms; font-size: var(--text-2xs); font-weight: 500; line-height: 1.35; white-space: nowrap; }
+.ui-tooltip kbd { color: var(--text-tertiary); font-size: inherit; }
+.ui-tooltip-anchor[data-side="bottom"] > .ui-tooltip { top: calc(100% + 6px); }
+.ui-tooltip-anchor[data-side="top"] > .ui-tooltip { bottom: calc(100% + 6px); transform: translateY(2px); }
+.ui-tooltip-anchor[data-side="right"] > .ui-tooltip { top: 50%; left: calc(100% + 6px); transform: translate(-2px, -50%); }
+.ui-tooltip-anchor[data-align="start"] > .ui-tooltip { left: 0; }
+.ui-tooltip-anchor[data-align="center"] > .ui-tooltip { left: 50%; transform: translate(-50%, -2px); }
+.ui-tooltip-anchor[data-side="top"][data-align="center"] > .ui-tooltip { transform: translate(-50%, 2px); }
+.ui-tooltip-anchor[data-align="end"] > .ui-tooltip { right: 0; }
+.ui-tooltip-anchor[data-side="right"] > .ui-tooltip { top: 50%; right: auto; left: calc(100% + 6px); transform: translate(-2px, -50%); }
+.ui-tooltip-anchor:hover > .ui-tooltip, .ui-tooltip-anchor:focus-within > .ui-tooltip { visibility: visible; opacity: 1; transform: translateY(0); }
+.ui-tooltip-anchor[data-align="center"]:is(:hover, :focus-within) > .ui-tooltip { transform: translate(-50%, 0); }
+.ui-tooltip-anchor[data-side="right"]:is(:hover, :focus-within) > .ui-tooltip { transform: translate(0, -50%); }
+.ui-tooltip-anchor:focus-within > .ui-tooltip { transition-delay: 0ms; }
 .usage-trigger { min-height: 34px; border-color: transparent; background: transparent; font-size: var(--text-xs); }
 .usage-trigger:hover { border-color: transparent; background: var(--surface-hover); }
 .icon-button { width: 34px; height: 34px; border-radius: var(--radius-control); }

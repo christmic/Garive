@@ -168,6 +168,9 @@ describe("Desktop visual accessibility contract", () => {
     expect(CSS).toContain(".topbar-actions .icon-button[aria-expanded=\"true\"] { color: var(--text-primary); background: transparent; }");
     expect(CSS).toContain(".topbar-text-action { display: flex; align-items: center; gap: 5px; height: 30px;");
     expect(CSS).toContain(".app-shell:has(.workspace-panel) .topbar-text-action { display: grid; place-items: center; width: 30px; padding: 0; }");
+    expect(CSS).toContain(".ui-tooltip-anchor { position: relative; display: inline-flex; min-width: 0; }");
+    expect(CSS).toContain("transition-delay: 350ms; font-size: var(--text-2xs);");
+    expect(CSS).toContain(".ui-tooltip-anchor:focus-within > .ui-tooltip { transition-delay: 0ms; }");
     expect(CSS).toContain(".work-menu-trigger { display: grid; place-items: center; width: 24px; height: 24px;");
     expect(CSS).toContain(".desktop-action-menu { position: absolute; z-index: 12; top: 27px; left: 0; width: 220px;");
     expect(CSS).toContain(".work-menu .desktop-action-menu { left: -4px; width: 204px; }");

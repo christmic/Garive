@@ -583,6 +583,7 @@ space. The same rule applies in light and dark themes and at narrow widths.
 | Component | Required states | Invariants |
 |---|---|---|
 | Button | default, hover, focus, pressed, disabled, busy | one primary action per decision region; icon-only requires accessible name |
+| Tooltip | hidden, delayed-hover, immediate-focus | shared 11 px overlay material; names the action, keeps an optional shortcut separate and never relies on native `title` chrome |
 | Field | empty, filled, focus, invalid, disabled | label persists; placeholder is never the label |
 | Badge | neutral, info, success, attention, danger | short noun/adjective plus semantic color; never action-shaped |
 | Task row | ready, active, needs-input, failed, completed, selected | same status copy and order in rail/search/command center |
@@ -596,6 +597,17 @@ space. The same rule applies in light and dark themes and at narrow widths.
 | Result actions | hidden, hover, focus, attention | 20 px row, 6 px top gap, 2 px action gap; ordinary actions disclose on turn hover/focus |
 | User Turn | short, measured-long, expanded, hover, focus | 70% bubble, 22 px radius, 16 px inset, 10 px vertical padding; actions belong to the full-width right-aligned Turn |
 | Thread scroll owner | attached, detached, unread, returning | 24 px threshold; only user intent detaches; layout changes preserve distance; browser anchoring is off |
+
+High-frequency icon actions use the shared Tooltip primitive. Pointer hover has
+a 350ms disclosure delay to avoid noise while crossing a toolbar; keyboard
+focus discloses immediately. The trigger keeps its independent `aria-label` and
+references the semantic `role=tooltip` description, including an optional
+shortcut. Top, bottom, right and start/center/end placement belong to the
+primitive so pane code never reimplements edge collision by hand. Reduced
+motion resolves its transition duration through the global motion tokens. A
+disabled action enters the Tab order only when the primitive is explicitly
+given a truthful unavailability explanation; the inner disabled control then
+leaves the accessibility tree and the wrapper owns `aria-disabled` semantics.
 
 ## Capacity view contract
 

@@ -20,6 +20,7 @@ import type { DesktopUpdateClient } from "./ipc/desktop-update";
 import { canSubmit, initialWorkState, reduceWork, type WorkState } from "./state/workspace";
 import type { DesktopUpdateState } from "./state/desktop-update";
 import { Icon, type IconName } from "./ui/Icon";
+import { Tooltip } from "./ui/Tooltip";
 import { UsageBudgetCard, UsageBudgetTrigger, type UsageBudgetSnapshot } from "./ui/UsageBudget";
 import { SetupFlow } from "./features/setup/SetupFlow";
 import { WorkspacePicker } from "./workspace/WorkspacePicker";
@@ -841,16 +842,16 @@ export function App({ client = "desktop", webCapabilities, createProductPort,
           <div className="topbar-actions">
             {visibleUsage && screen !== "settings" && <UsageBudgetTrigger value={visibleUsage} label={t("usage.trigger")}
               onOpen={() => { setSettingsSection("usage"); setScreen("settings"); }} />}
-            {screen === "work" && state.messages.length > 0 && <button className="topbar-text-action"
-              type="button" aria-label={t("thread.exportAria")} title={t("thread.exportAria")}
+            {screen === "work" && state.messages.length > 0 && <Tooltip label={t("thread.exportAria")} align="end">
+              <button className="topbar-text-action" type="button" aria-label={t("thread.exportAria")}
               onClick={() => downloadMarkdown(state.sessionId ?? "work", formatThreadMarkdown(title,
                 state.messages, { user: t("thread.user"), assistant: t("thread.assistant") }), "garive-thread")}>
-              <Icon name="download" /><span>{t("thread.export")}</span></button>}
-            {screen === "work" && state.messages.length > 0 && <button className="icon-button"
-              type="button" aria-label={t("shell.toggleInspector")} title={`${t("shell.toggleInspector")} (⌘⇧A)`}
+              <Icon name="download" /><span>{t("thread.export")}</span></button></Tooltip>}
+            {screen === "work" && state.messages.length > 0 && <Tooltip label={t("shell.toggleInspector")} shortcut="⌘⇧A" align="end">
+              <button className="icon-button" type="button" aria-label={t("shell.toggleInspector")}
               aria-expanded={state.inspectorOpen} aria-controls="work-inspector"
               onPointerUp={(event) => event.currentTarget.blur()}
-              onClick={() => dispatch({ type: "inspector_toggled" })}><Icon name="panel" /></button>}
+              onClick={() => dispatch({ type: "inspector_toggled" })}><Icon name="panel" /></button></Tooltip>}
           </div>
         </header>
 
@@ -1184,22 +1185,21 @@ function WorkSurface({ state, composer, submit, startSuggestion, dispatch, conte
             event.preventDefault(); void submit();
           } }} />
         <div className="composer-toolbar">
-          <div className="composer-tools"><button className="composer-context-button" type="button"
+          <div className="composer-tools"><Tooltip label={t(state.capabilities?.workspaces ? "work.composer.chooseFiles" : "work.composer.noWorkspaces")} side="top" align="start" focusDisabled={!state.capabilities?.workspaces}><button className="composer-context-button" type="button"
             disabled={!state.capabilities?.workspaces || state.phase === "submitting" || Boolean(suspension)}
             aria-label={t(state.capabilities?.workspaces ? "work.composer.addContext" : "work.composer.noWorkspaces")}
-            title={t(state.capabilities?.workspaces ? "work.composer.chooseFiles" : "work.composer.noWorkspaces")}
-            onClick={() => void openContext()}><Icon name="plus" /></button>
+            onClick={() => void openContext()}><Icon name="plus" /></button></Tooltip>
             {context?.grant.access === "enumerate" && <button type="button" disabled={state.phase === "submitting"}
               onClick={() => void authorizeOutputs()}><Icon name="shield" /><span>{t("work.composer.allowOutputs")}</span></button>}
             <span className="access-pill"><Icon name="shield" /><span className="access-pill-label">{needsInput ? t("work.composer.resume")
               : context?.grant.access === "read_write" ? t("work.composer.outputEnabled")
                 : context ? `${context.entries.length} ${t(context.entries.length === 1 ? "workspace.file" : "workspace.filesPlural")}` : t("work.composer.localText")}</span></span></div>
           {state.phase === "submitting" && !reconnecting
-            ? <button className="composer-stop-button" type="button" aria-label={t("work.composer.requestStop")}
-              title={t("work.composer.requestStop")} onClick={() => void cancelTurn()}><Icon name="stop" /></button>
-            : <button className="send-button" type="button" disabled={!canSubmit(state)} aria-label={t("work.composer.send")} onClick={() => void submit()}>
+            ? <Tooltip label={t("work.composer.requestStop")} side="top" align="end"><button className="composer-stop-button" type="button" aria-label={t("work.composer.requestStop")}
+              onClick={() => void cancelTurn()}><Icon name="stop" /></button></Tooltip>
+            : <Tooltip label={t("work.composer.send")} side="top" align="end"><button className="send-button" type="button" disabled={!canSubmit(state)} aria-label={t("work.composer.send")} onClick={() => void submit()}>
               {state.phase === "submitting" ? <span className="spinner" /> : <Icon name="send" />}
-            </button>}
+            </button></Tooltip>}
         </div>
         </div>
       </div>
@@ -1259,7 +1259,15 @@ function Timeline({ state, dispatch, t }: { state: WorkState; dispatch: WorkDisp
       <div className={message.terminal === "completed" ? "result-meta" : "result-meta attention"}
         data-terminal={message.terminal}><span className={message.terminal === "completed"
           ? "result-terminal sr-only" : "result-terminal"}><Icon name={message.terminal === "completed"
-            ? "check" : "warning"} />{terminalCopy(message.terminal, t)}</span><div className="result-actions"><button type="button" disabled={!message.text} aria-label={t("timeline.export")} title={t("timeline.export")} onClick={() => downloadMarkdown(message.id, message.text)}><Icon name="download" /></button><button type="button" aria-label={t(copiedId === message.id ? "timeline.copied" : "timeline.copy")} title={t(copiedId === message.id ? "timeline.copied" : "timeline.copy")} onClick={() => void copyResult(message.id, message.text)}><Icon name={copiedId === message.id ? "check" : "copy"} /></button>{state.artifacts.some((artifact) => artifact.turn_id === message.id) && <button type="button" aria-label={t("timeline.openArtifacts")} title={t("timeline.openArtifacts")} onClick={() => dispatch({ type: "inspector_selected", tab: "artifacts" })}><Icon name="file" /></button>}</div></div></div></article>)}
+            ? "check" : "warning"} />{terminalCopy(message.terminal, t)}</span><div className="result-actions">
+          <Tooltip label={t("timeline.export")}><button type="button" disabled={!message.text}
+            aria-label={t("timeline.export")} onClick={() => downloadMarkdown(message.id, message.text)}><Icon name="download" /></button></Tooltip>
+          <Tooltip label={t(copiedId === message.id ? "timeline.copied" : "timeline.copy")}><button type="button"
+            aria-label={t(copiedId === message.id ? "timeline.copied" : "timeline.copy")}
+            onClick={() => void copyResult(message.id, message.text)}><Icon name={copiedId === message.id ? "check" : "copy"} /></button></Tooltip>
+          {state.artifacts.some((artifact) => artifact.turn_id === message.id) && <Tooltip label={t("timeline.openArtifacts")} align="end"><button type="button"
+            aria-label={t("timeline.openArtifacts")} onClick={() => dispatch({ type: "inspector_selected", tab: "artifacts" })}><Icon name="file" /></button></Tooltip>}
+        </div></div></div></article>)}
     {state.livePreview && <article className="message assistant-message live-answer" aria-label={t("timeline.liveAnswer")}>
       {state.livePreview.available && state.livePreview.text
         ? <div className="result-markdown"><Markdown skipHtml remarkPlugins={[remarkGfm]}
@@ -1305,10 +1313,9 @@ export function UserMessage({ id, text, copied, onCopy, t }: {
         <span>{t(expanded ? "timeline.showLess" : "timeline.showMore")}</span><Icon name="chevron" />
       </button>}
     </div>
-    <div className="user-message-meta"><button type="button"
-      aria-label={t(copied ? "timeline.copied" : "timeline.copyRequest")}
-      title={t(copied ? "timeline.copied" : "timeline.copyRequest")}
-      onClick={() => void onCopy(id, text)}><Icon name={copied ? "check" : "copy"} /></button></div>
+    <div className="user-message-meta"><Tooltip label={t(copied ? "timeline.copied" : "timeline.copyRequest")} align="end">
+      <button type="button" aria-label={t(copied ? "timeline.copied" : "timeline.copyRequest")}
+        onClick={() => void onCopy(id, text)}><Icon name={copied ? "check" : "copy"} /></button></Tooltip></div>
   </div></article>;
 }
 
@@ -1382,8 +1389,8 @@ export function TurnProgress({ goal, status, activities, onOpen, t }: { goal?: s
     <div className="turn-progress-head"><span className="live-pulse" aria-hidden="true"><span /></span><div className="progress-summary">
       <strong>{t("timeline.progressTitle")}</strong><p>{goal || t("timeline.progressBody")}</p></div>
       {status && <span className="progress-state">{status}</span>}
-      <button type="button" onClick={onOpen} aria-label={t("timeline.openActivity")}
-        title={t("timeline.openActivity")}><Icon name="activity" /></button></div>
+      <Tooltip label={t("timeline.openActivity")} side="top" align="end"><button type="button" onClick={onOpen}
+        aria-label={t("timeline.openActivity")}><Icon name="activity" /></button></Tooltip></div>
     {recent.length > 0 && <div className="sr-only">{recent.map((activity) =>
       <div className={activity.terminal ? "complete" : "active"} key={`${activity.kind}-${activity.activity_id}`}>
         <strong>{activityLabel(activity.label_key, t)}</strong><small>{activityState(activity.state, t)}</small>
@@ -1438,16 +1445,16 @@ function Inspector({ state, dispatch, onAddContext, canAddContext, workspaceSpli
     ? <strong className="environment-title">{t("inspector.environment")}</strong>
     : <div className="workspace-tabs" role="tablist" aria-label={t("inspector.views")}><div className="workspace-tab">
       <button type="button" role="tab" aria-selected="true"><Icon name="file" /><span>{workspaceTitle ?? t("inspector.artifacts")}</span></button>
-      {workspaceTitle && <button className="workspace-tab-close" type="button"
-        aria-label={t("artifact.closePreview")} title={t("artifact.closePreview")}
-        onClick={() => setPreviewCloseRequest((request) => request + 1)}><Icon name="close" /></button>}
+      {workspaceTitle && <Tooltip label={t("artifact.closePreview")} align="start"><button className="workspace-tab-close" type="button"
+        aria-label={t("artifact.closePreview")}
+        onClick={() => setPreviewCloseRequest((request) => request + 1)}><Icon name="close" /></button></Tooltip>}
     </div></div>}
-    {mode === "environment-panel" ? <button className="icon-button" type="button"
-      aria-label={t("work.composer.addContext")} title={t("work.composer.chooseFiles")}
-      disabled={!canAddContext} onClick={() => void onAddContext()}><Icon name="plus" /></button>
-      : !workspaceTitle && <button className="icon-button" type="button"
+    {mode === "environment-panel" ? <Tooltip label={t("work.composer.chooseFiles")} align="end"><button className="icon-button" type="button"
+      aria-label={t("work.composer.addContext")}
+      disabled={!canAddContext} onClick={() => void onAddContext()}><Icon name="plus" /></button></Tooltip>
+      : !workspaceTitle && <Tooltip label={t("inspector.close")} align="end"><button className="icon-button" type="button"
         aria-label={t("inspector.close")} onClick={() => dispatch({ type: "inspector_toggled" })}>
-        <Icon name="close" /></button>}</header>
+        <Icon name="close" /></button></Tooltip>}</header>
     {state.inspectorTab === "activity" ? <div className="inspector-body" role="tabpanel"><CommittedActivity state={state} t={t} /></div>
       : <div className="inspector-body" role="tabpanel"><ResultDeliverables state={state} t={t}
         previewCloseRequest={previewCloseRequest} onPreviewTitle={setWorkspaceTitle} /></div>}
