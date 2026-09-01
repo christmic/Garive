@@ -8,7 +8,10 @@ use ratatui::{
 };
 
 use crate::{
-    application::{AppModel, FocusTarget, InspectorActivation, InspectorEntry, InspectorTone},
+    application::{
+        AppModel, FocusTarget, InspectorActivation, InspectorEntry, InspectorTone,
+        WIDE_INSPECTOR_MIN_WIDTH,
+    },
     Theme,
 };
 
@@ -32,7 +35,7 @@ struct Geometry {
 }
 
 pub(super) fn wide_area(area: Rect) -> Option<Rect> {
-    if area.width < 120 {
+    if area.width < WIDE_INSPECTOR_MIN_WIDTH {
         return None;
     }
     let combined_width = area.width.min(129);

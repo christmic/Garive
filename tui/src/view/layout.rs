@@ -103,4 +103,20 @@ mod tests {
             0
         );
     }
+
+    #[test]
+    fn inspector_never_compresses_the_standard_transcript_column() {
+        let mut model = AppModel::default();
+        model.inspector.open = true;
+
+        let overlay = FrameLayout::resolve(&model, Rect::new(0, 0, 128, 18));
+        assert_eq!(overlay.inspector, None);
+        assert_eq!(overlay.transcript.x, 16);
+        assert_eq!(overlay.transcript.width, STANDARD_TRANSCRIPT_WIDTH);
+
+        let side_by_side = FrameLayout::resolve(&model, Rect::new(0, 0, 129, 18));
+        assert_eq!(side_by_side.inspector.map(|area| area.x), Some(97));
+        assert_eq!(side_by_side.transcript.x, 0);
+        assert_eq!(side_by_side.transcript.width, STANDARD_TRANSCRIPT_WIDTH);
+    }
 }

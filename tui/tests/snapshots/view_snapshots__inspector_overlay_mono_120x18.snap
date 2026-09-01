@@ -1,0 +1,22 @@
+---
+source: tui/tests/view_snapshots.rs
+expression: "inspector_frame(theme, 120)"
+---
+            Session 1  ·  Agent                                                                Agent running
+
+              › Summarize the release plan.
+                ✓  Agent action · completed
+              ◆ Garive       ╭ Inspector · Activity ──────────────────────────────────────╮
+                ## Release   │ › ✓ Agent action · completed                               │
+                             │                                                            │
+                • Verify th  │                                                            │
+                • Ship with  │                                                            │
+                             │                                                            │
+                cargo test   │ ↑↓ select · Enter jump · Esc close                         │
+                             ╰────────────────────────────────────────────────────────────╯
+
+
+
+
+            › Ask a follow-up…
+              Esc cancel run
