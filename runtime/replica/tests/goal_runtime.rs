@@ -29,9 +29,10 @@ fn goal_commands_reconstruct_across_restart_and_exact_replay() {
         );
         commit_goal_command(&mut ledger, session.clone(), 1, &created).unwrap();
 
-        let draft = reconstruct_goal(&ledger, &session, "goal-1").unwrap();
         let active = plan_goal_transition(
-            &draft,
+            &ledger,
+            &session,
+            "goal-1",
             1,
             &context("activate"),
             GoalRuntimeTransition::Activate {
@@ -41,9 +42,10 @@ fn goal_commands_reconstruct_across_restart_and_exact_replay() {
         .unwrap();
         commit_goal_command(&mut ledger, session.clone(), 2, &active).unwrap();
 
-        let active = reconstruct_goal(&ledger, &session, "goal-1").unwrap();
         let suspended = plan_goal_transition(
-            &active,
+            &ledger,
+            &session,
+            "goal-1",
             2,
             &context("suspend"),
             GoalRuntimeTransition::Suspend {
@@ -54,7 +56,9 @@ fn goal_commands_reconstruct_across_restart_and_exact_replay() {
         .unwrap();
         commit_goal_command(&mut ledger, session.clone(), 3, &suspended).unwrap();
         resume = plan_goal_transition(
-            &suspended.next,
+            &ledger,
+            &session,
+            "goal-1",
             3,
             &context("resume"),
             GoalRuntimeTransition::Activate {
@@ -90,10 +94,11 @@ fn stale_session_writer_and_changed_command_replay_fail_closed() {
     open_session(&mut first, &session);
     let created = plan_create_goal(&first, &session, &context("create"), definition()).unwrap();
     commit_goal_command(&mut first, session.clone(), 1, &created).unwrap();
-    let state = reconstruct_goal(&first, &session, "goal-1").unwrap();
     let mut second = SqliteLedger::open(&path).unwrap();
     let winner = plan_goal_transition(
-        &state,
+        &first,
+        &session,
+        "goal-1",
         1,
         &context("winner"),
         GoalRuntimeTransition::Activate {
@@ -102,7 +107,9 @@ fn stale_session_writer_and_changed_command_replay_fail_closed() {
     )
     .unwrap();
     let loser = plan_goal_transition(
-        &state,
+        &second,
+        &session,
+        "goal-1",
         1,
         &context("loser"),
         GoalRuntimeTransition::Cancel {
@@ -231,6 +238,34 @@ fn child_creation_uses_the_fixed_ledger_graph_and_parent_limits() {
             child_definition("wider", "goal-1", 4),
         ),
         Err(GoalRuntimeError::ScopeExceeded)
+    );
+    assert_eq!(
+        plan_goal_transition(
+            &ledger,
+            &session,
+            "child-1",
+            1,
+            &context("widen-child"),
+            GoalRuntimeTransition::Revise {
+                definition: Box::new(child_definition("child-1", "goal-1", 4)),
+                replacement_reason: "expand_scope".into(),
+            },
+        ),
+        Err(GoalRuntimeError::ScopeExceeded)
+    );
+    assert_eq!(
+        plan_goal_transition(
+            &ledger,
+            &session,
+            "goal-1",
+            1,
+            &context("cycle-root"),
+            GoalRuntimeTransition::Revise {
+                definition: Box::new(child_definition("goal-1", "child-1", 1)),
+                replacement_reason: "invalid_reparent".into(),
+            },
+        ),
+        Err(GoalRuntimeError::Cycle)
     );
 }
 

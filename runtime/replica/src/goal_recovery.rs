@@ -57,27 +57,36 @@ pub(crate) fn reconstruct_goal_graph(
             },
         );
     }
-    validate_graph(&graph)?;
+    validate_goal_graph(&graph).map_err(|_| GoalRuntimeError::RecoveryCorrupt)?;
     Ok(graph)
 }
 
-fn validate_graph(graph: &BTreeMap<String, GoalRuntimeState>) -> Result<(), GoalRuntimeError> {
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum GoalGraphError {
+    MissingParent,
+    ScopeExceeded,
+    Cycle,
+}
+
+pub(crate) fn validate_goal_graph(
+    graph: &BTreeMap<String, GoalRuntimeState>,
+) -> Result<(), GoalGraphError> {
     for (goal_id, state) in graph {
         if let Some(parent_id) = state.snapshot.definition().parent_goal_id() {
             let parent = graph
                 .get(parent_id.as_str())
-                .ok_or(GoalRuntimeError::RecoveryCorrupt)?;
+                .ok_or(GoalGraphError::MissingParent)?;
             state
                 .snapshot
                 .definition()
                 .validate_child_of(parent.snapshot.definition())
-                .map_err(corrupt)?;
+                .map_err(|_| GoalGraphError::ScopeExceeded)?;
         }
         let mut visited = BTreeSet::new();
         let mut cursor = Some(goal_id.as_str());
         while let Some(current) = cursor {
             if !visited.insert(current) {
-                return Err(GoalRuntimeError::RecoveryCorrupt);
+                return Err(GoalGraphError::Cycle);
             }
             cursor = graph
                 .get(current)

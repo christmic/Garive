@@ -8,7 +8,10 @@ use serde_json::{json, Map, Value};
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
 
-use crate::{goal_recovery::reconstruct_goal_graph, SqliteLedger, SqliteLedgerError};
+use crate::{
+    goal_recovery::{reconstruct_goal_graph, validate_goal_graph, GoalGraphError},
+    SqliteLedger, SqliteLedgerError,
+};
 
 /// Authenticated metadata bound to one idempotent Goal command.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -101,6 +104,8 @@ pub enum GoalRuntimeError {
     EvidenceInsufficient,
     /// Child scope, capability, parent identity, or bound exceeds its parent.
     ScopeExceeded,
+    /// Proposed parent graph contains a cycle.
+    Cycle,
     /// Persisted Goal facts cannot reconstruct one legal contiguous history.
     RecoveryCorrupt,
     /// SQLite or Ledger durability failed.
@@ -201,6 +206,51 @@ fn stored_text<'a>(value: &'a Map<String, Value>, key: &str) -> Result<&'a str, 
 
 /// Plans one exact-revision transition without mutating durable state.
 pub fn plan_goal_transition(
+    ledger: &SqliteLedger,
+    session_id: &SessionId,
+    goal_id: &str,
+    expected_revision: u64,
+    context: &GoalCommandContext,
+    request: GoalRuntimeTransition,
+) -> Result<PlannedGoalCommand, GoalRuntimeError> {
+    if goal_id.is_empty() {
+        return Err(GoalRuntimeError::Invalid);
+    }
+    let mut graph = reconstruct_goal_graph(ledger, session_id)?;
+    let current = graph
+        .get(goal_id)
+        .ok_or(GoalRuntimeError::NotFound)?
+        .clone();
+    let planned = plan_goal_transition_from_state(&current, expected_revision, context, request)?;
+    graph.insert(goal_id.into(), planned.next.clone());
+    validate_goal_graph(&graph).map_err(|error| match error {
+        GoalGraphError::MissingParent | GoalGraphError::ScopeExceeded => {
+            GoalRuntimeError::ScopeExceeded
+        }
+        GoalGraphError::Cycle => GoalRuntimeError::Cycle,
+    })?;
+    if let Some(parent_id) = planned.next.snapshot.definition().parent_goal_id() {
+        let parent = graph
+            .get(parent_id.as_str())
+            .ok_or(GoalRuntimeError::ScopeExceeded)?;
+        if parent.snapshot.state().is_terminal() {
+            return Err(GoalRuntimeError::TransitionInvalid);
+        }
+        let child_count = graph
+            .values()
+            .filter(|state| state.snapshot.definition().parent_goal_id() == Some(parent_id))
+            .count();
+        if child_count
+            > usize::try_from(parent.snapshot.definition().bounds().max_child_goals())
+                .map_err(|_| GoalRuntimeError::Invalid)?
+        {
+            return Err(GoalRuntimeError::ScopeExceeded);
+        }
+    }
+    Ok(planned)
+}
+
+fn plan_goal_transition_from_state(
     current: &GoalRuntimeState,
     expected_revision: u64,
     context: &GoalCommandContext,
