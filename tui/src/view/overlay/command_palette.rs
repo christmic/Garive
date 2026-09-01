@@ -1,15 +1,18 @@
 use ratatui::{
     buffer::Buffer,
     layout::Rect,
+    style::Modifier,
     text::{Line, Span},
     widgets::{Block, BorderType, Borders, Clear, Padding, Paragraph, Widget},
 };
+use unicode_segmentation::UnicodeSegmentation;
+use unicode_width::UnicodeWidthStr;
 
 use crate::{application::AppModel, input::COMMAND_PALETTE};
 
 use super::super::{
     layout::FrameLayout,
-    primitives::{centered_popup, key_hints, selection_window, truncate_display},
+    primitives::{centered_popup, key_hints, selection_marker, selection_window, truncate_display},
     safe_text,
     style::Palette,
 };
@@ -166,14 +169,14 @@ pub(super) fn render(model: &AppModel, colors: Palette, area: Rect, buffer: &mut
             let row = layout
                 .first_item_row
                 .saturating_add(u16::try_from(offset).unwrap_or(u16::MAX));
-            if selection == projection.selected {
-                buffer.set_style(
-                    Rect::new(layout.inner.x, row, layout.inner.width, 1),
-                    colors.selection_row,
-                );
-            }
             render_line(
-                item_line(item, selection == projection.selected, layout, colors),
+                item_line(
+                    item,
+                    projection.query,
+                    selection == projection.selected,
+                    layout,
+                    colors,
+                ),
                 layout.inner,
                 row,
                 buffer,
@@ -293,6 +296,7 @@ pub(in crate::view) fn linear_text(model: &AppModel) -> String {
 
 fn item_line(
     item: &PaletteItem,
+    query: &str,
     selected: bool,
     layout: PaletteLayout,
     colors: Palette,
@@ -300,25 +304,92 @@ fn item_line(
     let width = usize::from(layout.inner.width);
     let input_width = if layout.compact { 16 } else { 18 };
     let detail_width = width.saturating_sub(input_width + 4);
-    Line::from(vec![
-        Span::styled(if selected { "› " } else { "  " }, colors.selected),
-        Span::styled(
-            format!("{:<input_width$}  ", item.input),
-            if selected {
-                colors.selected
-            } else {
-                colors.normal
-            },
-        ),
-        Span::styled(
-            truncate_display(&safe_text(&item.detail), detail_width),
-            if item.unavailable_reason.is_some() {
-                colors.warning
-            } else {
-                colors.normal
-            },
-        ),
-    ])
+    let detail_style = if item.unavailable_reason.is_some() {
+        colors.warning
+    } else {
+        colors.normal
+    };
+    let mut spans = vec![selection_marker(selected, colors)];
+    spans.extend(highlighted_field(
+        item.input,
+        query,
+        input_width,
+        colors.normal,
+    ));
+    spans.push(Span::styled("  ", colors.normal));
+    spans.extend(highlighted_field(
+        &item.detail,
+        query,
+        detail_width,
+        detail_style,
+    ));
+    Line::from(spans)
+}
+
+fn highlighted_field(
+    value: &str,
+    query: &str,
+    width: usize,
+    base: ratatui::style::Style,
+) -> Vec<Span<'static>> {
+    if width == 0 {
+        return Vec::new();
+    }
+    let safe = safe_text(value);
+    let graphemes = safe.graphemes(true).collect::<Vec<_>>();
+    let matches = matching_graphemes(&graphemes, query);
+    let full_width = UnicodeWidthStr::width(safe.as_str());
+    let truncated = full_width > width;
+    let budget = width.saturating_sub(usize::from(truncated));
+    let mut spans = Vec::new();
+    let mut used = 0usize;
+    for (index, grapheme) in graphemes.iter().enumerate() {
+        let grapheme_width = UnicodeWidthStr::width(*grapheme);
+        if used.saturating_add(grapheme_width) > budget {
+            break;
+        }
+        let style = if matches[index] {
+            base.add_modifier(Modifier::BOLD)
+        } else {
+            base
+        };
+        spans.push(Span::styled((*grapheme).to_owned(), style));
+        used = used.saturating_add(grapheme_width);
+    }
+    if truncated {
+        spans.push(Span::styled("…", base));
+        used = used.saturating_add(1);
+    }
+    if used < width {
+        spans.push(Span::styled(" ".repeat(width - used), base));
+    }
+    spans
+}
+
+fn matching_graphemes(graphemes: &[&str], query: &str) -> Vec<bool> {
+    let mut mask = vec![false; graphemes.len()];
+    let mut lowered = String::new();
+    let mut ranges = Vec::with_capacity(graphemes.len());
+    for grapheme in graphemes {
+        let start = lowered.len();
+        lowered.push_str(&grapheme.to_lowercase());
+        ranges.push((start, lowered.len()));
+    }
+    for term in safe_text(query)
+        .split_whitespace()
+        .map(str::to_lowercase)
+        .filter(|term| !term.is_empty())
+    {
+        for (start, _) in lowered.match_indices(&term) {
+            let end = start.saturating_add(term.len());
+            for (index, (grapheme_start, grapheme_end)) in ranges.iter().enumerate() {
+                if *grapheme_start < end && *grapheme_end > start {
+                    mask[index] = true;
+                }
+            }
+        }
+    }
+    mask
 }
 
 fn search_line(query: &str, colors: Palette) -> Line<'static> {
@@ -474,5 +545,39 @@ mod tests {
         assert!(spoken.contains("Showing commands"));
         assert!(spoken.contains("Selected 21 of 21: /quit"));
         assert!(spoken.contains("Home and End for edges"));
+    }
+
+    #[test]
+    fn selected_marker_and_unicode_matches_have_independent_emphasis() {
+        let layout = PaletteLayout {
+            popup: Rect::new(0, 0, 40, 8),
+            inner: Rect::new(0, 0, 36, 6),
+            window: (0, 1),
+            first_item_row: 2,
+            action_row: 4,
+            compact: true,
+        };
+        let item = PaletteItem {
+            input: "/状态😀",
+            help: "打开项目",
+            detail: "打开项目".into(),
+            unavailable_reason: None,
+        };
+        let colors = super::super::super::palette(crate::Theme::Mono);
+        let line = item_line(&item, "态😀 项目", true, layout, colors);
+
+        assert!(line.spans[0]
+            .style
+            .add_modifier
+            .contains(Modifier::REVERSED));
+        let bold = line
+            .spans
+            .iter()
+            .skip(1)
+            .filter(|span| span.style.add_modifier.contains(Modifier::BOLD))
+            .map(|span| span.content.as_ref())
+            .collect::<String>();
+        assert_eq!(bold, "态😀项目");
+        assert_eq!(line.width(), usize::from(layout.inner.width));
     }
 }

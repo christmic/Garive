@@ -243,8 +243,12 @@ short terminals so at least the selected row and its actions remain visible. A m
 only its rectangle plus a two-cell same-height horizontal halo; it must not
 erase rows above or below, splice the composer frame, or hide the command
 palette action row. The command palette uses compact vertical chrome and a
-fixed command column so all admitted rows fit at `160x28`; unavailable detail
-is one grapheme-safe display-width-truncated line.
+fixed command column so all admitted rows fit at `160x28`. Its selected state
+uses only the shared two-cell `SelectionMarker`; the command and detail remain
+neutral, while every query-matching grapheme is bold. Unavailable detail keeps
+its warning tone independently of selection and matching. Mono reverses the
+marker, not the entire row. Truncation and fixed-column padding use terminal
+display width, including CJK, emoji, and combining sequences.
 An anchored command menu is not a modal. It uses the overlay border and shared
 selection row, clears only its own rectangle, aligns its left edge with the
 composer, caps width at 76 cells, and grows upward by two border rows plus at
