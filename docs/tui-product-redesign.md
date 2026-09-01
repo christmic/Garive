@@ -18,6 +18,39 @@ discoverable commands, resumable work, and background-task visibility only
 where its official package or documentation proves the behavior. Garive keeps
 its own identity, Host semantics, components, tokens, and interaction grammar.
 
+## Corrective retrospective
+
+The implementation is technically substantial but the current product
+composition is not accepted. The gap is not a missing color token or isolated
+component. The work optimized local renderers, geometry, and regression tests
+before proving the complete screen hierarchy in a real terminal. Source audits
+were reduced to local measurements instead of reconstructed as continuous
+product states. Stable snapshots then protected those locally consistent but
+globally weak frames.
+
+### Done well
+
+| Aspect | Practice | Reusable value |
+|---|---|---|
+| Truth boundary | Durable H1/H2 and ephemeral H4 state remain distinct | Keep the reducer, convergence, reconnect, and persistence contracts |
+| Terminal safety | PTY, panic restore, Unicode geometry, input ownership, and bounded rendering are exercised | Keep the runtime, editor, terminal profile, and safety harnesses |
+| Component mechanics | Composer layout, Markdown, selection, Activity projection, and overlays have typed owners | Reuse their models and algorithms behind a new screen composition |
+
+### Done poorly
+
+| Issue | Manifestation | Impact | Required correction |
+|---|---|---|---|
+| Local-first design | Footer, status, Activity, spacing, and Composer were refined independently | Individually reasonable parts compete in one incoherent frame | Admit only complete state transitions and review the entire terminal frame |
+| Parameter-level source use | Source dimensions and isolated snapshots were copied without reproducing the runtime sequence | The implementation cites Codex but does not feel or behave like Codex | Reconstruct each baseline state from the executable and source together |
+| Premature differentiation | Garive identity and extra context were added before Codex-level composition parity | New visual centers amplified hierarchy errors | Reach the primary baseline before adding any Garive-specific enhancement |
+| Snapshot authority inversion | Passing snapshots were treated as evidence of visual quality | Tests stabilized rejected composition | Human-admit the real macOS frame first, then update snapshots to protect it |
+| Late physical review | PTY and buffer evidence preceded real-font, real-color full-screen review | Typography, negative space, contrast, and visual center failed late | Require Apple Terminal screenshots for every composition-changing batch |
+| Static-component framing | Streaming was treated as a renderer feature instead of the central time-based experience | Intermediate events did not form one continuous answer | Review the complete preparing → activity → text delta → durable takeover filmstrip |
+
+The reusable pattern is: engineering conformance prevents breakage, but only a
+stateful full-frame reference comparison can admit product composition. Neither
+gate substitutes for the other.
+
 ## Product principles
 
 1. **The answer is the visual center.** Chrome never competes with the current
@@ -221,9 +254,71 @@ the composer below two rows or hides an active decision.
 6. Validate real macOS Runtime streaming, resize, scroll detachment, interrupt,
    reconnect, reduced motion, and final replacement in PTY and screenshots.
 
+## Recovery plan from the current code
+
+Continuation does not restart the Runtime or editor. It replaces the rejected
+screen composition around the verified foundations in the following order:
+
+1. Freeze new decoration and inventory the current view tree. Keep the reducer,
+   Host clients, H4 accumulator, persistence, `EditorState`, Markdown engine,
+   terminal lifecycle, theme semantics, and accessibility projections. Mark
+   `FrameLayout`, empty state, transcript rhythm, Composer stack, footer,
+   Activity presentation, and overlay placement as visually provisional.
+2. Capture one reference matrix from pinned Codex and observed Claude Code in
+   Apple Terminal at the same font, width, and height as Garive. Required states
+   are launch, typing, submitted request, preparing, tool activity, first text
+   delta, continuing stream, approval/input, completed answer, detached scroll,
+   reconnect, command discovery, and help.
+3. Rebuild the page composition as four high-level owners—`LaunchView`,
+   `ConversationFlow`, `ComposerStack`, and `TransientLayer`—before changing
+   colors or adding features. Each owner controls its negative space and visual
+   axis; lower-level components cannot reserve global rows independently.
+4. Reach Codex composition parity first. Remove duplicate brand, Session,
+   lifecycle, and shortcut owners. Do not introduce a Garive-specific card,
+   status rail, or decorative surface until the corresponding parity matrix is
+   admitted.
+5. Bind the existing H4 model to one in-place live answer. Review a real event
+   filmstrip, not a synthetic final string: the first delta must appear promptly,
+   Activity must yield visual focus to prose, bursts may coalesce, and durable
+   takeover must leave no duplicate or residue. No fake per-character replay is
+   permitted.
+6. Recompose command, help, decision, and navigation surfaces only after the
+   ordinary conversation frame passes. They inherit the Composer axis and must
+   not alter the accepted idle/running geometry when closed.
+7. Add Garive-specific improvements one at a time, each with an explicit user
+   benefit and an A/B frame against the admitted Codex baseline. An addition
+   that weakens hierarchy, rhythm, or discoverability is removed regardless of
+   test coverage already written for it.
+
+### Non-negotiable admission gates
+
+No composition-changing batch may merge unless all of these are true:
+
+- the affected state has a same-size Codex reference, a Garive Apple Terminal
+  capture, and a written delta explaining every intentional difference;
+- the complete before/during/after state sequence is reviewed, including real
+  H4 intermediate events when execution is involved;
+- composition, hierarchy, spacing rhythm, contrast, action discoverability,
+  streaming continuity, and monochrome readability each score at least 4/5;
+  an average score cannot hide a failing dimension;
+- the frame contains one visual center, one owner per fact/action, no accidental
+  empty region, no unexplained persistent chrome, and no raw internal identity;
+- semantic buffer, responsive snapshot, keyboard/mouse, accessibility, macOS
+  PTY, terminal-restore, and performance gates still pass;
+- snapshots are regenerated only after the physical frame is admitted. A green
+  snapshot suite cannot approve a new design;
+- the review artifact is linked in the commit or PR, and the batch is rejected
+  rather than rationalized when the visual comparison is weaker.
+
+The first recovery batch is therefore not another footer or color refinement.
+It is the complete launch → first request → first streaming answer composition,
+implemented as one vertical slice on top of the existing model and transport.
+
 ## Implementation status
 
-The principal conversation-first composition and H4 path are implemented.
+The H4 path and most engineering foundations are implemented. The principal
+conversation-first composition is not visually accepted and remains a recovery
+slice under the admission gates above.
 `LiveAnswer` receives the strict Host live stream, applies bounded frame
 presentation, retains a stable Markdown prefix, and converges on durable H1/H2
 truth. Client wire failures and bounds are exercised by
@@ -270,4 +365,4 @@ remain later-platform work by explicit product priority.
 
 - Owner: `@christmic`
 - Last reviewed: 2026-09-01
-- Status: accepted design; implementation verified; physical macOS gallery gate active
+- Status: accepted corrective design; engineering foundation verified; visual product not accepted

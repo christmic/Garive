@@ -480,6 +480,19 @@ colors outside the palette, duplicated key-hint formatting, color-only state,
 content-dependent layout identity, and screenshots without executable snapshot
 or PTY evidence.
 
+Component conformance is necessary but cannot admit product composition. Any
+change to the launch frame, conversation flow, Composer stack, persistent
+context, Activity-to-answer transition, or overlay placement additionally
+requires a same-size Codex baseline and a real Apple Terminal Garive capture.
+The complete state sequence must be reviewed, not only an isolated renderer.
+Composition, hierarchy, spacing rhythm, contrast, action discoverability,
+streaming continuity, and monochrome readability must each score at least 4/5.
+Snapshots are updated only after that physical frame is admitted; passing
+snapshots never override a rejected full-frame comparison. Garive-specific
+visual additions are admitted only after the corresponding Codex baseline has
+reached parity and the addition improves a named user outcome without creating
+a second visual center or duplicate state owner.
+
 ## See also
 
 - [`tui-interaction-and-rendering.md`](tui-interaction-and-rendering.md) — product behavior, input ownership, and responsive composition.
