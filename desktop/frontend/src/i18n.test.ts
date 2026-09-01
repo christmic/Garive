@@ -32,6 +32,7 @@ describe("Desktop localization", () => {
     expect(t("environment.workspaces")).toBe("工作区");
     expect(t("work.menu.actions")).toBe("工作操作");
     expect(t("work.menu.openEnvironment")).toBe("打开环境");
+    expect(t("shell.productMenu")).toBe("Garive 运行时菜单");
   });
 
   it("preserves approval and Artifact trust semantics in Chinese", () => {

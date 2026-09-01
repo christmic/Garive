@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { webcrypto } from "node:crypto";
 
@@ -125,6 +125,24 @@ describe("Desktop product experience", () => {
     expect(host?.textContent).not.toContain("LocalLocal");
     expect(view.container.querySelector(".topbar .local-badge")).toBeNull();
     expect(screen.queryByRole("button", { name: "Account and app menu" })).toBeNull();
+  });
+
+  it("turns the product switcher into a truthful keyboard Runtime menu", async () => {
+    render(<App />);
+    const trigger = await screen.findByRole("button", { name: "Garive Runtime menu" });
+    expect(trigger.hasAttribute("disabled")).toBe(false);
+    fireEvent.click(trigger);
+    const menu = screen.getByRole("menu", { name: "Garive Runtime menu" });
+    expect(within(menu).getByRole("status").textContent).toContain("Runtime ready");
+    const runtime = within(menu).getByRole("menuitem", { name: "Local Runtime" });
+    await waitFor(() => expect(document.activeElement).toBe(runtime));
+    fireEvent.keyDown(menu, { key: "End" });
+    expect(document.activeElement).toBe(within(menu).getByRole("menuitem", { name: /Settings/ }));
+    fireEvent.keyDown(menu, { key: "Home" });
+    expect(document.activeElement).toBe(runtime);
+    fireEvent.keyDown(menu, { key: "Escape" });
+    expect(screen.queryByRole("menu", { name: "Garive Runtime menu" })).toBeNull();
+    expect(document.activeElement).toBe(trigger);
   });
 
   it("presents durable search as a compact desktop finder", async () => {

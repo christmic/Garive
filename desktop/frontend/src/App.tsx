@@ -1,5 +1,5 @@
 import { Children, isValidElement, useCallback, useEffect, useMemo, useReducer, useRef, useState,
-  type CSSProperties, type ReactNode } from "react";
+  type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import Markdown from "react-markdown";
@@ -128,6 +128,50 @@ export interface AppProps {
   readonly usageBudget?: UsageBudgetSnapshot;
 }
 
+function DesktopMenu({ className, label, triggerClassName, trigger, children }: {
+  className: string; label: string; triggerClassName: string; trigger: ReactNode;
+  children: (close: () => void) => ReactNode;
+}) {
+  const [open, setOpen] = useState(false);
+  const wrapper = useRef<HTMLDivElement>(null);
+  const triggerButton = useRef<HTMLButtonElement>(null);
+  const close = () => setOpen(false);
+  useEffect(() => {
+    if (!open) return;
+    const closeOutside = (event: PointerEvent) => {
+      if (!wrapper.current?.contains(event.target as Node)) close();
+    };
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      event.preventDefault(); close(); triggerButton.current?.focus();
+    };
+    document.addEventListener("pointerdown", closeOutside);
+    document.addEventListener("keydown", closeOnEscape);
+    requestAnimationFrame(() => wrapper.current?.querySelector<HTMLButtonElement>("[role=menuitem]")?.focus());
+    return () => {
+      document.removeEventListener("pointerdown", closeOutside);
+      document.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [open]);
+  const moveFocus = (event: ReactKeyboardEvent<HTMLDivElement>) => {
+    const items = [...(wrapper.current?.querySelectorAll<HTMLButtonElement>("[role=menuitem]") ?? [])];
+    if (!items.length || !["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return;
+    event.preventDefault();
+    const current = Math.max(0, items.indexOf(document.activeElement as HTMLButtonElement));
+    const next = event.key === "Home" ? 0 : event.key === "End" ? items.length - 1
+      : event.key === "ArrowDown" ? (current + 1) % items.length
+        : (current - 1 + items.length) % items.length;
+    items[next]?.focus();
+  };
+  return <div className={`desktop-menu ${className}`} ref={wrapper}>
+    <button className={triggerClassName} type="button" ref={triggerButton}
+      aria-label={label} title={label} aria-haspopup="menu" aria-expanded={open}
+      onClick={() => setOpen((value) => !value)}>{trigger}</button>
+    {open && <div className="desktop-action-menu" role="menu" aria-label={label}
+      onKeyDown={moveFocus}>{children(close)}</div>}
+  </div>;
+}
+
 export function App({ client = "desktop", webCapabilities, createProductPort,
   usageBudget }: AppProps = {}) {
   const desktop = client === "desktop";
@@ -139,7 +183,6 @@ export function App({ client = "desktop", webCapabilities, createProductPort,
   const [recents, setRecents] = useState<readonly RecentTask[]>([]);
   const [recentTitles, setRecentTitles] = useState<Readonly<Record<string, string>>>({});
   const [commandOpen, setCommandOpen] = useState(false);
-  const [workMenuOpen, setWorkMenuOpen] = useState(false);
   const [selectedContext, setSelectedContext] = useState<SelectedContext>();
   const [pickerGrant, setPickerGrant] = useState<WorkspaceGrant>();
   const [detachingWorkspaceId, setDetachingWorkspaceId] = useState<string>();
@@ -156,8 +199,6 @@ export function App({ client = "desktop", webCapabilities, createProductPort,
   const visibleUsage = usageBudget ?? (visualTestMode === "usage" ? visualUsageBudget : undefined);
   const composer = useRef<HTMLTextAreaElement>(null);
   const approvalAction = useRef<HTMLButtonElement>(null);
-  const workMenu = useRef<HTMLDivElement>(null);
-  const workMenuTrigger = useRef<HTMLButtonElement>(null);
   const desktopZoom = useRef(1);
   const pendingDraft = useRef("");
   const [queuedSubmission, setQueuedSubmission] = useState<string>();
@@ -188,23 +229,6 @@ export function App({ client = "desktop", webCapabilities, createProductPort,
     [preferences]);
   useEffect(() => { document.documentElement.lang = locale === "en-XA" ? "en-XA" : locale; },
     [locale]);
-  useEffect(() => {
-    if (!workMenuOpen) return;
-    const closeOutside = (event: PointerEvent) => {
-      if (!workMenu.current?.contains(event.target as Node)) setWorkMenuOpen(false);
-    };
-    const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key !== "Escape") return;
-      event.preventDefault(); setWorkMenuOpen(false); workMenuTrigger.current?.focus();
-    };
-    document.addEventListener("pointerdown", closeOutside);
-    document.addEventListener("keydown", closeOnEscape);
-    requestAnimationFrame(() => workMenu.current?.querySelector<HTMLButtonElement>("[role=menuitem]")?.focus());
-    return () => {
-      document.removeEventListener("pointerdown", closeOutside);
-      document.removeEventListener("keydown", closeOnEscape);
-    };
-  }, [workMenuOpen]);
   useEffect(() => {
     if (desktop && !visualTest) void setDesktopMenuLocale(locale).catch(() => undefined);
   }, [desktop, locale]);
@@ -635,8 +659,20 @@ export function App({ client = "desktop", webCapabilities, createProductPort,
             aria-label={t("shell.historyForward")}><Icon name="chevron" /></button>
         </div>
         <div className="sidebar-product-row">
-          <button className="product-switcher" type="button" aria-label={t("shell.productMenu")}
-            disabled><span>Garive</span><Icon name="chevron" /></button>
+          <DesktopMenu className="product-menu" label={t("shell.productMenu")}
+            triggerClassName="product-switcher" trigger={<><span>Garive</span><Icon name="chevron" /></>}>
+            {(close) => <><div className={`product-menu-status ${state.capabilities?.configured ? "online" : "offline"}`}
+              role="status"><Icon name="desktop" /><span><strong>{t("shell.local")}</strong>
+                <small>{t(state.capabilities?.configured ? "shell.runtimeReadyShort" : "shell.setupRequired")}</small></span>
+              <span className="status-dot" aria-hidden="true" /></div>
+              <button type="button" role="menuitem" onClick={() => { close(); setSettingsSection("runtime"); setScreen("settings"); }}>
+                <Icon name="desktop" /><span>{t("settings.runtime.title")}</span></button>
+              {state.capabilities?.workspaces && <button type="button" role="menuitem"
+                onClick={() => { close(); setSettingsSection("workspace"); setScreen("settings"); }}>
+                <Icon name="folder" /><span>{t("settings.workspace.title")}</span></button>}
+              <button type="button" role="menuitem" onClick={() => { close(); setSettingsSection("general"); setScreen("settings"); }}>
+                <Icon name="settings" /><span>{t("nav.settings")}</span><kbd>⌘,</kbd></button></>}
+          </DesktopMenu>
           <button className="sidebar-search icon-button" type="button" aria-label={t("nav.search")}
             disabled={!state.capabilities?.durable_navigation}
             onClick={() => setScreen("search")}><Icon name="search" /></button>
@@ -704,25 +740,20 @@ export function App({ client = "desktop", webCapabilities, createProductPort,
             <span className="topbar-context-icon" aria-hidden="true"><Icon name={screen === "work" ? "folder"
               : screen === "agents" ? "agent" : screen === "settings" ? "settings" : "search"} /></span>
             <span className="topbar-title-copy">{screen === "work" ? title : screen === "search" ? t("nav.search") : screen === "agents" ? t("nav.agents") : t("nav.settings")}</span>
-            {screen === "work" && state.messages.length > 0 && <div className="work-menu" ref={workMenu}>
-              <button className="work-menu-trigger" type="button" ref={workMenuTrigger}
-                aria-label={t("work.menu.actions")} title={t("work.menu.actions")}
-                aria-haspopup="menu" aria-expanded={workMenuOpen}
-                onClick={() => setWorkMenuOpen((open) => !open)}><Icon name="more" /></button>
-              {workMenuOpen && <div className="work-action-menu" role="menu" aria-label={t("work.menu.actions")}>
-                <button type="button" role="menuitem" onClick={() => { setWorkMenuOpen(false); beginNewWork(); }}>
+            {screen === "work" && state.messages.length > 0 && <DesktopMenu className="work-menu"
+              label={t("work.menu.actions")} triggerClassName="work-menu-trigger" trigger={<Icon name="more" />}>
+              {(close) => <><button type="button" role="menuitem" onClick={() => { close(); beginNewWork(); }}>
                   <Icon name="plus" /><span>{t("nav.newWork")}</span><kbd>⌘N</kbd></button>
                 {state.capabilities?.durable_navigation && <button type="button" role="menuitem"
-                  onClick={() => { setWorkMenuOpen(false); setScreen("search"); }}>
+                  onClick={() => { close(); setScreen("search"); }}>
                   <Icon name="search" /><span>{t("nav.search")}</span><kbd>⌘F</kbd></button>}
-                <button type="button" role="menuitem" onClick={() => { setWorkMenuOpen(false);
+                <button type="button" role="menuitem" onClick={() => { close();
                   dispatch({ type: "inspector_toggled" }); }}><Icon name="panel" />
                   <span>{t(state.inspectorOpen ? "work.menu.closeEnvironment" : "work.menu.openEnvironment")}</span><kbd>⌘⇧A</kbd></button>
-                <button type="button" role="menuitem" onClick={() => { setWorkMenuOpen(false);
+                <button type="button" role="menuitem" onClick={() => { close();
                   setSettingsSection("general"); setScreen("settings"); }}><Icon name="settings" />
-                  <span>{t("nav.settings")}</span><kbd>⌘,</kbd></button>
-              </div>}
-            </div>}
+                  <span>{t("nav.settings")}</span><kbd>⌘,</kbd></button></>}
+            </DesktopMenu>}
             {visualTest && <span className="local-badge qa-badge">{t("shell.qaPreview")}</span>}
           </div>
           <div className="topbar-actions">

@@ -122,6 +122,11 @@ workbench made from four persistent spatial layers:
    global destinations, durable tasks and host identity. It uses a distinct
    neutral surface, compact rows and one selected fill. Logos, hero branding,
    large avatars and duplicate connection badges are not part of this layer.
+   A chevron beside the product name is a real Runtime menu, never a disabled
+   imitation of a workspace switcher. It exposes the admitted Host status and
+   routes to Runtime, Workspace and general settings; unavailable routes are
+   omitted. Product and Work menus share dismissal, focus restoration and
+   Arrow/Home/End keyboard behavior.
    Its task area is a semantic stack rather than one undifferentiated feed:
    truthful needs-input, running and failed Sessions form a bounded Priority
    group ahead of completed/idle Recents. A Session appears once, empty groups

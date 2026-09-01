@@ -621,6 +621,22 @@ and the same DOM is mounted by Desktop and Web. Export remains the truthful
 far-edge analogue to the unavailable cloud Share action instead of being
 duplicated inside the menu.
 
+### XVIII. Truthful product/Runtime menu
+
+The supplied desktop references make the product name and chevron an active
+top-left hierarchy. Garive previously copied that appearance with a disabled
+button, creating a false affordance. The shared rail now opens a real Runtime
+menu: its status row is derived from negotiated Host configuration, followed
+by admitted Local Runtime, Workspace access and Settings routes. An unavailable
+Workspace route disappears rather than rendering a dead row.
+
+The product and Work menus now use one component for initial focus, outside
+pointer dismissal, Escape focus restoration and wrapping Arrow navigation with
+Home/End bounds. In the 1280px sidebar fixture the dark/light menu measures
+x=8, y=62, 220×156px, resolves to the same overlay surfaces as Environment,
+and retains zero document overflow. This exceeds the reference's visual cue by
+making the switcher operational without inventing another Host or account.
+
 ## Gate 1 — Codex fidelity
 
 This gate passes only when both Desktop and Web show:

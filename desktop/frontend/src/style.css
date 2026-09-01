@@ -604,7 +604,8 @@ html[data-client="desktop"] .sidebar-window-row { padding-left: 58px; }
 .sidebar-product-row { display: flex; align-items: center; min-height: 24px; margin: 1px 0 2px; }
 .product-switcher { display: flex; align-items: center; gap: 3px; min-width: 0; height: 24px; padding: 0 6px; border: 0; border-radius: var(--radius-control); color: var(--text-primary); background: transparent; font-size: var(--text-sm); font-weight: 610; }
 .product-switcher:disabled { opacity: 1; }
-.product-switcher svg { width: 12px; transform: rotate(90deg); }
+.product-switcher svg { width: 12px; transform: rotate(90deg); transition: transform var(--motion-fast); }
+.product-switcher[aria-expanded="true"] svg { transform: rotate(-90deg); }
 .sidebar-search { width: 24px; height: 24px; margin-left: auto; }
 .sidebar-search svg { width: 14px; }
 .brand { height: 36px; gap: 8px; padding: 0 8px; font-size: var(--text-md); font-weight: 650; }
@@ -637,15 +638,23 @@ kbd { font-size: var(--text-2xs); }
 .topbar { padding: 0 14px 0 10px; border-bottom-color: var(--border-subtle); background: color-mix(in srgb, var(--surface-canvas) 91%, transparent); }
 .topbar-title { flex: 1; gap: 8px; min-width: 0; font-size: var(--text-sm); font-weight: 590; }
 .topbar-title-copy { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.work-menu { position: relative; flex: none; }
+.desktop-menu { position: relative; flex: none; }
 .work-menu-trigger { display: grid; place-items: center; width: 24px; height: 24px; padding: 0; border: 0; border-radius: var(--radius-control); color: var(--text-tertiary); background: transparent; }
 .work-menu-trigger:hover, .work-menu-trigger[aria-expanded="true"] { color: var(--text-primary); background: var(--surface-hover); }
 .work-menu-trigger svg { width: 14px; }
-.work-action-menu { position: absolute; z-index: 12; top: 27px; left: -4px; width: 204px; padding: 4px; border: 1px solid var(--border-subtle); border-radius: var(--radius-panel); background: var(--surface-overlay); box-shadow: var(--shadow-overlay); animation: environment-enter var(--motion-fast) var(--ease-enter); transform-origin: top left; }
-.work-action-menu button { display: grid; grid-template-columns: 18px minmax(0, 1fr) auto; align-items: center; gap: 7px; width: 100%; min-height: 32px; padding: 0 7px; border: 0; border-radius: var(--radius-control); color: var(--text-secondary); background: transparent; text-align: left; font-size: var(--text-xs); }
-.work-action-menu button:hover, .work-action-menu button:focus-visible { color: var(--text-primary); background: var(--surface-hover); outline: 0; }
-.work-action-menu button svg { width: 13px; color: var(--text-tertiary); }
-.work-action-menu kbd { color: var(--text-tertiary); background: transparent; }
+.desktop-action-menu { position: absolute; z-index: 12; top: 27px; left: 0; width: 220px; padding: 4px; border: 1px solid var(--border-subtle); border-radius: var(--radius-panel); background: var(--surface-overlay); box-shadow: var(--shadow-overlay); animation: environment-enter var(--motion-fast) var(--ease-enter); transform-origin: top left; }
+.work-menu .desktop-action-menu { left: -4px; width: 204px; }
+.desktop-action-menu button { display: grid; grid-template-columns: 18px minmax(0, 1fr) auto; align-items: center; gap: 7px; width: 100%; min-height: 32px; padding: 0 7px; border: 0; border-radius: var(--radius-control); color: var(--text-secondary); background: transparent; text-align: left; font-size: var(--text-xs); }
+.desktop-action-menu button:hover, .desktop-action-menu button:focus-visible { color: var(--text-primary); background: var(--surface-hover); outline: 0; }
+.desktop-action-menu button svg { width: 13px; color: var(--text-tertiary); }
+.desktop-action-menu kbd { color: var(--text-tertiary); background: transparent; }
+.product-menu-status { display: grid; grid-template-columns: 18px minmax(0, 1fr) 8px; align-items: center; gap: 7px; min-height: 43px; margin-bottom: 4px; padding: 4px 7px 7px; border-bottom: 1px solid var(--border-subtle); }
+.product-menu-status > svg { width: 13px; color: var(--text-tertiary); }
+.product-menu-status strong, .product-menu-status small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.product-menu-status strong { color: var(--text-primary); font-size: var(--text-xs); font-weight: 570; }
+.product-menu-status small { margin-top: 1px; color: var(--text-tertiary); font-size: var(--text-2xs); }
+.product-menu-status.online .status-dot { background: var(--state-success); }
+.product-menu-status.offline .status-dot { background: var(--state-attention); }
 .topbar-context-icon { display: grid; place-items: center; flex: none; width: 16px; height: 16px; color: var(--text-tertiary); }
 .topbar-context-icon svg { width: 14px; height: 14px; }
 .topbar-title .local-badge, .topbar-actions { flex: none; }
