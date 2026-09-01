@@ -913,6 +913,29 @@ states stay visible. Garive does not fabricate reasoning prose, elapsed time,
 model choice or tool calls. Collapse state is component-local until a durable
 product preference is admitted, so it is not described as persisted behavior.
 
+### XXVII. User Turn rhythm and measured request collapse
+
+Installed source separates the user bubble from its Turn group. In
+`conversation-blocks-Bqf2uxPH.js`, the group is full-width, right-aligned and
+uses a 4 px gap; Copy/Edit/timestamp actions are opacity-zero until group hover
+or focus. The bubble uses 10 px vertical padding. Its companion CSS module
+`conversation-blocks-BHmH6nQ0.css` resolves user width to 70%, radius to 22 px
+and horizontal thread inset to 16 px.
+
+The same source does not truncate by character count. Its measurement hook
+observes rendered width, font and content height. Ordinary requests receive a
+20-line budget; when collapsed, one line is reserved for a standalone ellipsis
+and 19 lines remain for content. The toggle stays inside the bubble, aligned to
+its content start, with a 6 px top margin and `aria-expanded` state. Hidden
+interactive descendants are made inert and removed from accessibility until
+visible.
+
+Garive's request is plain text and has no interactive descendants, timestamps
+or editable durable command, so it maps only the supported subset: measured
+20-line collapse, in-bubble Show more/less, and a real Copy request action on
+the Turn hover/focus row. Desktop and Web share the component. No send time or
+Edit affordance is invented because current Host projections admit neither.
+
 ## Gate 1 — Codex fidelity
 
 This gate passes only when both Desktop and Web show:

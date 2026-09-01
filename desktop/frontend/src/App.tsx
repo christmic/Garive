@@ -445,6 +445,16 @@ export function App({ client = "desktop", webCapabilities, createProductPort,
         } });
         dispatch({ type: "submission_started" });
       }
+      if (visualTestMode === "long-request") dispatch({ type: "session_loaded", timeline: {
+        api_version: "v1", session_id: "visual-long-request", scanned_through_position: 7,
+        observed_max_position: 7, has_more: false, items: [{ turn_id: "long-request-turn",
+          started_position: 1, latest_position: 7, state: "completed",
+          user_text: Array.from({ length: 24 }, (_, index) =>
+            `${index + 1}. Preserve this admitted launch constraint in the implementation review.`).join("\n"),
+          completion_text: "The launch constraints were reviewed and preserved in the committed result.",
+          content_truncated: false, activities: [],
+        }],
+      } });
       return;
     }
     if (!desktop) {
@@ -1121,7 +1131,8 @@ function Timeline({ state, dispatch, t }: { state: WorkState; dispatch: WorkDisp
   const announcement = state.phase === "submitting" ? t("timeline.workingAnnouncement")
     : latest?.role === "assistant" ? `${t("timeline.turn")} ${terminalCopy(latest.terminal, t)}。` : "";
   return <div className="timeline">{state.messages.map((message) => message.role === "user"
-    ? <article className="message user-message" key={message.id}><div>{message.text}</div></article>
+    ? <UserMessage key={message.id} id={message.id} text={message.text}
+      copied={copiedId === message.id} onCopy={copyResult} t={t} />
     : !message.text && message.suspension
       ? <p className="sr-only" role="status" key={message.id}>{terminalCopy(message.terminal, t)}</p>
     : <article className="message assistant-message" key={message.id}><div>
@@ -1141,6 +1152,48 @@ function Timeline({ state, dispatch, t }: { state: WorkState; dispatch: WorkDisp
     </article>}
     <p className="sr-only" aria-live="polite" aria-atomic="true">{announcement}</p>
   </div>;
+}
+
+export function UserMessage({ id, text, copied, onCopy, t }: {
+  id: string;
+  text: string;
+  copied: boolean;
+  onCopy: (id: string, text: string) => Promise<void>;
+  t: (key: MessageKey) => string;
+}) {
+  const content = useRef<HTMLDivElement>(null);
+  const [collapsible, setCollapsible] = useState(false);
+  const [expanded, setExpanded] = useState(false);
+  const measure = useCallback(() => {
+    const element = content.current;
+    if (!element) return;
+    const measured = Number.parseFloat(window.getComputedStyle(element).lineHeight);
+    const lineHeight = Number.isFinite(measured) ? measured : 22;
+    setCollapsible(element.scrollHeight > lineHeight * 20 + 1);
+  }, [text]);
+  useLayoutEffect(() => {
+    measure();
+    if (typeof ResizeObserver === "undefined" || !content.current) return;
+    const observer = new ResizeObserver(measure);
+    observer.observe(content.current);
+    return () => observer.disconnect();
+  }, [measure]);
+  const collapsed = collapsible && !expanded;
+  return <article className="message user-message"><div className="user-turn">
+    <div className="user-message-bubble">
+      <div ref={content} className={collapsed ? "user-message-content collapsed" : "user-message-content"}
+        data-collapsed-lines={collapsed ? 19 : undefined}>{text}</div>
+      {collapsed && <span className="user-message-ellipsis" aria-hidden="true">…</span>}
+      {collapsible && <button className={expanded ? "user-message-toggle expanded" : "user-message-toggle"}
+        type="button" aria-expanded={expanded} onClick={() => setExpanded((current) => !current)}>
+        <span>{t(expanded ? "timeline.showLess" : "timeline.showMore")}</span><Icon name="chevron" />
+      </button>}
+    </div>
+    <div className="user-message-meta"><button type="button"
+      aria-label={t(copied ? "timeline.copied" : "timeline.copyRequest")}
+      title={t(copied ? "timeline.copied" : "timeline.copyRequest")}
+      onClick={() => void onCopy(id, text)}><Icon name={copied ? "check" : "copy"} /></button></div>
+  </div></article>;
 }
 
 export function TurnActivityDisclosure({ activities, t }: {

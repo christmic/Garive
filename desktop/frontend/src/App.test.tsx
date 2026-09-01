@@ -52,7 +52,7 @@ vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn(async (command: string, a
   }
 }) }));
 
-import { App, CommittedActivity, TurnActivityDisclosure, TurnProgress } from "./App";
+import { App, CommittedActivity, TurnActivityDisclosure, TurnProgress, UserMessage } from "./App";
 import { createTranslator } from "./i18n";
 import type { WorkState } from "./state/workspace";
 
@@ -432,6 +432,27 @@ describe("Desktop product experience", () => {
     expect(view.container.querySelectorAll(".turn-activity-row")).toHaveLength(2);
     fireEvent.click(view.container.querySelector("summary")!);
     expect(disclosure?.open).toBe(true);
+  });
+
+  it("collapses a measured long request and keeps copy in the Turn action row", async () => {
+    const descriptor = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "scrollHeight");
+    Object.defineProperty(HTMLElement.prototype, "scrollHeight", { configurable: true,
+      get() { return this.classList.contains("user-message-content") ? 500 : 0; } });
+    const onCopy = vi.fn(async () => undefined);
+    try {
+      const view = render(<UserMessage id="user-long" text={"A long request\n".repeat(24)}
+        copied={false} onCopy={onCopy} t={createTranslator("en")} />);
+      const content = view.container.querySelector(".user-message-content");
+      expect(content?.getAttribute("data-collapsed-lines")).toBe("19");
+      expect(screen.getByRole("button", { name: "Show more" }).getAttribute("aria-expanded")).toBe("false");
+      fireEvent.click(screen.getByRole("button", { name: "Show more" }));
+      expect(screen.getByRole("button", { name: "Show less" }).getAttribute("aria-expanded")).toBe("true");
+      fireEvent.click(screen.getByRole("button", { name: "Copy request" }));
+      await waitFor(() => expect(onCopy).toHaveBeenCalledWith("user-long", "A long request\n".repeat(24)));
+    } finally {
+      if (descriptor) Object.defineProperty(HTMLElement.prototype, "scrollHeight", descriptor);
+      else Reflect.deleteProperty(HTMLElement.prototype, "scrollHeight");
+    }
   });
 
   it("keeps the goal rail visible when durable work needs input", () => {

@@ -158,8 +158,13 @@ describe("Desktop visual accessibility contract", () => {
     expect(CSS).toContain(".work-menu .desktop-action-menu { left: -4px; width: 204px; }");
     expect(CSS).toContain(".product-menu-status { display: grid; grid-template-columns: 18px minmax(0, 1fr) 8px;");
     expect(CSS).toContain("grid-template-columns: 18px minmax(0, 1fr) auto");
-    expect(CSS).toContain(".user-message > div { max-width: var(--user-chat-width); padding: 10px var(--thread-content-margin); border: 0; border-radius: var(--radius-user-message); corner-shape: round;");
+    expect(CSS).toContain(".user-message-bubble { position: relative; display: flex; max-width: var(--user-chat-width); min-width: 0; padding: 10px var(--thread-content-margin);");
     expect(CSS).toContain("background: var(--surface-user-message)");
+    expect(CSS).toContain(".user-turn { display: flex; width: 100%; flex-direction: column; align-items: flex-end; gap: 4px;");
+    expect(CSS).toContain(".user-message-content.collapsed { max-height: calc(19 * 1.55em); overflow: hidden; }");
+    expect(CSS).toContain(".user-message-toggle { display: inline-flex; align-self: flex-start; align-items: center; gap: 4px; min-height: 20px; margin-top: 6px;");
+    expect(CSS).toContain(".user-message-meta { display: flex; min-height: 20px; gap: 2px; opacity: 0;");
+    expect(CSS).toContain(".user-message:hover .user-message-meta, .user-message:focus-within .user-message-meta { opacity: 1; }");
     expect(CSS).toContain(".result-meta { justify-content: flex-start; gap: 2px; min-height: 20px; margin-top: 6px;");
     expect(CSS).toContain("opacity: 0; transition: opacity var(--motion-basic) var(--ease-basic)");
     expect(CSS).toContain(".result-meta.attention { opacity: 1; }");

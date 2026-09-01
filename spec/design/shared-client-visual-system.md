@@ -566,6 +566,7 @@ space. The same rule applies in light and dark themes and at narrow widths.
 | Capacity | unavailable, normal, watch, critical, exhausted | scope, period, attribution, remaining/reset and continuation policy travel together |
 | Turn activity | active, completed, attention | uses only admitted per-Turn Activity; active starts expanded, completed starts collapsed |
 | Result actions | hidden, hover, focus, attention | 20 px row, 6 px top gap, 2 px action gap; ordinary actions disclose on turn hover/focus |
+| User Turn | short, measured-long, expanded, hover, focus | 70% bubble, 22 px radius, 16 px inset, 10 px vertical padding; actions belong to the full-width right-aligned Turn |
 
 ## Capacity view contract
 
@@ -618,6 +619,11 @@ product admits those actions.
   220 ms and respects reduced motion.
 - Collapse state may be local to the mounted Turn. Clients must not claim
   cross-session persistence until Runtime or preferences admit that contract.
+- User requests collapse only after rendered measurement exceeds 20 lines.
+  Collapsed content reserves 19 lines plus a separate ellipsis line; the
+  in-bubble toggle exposes `aria-expanded`. Copy is disclosed on Turn
+  hover/focus. Timestamp and Edit stay absent without admitted product facts
+  and mutation semantics.
 
 ## Content rules
 
