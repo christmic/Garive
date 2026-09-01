@@ -20,7 +20,7 @@ impl RoleMarker {
     pub(super) fn span(self, colors: Palette) -> Span<'static> {
         match self {
             Self::User => Span::styled("› ", colors.request_marker),
-            Self::Agent => Span::styled("◆ Garive", colors.agent),
+            Self::Agent => Span::styled("• ", colors.agent),
         }
     }
 }
@@ -270,7 +270,7 @@ mod tests {
     fn role_markers_and_live_caret_preserve_non_color_identity() {
         let colors = super::super::palette(crate::Theme::Dark);
         assert_eq!(RoleMarker::User.span(colors).content, "› ");
-        assert_eq!(RoleMarker::Agent.span(colors).content, "◆ Garive");
+        assert_eq!(RoleMarker::Agent.span(colors).content, "• ");
 
         let mut active = Line::raw("answer");
         LiveCaret::for_output(true, false, false).append_to(&mut active, colors);

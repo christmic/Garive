@@ -52,8 +52,11 @@ The fullscreen frame has four vertical regions:
 
 - The context line is one row. It is not a bordered toolbar. Session identity
   leads; connection state appears only when non-healthy.
-- Transcript content uses a bounded reading measure on wide terminals. Extra
-  width becomes breathing room or an optional inspector, never longer prose.
+- The ordinary transcript and Composer share the terminal's left axis, as the
+  audited Codex, Claude Code, and Qoder CLI surfaces do. Markdown can retain a
+  bounded prose measure internally, but the whole application shell must not
+  become a narrow centered island. Extra width belongs to code, tables,
+  overlays, or an explicitly opened Inspector.
 - User turns use a restrained surface and a left role marker. Agent prose uses
   the terminal background with stronger typographic rhythm. Neither is placed
   in a heavy full-width card.

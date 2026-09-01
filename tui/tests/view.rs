@@ -64,7 +64,7 @@ fn standard_frame_has_conversation_context_and_safe_text() {
         text: "answer\u{1b}[31m\u{2066}x\u{2069}".into(),
     });
     let standard = frame(&model, 120, 18);
-    assert!(standard.contains("◆ Garive"));
+    assert!(standard.contains("• "));
     assert!(standard.contains("Current session"));
     assert!(!standard.contains("Sessions 3"));
     assert!(standard.contains("answer�[31m⟦LRI⟧x⟦PDI⟧"));

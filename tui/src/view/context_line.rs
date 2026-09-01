@@ -14,6 +14,14 @@ use crate::{
 
 use super::{agent_label, palette};
 
+pub(super) fn visible(model: &AppModel) -> bool {
+    model.connection != ConnectionState::Online
+        || matches!(
+            model.execution,
+            ExecutionState::Suspended | ExecutionState::Failed
+        )
+}
+
 pub(super) fn render(model: &AppModel, theme: Theme, area: Rect, buffer: &mut Buffer) {
     if area.is_empty() {
         return;

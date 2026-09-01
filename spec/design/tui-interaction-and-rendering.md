@@ -39,28 +39,25 @@ remote authentication remain unavailable until their owning slices exist.
 ## Information architecture
 
 ```text
-Session title · Agent                                            running
+› Explain the recovery path.
+  ✓ Read runtime state · +2 completed
+• The Runtime commits the durable result while the live tail remains
+  replaceable.▍
 
-You
-  Explain the recovery path.
-
-  3 actions · 8s
-  ◆ Garive
-    The Runtime commits ...▍
-
-┌ composer -----------------------------------------------------------┐
-│ > Ask a follow-up                                                    │
-└---------------------------------------------------------------------┘
-  Esc cancel
+  Esc interrupt
+› Ask a follow-up
 ```
 
-The frame has four semantic regions: a one-row `ContextLine`, the conversation
-transcript, the persistent `Composer`, and an optional one-row `HintLine`.
-The transcript is the primary plane. A permanent navigation rail, bordered
-toolbar, conversation frame, and second status bar are prohibited. Session
-navigation, commands, recovery, and decisions use bounded overlays. At wide
-sizes an explicitly opened `Inspector` may share the work surface without
-changing transcript truth or reading measure.
+The frame has four semantic regions: an exceptional-only `ContextLine`, the
+conversation transcript, the persistent `Composer`, and an optional one-row
+`HintLine`. In a healthy conversation the ContextLine has zero height; Session
+identity is available through the terminal title and switcher instead of a
+permanent toolbar. Transcript and Composer share the terminal's left axis.
+A permanent navigation rail, bordered toolbar, conversation frame, centered
+application island, and second status bar are prohibited. Session navigation,
+commands, recovery, and decisions use bounded overlays. At wide sizes an
+explicitly opened `Inspector` may share the work surface without changing
+transcript truth.
 
 The transcript composes `TurnBlock` values. A Turn owns one restrained User
 request, its `ActivityStack`, one `LiveAnswer` or committed `MarkdownAnswer`,
@@ -77,16 +74,18 @@ frames.
 | `<40` | minimum | safe minimum-size view; no raw IDs or content echo; the draft remains in memory |
 | `40..=51` | linear | full-width transcript, collapsed activity summary, and at most one hint |
 | `52..=79` | compact | full-width transcript with compact metadata; all secondary surfaces are overlays |
-| `80..=128` | standard | centered bounded transcript; Session and Inspector surfaces are overlays |
-| `>=129` | wide | 96-column transcript, one-cell gap, and optional explicit 32-column Inspector |
+| `80..=128` | standard | full-width workbench with a shared transcript/Composer axis; Session and Inspector surfaces are overlays |
+| `>=129` | wide | full-width workbench; opening Inspector explicitly reserves a 96-column transcript and one-cell gap |
 
 Height below eight rows shows a safe minimum-size view. Height pressure removes
 ambient context, secondary hints, and collapsed history before reducing the
 Composer below two content rows or hiding an active decision. No layout
 calculation may underflow or panic for any `u16` terminal size.
 
-The conversation text column has a maximum width. Extra wide space belongs to
-margins or the activity inspector, not longer prose lines.
+Markdown prose may impose an internal reading measure without moving the shell
+axis; code, tables, Composer, overlays, and the detached-follow cue can use the
+available terminal width. Extra width must not turn the entire TUI into a
+centered narrow island.
 
 ## Focus and overlay model
 
@@ -116,12 +115,15 @@ the background `HintLine` is absent and the running-Turn rail never advertises
 transcript does not already expose work; otherwise it is empty. The overlay
 alone names the currently executable `Esc`, `Enter`, or decision action. Closing
 the overlay restores the background cue without changing execution state.
-After cancellation is admitted, the same Turn-control component replaces the
-generic frozen/running copy with `Requesting cancellation…`. Exact Host
-acceptance changes it to `Cancellation accepted · waiting for Turn to stop`;
-neither phase advertises another cancel action. Unknown outcome is passive
-behind its recovery overlay. Fullscreen, minimum-width and linear presenters
-consume this same semantic projection.
+After cancellation is admitted, the same Turn-control component is the only
+status voice adjacent to the retained draft. It replaces generic
+frozen/running copy with `Cancelling…`; exact Host acceptance changes it to
+`Stopping…`. Neither phase advertises another cancel action or repeats a
+second durable-truth hint. Unknown outcome is the passive
+`Cancel status unknown` behind its recovery overlay. A frozen draft is shown
+from its beginning at compact heights instead of following its old caret to a
+meaningless suffix. Fullscreen, minimum-width and linear presenters consume
+this same semantic projection.
 An unknown command bound to a Session becomes an actionable overlay only after
 that exact Session is selected. Startup may announce that recovery exists, but
 must not expose `Enter` before the controller can acquire the same pending
@@ -711,9 +713,11 @@ the suspension only while that exact suspension still exists.
 | State | Visible wording |
 |---|---|
 | submitting | `Committing turn…` |
-| following | `Agent running` |
+| following without a visible active transcript row | `Working…` |
 | live preview unavailable | `Live feedback unavailable` |
-| cancelling | `Cancellation requested…` |
+| cancel request pending | `Cancelling…` |
+| cancel accepted; terminal pending | `Stopping…` |
+| cancel outcome unknown | `Cancel status unknown` |
 | disconnected | `Disconnected; Turn state unknown` |
 | reconnecting | `Reconnecting (2/5)…` |
 | unknown command | `Command result unknown; exact retry available` |

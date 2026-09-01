@@ -49,15 +49,15 @@ pub(super) fn render(
 fn phase_copy(answer: &LiveAnswer, width: u16) -> &'static str {
     if answer.ended {
         if width < 52 {
-            return " · Awaiting saved result";
+            return "Awaiting saved result";
         }
-        return " · Waiting for durable result";
+        return "Waiting for durable result";
     }
     match answer.phase {
-        Some(LiveAnswerPhase::Preparing) => " · Preparing context",
-        Some(LiveAnswerPhase::Generating) => " · Generating response",
-        Some(LiveAnswerPhase::Finalizing) => " · Finalizing response",
-        None => " · Working",
+        Some(LiveAnswerPhase::Preparing) => "Preparing context",
+        Some(LiveAnswerPhase::Generating) => "Writing…",
+        Some(LiveAnswerPhase::Finalizing) => "Finishing…",
+        None => "Working…",
     }
 }
 
@@ -150,7 +150,7 @@ mod tests {
             true,
             &mut cache,
         );
-        assert_eq!(line_text(&lines)[0], "◆ Garive · Awaiting saved result");
+        assert_eq!(line_text(&lines)[0], "• Awaiting saved result");
         assert!(unicode_width::UnicodeWidthStr::width(line_text(&lines)[0].as_str()) <= 36);
     }
 

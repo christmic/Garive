@@ -50,12 +50,13 @@ pub(crate) fn status_motion_enabled(model: &AppModel, reduced: bool) -> bool {
 pub(crate) fn status_motion(model: &AppModel, frame: MotionFrame) -> StatusMotion {
     let execution = match model.execution {
         ExecutionState::Idle => "ready",
-        ExecutionState::Following => "Agent running",
+        ExecutionState::Following => "Working…",
         ExecutionState::Suspended => "action required",
         ExecutionState::Failed => "failed",
     };
     let execution_label = match (model.execution, frame.pulse()) {
         (ExecutionState::Following, Some(pulse)) => format!("{pulse} {execution}"),
+        (ExecutionState::Following, None) => format!("• {execution}"),
         _ => execution.into(),
     };
     StatusMotion { execution_label }
@@ -77,10 +78,10 @@ mod tests {
         assert!(!status_motion_enabled(&model, true));
         assert_eq!(
             status_motion(&model, MotionFrame::animated(4)).execution_label,
-            "● Agent running"
+            "● Working…"
         );
         let reduced = status_motion(&model, MotionFrame::reduced());
-        assert_eq!(reduced.execution_label, "Agent running");
+        assert_eq!(reduced.execution_label, "• Working…");
 
         model.connection = ConnectionState::Online;
         model.execution = ExecutionState::Idle;

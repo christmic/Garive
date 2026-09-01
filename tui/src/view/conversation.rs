@@ -299,10 +299,7 @@ fn render_timeline_item(
             lines.extend(request_surface::render(&item.text, theme, width));
         }
         TimelineRole::Agent => {
-            lines.push(Line::from(
-                super::primitives::RoleMarker::Agent.span(colors),
-            ));
-            lines.extend(render_markdown(
+            let mut answer = render_markdown(
                 &item.text,
                 "  ",
                 colors.normal,
@@ -310,7 +307,20 @@ fn render_timeline_item(
                 colors.muted,
                 super::markdown_syntax::SyntaxPalette::from_palette(colors),
                 width,
-            ));
+            );
+            if let Some(first) = answer.first_mut() {
+                if first
+                    .spans
+                    .first()
+                    .is_some_and(|span| span.content.as_ref() == "  ")
+                {
+                    first.spans.remove(0);
+                }
+                first
+                    .spans
+                    .insert(0, super::primitives::RoleMarker::Agent.span(colors));
+            }
+            lines.extend(answer);
         }
         TimelineRole::Status => {
             let text = safe_text(&item.text);

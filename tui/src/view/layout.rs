@@ -4,7 +4,7 @@ use ratatui::layout::{Constraint, Layout, Rect};
 
 use crate::application::AppModel;
 
-use super::{composer, inspector, primitives::centered_column};
+use super::{composer, context_line, inspector, primitives::centered_column};
 
 const STANDARD_TRANSCRIPT_WIDTH: u16 = 96;
 
@@ -33,12 +33,12 @@ impl FrameLayout {
                 inspector.x.saturating_sub(x).saturating_sub(1),
                 area.height,
             )
-        } else if area.width >= 80 {
+        } else if model.inspector.open && area.width >= 80 {
             centered_column(area, STANDARD_TRANSCRIPT_WIDTH)
         } else {
             area
         };
-        let context_height = u16::from(content.height >= 10);
+        let context_height = u16::from(content.height >= 10 && context_line::visible(model));
         // Keep the interactive surface stationary when contextual hints appear.
         // Below nine rows the hint is deliberately removed by the compact layout.
         let hint_height = u16::from(content.height >= 9);
@@ -118,5 +118,16 @@ mod tests {
         assert_eq!(side_by_side.inspector.map(|area| area.x), Some(97));
         assert_eq!(side_by_side.transcript.x, 0);
         assert_eq!(side_by_side.transcript.width, STANDARD_TRANSCRIPT_WIDTH);
+    }
+
+    #[test]
+    fn ordinary_workbench_keeps_transcript_and_composer_on_the_terminal_axis() {
+        let model = AppModel::default();
+        let frame = FrameLayout::resolve(&model, Rect::new(0, 0, 160, 24));
+
+        assert_eq!(frame.transcript.x, 0);
+        assert_eq!(frame.transcript.width, 160);
+        assert_eq!(frame.composer.x, 0);
+        assert_eq!(frame.composer.width, 160);
     }
 }

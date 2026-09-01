@@ -257,7 +257,7 @@ mod tests {
         reflow_visual_anchor(&mut model, Theme::Dark, 80, &mut RenderCache::default());
 
         assert_eq!(model.viewport.anchor_key.as_deref(), Some("answer"));
-        assert_eq!(model.viewport.source_line, 2);
+        assert_eq!(model.viewport.source_line, 1);
     }
 
     #[test]
