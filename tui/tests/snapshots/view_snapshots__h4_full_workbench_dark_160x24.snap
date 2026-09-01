@@ -98,7 +98,7 @@ expression: wide
                                            │    /theme dark         Use dark theme                                  │
                                            │    /theme light        Use light theme                                 │
                                            │    /theme mono         Use mono theme                                  │
-                                           │    /mouse auto         Use automatic mouse capture now                 │
+                                           │    /mouse auto         Keep terminal selection and scrolling           │
                                            │                                                                        │
                                            │    ↑/↓ select   Home/End edge   Enter run   Esc close                  │
                                            ╰────────────────────────────────────────────────────────────────────────╯

@@ -49,7 +49,7 @@ Use `garive-tui --help` to inspect the executable's current CLI contract.
 | `--definition <ID>` | Choose the installed Agent definition used for new Sessions. |
 | `--state-dir <ABSOLUTE_PATH>` | Override the private local presentation-state directory. |
 | `--theme system\|dark\|light\|mono` | Override the saved color preference for this process. |
-| `--mouse auto\|on\|off` | Override the saved mouse-capture preference. |
+| `--mouse auto\|on\|off` | Override mouse capture; `auto` safely leaves native selection and scrolling enabled. |
 | `--screen-reader` | Use ordered linear output without alternate-screen addressing. |
 | `--reduced-motion` | Replace active status pulses with stable glyphs and stop their redraw timer. |
 | `--no-prompt-history` | Disable prompt-history reads and writes without deleting the file. |
@@ -297,7 +297,7 @@ condition is true.
 | `/reconnect` | Reload the selected Session and resume its event stream. |
 | `/cancel` | Request cancellation of the active Turn. |
 | `/theme system\|dark\|light\|mono` | Change the current theme. |
-| `/mouse on\|off` | Save mouse capture for the next terminal session. |
+| `/mouse auto\|on\|off` | Change mouse capture immediately and save the same preference. |
 | `/copy last` | Request an OSC 52 copy of the last visible Agent completion. |
 | `/copy selection` | Request an OSC 52 copy of the active composer selection. |
 | `/copy session-id` | Request an OSC 52 copy of the selected Session ID. |
@@ -461,9 +461,11 @@ not inferred failure. Wait for bounded automatic reconnect or run `/reconnect`.
 If a pending recovery overlay is present, use exact retry after reading the
 recovery guidance.
 
-**Mouse is unchanged after `/mouse`**: the command updates the preference for
-the next terminal session so the current terminal's capture lifecycle remains
-coherent.
+**Terminal text selection changed after `/mouse on`**: mouse capture changed
+immediately, so Garive now receives pointer input. Use the terminal's capture-
+bypass modifier when supported, or run `/mouse auto` or `/mouse off` to restore
+native selection and scrolling immediately. `auto` is the safe default and does
+not capture the mouse.
 
 **`Set VISUAL or EDITOR before editing externally.`**: configure one editor
 command that waits until its document closes. GUI editors commonly need a

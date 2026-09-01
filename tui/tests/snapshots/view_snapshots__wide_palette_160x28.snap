@@ -17,7 +17,7 @@ expression: "frame(&palette, Theme::Light, 160, 28)"
                                            │    /theme dark         Use dark theme                                  │
                                            │    /theme light        Use light theme                                 │
                                            │    /theme mono         Use mono theme                                  │
-                                           │    /mouse auto         Use automatic mouse capture now                 │
+                                           │    /mouse auto         Keep terminal selection and scrolling           │
                                            │    /mouse on           Enable mouse capture now                        │
                                            │    /mouse off          Disable mouse capture now                       │
                                            │    /copy last          Copy last completion                            │

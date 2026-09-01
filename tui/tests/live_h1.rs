@@ -122,8 +122,10 @@ fn shipping_tui_boots_and_restores_a_real_pty() {
             !text.contains("\x1b]10;?\x1b\\") && !text.contains("\x1b]11;?\x1b\\"),
             "explicit themes must not probe terminal colors or delay the first frame"
         );
-        assert!(text.contains("\x1b[?1000h"), "auto mouse capture entered");
-        assert!(text.contains("\x1b[?1000l"), "auto mouse capture restored");
+        assert!(
+            !text.contains("\x1b[?1000h") && !text.contains("\x1b[?1000l"),
+            "default auto policy preserves native terminal mouse behavior"
+        );
         assert!(text.contains("\x1b[?2004l"), "bracketed paste restored");
         assert!(
             text.contains("\x1b]0;Garive · Workspace · Connecting · Ready\x07"),
@@ -183,7 +185,7 @@ fn session_picker_loads_and_selects_a_deduplicated_typed_host_page() {
 }
 
 #[test]
-fn mouse_command_reconfigures_the_current_full_screen_pty_and_persists_auto() {
+fn mouse_command_reconfigures_the_current_full_screen_pty_and_persists_safe_auto() {
     let (address, server) = empty_host();
     let temporary = tempfile::tempdir().unwrap();
     let transcript = temporary.path().join("mouse-reconfiguration.log");
@@ -218,8 +220,8 @@ fn mouse_command_reconfigures_the_current_full_screen_pty_and_persists_auto() {
             send "\033"
             after 100
             send "/mouse auto\r\r"
-            must_expect "\033\[?1000h" 16
-            must_expect "automatic" 17
+            must_expect "selection" 16
+            must_expect "available" 17
             send "\033"
             after 100
             send "\021"
@@ -237,8 +239,8 @@ fn mouse_command_reconfigures_the_current_full_screen_pty_and_persists_auto() {
 
     let text = fs::read_to_string(transcript).unwrap();
     assert_eq!(text.matches("\x1b[?1049h").count(), 1);
-    assert_eq!(text.matches("\x1b[?1000h").count(), 2);
-    assert_eq!(text.matches("\x1b[?1000l").count(), 2);
+    assert_eq!(text.matches("\x1b[?1000h").count(), 1);
+    assert_eq!(text.matches("\x1b[?1000l").count(), 1);
     let preferences = fs::read_to_string(state.join("preferences.v1.json")).unwrap();
     assert!(preferences.contains(r#""mouse":"auto""#));
 }

@@ -395,7 +395,7 @@ sending the text to Host.
 | `/reconnect` | none | start explicit reconnect from saved cursor |
 | `/cancel` | none | request cancellation of selected running Turn |
 | `/theme` | `system`, `dark`, `light`, or `mono` | update local preference |
-| `/mouse` | `on` or `off` | change mouse capture safely |
+| `/mouse` | `auto`, `on`, or `off` | change mouse capture safely now and persist it |
 | `/copy` | `last`, `selection`, or `session-id` | copy visible completion, active composer selection, or opaque ID |
 | `/quit` | none | open quit confirmation |
 

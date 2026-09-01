@@ -214,18 +214,15 @@ impl RuntimeState {
 
     pub(in crate::runtime) fn set_mouse_mode(&mut self, mode: crate::MouseMode) {
         self.config.mouse = mode;
-        let enabled = crate::args::mouse_capture_enabled(mode, self.config.screen_reader, true);
+        let enabled = crate::args::mouse_capture_enabled(mode, self.config.screen_reader);
         if !self.config.screen_reader {
             self.terminal_reconfiguration = Some(TerminalReconfiguration::MouseCapture { enabled });
         }
         self.model.notice = Some(
             match (self.config.screen_reader, mode, enabled) {
                 (true, _, _) => "Mouse capture stays disabled in accessible terminal mode.",
-                (false, crate::MouseMode::Auto, true) => {
-                    "Mouse capture is automatic and enabled for this full-screen session."
-                }
-                (false, crate::MouseMode::Auto, false) => {
-                    "Mouse capture is automatic and disabled for this terminal session."
+                (false, crate::MouseMode::Auto, _) => {
+                    "Garive mouse capture is off; terminal selection and scrolling remain available."
                 }
                 (false, crate::MouseMode::On, _) => {
                     "Mouse capture is enabled for this terminal session."

@@ -280,6 +280,12 @@ fields. Defaults are `system`, OS reduced-motion when discoverable otherwise
 false, mouse `auto`, expanded rail, closed inspector, bell true, and draft
 persistence true.
 
+`auto` is a conservative, forward-compatible preference and currently resolves
+to capture off so native terminal selection and scrolling remain available.
+Only `on` emits mouse-capture enable sequences. A slash-command change is
+applied to the live terminal first and persists the identical enum value;
+screen-reader mode always resolves all three values to capture off.
+
 `activity_inspector` is Inspector's only persisted value and means open or
 closed. Its Activity/Recovery/Details variant, selected entry identity, scroll
 window, and focus are transient application state and never enter this file.

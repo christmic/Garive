@@ -427,9 +427,12 @@ hook. It drains pending terminal writes, disables mouse/focus/paste features,
 shows and resets the cursor, leaves alternate screen, disables raw mode, and
 flushes. No async task may write terminal bytes after restore begins.
 
-Mouse capture is off by default. It activates only after explicit user action
-or configuration because some terminal/remote combinations leak mouse reports.
-The same action can disable it without restarting.
+Mouse capture is off by default. `auto` is the conservative policy: it preserves
+the terminal's native selection and scrolling and does not emit mouse-enable
+sequences. Only an explicit persisted or launch-time `on` activates capture;
+`--screen-reader` still overrides every mode to off. `/mouse auto|on|off`
+reconfigures the acquired terminal immediately, without leaving the alternate
+screen or restarting, and stores the same preference for the next launch.
 
 `--screen-reader` uses a linear, non-alternate presentation: completed message
 blocks are printed once, status changes use concise lines, interactive overlays

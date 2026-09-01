@@ -30,7 +30,7 @@ pub enum Theme {
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize, ValueEnum)]
 #[serde(rename_all = "lowercase")]
 pub enum MouseMode {
-    /// Defer to terminal capabilities and local preferences.
+    /// Preserve native terminal selection and scrolling unless policy evolves.
     #[default]
     Auto,
     /// Enable mouse capture after terminal acquisition.
@@ -109,18 +109,14 @@ pub(crate) fn apply_terminal_environment(
     }
 }
 
-pub(crate) fn mouse_capture_enabled(
-    mode: MouseMode,
-    screen_reader: bool,
-    full_screen: bool,
-) -> bool {
+pub(crate) fn mouse_capture_enabled(mode: MouseMode, screen_reader: bool) -> bool {
     if screen_reader {
         return false;
     }
     match mode {
         MouseMode::On => true,
         MouseMode::Off => false,
-        MouseMode::Auto => full_screen,
+        MouseMode::Auto => false,
     }
 }
 
@@ -235,13 +231,12 @@ mod tests {
     }
 
     #[test]
-    fn mouse_capture_resolution_preserves_preference_and_requires_accessible_full_screen() {
-        assert!(mouse_capture_enabled(MouseMode::On, false, false));
-        assert!(!mouse_capture_enabled(MouseMode::Off, false, true));
-        assert!(mouse_capture_enabled(MouseMode::Auto, false, true));
-        assert!(!mouse_capture_enabled(MouseMode::Auto, false, false));
+    fn mouse_capture_is_explicit_and_accessible_mode_always_wins() {
+        assert!(mouse_capture_enabled(MouseMode::On, false));
+        assert!(!mouse_capture_enabled(MouseMode::Off, false));
+        assert!(!mouse_capture_enabled(MouseMode::Auto, false));
         for mode in [MouseMode::Auto, MouseMode::On, MouseMode::Off] {
-            assert!(!mouse_capture_enabled(mode, true, true));
+            assert!(!mouse_capture_enabled(mode, true));
         }
     }
 }

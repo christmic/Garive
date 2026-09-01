@@ -44,7 +44,7 @@ pub(crate) const COMMAND_PALETTE: &[CommandSpec] = &[
     CommandSpec::new("/theme mono", "Use mono theme", CommandRequirement::Always),
     CommandSpec::new(
         "/mouse auto",
-        "Use automatic mouse capture now",
+        "Keep terminal selection and scrolling",
         CommandRequirement::Always,
     ),
     CommandSpec::new(
