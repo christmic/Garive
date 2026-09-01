@@ -1,4 +1,7 @@
-use std::{collections::BTreeSet, sync::Arc};
+use std::{
+    collections::BTreeSet,
+    sync::{Arc, Mutex},
+};
 
 use garive_core::{
     AgentFailureReason, AgentOutcome, ExecutionReport, GovernedSuspensionBinding,
@@ -24,7 +27,7 @@ use garive_plan::{
 };
 use garive_runtime::{
     commit_goal_command, commit_plan_command, commit_plan_replacement, commit_planned_turn,
-    get_turn, plan_activate_goal_from_authoritative_plan, plan_adopt_plan,
+    dispatch_plan_step_once, get_turn, plan_activate_goal_from_authoritative_plan, plan_adopt_plan,
     plan_complete_owned_step_from_turn, plan_complete_plan, plan_continue_owned_plan_turn,
     plan_continue_turn, plan_core_terminal, plan_fail_owned_step_from_turn, plan_goal_transition,
     plan_next_turn_cancellation_for_goal, plan_plan_replacement, plan_plan_transition,
@@ -36,8 +39,10 @@ use garive_runtime::{
     EffectiveRuntimeLimits, GetTurnQuery, GoalCommandContext, GoalPlanCoordinationError,
     GoalRuntimeError, GoalRuntimeTransition, InteractionInputRepresentation, LocalExecutionAttempt,
     LocalExecutionPolicy, LocalExecutionWorker, LocalWorkerDisposition, PlanCommandContext,
-    PlanRuntimeError, PlanRuntimeState, PlanRuntimeTransition, PlanStepExecutionStart,
-    RuntimeCommandId, SqliteLedger, StartTurnCommand,
+    PlanDispatchError, PlanDispatchOutcome, PlanDispatchTick, PlanRuntimeError, PlanRuntimeState,
+    PlanRuntimeTransition, PlanStepDispatchFactory, PlanStepDispatchInput, PlanStepExecutionStart,
+    PreparedPlanStepDispatch, RuntimeCommandId, SqliteLedger, StartTurnCommand, TurnDispatchError,
+    TurnDispatcher,
 };
 use serde_json::json;
 use sha2::{Digest, Sha256};
@@ -497,6 +502,106 @@ fn proposal_and_adoption_require_the_current_durable_goal_binding() {
         .unwrap()
         .iter()
         .all(|fact| fact.fact_id.as_str() != "claim-terminal-goal"));
+}
+
+#[test]
+fn bounded_dispatch_resumes_claim_and_starts_exactly_one_execution() {
+    let directory = tempdir().unwrap();
+    let path = directory.path().join("plan-dispatch.sqlite3");
+    let session = SessionId::try_from("session-1").unwrap();
+    let mut ledger = SqliteLedger::open(&path).unwrap();
+    open_session(&mut ledger, &session);
+    let proposed = plan_propose_plan(
+        &ledger,
+        &session,
+        &context("dispatch-propose"),
+        definition(),
+    )
+    .unwrap();
+    commit_plan_command(&mut ledger, session.clone(), 1, &proposed).unwrap();
+    let draft = recover(&ledger, &session);
+    let adopted = plan_adopt_plan(
+        &ledger,
+        &session,
+        &draft,
+        draft.state_version,
+        &context("dispatch-adopt"),
+        PlanRuntimeTransition::Adopt {
+            expected_goal_revision: 2,
+            expected_prior_plan_revision: None,
+            policy_reference: "dispatch-policy-v1".into(),
+            carry_forward_evidence: evidence(),
+        },
+    )
+    .unwrap();
+    commit_plan_command(
+        &mut ledger,
+        session.clone(),
+        draft.session_version,
+        &adopted,
+    )
+    .unwrap();
+    let tick = dispatch_tick();
+    let dispatcher = RecordingTurnDispatcher::default();
+    let mut unavailable = DispatchFactory { unavailable: true };
+    assert_eq!(
+        dispatch_plan_step_once(
+            &mut ledger,
+            &session,
+            "goal-1",
+            &tick,
+            &mut unavailable,
+            &dispatcher,
+        ),
+        Err(PlanDispatchError::PreparationFailed)
+    );
+    let claimed = recover(&ledger, &session);
+    assert_eq!(
+        claimed.snapshot.step(&step_id("prepare")).unwrap().state(),
+        StepState::Claimed
+    );
+    assert!(dispatcher.committed.lock().unwrap().is_empty());
+
+    let mut prepared = DispatchFactory { unavailable: false };
+    let PlanDispatchOutcome::Started {
+        committed,
+        dispatch_accepted,
+    } = dispatch_plan_step_once(
+        &mut ledger,
+        &session,
+        "goal-1",
+        &tick,
+        &mut prepared,
+        &dispatcher,
+    )
+    .unwrap()
+    else {
+        panic!("claimed Step must start")
+    };
+    assert!(dispatch_accepted);
+    assert_eq!(committed.snapshot_digest, digest('b'));
+    assert_eq!(
+        dispatcher.committed.lock().unwrap().as_slice(),
+        &[committed]
+    );
+    let running = recover(&ledger, &session);
+    assert_eq!(
+        running.snapshot.step(&step_id("prepare")).unwrap().state(),
+        StepState::Running
+    );
+    assert_eq!(
+        dispatch_plan_step_once(
+            &mut ledger,
+            &session,
+            "goal-1",
+            &tick,
+            &mut prepared,
+            &dispatcher,
+        )
+        .unwrap(),
+        PlanDispatchOutcome::ClaimBusy
+    );
+    assert_eq!(dispatcher.committed.lock().unwrap().len(), 1);
 }
 
 #[tokio::test]
@@ -1876,6 +1981,65 @@ fn digest(character: char) -> String {
 }
 fn timestamp() -> &'static str {
     "2026-08-31T00:00:00Z"
+}
+
+fn dispatch_tick() -> PlanDispatchTick {
+    PlanDispatchTick {
+        worker_reference: "worker:plan-dispatch".into(),
+        claim_id: "dispatch-claim".into(),
+        lease_epoch: 1,
+        clock_revision: "monotonic-v1".into(),
+        claimed_at_tick: 10,
+        expires_at_tick: 20,
+        observed_at_tick: 15,
+        attempt_id: "dispatch-attempt".into(),
+        claim_command_id: "dispatch-claim-command".into(),
+        start_command_id: "dispatch-start-command".into(),
+        recorded_at: timestamp().into(),
+    }
+}
+
+struct DispatchFactory {
+    unavailable: bool,
+}
+impl PlanStepDispatchFactory for DispatchFactory {
+    fn prepare(
+        &mut self,
+        input: PlanStepDispatchInput<'_>,
+    ) -> Result<PreparedPlanStepDispatch, PlanDispatchError> {
+        if self.unavailable {
+            return Err(PlanDispatchError::PreparationFailed);
+        }
+        assert_eq!(input.goal_id, "goal-1");
+        assert_eq!(input.plan_id, "plan-1");
+        assert_eq!(input.plan_revision, 1);
+        assert_eq!(input.step_id.as_str(), "prepare");
+        assert_eq!(input.objective, "Prepare");
+        Ok(PreparedPlanStepDispatch {
+            agent_instance_id: AgentInstanceId::try_from("agent-instance-1").unwrap(),
+            definition_id: AgentDefinitionId::try_from("agent-definition-1").unwrap(),
+            definition_revision: AgentDefinitionRevision::try_from("revision-1").unwrap(),
+            limits: EffectiveRuntimeLimits {
+                max_iterations: 4,
+                max_input_tokens: Some(4_096),
+                max_output_tokens: Some(2_048),
+                deadline_budget_ms: Some(30_000),
+            },
+            sandbox_profile_digest: digest('f'),
+            safety_decision_id: "safety-dispatch".into(),
+        })
+    }
+}
+
+#[derive(Default)]
+struct RecordingTurnDispatcher {
+    committed: Mutex<Vec<garive_runtime::CommittedTurn>>,
+}
+impl TurnDispatcher for RecordingTurnDispatcher {
+    fn dispatch(&self, turn: &garive_runtime::CommittedTurn) -> Result<(), TurnDispatchError> {
+        self.committed.lock().unwrap().push(turn.clone());
+        Ok(())
+    }
 }
 
 struct PlanCompletingModel;
