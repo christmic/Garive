@@ -381,6 +381,7 @@ fn empty_state_responsive_hierarchy_matches_reviewed_snapshot() {
     assert!(!matrix.contains("/ commands"));
     assert!(!matrix.contains("Connecting to your durable workspace"));
     assert!(!matrix.contains("A quiet place to get things done"));
+    assert!(!matrix.contains("Garive · New conversation"));
     assert!(matrix.contains("Install an Agent definition"));
     assert!(matrix.contains("Open /status"));
     insta::assert_snapshot!("empty_state_responsive_matrix", matrix);

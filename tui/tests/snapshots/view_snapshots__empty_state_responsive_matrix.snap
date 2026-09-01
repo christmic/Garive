@@ -1,6 +1,5 @@
 ---
 source: tui/tests/view_snapshots.rs
-assertion_line: 385
 expression: matrix
 ---
 ===== loading compact · Mono · 40x18 =====
@@ -81,7 +80,7 @@ New conversation  ·  Garive                                                    
 
 
 › Ask Garive anything
-  Garive · New conversation
+
 
 ===== not configured · Mono · 100x18 =====
 
@@ -101,7 +100,7 @@ New conversation  ·  Garive                                                    
 
 
 › Ask Garive anything
-  Garive · New conversation
+
 
 ===== degraded · Dark · 100x18 =====
 New conversation  ·  Garive                                                              unavailable

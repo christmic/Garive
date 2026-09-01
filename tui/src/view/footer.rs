@@ -55,30 +55,54 @@ fn render_ambient_footer(
     area: Rect,
     buffer: &mut Buffer,
 ) {
-    let session = model
-        .selected_session
-        .as_deref()
-        .and_then(|selected| {
-            model
-                .sessions
-                .iter()
-                .position(|session| session.session_id == selected)
-        })
-        .map_or_else(
-            || "New conversation".to_owned(),
-            |index| format!("Session {}", index + 1),
-        );
-    let product = if model.definitions.is_empty() && model.selected_session.is_none() {
-        "Garive"
-    } else {
-        "Agent"
+    let Some(session) = ambient_session_label(model) else {
+        return;
     };
     let left = Line::from(vec![
         Span::styled("  ", colors.muted),
-        Span::styled(product, colors.normal),
+        Span::styled("Agent", colors.normal),
         Span::styled(format!(" · {session}"), colors.muted),
     ]);
     Paragraph::new(left).render(area, buffer);
+}
+
+fn ambient_session_label(model: &AppModel) -> Option<String> {
+    let selected = model.selected_session.as_deref()?;
+    model
+        .sessions
+        .iter()
+        .position(|session| session.session_id == selected)
+        .map(|index| format!("Session {}", index + 1))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn ambient_identity_requires_a_real_selected_session() {
+        assert_eq!(ambient_session_label(&AppModel::default()), None);
+
+        let mut model = AppModel {
+            selected_session: Some("missing".into()),
+            ..Default::default()
+        };
+        assert_eq!(ambient_session_label(&model), None);
+
+        model.sessions.push(garive_host_client::SessionSummary {
+            api_version: "v1".into(),
+            session_id: "missing".into(),
+            agent_instance_id: "agent".into(),
+            definition_id: "definition".into(),
+            definition_revision: "revision".into(),
+            opened_at: "2026-09-01T00:00:00Z".into(),
+            latest_position: 0,
+            latest_turn_id: None,
+            latest_turn_state: None,
+            turn_count: 0,
+        });
+        assert_eq!(ambient_session_label(&model).as_deref(), Some("Session 1"));
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]

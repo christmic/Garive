@@ -372,9 +372,11 @@ already owns model, directory, and permission identity.
 Garive does not have equivalent Host-backed model, directory, and permission
 facts in its current client projection, so it cannot truthfully reproduce that
 header. Its ordinary empty transcript stays silent: the exceptional
-`ContextLine`, Composer invitation, and ambient Agent/Session footer each own
-one non-overlapping role. When `ContextLine` is visible, it displaces ambient
-identity so the same workspace identity is not repeated at the top and bottom.
+`ContextLine`, Composer invitation, and selected durable Session footer each
+own one non-overlapping role. Before a durable Session exists, the Composer
+invitation is sufficient and the reserved footer stays blank. When
+`ContextLine` is visible, it displaces ambient identity so the same workspace
+identity is not repeated at the top and bottom.
 
 ### Event and terminal ownership
 

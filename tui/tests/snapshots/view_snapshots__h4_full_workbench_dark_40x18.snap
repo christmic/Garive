@@ -20,7 +20,7 @@ expression: compact
 
 • Preparing…  ·  esc to interrupt
 › A retained follow-up draft
-  Agent · New conversation
+
 
 ===== first presented delta =====
 
@@ -40,7 +40,7 @@ expression: compact
 
 • Preparing…  ·  esc to interrupt
 › A retained follow-up draft
-  Agent · New conversation
+
 
 ===== second delta with activity =====
 
@@ -60,7 +60,7 @@ expression: compact
 
 • Writing…  ·  esc to interrupt
 › A retained follow-up draft
-  Agent · New conversation
+
 
 ===== overlay while streaming =====
 
@@ -80,7 +80,7 @@ Showing 1–8 / 21 · ↓13
   Enter run   Esc close
 • Writing…
 › A retained follow-up draft
-  Agent · New conversation
+
 
 ===== stream restored after overlay =====
 
@@ -100,7 +100,7 @@ Showing 1–8 / 21 · ↓13
 
 • Writing…  ·  esc to interrupt
 › A retained follow-up draft
-  Agent · New conversation
+
 
 ===== finalizing =====
 
@@ -120,7 +120,7 @@ Showing 1–8 / 21 · ↓13
 
 • Finishing…  ·  esc to interrupt
 › A retained follow-up draft
-  Agent · New conversation
+
 
 ===== ended awaiting durable =====
 
@@ -140,7 +140,7 @@ Showing 1–8 / 21 · ↓13
 
 • Saving…  ·  esc to interrupt
 › A retained follow-up draft
-  Agent · New conversation
+
 
 ===== durable takeover =====
 
@@ -160,4 +160,3 @@ Showing 1–8 / 21 · ↓13
 
 
 › A retained follow-up draft
-  Agent · New conversation

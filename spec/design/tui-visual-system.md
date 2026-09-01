@@ -86,7 +86,9 @@ be absent. Its reserved slot then renders the muted `AmbientFooter` with public
 Agent/Session identity, never a permanent shortcut legend. When exceptional
 state makes `ContextLine` visible, it owns that identity and the reserved footer
 slot stays blank unless an actionable `HintLine` displaces it; identity cannot
-appear at both edges of the workspace. At supported heights
+appear at both edges of the workspace. Before a selected durable Session
+exists, the Composer invitation owns the new-work identity and the ambient
+footer remains blank instead of repeating `Agent · New conversation`. At supported heights
 of nine rows or more, the slot remains allocated so selection, notices, and Host events never
 move the Composer hit geometry; tiny layouts below nine rows remove the slot as
 part of their explicit degradation.
@@ -191,7 +193,7 @@ second persistent status row are prohibited.
 
 An ordinary empty transcript is intentionally silent. `ContextLine` owns
 loading and exceptional connection truth, `ComposerDock` owns the invitation
-to act, and `AmbientFooter` owns product and Session identity. The transcript
+to act, and `AmbientFooter` owns an existing selected Session's identity only. The transcript
 must not repeat the brand, invitation, shortcut discovery, or loading state.
 Only blocking empty states render body copy: missing configuration names the
 Agent-install path and degraded Host access names `/status` as the recovery
