@@ -5,13 +5,16 @@ use std::{
     net::SocketAddr,
     path::{Path, PathBuf},
     process::Command,
-    sync::{Arc, Mutex},
+    sync::{
+        atomic::{AtomicBool, AtomicUsize, Ordering},
+        Arc, Mutex,
+    },
     time::Duration,
 };
 
 use garive_core::{
     AgentEvent, AgentEventKind, AgentOutcome, EventSink, ExecutionId, ExecutionReport, SessionId,
-    TurnId, UsageSummary,
+    StopReason, TurnId, UsageSummary,
 };
 use garive_llm::{ModelItem, ModelStreamEvent, TokenCount};
 use garive_runtime::{
@@ -23,6 +26,8 @@ use tokio::sync::{oneshot, watch};
 use tokio::{io::copy_bidirectional, net::TcpListener};
 
 struct Clock;
+
+static LIVE_H4_TEST_GATE: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 
 impl HostClock for Clock {
     fn recorded_at(&self) -> String {
@@ -42,6 +47,7 @@ impl TurnDispatcher for CaptureDispatcher {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn shipping_tui_recovers_live_snapshot_then_converges_to_durable_truth() {
+    let _gate = LIVE_H4_TEST_GATE.lock().await;
     let temporary = tempfile::tempdir().unwrap();
     let database = temporary.path().join("runtime.sqlite3");
     let hub = LiveOutputHub::new(LiveOutputLimits {
@@ -227,6 +233,224 @@ async fn shipping_tui_recovers_live_snapshot_then_converges_to_durable_truth() {
     server_stopped.await.unwrap().unwrap();
 }
 
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn shipping_tui_keeps_input_help_and_cancel_responsive_during_a_live_flood() {
+    let _gate = LIVE_H4_TEST_GATE.lock().await;
+    let temporary = tempfile::tempdir().unwrap();
+    let database = temporary.path().join("runtime.sqlite3");
+    let hub = LiveOutputHub::new(LiveOutputLimits {
+        max_active_executions: 1,
+        max_preview_bytes: 1_024 * 1_024,
+        max_event_bytes: 64,
+        broadcast_capacity: 65_536,
+        max_subscribers_per_session: 1,
+    })
+    .unwrap();
+    let dispatcher = Arc::new(CaptureDispatcher::default());
+    let host = LiveHost::new_with_live_output(
+        &database,
+        installed(),
+        LiveHostLimits {
+            max_command_bytes: 4_096,
+            event_batch_size: 64,
+            event_poll_interval_ms: 5,
+            activity: None,
+        },
+        Arc::new(Clock),
+        dispatcher.clone(),
+        hub.clone(),
+    )
+    .unwrap();
+    let session = host
+        .create_session("create-live-fairness", "definition-main")
+        .unwrap();
+    let started = host
+        .start_turn(
+            "start-live-fairness",
+            &session.session_id,
+            "keep input responsive",
+        )
+        .unwrap();
+    let committed = dispatcher.0.lock().unwrap().clone().unwrap();
+    let mut sink = hub.event_sink();
+    sink.emit(core_event(&committed, AgentEventKind::ExecutionStarted))
+        .unwrap();
+    sink.emit(core_event(
+        &committed,
+        AgentEventKind::ModelStream(ModelStreamEvent::TextDelta {
+            output_index: 0,
+            delta: "FLOOD-BEGIN ".into(),
+        }),
+    ))
+    .unwrap();
+
+    let server = LiveHostServer::bind(host.clone(), "127.0.0.1:0".parse().unwrap())
+        .await
+        .unwrap();
+    let address = server.local_addr();
+    let (server_shutdown, server_stopped) = serve(server);
+    let ready = temporary.path().join("ready");
+    let active = temporary.path().join("active");
+    let cancelled = temporary.path().join("cancelled");
+    let draft_seen = temporary.path().join("draft-seen");
+    let redraw_seen = temporary.path().join("redraw-seen");
+    let terminal_committed = temporary.path().join("terminal-committed");
+    let help_seen = temporary.path().join("help-seen");
+    let log = temporary.path().join("fairness.log");
+    let state = temporary.path().join("state");
+    let expect = tokio::task::spawn_blocking({
+        let session_id = session.session_id.clone();
+        let paths = [
+            log.clone(),
+            ready.clone(),
+            cancelled.clone(),
+            state,
+            draft_seen.clone(),
+            help_seen.clone(),
+            active.clone(),
+            redraw_seen.clone(),
+            terminal_committed.clone(),
+        ];
+        move || run_fairness_expect(address, &session_id, &paths)
+    });
+
+    wait_for(&ready).await;
+    sink.emit(core_event(
+        &committed,
+        AgentEventKind::ModelStream(ModelStreamEvent::TextDelta {
+            output_index: 0,
+            delta: "FLOOD-ACTIVE ".into(),
+        }),
+    ))
+    .unwrap();
+    wait_for(&active).await;
+    let stop = Arc::new(AtomicBool::new(false));
+    let emitted = Arc::new(AtomicUsize::new(0));
+    let flood_hub = hub.clone();
+    let flood = tokio::spawn({
+        let stop = Arc::clone(&stop);
+        let emitted = Arc::clone(&emitted);
+        let committed = committed.clone();
+        async move {
+            let mut flood_sink = flood_hub.event_sink();
+            while !stop.load(Ordering::Relaxed) {
+                for _ in 0..64 {
+                    if flood_sink
+                        .emit(core_event(
+                            &committed,
+                            AgentEventKind::ModelStream(ModelStreamEvent::TextDelta {
+                                output_index: 0,
+                                delta: ".".into(),
+                            }),
+                        ))
+                        .is_err()
+                    {
+                        return;
+                    }
+                    emitted.fetch_add(1, Ordering::Relaxed);
+                }
+                tokio::time::sleep(Duration::from_millis(5)).await;
+            }
+        }
+    });
+
+    let script_reached_cancel = tokio::time::timeout(Duration::from_secs(10), async {
+        while !cancelled.exists() {
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    })
+    .await;
+    if script_reached_cancel.is_err() {
+        stop.store(true, Ordering::Relaxed);
+        flood.await.unwrap();
+        let expect_code = expect.await.unwrap();
+        panic!(
+            "fairness script stopped before cancel: code={expect_code}, active={}, redraw={}, draft={}, help={}",
+            active.exists(),
+            redraw_seen.exists(),
+            draft_seen.exists(),
+            help_seen.exists()
+        );
+    }
+    let cancel_result = tokio::time::timeout(Duration::from_secs(2), async {
+        loop {
+            let snapshot = SqliteLedger::open(&database)
+                .unwrap()
+                .load_turn(&committed.turn_id)
+                .unwrap();
+            if snapshot
+                .facts
+                .iter()
+                .any(|fact| fact.kind.as_str() == "turn.cancel_requested")
+            {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+    })
+    .await;
+    if cancel_result.is_err() {
+        let transcript = fs::read_to_string(&log).unwrap_or_default();
+        let diagnostics = fs::read_dir(temporary.path().join("state/diagnostics"))
+            .ok()
+            .into_iter()
+            .flatten()
+            .filter_map(Result::ok)
+            .filter_map(|entry| fs::read_to_string(entry.path()).ok())
+            .collect::<Vec<_>>();
+        let pending = fs::read_dir(temporary.path().join("state/pending"))
+            .ok()
+            .into_iter()
+            .flatten()
+            .filter_map(Result::ok)
+            .filter_map(|entry| fs::read_to_string(entry.path()).ok())
+            .collect::<Vec<_>>();
+        panic!(
+            "shipping cancel did not reach durable Host truth within two seconds; pending={pending:?}, diagnostics={diagnostics:?}, quit_warning={}, help={}, draft={}",
+            transcript.contains("Press Ctrl+C again to quit."),
+            transcript.contains("Keyboard guide"),
+            transcript.contains("draft-under-flood")
+        );
+    }
+    stop.store(true, Ordering::Relaxed);
+    flood.await.unwrap();
+    assert!(
+        emitted.load(Ordering::Relaxed) > 512,
+        "the source exceeded two complete 256-value channel capacities"
+    );
+    commit_cancelled(&database, &committed);
+    hub.end_execution(
+        &session.session_id,
+        &started.turn_id,
+        &started.execution_id,
+        LiveOutputEndReason::TerminalCommitted,
+    )
+    .unwrap();
+    fs::write(&terminal_committed, b"ready").unwrap();
+
+    let expect_code = expect.await.unwrap();
+    let transcript = fs::read_to_string(log).unwrap();
+    if expect_code != 0 {
+        let final_frame = transcript.rsplit("\x1b[2J").next().unwrap_or_default();
+        let diagnostics = fs::read_dir(temporary.path().join("state/diagnostics"))
+            .ok()
+            .into_iter()
+            .flatten()
+            .filter_map(Result::ok)
+            .filter_map(|entry| fs::read_to_string(entry.path()).ok())
+            .collect::<Vec<_>>();
+        panic!(
+            "fairness PTY exit code {expect_code}; diagnostics={diagnostics:?}; final_frame={final_frame:?}"
+        );
+    }
+    assert!(transcript.contains("draft-under-flood"));
+    assert!(transcript.contains("Keyboard guide"));
+    assert!(transcript.contains("stopped"));
+    assert!(transcript.contains("\x1b[?1049h") && transcript.contains("\x1b[?1049l"));
+    server_shutdown.send(()).unwrap();
+    server_stopped.await.unwrap().unwrap();
+}
+
 fn run_screen_reader(
     address: SocketAddr,
     session: &str,
@@ -320,6 +544,28 @@ fn run_expect(address: SocketAddr, session: &str, paths: &[PathBuf; 10], end_log
         .success()
 }
 
+fn run_fairness_expect(address: SocketAddr, session: &str, paths: &[PathBuf; 9]) -> i32 {
+    Command::new("expect")
+        .env("TERM", "xterm-256color")
+        .env("GARIVE_TUI_BIN", env!("CARGO_BIN_EXE_garive-tui"))
+        .env("GARIVE_TUI_HOST", format!("http://{address}/"))
+        .env("GARIVE_TUI_SESSION", session)
+        .env("GARIVE_FAIRNESS_LOG", &paths[0])
+        .env("GARIVE_FAIRNESS_READY", &paths[1])
+        .env("GARIVE_FAIRNESS_CANCELLED", &paths[2])
+        .env("GARIVE_TUI_STATE", &paths[3])
+        .env("GARIVE_FAIRNESS_DRAFT", &paths[4])
+        .env("GARIVE_FAIRNESS_HELP", &paths[5])
+        .env("GARIVE_FAIRNESS_ACTIVE", &paths[6])
+        .env("GARIVE_FAIRNESS_REDRAW", &paths[7])
+        .env("GARIVE_FAIRNESS_TERMINAL", &paths[8])
+        .args(["-c", FAIRNESS_EXPECT_SCRIPT])
+        .status()
+        .unwrap()
+        .code()
+        .unwrap_or(-1)
+}
+
 const EXPECT_SCRIPT: &str = r#"
     set timeout 10
     encoding system utf-8
@@ -410,6 +656,75 @@ const SCREEN_READER_SCRIPT: &str = r#"
     expect eof
 "#;
 
+const FAIRNESS_EXPECT_SCRIPT: &str = r#"
+    set timeout 10
+    encoding system utf-8
+    log_user 0
+    proc mark {path} { set file [open $path w]; puts $file ready; close $file }
+    proc wait_file {path code} {
+        for {set attempt 0} {$attempt < 1000} {incr attempt} {
+            if {[file exists $path]} { return }
+            after 10
+        }
+        exit $code
+    }
+    proc must {pattern code} {
+        expect {
+            -exact $pattern { return }
+            timeout { exit $code }
+            eof { exit [expr {$code + 1}] }
+        }
+    }
+    log_file -a -noappend $env(GARIVE_FAIRNESS_LOG)
+    spawn -noecho /bin/sh -c {stty rows 24 columns 100; exec "$GARIVE_TUI_BIN" --host "$GARIVE_TUI_HOST" --session "$GARIVE_TUI_SESSION" --state-dir "$GARIVE_TUI_STATE" --theme mono --mouse off}
+    fconfigure $spawn_id -encoding utf-8
+    must "FLOOD-BEGIN" 21
+    mark $env(GARIVE_FAIRNESS_READY)
+    must "FLOOD-ACTIVE" 23
+    mark $env(GARIVE_FAIRNESS_ACTIVE)
+    after 100
+    set timeout 2
+    send "draft-under-flood"
+    send "\011"
+    send "\014"
+    must "\033\[2J" 24
+    mark $env(GARIVE_FAIRNESS_REDRAW)
+    must "draft-under-flood" 25
+    mark $env(GARIVE_FAIRNESS_DRAFT)
+    send "\020"
+    send "keyboard"
+    send "\014"
+    must "\033\[2J" 27
+    must "keyboard" 28
+    must "/help" 29
+    send "\r"
+    send "\014"
+    must "\033\[2J" 30
+    must "required." 31
+    mark $env(GARIVE_FAIRNESS_HELP)
+    send "\033"
+    after 500
+    send "\014"
+    must "\033\[2J" 32
+    must "cancel" 33
+    send "\033"
+    mark $env(GARIVE_FAIRNESS_CANCELLED)
+    set timeout 10
+    wait_file $env(GARIVE_FAIRNESS_TERMINAL) 34
+    after 250
+    send "\011"
+    send "\014"
+    must "\033\[2J" 36
+    must "stopped" 37
+    send "\021"
+    must "Garive?" 39
+    send "\r"
+    expect {
+        eof { exit 0 }
+        timeout { exit 41 }
+    }
+"#;
+
 fn core_event(turn: &CommittedTurn, kind: AgentEventKind) -> AgentEvent {
     AgentEvent {
         session_id: SessionId::try_from(turn.session_id.as_str()).unwrap(),
@@ -447,6 +762,41 @@ fn commit_terminal(database: &Path, turn: &CommittedTurn) {
     SqliteLedger::open(database)
         .unwrap()
         .commit(turn.session_id.clone(), turn.session_version, facts)
+        .unwrap();
+}
+
+fn commit_cancelled(database: &Path, turn: &CommittedTurn) {
+    let usage = UsageSummary {
+        input_tokens: TokenCount::Known(1),
+        output_tokens: TokenCount::Known(1),
+        estimated: false,
+    };
+    let report = ExecutionReport {
+        outcome: AgentOutcome::Stopped {
+            reason: StopReason::Cancelled,
+        },
+        completed_iterations: 0,
+        usage,
+    };
+    let facts = plan_core_terminal(
+        &CoreTerminalContext {
+            turn_id: turn.turn_id.clone(),
+            execution_id: turn.execution_id.clone(),
+            recorded_at: "2026-09-01T00:00:02Z".into(),
+        },
+        &report,
+    )
+    .unwrap();
+    let ledger = SqliteLedger::open(database).unwrap();
+    let version = ledger
+        .session_watermark(&turn.session_id)
+        .unwrap()
+        .unwrap()
+        .session_version;
+    drop(ledger);
+    SqliteLedger::open(database)
+        .unwrap()
+        .commit(turn.session_id.clone(), version, facts)
         .unwrap();
 }
 

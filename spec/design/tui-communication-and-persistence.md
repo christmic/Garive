@@ -167,6 +167,11 @@ position. When H2 offers no explicit target-prefix query, the client accepts
 only pages covered by the first prefix and follows from it; newer changes arrive
 through H1. A page never splits a Turn.
 
+If a durable write advances the watermark between the Session view and its
+timeline pages, the client discards that whole read and retries the snapshot at
+most three times. Host rejection, transport failure, and malformed protocol
+data are not reclassified as snapshot churn and fail immediately.
+
 An H1 event updates one known Turn/activity or creates the expected newly
 started Turn shell. If required user text or suspension data is missing from
 the event, the client marks the Session snapshot stale and performs a bounded
@@ -193,7 +198,9 @@ H4 uses its own 256-value bounded channel. Rapid adjacent text deltas may
 coalesce exactly. If the adapter or application falls behind, it clears the
 partial preview and reconnects for a current in-memory snapshot; it never drops
 an unknown prefix and continues rendering a suffix. H4 processing shares the
-64-message event-loop budget without delaying terminal input.
+64-message event-loop budget without delaying terminal input. Accepted Host
+messages only mark a pending frame; one 16 ms boundary advances and paints the
+latest truthful projection, rather than parsing and drawing once per message.
 
 A selected Session has one follow task. Up to four background Sessions with a
 running or action-required Turn may retain follows; least-recently-visible idle

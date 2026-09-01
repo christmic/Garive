@@ -7,6 +7,7 @@ use crate::application::{
 };
 
 pub(crate) const PAGE_LIMIT: usize = 100;
+const SNAPSHOT_READ_ATTEMPTS: usize = 3;
 
 pub(crate) type HostReadFuture =
     Pin<Box<dyn Future<Output = Result<HostReadResponse, HostReadFailure>> + Send + 'static>>;
@@ -58,36 +59,62 @@ impl HostReadPort for LiveHostReadPort {
     fn load_snapshot(&self, request: SnapshotRequest) -> HostReadFuture {
         let client = self.client.clone();
         Box::pin(async move {
-            let view = client
-                .get_session(&request.session_id)
-                .await
-                .map_err(HostReadFailure::from)?;
-            let mut items = Vec::new();
-            let mut scan = SnapshotScan::default();
-            loop {
-                let page = client
-                    .get_timeline(&request.session_id, scan.after, PAGE_LIMIT)
-                    .await
-                    .map_err(HostReadFailure::from)?;
-                let complete = scan.accept(
-                    page.observed_max_position,
-                    page.scanned_through_position,
-                    page.has_more,
-                )?;
-                items.extend(page.items);
-                if complete {
-                    break;
+            for attempt in 0..SNAPSHOT_READ_ATTEMPTS {
+                match read_snapshot(&client, &request).await {
+                    Ok(snapshot) => return Ok(HostReadResponse::Snapshot(Box::new(snapshot))),
+                    Err(SnapshotReadError::Unstable) if attempt + 1 < SNAPSHOT_READ_ATTEMPTS => {
+                        tokio::task::yield_now().await;
+                    }
+                    Err(SnapshotReadError::Unstable) => return Err(invalid_snapshot()),
+                    Err(SnapshotReadError::Host(failure)) => return Err(failure),
                 }
             }
-            let follow_position = scan.finish(view.observed_max_position)?;
-            Ok(HostReadResponse::Snapshot(Box::new(SnapshotRead {
-                request,
-                view,
-                items,
-                follow_position,
-            })))
+            unreachable!("snapshot attempts are non-zero")
         })
     }
+}
+
+enum SnapshotReadError {
+    Unstable,
+    Host(HostReadFailure),
+}
+
+async fn read_snapshot(
+    client: &LiveHostClient,
+    request: &SnapshotRequest,
+) -> Result<SnapshotRead, SnapshotReadError> {
+    let view = client
+        .get_session(&request.session_id)
+        .await
+        .map_err(|error| SnapshotReadError::Host(error.into()))?;
+    let mut items = Vec::new();
+    let mut scan = SnapshotScan::default();
+    loop {
+        let page = client
+            .get_timeline(&request.session_id, scan.after, PAGE_LIMIT)
+            .await
+            .map_err(|error| SnapshotReadError::Host(error.into()))?;
+        let complete = scan
+            .accept(
+                page.observed_max_position,
+                page.scanned_through_position,
+                page.has_more,
+            )
+            .map_err(|_| SnapshotReadError::Unstable)?;
+        items.extend(page.items);
+        if complete {
+            break;
+        }
+    }
+    let follow_position = scan
+        .finish(view.observed_max_position)
+        .map_err(|_| SnapshotReadError::Unstable)?;
+    Ok(SnapshotRead {
+        request: request.clone(),
+        view,
+        items,
+        follow_position,
+    })
 }
 
 #[derive(Default)]

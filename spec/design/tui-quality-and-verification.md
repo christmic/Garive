@@ -237,6 +237,14 @@ loaded production timeline cells peaked at `4,128,768`, `4,210,688`, and
 specific to the named reference environment.
 
 Stress tests also prove cancellation latency under a saturated Host channel.
+The macOS shipping-binary `live_h4_recovery` fairness case starts a real
+Runtime/file-SQLite Host and continuously emits more than two complete
+256-value live-channel capacities while the TUI types a draft, performs a full
+review frame, opens and closes Help, and sends cancellation. Each interactive
+stage has a two-second PTY deadline; the cancel request must become a durable
+`turn.cancel_requested` fact within the same bound before a real
+`turn.stopped` event takes over and the terminal is restored. This case is
+invalid if it merely lowers the source rate or asserts scheduler internals.
 The candidate-bound release harness proves memory stability during 30 minutes
 of bounded event/reconnect churn: Garive `8b077f12` completed 1,426 reconnects
 and 143 unique committed Turns in 1,800.080 seconds. TUI RSS peaked and ended at
