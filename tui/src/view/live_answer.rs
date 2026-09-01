@@ -5,7 +5,11 @@ use crate::{
     Theme,
 };
 
-use super::{conversation::live_cache::LiveRenderCache, palette};
+use super::{
+    conversation::live_cache::LiveRenderCache,
+    palette,
+    primitives::{LiveCaret, RoleMarker},
+};
 
 pub(super) fn render(
     answer: &LiveAnswer,
@@ -16,7 +20,7 @@ pub(super) fn render(
 ) -> Vec<Line<'static>> {
     let colors = palette(theme);
     let mut lines = vec![Line::from(vec![
-        Span::styled("◆ Garive", colors.agent),
+        RoleMarker::Agent.span(colors),
         Span::styled(phase_copy(answer), colors.muted),
     ])];
     match answer.availability {
@@ -30,10 +34,13 @@ pub(super) fn render(
             } else {
                 lines.extend(cache.render_markdown(answer, theme, width));
             }
-            if answer.caret_visible() && !reduced_motion {
-                if let Some(line) = lines.last_mut() {
-                    line.spans.push(Span::styled("▍", colors.accent));
-                }
+            if let Some(line) = lines.last_mut() {
+                LiveCaret::for_output(
+                    answer.availability == LiveAnswerAvailability::Available,
+                    answer.ended,
+                    reduced_motion,
+                )
+                .append_to(line, colors);
             }
         }
     }

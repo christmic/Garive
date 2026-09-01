@@ -287,7 +287,9 @@ fn render_timeline_item(
             lines.extend(request_surface::render(&item.text, theme, width));
         }
         TimelineRole::Agent => {
-            lines.push(Line::styled("◆ Garive", colors.agent));
+            lines.push(Line::from(
+                super::primitives::RoleMarker::Agent.span(colors),
+            ));
             lines.extend(render_markdown(
                 &item.text,
                 "  ",
