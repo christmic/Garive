@@ -207,7 +207,9 @@ Loose lists, block quotes, tables, setext headings, and fences therefore remain
 whole while they grow. A reference definition disables the split because it
 may change links in earlier source. The stable prefix keeps its parsed
 presentation; only the tail reparses otherwise. An active available preview
-ends with `LiveCaret`. Unavailable preview shows one muted line and no partial
+with visible text ends with `LiveCaret`. Before the first visible delta, the
+component shows only its phase row and Turn gap: it cannot paint an empty Agent
+bubble or orphan caret. Unavailable preview shows one muted line and no partial
 suffix. The H1/H2 committed answer atomically replaces the complete live
 component without a transition card or duplicate answer.
 
@@ -304,6 +306,17 @@ their label and a bounded sanitized destination without emitting OSC 8.
 Fenced code uses one semantic frame, retains its first bounded language token,
 expands tabs to four cells for display, and clips by grapheme/display width with
 an explicit `…`; source text remains unchanged for copy.
+
+Agent Markdown owns physical wrapping before the outer transcript paragraph.
+Its two-cell Agent gutter repeats on every physical row, including CJK, emoji,
+combining text, block quotes, and code. List markers use hanging indentation:
+the marker appears only on the first physical row and every continuation begins
+after the complete display-width marker. Top-level heading, paragraph, list,
+quote, table, and code blocks have exactly one blank rhythm row between them;
+simple sibling list items remain tight. Blank rhythm rows never receive a role
+gutter or caret. The live stable-prefix cache must render identically to the
+same complete Markdown source, so streaming cannot change indentation or block
+rhythm when a tail becomes stable.
 
 Syntax color is a component contract, not a theme passthrough. Recognized
 fenced languages map parser scopes to `normal`, `comment`, `string`,

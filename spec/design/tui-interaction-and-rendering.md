@@ -531,6 +531,14 @@ Long unbroken graphemes clip safely. Wide and combining characters use the
 same display-width implementation as editor cursor placement. Tabs expand to
 four columns for display without changing copied text.
 
+The Markdown renderer, not the outer transcript widget, owns physical reflow.
+It reserves the Agent/quote/code gutters before wrapping styled grapheme spans,
+repeats those gutters on every physical row, and subtracts a list marker's
+display width from continuation rows. The outer paragraph may retain defensive
+wrapping but conforming output already fits its assigned width. Top-level major
+blocks receive one blank row; simple list siblings do not. Incremental live
+rendering must equal monolithic rendering for the same source, width, and theme.
+
 ### Progressive output
 
 `LiveAnswer` renders only H4 values admitted by
@@ -552,8 +560,10 @@ The event loop requests a draw when received text advances and coalesces values
 that arrive before the next terminal frame. Presented text reaches received
 text within two available render frames; a burst catches up in one frame
 instead of preserving cosmetic per-character delay. The renderer does not
-invent characters or replay a completed answer. A subtle live caret is visible
-only for an active, available preview and is absent under reduced motion. The
+invent characters or replay a completed answer. Before the first visible
+delta, it renders the safe phase row with neither an empty answer row nor a
+caret. A subtle live caret becomes visible only after active, available preview
+text exists and is absent under reduced motion. The
 stable Markdown prefix is not reparsed for each delta; only the mutable final
 block may reflow until it becomes stable. Resize may reflow the entire preview.
 

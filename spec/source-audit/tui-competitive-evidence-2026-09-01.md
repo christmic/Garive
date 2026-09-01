@@ -75,6 +75,24 @@ reverse-engineered tree because provenance and version parity are unverified.
   footer context. Garive adapts this density into `ComposerDock`, while
   retaining its own Host truth, Unicode editor, selection, frozen-state row,
   and pointer geometry.
+- **CX-V3 — answer gutter, reflow, and semantic rhythm.**
+  `/Users/christmix/OraculoSpace/codex/codex-rs/tui/src/history_cell/messages.rs:430-454`
+  reserves two answer columns before Markdown reflow and prefixes the resulting
+  physical lines. `/Users/christmix/OraculoSpace/codex/codex-rs/tui/src/markdown_render.rs:1877-1893`
+  wraps non-code spans with distinct initial/subsequent indentation, while
+  `:1944-1956` installs those prefixes per logical line. Paragraph separation
+  is owned at `:577-596`; list boundaries and tight/simple siblings are owned
+  at `:786-808`; multiline list items request space before the next sibling at
+  `:553-560`. Garive adopts the reserved-gutter and semantic-owner boundaries,
+  then strengthens them with grapheme/display-width wrapping, explicit hanging
+  continuation tests, and stable-tail/monolithic equivalence.
+- **CX-S5 — no output surface before evidence.**
+  `/Users/christmix/OraculoSpace/codex/codex-rs/tui/src/streaming/mod.rs:30-53`
+  initializes and resets `has_seen_delta` to false;
+  `streaming/controller.rs:127-138` changes it only for a non-empty delta.
+  Garive adapts that lifecycle boundary: safe work phase is visible before the
+  first delta, while its own source-backed live caret begins only after visible
+  preview text exists.
 - **CX-R1 — provider retry is not subscription resume.**
   `/Users/christmix/OraculoSpace/codex/codex-rs/core/src/responses_retry.rs:15-16`
   sets 5 s initial and 60 s maximum connection delay.
@@ -138,6 +156,8 @@ reverse-engineered tree because provenance and version parity are unverified.
 | Selection styling | **Adapt** | Keep accent on one textual selection marker, bold grapheme-safe match spans, and reverse only the marker in mono so selection never depends on blue or floods the row. | CC-I1, CC-A1 |
 | User request hierarchy | **Adapt** | Use one low-contrast, unbordered request surface with a non-color marker and hanging Unicode indent; keep screen-reader role wording explicit. | CX-V1 |
 | Composer density | **Adapt** | Use an open low-contrast ComposerDock with one lead and separate contextual row; frozen/action truth changes wording and tone without adding a permanent frame. | CX-V2 |
+| Answer typography | **Adapt** | Reserve and repeat the Agent gutter before styled grapheme reflow, use list hanging indents, and let Markdown block semantics own vertical rhythm. Garive additionally requires live-cache/monolithic equality. | CX-V3 |
+| Pre-delta state | **Adapt** | Keep safe work phase visible, but create no empty answer surface or orphan live caret before the first visible H4 delta. | CX-S5 |
 | Screen-reader projection | **Adapt** | Keep Garive's linear presenter and semantic announcements; suppress decorative animation and per-delta transcript chatter. | CC-A1; executable `claude --help` behavior |
 | Reconnect status | **Adopt** | A continuing failure is persistent, names the state, exposes details safely, and offers an explicit retry; it is not toast-only. | CX-R1, CC-R1 |
 | H1/H4 reconnect algorithm | **Reject** | Do not copy provider sampling retry or remote-session behavior. H1 resumes from its typed durable cursor; H4 reconnects by generation/sequence snapshot rules and never advances H1. | CX-R1, CC-R1; neither exposes Garive cursor semantics |
@@ -165,6 +185,9 @@ reverse-engineered tree because provenance and version parity are unverified.
 6. Unknown mutation outcomes remain persist-before-send exact replays. Neither
    competitor transcript files nor headless stream-json become Host authority.
    [CC-P1, QD-B1, QD-P1]
+7. Every physical Agent row retains its reserved gutter and every list
+   continuation retains its marker-width hanging indent. Awaiting-first-delta
+   exposes phase without pretending that answer text exists. [CX-V3, CX-S5]
 
 ## Known gaps
 
