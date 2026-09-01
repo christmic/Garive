@@ -27,7 +27,7 @@ not depend on the terminal default being light or dark.
 |---|---|
 | `StatusChip` | padded icon/text span; semantic state style; never color-only |
 | `KeyHint` | visually distinct keycap plus verb; ordered by current action priority |
-| `SelectionRow` | full-row highlight plus stable cursor/marker; reverse video in mono |
+| `SelectionRow` | explicit marker-only or full-area policy plus stable cursor; reverse video in mono |
 | `FocusFrame` | stable Composer or modal boundary; focus style never changes geometry or moves on Host events |
 | `CenteredColumn` | caps readable transcript width without changing model state |
 | `ModalFrame` | dims retained workspace, clears popup bounds, rounded focus border, safe padding |
@@ -46,6 +46,9 @@ so CJK and combining sequences cannot split or shift later components.
 
 Implementations live in `tui/src/view/primitives.rs` and `style.rs`.
 Higher-level renderers must reuse these primitives for equivalent behavior.
+`SelectionRow` requires an explicit extent. CommandPalette uses `MarkerOnly`;
+single-line lists and anchored menus use `FullArea`; Inspector applies
+`FullArea` to its content-driven one- or two-row entry rectangle.
 `ModalFrame` alone computes modal inner padding and paints the retained-workspace
 backdrop, two-cell horizontal halo, cleared popup, title, and rounded border.
 CommandPalette, generic overlays, and the overlay Inspector cannot reproduce

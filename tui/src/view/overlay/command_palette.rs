@@ -10,7 +10,7 @@ use crate::{application::AppModel, input::COMMAND_PALETTE};
 use super::super::{
     layout::FrameLayout,
     primitives::{
-        centered_popup, key_hints, selection_marker, selection_window, truncate_display, ModalFrame,
+        centered_popup, key_hints, selection_window, truncate_display, ModalFrame, SelectionRow,
     },
     safe_text,
     style::Palette,
@@ -302,7 +302,7 @@ fn item_line(
     } else {
         colors.normal
     };
-    let mut spans = vec![selection_marker(selected, colors)];
+    let mut spans = vec![SelectionRow::marker_only(selected).marker(colors)];
     spans.extend(highlighted_field(
         item.input,
         query,

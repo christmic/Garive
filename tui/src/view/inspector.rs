@@ -12,7 +12,12 @@ use crate::{
     Theme,
 };
 
-use super::{palette, primitives::truncate_display, safe_text, style::Palette};
+use super::{
+    palette,
+    primitives::{truncate_display, SelectionRow},
+    safe_text,
+    style::Palette,
+};
 
 mod row_layout;
 
@@ -160,14 +165,12 @@ fn render_entry(
     if area.is_empty() {
         return;
     }
-    if selected {
-        buffer.set_style(area, colors.selection_row);
-    }
-    let marker = if selected { "›" } else { " " };
+    let selection = SelectionRow::full_area(selected);
+    selection.paint(area, colors, buffer);
     let icon = tone_icon(entry.tone);
     let label_width = usize::from(area.width.saturating_sub(4));
     Line::from(vec![
-        Span::styled(format!("{marker} "), colors.selected),
+        selection.marker(colors),
         Span::styled(format!("{icon} "), tone_style(entry.tone, colors)),
         Span::styled(
             truncate_display(&safe_text(&entry.label), label_width),
