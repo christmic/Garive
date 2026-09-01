@@ -2,10 +2,10 @@
 source: tui/tests/view_snapshots.rs
 expression: "frame(&action, Theme::Mono, 100, 24)"
 ---
-  Session 1  ·  Agent
 
-    › Summarize the release plan.
-      ✓  Agent action · completed
+  › Summarize the release plan.
+    ✓  Agent action · completed
+  • ## Release plan
                    ╭ Approval required ─────────────────────────────────────────╮
                    │                                                            │
                    │  !  Review the public request before responding.           │
@@ -23,5 +23,5 @@ expression: "frame(&action, Theme::Mono, 100, 24)"
 
 
 
-  Agent running
-  › Ask a follow-up…
+• Working…
+› Ask a follow-up…

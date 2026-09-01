@@ -2,7 +2,6 @@
 source: tui/tests/view_snapshots.rs
 expression: "frame(&activities, Theme::Mono, 40, 18)"
 ---
-Session 1
 
   › Verify the release candidate.
     ● Reading file · ✓2
@@ -17,5 +16,6 @@ Session 1
 
 
 
- Esc cancel Turn
+
+ Esc interrupt
 › Ask a follow-up…

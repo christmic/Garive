@@ -1,11 +1,11 @@
 ---
 source: tui/tests/view_snapshots.rs
-expression: "frame(&completed_activity_stack_model(), Theme::Mono, 40, 18)"
+expression: completed
 ---
-Session 1
 
   › Verify the release candidate.
     ✓ Read file · +2
+
 
 
 
