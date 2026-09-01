@@ -729,6 +729,10 @@ an exact task price from prompt length, selected model, or prior averages.
 
 - Token declarations are the only source of palette, type scale, canonical
   radii, depth and motion values for new shared components.
+- Shared typography uses only semantic Normal 400, Medium 500, Semibold 600 and
+  Bold 700 tokens. Component CSS must not introduce an arbitrary numeric
+  `font-weight`; exceptional source utilities require a separate evidence and
+  contract change. Chat copy remains 13 px at 1.625 leading.
 - Desktop and Web render the same Capacity component from the same view value.
 - Unit tests cover normal, critical, exhausted and absent capacity plus
   accessible meter text.

@@ -42,6 +42,11 @@ describe("Desktop visual accessibility contract", () => {
     }
     expect(TOKENS).toContain("--document-font-size: 13px");
     expect(TOKENS).toContain("--document-leading: 1.625");
+    expect(TOKENS).toContain("--font-weight-normal: 400");
+    expect(TOKENS).toContain("--font-weight-medium: 500");
+    expect(TOKENS).toContain("--font-weight-semibold: 600");
+    expect(TOKENS).toContain("--font-weight-bold: 700");
+    expect(CSS.match(/font-weight:\s*\d+/g)).toBeNull();
     expect(TOKENS).toContain("--conversation-item-gap: 16px");
     expect(TOKENS).toContain("--conversation-grouped-item-gap: 4px");
     expect(TOKENS).toContain("--user-chat-width: 70%");
@@ -164,7 +169,7 @@ describe("Desktop visual accessibility contract", () => {
     expect(CSS).toContain(".suggestion-grid button:is(:hover, :focus-visible) { color: var(--text-primary); }");
     expect(CSS).toContain(".suggestion-grid button:active { transform: scale(.99); }");
     expect(CSS).toContain(".suggestion-grid .suggestion-icon svg { position: static;");
-    expect(CSS).toContain(".suggestion-grid .suggestion-copy { min-width: 0; overflow: hidden; color: inherit; font-size: var(--text-sm); font-weight: 400; letter-spacing: normal; text-overflow: ellipsis; text-transform: none; white-space: nowrap; }");
+    expect(CSS).toContain(".suggestion-grid .suggestion-copy { min-width: 0; overflow: hidden; color: inherit; font-size: var(--text-sm); font-weight: var(--font-weight-normal); letter-spacing: normal; text-overflow: ellipsis; text-transform: none; white-space: nowrap; }");
     expect(CSS).not.toContain("grid-template-columns: 78px minmax(0, 1fr) 16px");
     expect(CSS).toContain(".new-work-surface .composer-wrap { top: 190px; }");
     expect(CSS).toContain(".setup-shell { position: relative; min-height: 100%; overflow: auto; padding: 46px 24px 64px; background: var(--surface-canvas);");

@@ -1530,6 +1530,23 @@ fixture, Running measures 145/161 px footer/reserve and Approval measures
 299.34/315.34 px. Both remain at distance zero from the tail when attached and
 report zero horizontal overflow.
 
+### LIII. Type hierarchy uses semantic weight steps
+
+The installed Codex `26.825.51511` stylesheet defines five font-weight tokens:
+Light 300, Normal 400, Medium 500, Semibold 600 and Bold 700. Shared UI classes
+predominantly use the semantic variables; an arbitrary 590 utility exists, but
+it is not the basis of the component hierarchy. The same source sets the chat
+body to 13 px and the product body to 14 px, so changing Garive's already
+matched sizes would reduce fidelity.
+
+Garive had accumulated 450, 520, 540, 550, 560, 570, 580, 590, 610, 620, 630,
+640, 650, 680 and 720 across shared surfaces. Desktop and Web now own the
+source-equivalent Normal/Medium/Semibold/Bold tokens, and every component uses
+those semantic steps. A contract test rejects numeric `font-weight` values in
+component CSS. Live DOM confirms New work, Recents, section labels, the thread
+title and Goal rail at 500; Markdown section headings remain 600 and response
+copy remains 400 at the source-backed 13 px / 1.625 leading.
+
 ## Gate 1 — Codex fidelity
 
 This gate passes only when both Desktop and Web show:
