@@ -228,14 +228,21 @@ carried by revisions `d56ab5c7`, `9df9bcba`, and `16d26a94`; Inspector's shared
 projection, interaction, snapshots, and macOS PTY evidence culminate in
 `821a57e4`.
 
-This is not product closeout. Revision `9929bbb0` introduces a correlated
-asynchronous effect runner and persistence port, but the full application
-reducer/effect migration is incomplete. Detached-live PTY coverage,
-screen-reader no-per-delta/exactly-once-final evidence, and physical Apple
-Terminal plus iTerm2-class screenshot admission also remain open.
+The correlated reducer/effect migration, detached-live behavior, typed Session
+pagination, bounded reconnect/eviction, fair local/Host scheduling, resize
+coalescing, and persistence-boundary fault injection are now implemented and
+exercised. Screen-reader mode suppresses per-delta chatter and announces the
+durable final answer exactly once; the shipping production Runtime test proves
+the same file/SQLite/Host path survives restart without exposing internal
+definition identity.
+
+This is not physical gallery closeout. Native macOS tests and real PTY
+transcripts are admitted, but Apple Terminal and iTerm2-class screenshots remain
+open while the macOS login session is locked. Linux and Windows native review
+remain later-platform work by explicit product priority.
 
 ## Meta
 
 - Owner: `@christmic`
-- Last reviewed: 2026-08-31
-- Status: accepted design; principal implementation present; completion gates active
+- Last reviewed: 2026-09-01
+- Status: accepted design; implementation verified; physical macOS gallery gate active
