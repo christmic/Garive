@@ -1,6 +1,7 @@
 use garive_goal::{GoalDefinitionV1, GoalEvidenceV1, GoalSnapshot, GoalState, GoalTransition};
 use garive_ledger::{DurableFact, SessionId};
 use serde_json::{Map, Value};
+use std::collections::{BTreeMap, BTreeSet};
 
 use crate::{GoalRuntimeError, GoalRuntimeState, SqliteLedger, SqliteLedgerError};
 
@@ -13,6 +14,14 @@ pub fn reconstruct_goal(
     if goal_id.is_empty() {
         return Err(GoalRuntimeError::Invalid);
     }
+    let mut graph = reconstruct_goal_graph(ledger, session_id)?;
+    graph.remove(goal_id).ok_or(GoalRuntimeError::NotFound)
+}
+
+pub(crate) fn reconstruct_goal_graph(
+    ledger: &SqliteLedger,
+    session_id: &SessionId,
+) -> Result<BTreeMap<String, GoalRuntimeState>, GoalRuntimeError> {
     let watermark = ledger
         .session_watermark(session_id)
         .map_err(map_ledger)?
@@ -20,27 +29,63 @@ pub fn reconstruct_goal(
     let facts = ledger
         .read_facts(session_id, 0, watermark.max_position, None)
         .map_err(map_ledger)?;
-    let mut snapshot = None;
-    let mut attempt_number = 0;
-    for fact in facts.iter().filter(|fact| belongs(fact, goal_id)) {
-        apply(&mut snapshot, &mut attempt_number, fact)?;
+    let mut partial = BTreeMap::<String, (Option<GoalSnapshot>, u32)>::new();
+    for fact in facts
+        .iter()
+        .filter(|fact| fact.kind.as_str().starts_with("goal."))
+    {
+        let payload: Value = serde_json::from_str(fact.payload.as_json()).map_err(corrupt)?;
+        let value = payload
+            .as_object()
+            .ok_or(GoalRuntimeError::RecoveryCorrupt)?;
+        let goal_id = text(value, "goal_id")?;
+        if goal_id.is_empty() || text(value, "command_id")? != fact.fact_id.as_str() {
+            return Err(GoalRuntimeError::RecoveryCorrupt);
+        }
+        let (snapshot, attempt_number) = partial.entry(goal_id.into()).or_default();
+        apply(snapshot, attempt_number, fact)?;
     }
-    Ok(GoalRuntimeState {
-        snapshot: snapshot.ok_or(GoalRuntimeError::NotFound)?,
-        attempt_number,
-        session_version: watermark.session_version,
-        through_position: watermark.max_position,
-    })
+    let mut graph = BTreeMap::new();
+    for (goal_id, (snapshot, attempt_number)) in partial {
+        graph.insert(
+            goal_id,
+            GoalRuntimeState {
+                snapshot: snapshot.ok_or(GoalRuntimeError::RecoveryCorrupt)?,
+                attempt_number,
+                session_version: watermark.session_version,
+                through_position: watermark.max_position,
+            },
+        );
+    }
+    validate_graph(&graph)?;
+    Ok(graph)
 }
 
-fn belongs(fact: &DurableFact, goal_id: &str) -> bool {
-    if !fact.kind.as_str().starts_with("goal.") {
-        return false;
+fn validate_graph(graph: &BTreeMap<String, GoalRuntimeState>) -> Result<(), GoalRuntimeError> {
+    for (goal_id, state) in graph {
+        if let Some(parent_id) = state.snapshot.definition().parent_goal_id() {
+            let parent = graph
+                .get(parent_id.as_str())
+                .ok_or(GoalRuntimeError::RecoveryCorrupt)?;
+            state
+                .snapshot
+                .definition()
+                .validate_child_of(parent.snapshot.definition())
+                .map_err(corrupt)?;
+        }
+        let mut visited = BTreeSet::new();
+        let mut cursor = Some(goal_id.as_str());
+        while let Some(current) = cursor {
+            if !visited.insert(current) {
+                return Err(GoalRuntimeError::RecoveryCorrupt);
+            }
+            cursor = graph
+                .get(current)
+                .and_then(|item| item.snapshot.definition().parent_goal_id())
+                .map(|parent| parent.as_str());
+        }
     }
-    serde_json::from_str::<Value>(fact.payload.as_json())
-        .ok()
-        .and_then(|value| value.get("goal_id")?.as_str().map(str::to_owned))
-        .is_some_and(|value| value == goal_id)
+    Ok(())
 }
 
 fn apply(

@@ -6,8 +6,9 @@ use garive_ledger::{
 };
 use serde_json::{json, Map, Value};
 use sha2::{Digest, Sha256};
+use std::collections::{BTreeMap, BTreeSet};
 
-use crate::{SqliteLedger, SqliteLedgerError};
+use crate::{goal_recovery::reconstruct_goal_graph, SqliteLedger, SqliteLedgerError};
 
 /// Authenticated metadata bound to one idempotent Goal command.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -108,10 +109,66 @@ pub enum GoalRuntimeError {
 
 /// Plans creation of revision 1 without mutating durable state.
 pub fn plan_create_goal(
+    ledger: &SqliteLedger,
+    session_id: &SessionId,
     context: &GoalCommandContext,
     definition: GoalDefinitionV1,
 ) -> Result<PlannedGoalCommand, GoalRuntimeError> {
     validate_context(context)?;
+    let watermark = ledger
+        .session_watermark(session_id)
+        .map_err(map_ledger)?
+        .ok_or(GoalRuntimeError::NotFound)?;
+    let facts = ledger
+        .read_facts(session_id, 0, watermark.max_position, None)
+        .map_err(map_ledger)?;
+    let mut goal_ids = BTreeSet::new();
+    let mut creation_commands = BTreeMap::new();
+    for fact in facts
+        .iter()
+        .filter(|fact| fact.kind.as_str() == "goal.created")
+    {
+        let payload: Value = serde_json::from_str(fact.payload.as_json())
+            .map_err(|_| GoalRuntimeError::RecoveryCorrupt)?;
+        let value = payload
+            .as_object()
+            .ok_or(GoalRuntimeError::RecoveryCorrupt)?;
+        let goal_id = stored_text(value, "goal_id")?;
+        let command_id = stored_text(value, "command_id")?;
+        if !goal_ids.insert(goal_id.to_owned())
+            || creation_commands
+                .insert(goal_id.to_owned(), command_id.to_owned())
+                .is_some()
+        {
+            return Err(GoalRuntimeError::RecoveryCorrupt);
+        }
+    }
+    let graph = reconstruct_goal_graph(ledger, session_id)?;
+    if let Some(command_id) = creation_commands.get(definition.goal_id().as_str()) {
+        if command_id != &context.command_id {
+            return Err(GoalRuntimeError::CommandConflict);
+        }
+    } else if let Some(parent_id) = definition.parent_goal_id() {
+        let parent = graph
+            .get(parent_id.as_str())
+            .ok_or(GoalRuntimeError::ScopeExceeded)?;
+        if parent.snapshot.state().is_terminal() {
+            return Err(GoalRuntimeError::TransitionInvalid);
+        }
+        definition
+            .validate_child_of(parent.snapshot.definition())
+            .map_err(map_goal)?;
+        let child_count = graph
+            .values()
+            .filter(|state| state.snapshot.definition().parent_goal_id() == Some(parent_id))
+            .count();
+        if child_count
+            >= usize::try_from(parent.snapshot.definition().bounds().max_child_goals())
+                .map_err(|_| GoalRuntimeError::Invalid)?
+        {
+            return Err(GoalRuntimeError::ScopeExceeded);
+        }
+    }
     let definition_json = definition.canonical_json().map_err(map_goal)?;
     let definition_digest = definition.digest().map_err(map_goal)?;
     let payload = json!({
@@ -128,10 +185,18 @@ pub fn plan_create_goal(
         next: GoalRuntimeState {
             snapshot,
             attempt_number: 0,
-            session_version: 0,
-            through_position: 0,
+            session_version: watermark.session_version,
+            through_position: watermark.max_position,
         },
     })
+}
+
+fn stored_text<'a>(value: &'a Map<String, Value>, key: &str) -> Result<&'a str, GoalRuntimeError> {
+    value
+        .get(key)
+        .and_then(Value::as_str)
+        .filter(|value| !value.is_empty())
+        .ok_or(GoalRuntimeError::RecoveryCorrupt)
 }
 
 /// Plans one exact-revision transition without mutating durable state.

@@ -8,6 +8,7 @@ use garive_runtime::{
     GoalCommandContext, GoalRuntimeError, GoalRuntimeTransition, SqliteLedger,
 };
 use serde_json::json;
+use sha2::{Digest, Sha256};
 use tempfile::tempdir;
 
 #[test]
@@ -19,7 +20,8 @@ fn goal_commands_reconstruct_across_restart_and_exact_replay() {
     {
         let mut ledger = SqliteLedger::open(&path).unwrap();
         open_session(&mut ledger, &session);
-        let created = plan_create_goal(&context("create"), definition()).unwrap();
+        let created =
+            plan_create_goal(&ledger, &session, &context("create"), definition()).unwrap();
         assert!(
             garive_ledger::validate_runtime_fact(&created.facts[0]).is_ok(),
             "{}",
@@ -86,7 +88,7 @@ fn stale_session_writer_and_changed_command_replay_fail_closed() {
     let session = SessionId::try_from("session-1").unwrap();
     let mut first = SqliteLedger::open(&path).unwrap();
     open_session(&mut first, &session);
-    let created = plan_create_goal(&context("create"), definition()).unwrap();
+    let created = plan_create_goal(&first, &session, &context("create"), definition()).unwrap();
     commit_goal_command(&mut first, session.clone(), 1, &created).unwrap();
     let state = reconstruct_goal(&first, &session, "goal-1").unwrap();
     let mut second = SqliteLedger::open(&path).unwrap();
@@ -115,6 +117,8 @@ fn stale_session_writer_and_changed_command_replay_fail_closed() {
     );
 
     let changed = plan_create_goal(
+        &first,
+        &session,
         &context("create"),
         GoalDefinitionV1::new(
             GoalId::new("goal-1").unwrap(),
@@ -132,6 +136,138 @@ fn stale_session_writer_and_changed_command_replay_fail_closed() {
         commit_goal_command(&mut first, session, 0, &changed),
         Err(GoalRuntimeError::CommandConflict)
     );
+}
+
+#[test]
+fn child_creation_uses_the_fixed_ledger_graph_and_parent_limits() {
+    let directory = tempdir().unwrap();
+    let path = directory.path().join("children.sqlite3");
+    let session = SessionId::try_from("session-1").unwrap();
+    let mut ledger = SqliteLedger::open(&path).unwrap();
+    open_session(&mut ledger, &session);
+    let parent = plan_create_goal(&ledger, &session, &context("parent"), definition()).unwrap();
+    commit_goal_command(
+        &mut ledger,
+        session.clone(),
+        parent.next.session_version,
+        &parent,
+    )
+    .unwrap();
+
+    let first = plan_create_goal(
+        &ledger,
+        &session,
+        &context("child-1"),
+        child_definition("child-1", "goal-1", 1),
+    )
+    .unwrap();
+    commit_goal_command(
+        &mut ledger,
+        session.clone(),
+        first.next.session_version,
+        &first,
+    )
+    .unwrap();
+    let replay = plan_create_goal(
+        &ledger,
+        &session,
+        &context("child-1"),
+        child_definition("child-1", "goal-1", 1),
+    )
+    .unwrap();
+    assert_eq!(
+        commit_goal_command(&mut ledger, session.clone(), 0, &replay)
+            .unwrap()
+            .disposition,
+        CommitDisposition::Replayed
+    );
+    assert_eq!(
+        plan_create_goal(
+            &ledger,
+            &session,
+            &context("duplicate-child"),
+            child_definition("child-1", "goal-1", 1),
+        ),
+        Err(GoalRuntimeError::CommandConflict)
+    );
+
+    let second = plan_create_goal(
+        &ledger,
+        &session,
+        &context("child-2"),
+        child_definition("child-2", "goal-1", 1),
+    )
+    .unwrap();
+    commit_goal_command(
+        &mut ledger,
+        session.clone(),
+        second.next.session_version,
+        &second,
+    )
+    .unwrap();
+    assert_eq!(
+        plan_create_goal(
+            &ledger,
+            &session,
+            &context("child-3"),
+            child_definition("child-3", "goal-1", 1),
+        ),
+        Err(GoalRuntimeError::ScopeExceeded)
+    );
+    assert_eq!(
+        plan_create_goal(
+            &ledger,
+            &session,
+            &context("orphan"),
+            child_definition("orphan", "missing-parent", 1),
+        ),
+        Err(GoalRuntimeError::ScopeExceeded)
+    );
+    assert_eq!(
+        plan_create_goal(
+            &ledger,
+            &session,
+            &context("wider"),
+            child_definition("wider", "goal-1", 4),
+        ),
+        Err(GoalRuntimeError::ScopeExceeded)
+    );
+}
+
+#[test]
+fn reconstruction_rejects_orphan_and_cyclic_goal_prefixes() {
+    for (name, facts) in [
+        (
+            "orphan",
+            vec![created_fact(
+                "create-orphan",
+                child_definition("orphan", "missing-parent", 1),
+            )],
+        ),
+        (
+            "cycle",
+            vec![
+                created_fact("create-a", child_definition("goal-a", "goal-b", 1)),
+                created_fact("create-b", child_definition("goal-b", "goal-a", 1)),
+            ],
+        ),
+    ] {
+        let directory = tempdir().unwrap();
+        let path = directory.path().join(format!("{name}.sqlite3"));
+        let session = SessionId::try_from("session-1").unwrap();
+        let mut ledger = SqliteLedger::open(&path).unwrap();
+        open_session(&mut ledger, &session);
+        ledger.commit(session.clone(), 1, facts).unwrap();
+        assert_eq!(
+            reconstruct_goal(
+                &ledger,
+                &session,
+                if name == "orphan" { "orphan" } else { "goal-a" }
+            ),
+            Err(GoalRuntimeError::RecoveryCorrupt),
+            "{name}"
+        );
+    }
 }
 
 fn open_session(ledger: &mut SqliteLedger, session: &SessionId) {
@@ -162,6 +298,19 @@ fn definition() -> GoalDefinitionV1 {
     .unwrap()
 }
 
+fn child_definition(goal_id: &str, parent_id: &str, max_attempts: u32) -> GoalDefinitionV1 {
+    GoalDefinitionV1::new(
+        GoalId::new(goal_id).unwrap(),
+        "Complete a narrowed child objective",
+        criteria(),
+        GoalScopeV1::new(None, ["workspace-1".into()]).unwrap(),
+        GoalBoundsV1::new(max_attempts, 2, 1, Some(5_000), Some(30_000)).unwrap(),
+        Some(GoalId::new(parent_id).unwrap()),
+        capabilities(),
+    )
+    .unwrap()
+}
+
 fn criteria() -> Vec<GoalCriterion> {
     vec![GoalCriterion::UserAcceptance {
         criterion_id: GoalCriterionId::new("accepted").unwrap(),
@@ -185,6 +334,32 @@ fn context(command_id: &str) -> GoalCommandContext {
     GoalCommandContext {
         command_id: command_id.into(),
         actor_reference: "user:fixture".into(),
+        recorded_at: timestamp().into(),
+    }
+}
+
+fn created_fact(command_id: &str, definition: GoalDefinitionV1) -> FactDraft {
+    let definition_json = definition.canonical_json().unwrap();
+    FactDraft {
+        fact_id: FactId::try_from(command_id).unwrap(),
+        turn_id: None,
+        execution_id: None,
+        model_request_id: None,
+        tool_invocation_id: None,
+        kind: FactKind::new("goal.created").unwrap(),
+        schema_version: 1,
+        payload: CanonicalPayload::from_value(&json!({
+            "command_id": command_id,
+            "goal_id": definition.goal_id().as_str(),
+            "revision": 1,
+            "definition_digest": definition.digest().unwrap(),
+            "definition": {
+                "digest": format!("{:x}", Sha256::digest(definition_json.as_bytes())),
+                "inline_utf8": definition_json,
+            },
+            "actor_reference": "user:fixture",
+        }))
+        .unwrap(),
         recorded_at: timestamp().into(),
     }
 }

@@ -182,6 +182,11 @@ impl GoalBoundsV1 {
         self.max_attempts
     }
 
+    /// Returns the hard limit on directly owned child Goals.
+    pub const fn max_child_goals(&self) -> u32 {
+        self.max_child_goals
+    }
+
     fn is_within(&self, parent: &Self) -> bool {
         self.max_attempts <= parent.max_attempts
             && self.max_plan_revisions <= parent.max_plan_revisions
@@ -346,6 +351,11 @@ impl GoalDefinitionV1 {
     /// Returns the immutable hard bounds for this revision.
     pub const fn bounds(&self) -> &GoalBoundsV1 {
         &self.bounds
+    }
+
+    /// Returns the exact parent identity, when this is a child Goal.
+    pub const fn parent_goal_id(&self) -> Option<&GoalId> {
+        self.parent_goal_id.as_ref()
     }
 
     /// Proves that this child definition only narrows one exact parent grant.

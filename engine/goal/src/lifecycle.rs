@@ -117,7 +117,8 @@ pub enum GoalState {
 }
 
 impl GoalState {
-    const fn is_terminal(self) -> bool {
+    /// Returns whether no later lifecycle transition is permitted.
+    pub const fn is_terminal(self) -> bool {
         matches!(self, Self::Succeeded | Self::Failed | Self::Cancelled)
     }
 }
