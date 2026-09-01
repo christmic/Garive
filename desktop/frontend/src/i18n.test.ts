@@ -25,6 +25,7 @@ describe("Desktop localization", () => {
   it("covers the primary Work, Search, and Agents journeys", () => {
     const t = createTranslator("zh-Hans");
     expect(t("work.welcome.title")).toBe("这次要完成什么？");
+    expect(t("work.composer.startPlaceholder")).toBe("随心输入");
     expect(t("work.composer.commitNote")).toContain("本地运行时提交");
     expect(t("search.description")).toContain("不会创建云端索引");
     expect(t("agents.description")).toContain("新工作");

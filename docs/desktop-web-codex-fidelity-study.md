@@ -1311,6 +1311,35 @@ fixture Sessions and narrows “Launch” to the one matching attention task. At
 and has no horizontal overflow. `⌘K` on the same narrow work surface opens the
 command/action mode without changing the underlying work.
 
+### XLIV. New work is a quiet execution surface
+
+Installed Codex `26.825.51511` provides three direct implementation facts for
+the empty task state. `app-initial-B6Gk5KCN.js` uses `Do anything` as the Codex
+composer placeholder and `随心输入` in its Chinese locale. The main region in
+`new-thread-panel-page-DPS1Lu4g.js` is an empty `max-w-3xl` flex content area,
+not a permanent marketing heading and description. Finally,
+`home-suggestion-surface-B3IuURqZ.js` owns the starter rows beside the composer;
+the Electron token `--spacing-home-suggestion-row` resolves to 40px and the
+surface applies an 8px vertical inset. These are source facts, not dimensions
+estimated from the supplied screenshots.
+
+Garive now maps that grammar onto its own product capability. New work keeps a
+screen-reader heading but removes the visible hero heading and instructional
+copy. The real composer remains the primary control and shows the source-backed
+placeholder while retaining Garive's accessible outcome label, workspace
+context, access state and commit boundary. Starter actions are 40px rows in the
+same `composer-stack`, separated by 8px, and disappear as soon as a draft is
+entered. This structural ownership removes independent hero/suggestion offsets
+and gives Desktop and Web one future layout seam.
+
+The supplied Codex references also show one search icon beside the product
+switcher, not a second full Search row in primary navigation. Garive therefore
+keeps that icon, `⌘F`, native intent and the shared search overlay while removing
+the duplicate row. At 1280×800 the live Web surface exposes one Search button,
+one semantic heading, the quiet composer and three adjacent starters. At
+480×720 selecting a starter focuses the composer, removes the starter surface
+and leaves the send action reachable without horizontal overflow.
+
 ## Gate 1 — Codex fidelity
 
 This gate passes only when both Desktop and Web show:

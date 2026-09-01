@@ -760,9 +760,6 @@ export function App({ client = "desktop", webCapabilities, createProductPort,
           <NavItem icon="work" label={t("nav.work")}
             selected={screen === "work" && state.messages.length === 0}
             onClick={() => setScreen("work")} />
-          <NavItem icon="search" label={t("nav.search")} selected={commandOpen && commandMode === "search"}
-            disabled={!state.capabilities?.durable_navigation} hint={t("shell.searchHint")}
-            onClick={() => openCommandCenter("search")} />
           <NavItem icon="agent" label={t("nav.agents")} selected={screen === "agents"}
             onClick={() => setScreen("agents")} />
           <NavItem icon="memory" label={t("shell.memory")} disabled
@@ -1140,8 +1137,7 @@ function WorkSurface({ state, composer, submit, startSuggestion, dispatch, conte
         if (direction) markUserScroll(direction);
       }}
       className={state.messages.length ? "conversation" : "conversation empty-conversation"}>
-      {state.messages.length === 0 ? <Welcome draftActive={state.draft.trim().length > 0}
-        onSelect={startSuggestion} t={t} />
+      {state.messages.length === 0 ? <h1 className="sr-only">{t("work.welcome.title")}</h1>
         : <Timeline state={state} dispatch={dispatch} t={t} />}
     </div>
     <div className="conversation-top-fade" data-visible={scrolledFromTop} aria-hidden="true" />
@@ -1198,7 +1194,8 @@ function WorkSurface({ state, composer, submit, startSuggestion, dispatch, conte
           aria-describedby="composer-commit-note"
           aria-label={t(state.phase === "submitting" ? "work.composer.draftNext" : needsInput ? "work.composer.continue" : "work.composer.describe")}
           placeholder={t(blockedSuspension ? "work.composer.governed" : state.phase === "submitting"
-            ? "work.composer.draftNextPlaceholder" : needsInput ? "work.composer.continuePlaceholder" : "work.composer.describePlaceholder")}
+            ? "work.composer.draftNextPlaceholder" : needsInput ? "work.composer.continuePlaceholder"
+              : state.messages.length === 0 ? "work.composer.startPlaceholder" : "work.composer.describePlaceholder")}
           onChange={(event) => dispatch({ type: "draft_changed", value: event.target.value })}
           onKeyDown={(event) => { if (state.phase !== "submitting" && shouldSubmitComposer({ key: event.key,
             shiftKey: event.shiftKey, isComposing: event.nativeEvent.isComposing })) {
@@ -1222,26 +1219,28 @@ function WorkSurface({ state, composer, submit, startSuggestion, dispatch, conte
             </button></Tooltip>}
         </div>
         </div>
+        {state.messages.length === 0 && <StarterSuggestions draftActive={state.draft.trim().length > 0}
+          onSelect={startSuggestion} t={t} />}
       </div>
       <p id="composer-commit-note" className="composer-note sr-only">{t("work.composer.commitNote")}</p>
     </div>
   </section>;
 }
 
-function Welcome({ draftActive, onSelect, t }: { draftActive: boolean;
+function StarterSuggestions({ draftActive, onSelect, t }: { draftActive: boolean;
   onSelect: (text: string) => void; t: (key: MessageKey) => string }) {
   const suggestions = [
     { label: t("work.suggestion.synthesize"), text: t("work.suggestion.synthesizeBody"), icon: "file" },
     { label: t("work.suggestion.analyze"), text: t("work.suggestion.analyzeBody"), icon: "search" },
     { label: t("work.suggestion.create"), text: t("work.suggestion.createBody"), icon: "work" },
   ] satisfies readonly { label: string; text: string; icon: IconName }[];
-  return <div className="welcome"><h1>{t("work.welcome.title")}</h1>
-    <p className="welcome-copy">{t("work.welcome.description")}</p>
-    {!draftActive && <div className="suggestion-grid">{suggestions.map(({ label, text, icon }) =>
+  if (draftActive) return null;
+  return <div className="home-suggestions"><div className="suggestion-grid">
+    {suggestions.map(({ label, text, icon }) =>
       <Tooltip key={label} label={`${label}: ${text}`} side="top" align="start"><button
         type="button" aria-label={`${label}: ${text}`}
         onClick={() => onSelect(text)}><span className="suggestion-icon"><Icon name={icon} /></span>
-        <span className="suggestion-copy">{text}</span></button></Tooltip>)}</div>}
+        <span className="suggestion-copy">{text}</span></button></Tooltip>)}</div>
   </div>;
 }
 

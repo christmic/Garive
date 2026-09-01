@@ -150,7 +150,8 @@ describe("Desktop visual accessibility contract", () => {
     expect(CSS).toContain(".settings-workbench { display: grid; grid-template-columns: 164px minmax(0, 1fr)");
     expect(CSS).toContain(".settings-panel { min-width: 0; overflow: auto;");
     expect(CSS).toContain(".settings-navigation { display: flex;");
-    expect(CSS).toContain(".welcome { width: min(var(--thread-content-max-width), 100%);");
+    expect(CSS).toContain(".home-suggestions { width: 100%; padding-top: 8px; pointer-events: auto; }");
+    expect(CSS).not.toContain(".welcome-copy");
     expect(CSS).toContain(".new-work-surface .composer-wrap { top: clamp(210px, 27vh, 236px);");
     expect(CSS).toContain(".suggestion-grid button { position: relative; display: flex; align-items: center; gap: 6px; min-height: 40px;");
     expect(CSS).toContain(".suggestion-grid button:is(:hover, :focus-visible) { color: var(--text-primary); }");

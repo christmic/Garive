@@ -185,11 +185,11 @@ describe("Desktop product experience", () => {
 
   it("keeps durable search inside the contextual command overlay", async () => {
     const view = render(<App />);
-    const searchTooltip = await screen.findByRole("tooltip", { name: "Search durable work (⌘F)" });
-    const search = searchTooltip.parentElement?.querySelector<HTMLButtonElement>("button");
-    expect(search?.hasAttribute("title")).toBe(false);
-    search?.focus();
-    fireEvent.click(search!);
+    const [search] = await screen.findAllByRole("button", { name: "Search" });
+    expect(screen.getAllByRole("button", { name: "Search" })).toHaveLength(1);
+    expect(search.hasAttribute("title")).toBe(false);
+    search.focus();
+    fireEvent.click(search);
     const dialog = screen.getByRole("dialog", { name: "Command menu" });
     expect(screen.getByRole("textbox", { name: "Search durable work" })).toBeTruthy();
     expect(screen.getByRole("group", { name: "Filter durable work" })).toBeTruthy();
@@ -260,6 +260,7 @@ describe("Desktop product experience", () => {
     render(<App />);
     await screen.findByText("What should we accomplish?");
     const composer = screen.getByRole("textbox", { name: "Describe the outcome you want" });
+    expect(composer.getAttribute("placeholder")).toBe("Do anything");
     composer.focus();
     fireEvent.keyDown(window, { key: "k", metaKey: true });
     const dialog = await screen.findByRole("dialog", { name: "Command menu" });
