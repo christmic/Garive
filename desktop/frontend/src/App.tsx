@@ -25,6 +25,7 @@ import { Tooltip } from "./ui/Tooltip";
 import { TurnActionControls } from "./ui/TurnActionControls";
 import { ThreadUserNavigationRail } from "./ui/ThreadUserNavigationRail";
 import { ThreadFindBar } from "./ui/ThreadFindBar";
+import { ScrollToTailButton } from "./ui/ScrollToTailButton";
 import { UsageBudgetCard, UsageBudgetTrigger, type UsageBudgetSnapshot } from "./ui/UsageBudget";
 import { WindowZoomBanner } from "./ui/WindowZoomBanner";
 import { SetupFlow } from "./features/setup/SetupFlow";
@@ -1371,11 +1372,8 @@ function WorkSurface({ state, composer, submit, startSuggestion, dispatch, conte
       {state.error && <button type="button" onClick={() => dispatch({ type: "error_dismissed" })}
         aria-label={t("error.dismiss")}><Icon name="close" /></button>}</div>}
     <div ref={composerFooter} className="composer-wrap" data-thread-scroll-footer="true">
-      {!followingTail && <button className={newOutputBelow
-        ? "conversation-tail-button unread" : "conversation-tail-button"} type="button"
-        aria-label={t(newOutputBelow ? "timeline.newOutput" : "timeline.jumpLatest")}
-        onClick={jumpToLatest}><Icon name="chevron" /><span>{t(newOutputBelow
-          ? "timeline.newOutput" : "timeline.jumpLatest")}</span></button>}
+      <ScrollToTailButton visible={!followingTail} working={newOutputBelow}
+        label={t("timeline.jumpLatest")} onClick={jumpToLatest} />
       <div className="composer-stack">
         <ComposerRail visible={state.phase === "submitting" || Boolean(suspension)}><TurnProgress goal={activeGoal}
           status={suspension ? t("status.needsInput") : undefined} activities={state.activities}

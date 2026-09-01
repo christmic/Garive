@@ -310,9 +310,13 @@ grouped token, but it must not change document typography or hide state.
 - Return-to-latest uses a real smooth scroll unless the OS requests reduced
   motion. Activating it deliberately returns the controller to follow mode and
   clears the unread marker while the viewport moves to the exact tail.
-- The return control is anchored to the variable-height Composer wrapper, 25 px
-  above its leading edge. It must not use a fixed viewport-bottom offset, so
-  approval, suspension and attached-workspace rows cannot overlap it.
+- The return control stays mounted as a 32×32 px circular button, but hidden
+  state removes opacity, pointer ownership and keyboard reach together. Its
+  top edge is anchored 26 px above the variable-height Composer wrapper rather
+  than to the viewport. Ordinary detached state uses the down chevron; unseen
+  live output swaps in three 4 px dots with a 1 s wave and 0/.1/.2 s delays.
+  Reduced motion freezes the dots. No visible text or fixed viewport-bottom
+  offset may compete with approval, suspension or attached-workspace rows.
 
 ### File-document typography
 

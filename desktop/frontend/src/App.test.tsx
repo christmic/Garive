@@ -464,6 +464,8 @@ describe("Desktop product experience", () => {
     fireEvent.scroll(conversation);
     const jump = await screen.findByRole("button", { name: "Jump to latest" });
     expect(jump.closest(".composer-wrap")).toBe(view.container.querySelector(".composer-wrap"));
+    expect(jump.textContent).toBe("");
+    expect(jump.getAttribute("data-visible")).toBe("true");
     expect(conversation.scrollTop).toBe(100);
     conversation.scrollTop = 0;
     fireEvent.scroll(conversation);

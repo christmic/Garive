@@ -1633,6 +1633,26 @@ with results, exact 8/16 positioning, six cross-Markdown matches, orange/yellow
 current/rest colors, forward/backward wrap, Escape cleanup and focus return to
 the Composer with zero horizontal overflow.
 
+### LVII. Return to latest is a stateful icon, not a status capsule
+
+Installed Codex `26.825.51511` defines its reusable scroll-to-bottom control in
+`app-initial-B6Gk5KCN.js` as an absolute 32×32 px circle with one border,
+surface background, secondary text and a basic opacity transition. Hidden
+state simultaneously sets zero opacity, pointer inertness, `aria-hidden` and
+`tabIndex=-1`. `local-conversation-thread-CQimdxEP.js` anchors it above the
+Composer and swaps the down chevron for working dots only when unseen live
+output exists. The installed CSS defines three 4 px dots, a 1 s wave and
+0/.1/.2 s delays, disabled by reduced motion.
+
+Garive formerly rendered a 30 px text capsule whose width changed between
+`Jump to latest` and `New output below`, adding a competing status row above
+the Composer. Desktop and Web now share one persistent circular control with
+the source states and animation while preserving Garive's measured footer and
+tail-following controller. Live 1280×720 evidence confirms the control appears
+only after a real away-scroll, has no visible label, remains named for assistive
+technology, and returns to hidden, pointer-inert, keyboard-inert state after
+activation.
+
 ## Gate 1 — Codex fidelity
 
 This gate passes only when both Desktop and Web show:

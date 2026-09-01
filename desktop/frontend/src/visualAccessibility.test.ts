@@ -266,8 +266,9 @@ describe("Desktop visual accessibility contract", () => {
     expect(CSS).toContain('.conversation-top-fade[data-visible="true"] { opacity: 1; }');
     expect(CSS).toContain(".conversation { overflow-anchor: none; }");
     expect(CSS).toContain("height: 16px; background: linear-gradient(to bottom, var(--surface-canvas), transparent)");
-    expect(CSS).toContain(".conversation-tail-button { pointer-events: auto; position: absolute; z-index: 4; top: -25px; left: 50%;");
+    expect(CSS).toContain(".conversation-tail-button { pointer-events: auto; position: absolute; z-index: 4; top: -26px; left: 50%; display: grid; place-items: center; width: 32px; height: 32px;");
     expect(CSS).not.toContain(".conversation-tail-button { bottom:");
+    expect(CSS).toContain("@keyframes conversation-tail-wave");
     expect(CSS).toContain("padding-left: 10px; padding-right: 0;");
     expect(CSS).toContain("box-shadow: var(--shadow-composer)");
     expect(CSS).toContain(".composer textarea { min-height: var(--composer-multiline-input-min-height); max-height: 25dvh; padding: 6px 12px 0;");
