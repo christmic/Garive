@@ -904,6 +904,23 @@ the surrounding desktop shell, while export remains a distinct action. Garive
 uses a 40 rem document measure because it reproduces the supplied reference's
 line wrapping at the audited viewport; this is not asserted as Codex source.
 
+### XXIX. Source-backed split-pane toolbar rhythm
+
+The installed `thread-app-shell-chrome-DQMbICmE.js` defines the thread workspace
+toolbar as `h-toolbar-pane`, labels it “Chat toolbar”, keeps the title in a
+`min-w-0 flex-1` region and registers compact trailing actions. This is direct
+source evidence that a split thread uses pane chrome, not the 46px standalone
+window toolbar. The supplied second reference independently shows the chat and
+file pane headers aligned on one horizontal rhythm.
+
+Garive therefore keeps 46px for an unsplit work window and resolves a shared
+`--height-active-thread-toolbar` to 40px whenever the artifact workspace is
+open. The same value owns the chat grid row, file tab row, divider origin and
+responsive overlay offset. Export and inspector actions keep their behaviour
+and accessible names while their split presentation becomes a uniform 30px
+icon control. This is a Garive composition decision grounded in the cited
+source geometry; it does not copy unavailable Codex action logic.
+
 ### XXVI. Turn-local progressive disclosure and result actions
 
 Installed source evidence is explicit. `local-conversation-turn-BPH7L6Kk.js`

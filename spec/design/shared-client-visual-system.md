@@ -487,8 +487,12 @@ elapsed time, model selection and execution controls remain absent until a
 trusted product capability supplies them. Reduced motion sets its attachment
 transition to zero through `--motion-relaxed`.
 
-The unified Desktop/Web main toolbar is 46px; compact chrome uses 36px. The file
-tab shares the main row, its location toolbar is 40px including its
+The unified Desktop/Web main toolbar is 46px; compact chrome uses 36px. Opening
+a workspace pane switches both the thread header and file tab row to the shared
+40px pane rhythm; the semantic `--height-active-thread-toolbar` token owns the
+transition so resize handles and responsive overlays cannot drift. Thread
+actions remain fully labelled to assistive technology but become 30px uniform
+icon controls in the constrained split. The file location toolbar is 40px including its
 separator, and the first rendered heading begins after a 4px document inset.
 An existing Work exposes one 24px title-proximate overflow action before the
 far-edge actions. It opens a compact desktop menu containing only real routes

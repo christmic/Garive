@@ -50,6 +50,7 @@
   --height-toolbar-sm: 36px;
   --height-toolbar-pane: 40px;
   --height-window-bar: var(--height-toolbar);
+  --height-thread-toolbar: var(--height-window-bar);
   --height-file-toolbar: var(--height-toolbar-pane);
   --motion-basic: 150ms;
   --motion-relaxed: 300ms;

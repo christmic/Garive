@@ -54,6 +54,7 @@ describe("Desktop visual accessibility contract", () => {
     expect(TOKENS).toContain("--height-toolbar-sm: 36px");
     expect(TOKENS).toContain("--height-toolbar-pane: 40px");
     expect(TOKENS).toContain("--height-window-bar: var(--height-toolbar)");
+    expect(TOKENS).toContain("--height-thread-toolbar: var(--height-window-bar)");
     expect(TOKENS).toContain("--height-file-toolbar: var(--height-toolbar-pane)");
     expect(TOKENS).toContain("--radius-composer: 24px");
     expect(TOKENS).toContain("--size-composer-action: 28px");
@@ -82,6 +83,7 @@ describe("Desktop visual accessibility contract", () => {
     expect(CSS).toContain("display: flex; background: var(--surface-canvas)");
     expect(CSS).toContain("--conversation-split: 352px");
     expect(CSS).toContain(".app-shell:has(.workspace-panel)");
+    expect(CSS).toContain(".app-shell:has(.workspace-panel) { --height-active-thread-toolbar: var(--height-toolbar-pane); }");
     expect(CSS).toContain(".app-shell:has(.workspace-panel) .main-surface { flex-grow: 0; max-width: var(--conversation-split); }");
     expect(CSS).toContain(".panel-animated > [data-panel] { transition: flex-grow var(--motion-relaxed) var(--ease-basic), max-width var(--motion-relaxed) var(--ease-basic); }");
     expect(CSS).toContain(".panel-animated.panel-dragging > [data-panel] { transition: none; }");
@@ -112,7 +114,9 @@ describe("Desktop visual accessibility contract", () => {
     expect(CSS).toContain(".workspace-tab { display: grid; grid-template-columns: minmax(0, 1fr) 22px; width: min(120px, 100%);");
     expect(CSS).toContain("min-height: var(--height-file-toolbar);");
     expect(CSS).toContain(".app-shell:has(.workspace-panel) .timeline { width: calc(100% - 20px); }");
-    expect(CSS).toContain("grid-template-columns: minmax(0, 1fr); grid-template-rows: var(--height-window-bar) minmax(0, 1fr)");
+    expect(CSS).toContain("grid-template-columns: minmax(0, 1fr); grid-template-rows: var(--height-active-thread-toolbar) minmax(0, 1fr)");
+    expect(CSS).toContain(".workspace-panel { position: relative; flex: 1 1 auto; min-width: 0; max-width: calc(100% - var(--sidebar-width) - var(--conversation-split)); grid-template-rows: var(--height-toolbar-pane) 1fr;");
+    expect(CSS).toContain(".workspace-resizer { position: absolute; z-index: 4; top: var(--height-active-thread-toolbar);");
     expect(CSS).toContain(".sidebar-resizer { position: absolute; z-index: 11; top: var(--height-toolbar-sm);");
     expect(CSS).toContain(".timeline { width: min(var(--thread-content-max-width), calc(100% - 48px));");
     expect(CSS).toContain("padding: var(--thread-content-top-inset) 0 174px;");
@@ -163,6 +167,7 @@ describe("Desktop visual accessibility contract", () => {
     expect(CSS).toContain(".progress-state { color: var(--text-tertiary); font-size: var(--text-2xs); white-space: nowrap; }");
     expect(CSS).toContain(".topbar-actions .icon-button[aria-expanded=\"true\"] { color: var(--text-primary); background: transparent; }");
     expect(CSS).toContain(".topbar-text-action { display: flex; align-items: center; gap: 5px; height: 30px;");
+    expect(CSS).toContain(".app-shell:has(.workspace-panel) .topbar-text-action { display: grid; place-items: center; width: 30px; padding: 0; }");
     expect(CSS).toContain(".work-menu-trigger { display: grid; place-items: center; width: 24px; height: 24px;");
     expect(CSS).toContain(".desktop-action-menu { position: absolute; z-index: 12; top: 27px; left: 0; width: 220px;");
     expect(CSS).toContain(".work-menu .desktop-action-menu { left: -4px; width: 204px; }");
