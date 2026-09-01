@@ -14,6 +14,53 @@ use std::{
 };
 
 #[test]
+fn system_theme_uses_paired_terminal_colors_in_a_real_pty() {
+    let (address, server) = empty_host();
+    let temporary = tempfile::tempdir().unwrap();
+    let transcript = temporary.path().join("system-theme.log");
+    let status = Command::new("expect")
+        .env_remove("NO_COLOR")
+        .env("TERM", "xterm-256color")
+        .env("GARIVE_TUI_BIN", env!("CARGO_BIN_EXE_garive-tui"))
+        .env("GARIVE_TUI_HOST", format!("http://{address}/"))
+        .env("GARIVE_TUI_LOG", &transcript)
+        .env("GARIVE_TUI_STATE", temporary.path().join("state"))
+        .args([
+            "-c",
+            r#"
+                set timeout 5
+                log_file -noappend $env(GARIVE_TUI_LOG)
+                spawn -noecho /bin/sh -c {stty rows 24 columns 100; exec "$GARIVE_TUI_BIN" --host "$GARIVE_TUI_HOST" --state-dir "$GARIVE_TUI_STATE" --theme system --mouse off}
+                expect -exact "\033]10;?\033\\\033]11;?\033\\"
+                send "\033]11;rgb:f5/f5/f5\007\033]10;rgb:11/11/11\033\\"
+                expect -exact "\033\[6n"
+                send "\033\[1;1R"
+                expect { "Garive" {} timeout { exit 2 } }
+                send "\021"
+                expect { "Garive?" {} timeout { exit 3 } }
+                send "\r"
+                expect { eof {} timeout { exit 4 } }
+            "#,
+        ])
+        .status()
+        .expect("expect must launch the shipping binary in a PTY");
+    server.join().unwrap();
+    assert!(status.success());
+    let output = fs::read(&transcript).unwrap();
+    let text = String::from_utf8_lossy(&output);
+    assert!(text.contains("\x1b]10;?\x1b\\\x1b]11;?\x1b\\"));
+    assert!(
+        text.contains("\x1b[38;5;4;49m"),
+        "light palette blue accent rendered"
+    );
+    assert!(
+        text.contains("\x1b[38;5;0;48;2;235;238;244m"),
+        "light palette dark text and surface rendered"
+    );
+    assert!(text.contains("\x1b[?1049l"), "terminal restored");
+}
+
+#[test]
 fn shipping_tui_boots_and_restores_a_real_pty() {
     for reduced_motion in [false, true] {
         let (address, server) = empty_host();

@@ -20,11 +20,8 @@ pub(super) fn handle_terminal(event: Event, state: &mut RuntimeState) {
         Event::Resize(width, height) => {
             state.composer_clicks.reset();
             state.dispatch(AppAction::TerminalResized(TerminalSize { width, height }));
-            crate::view::reflow_conversation(
-                &mut state.model,
-                state.config.theme,
-                &mut state.render_cache,
-            );
+            let theme = state.theme();
+            crate::view::reflow_conversation(&mut state.model, theme, &mut state.render_cache);
         }
         Event::FocusGained => state.dispatch(AppAction::TerminalFocusChanged(true)),
         Event::FocusLost => {
@@ -220,12 +217,8 @@ fn handle_key_inner(key: KeyEvent, state: &mut RuntimeState) {
 }
 
 pub(super) fn scroll_conversation(state: &mut RuntimeState, cells: isize) {
-    crate::view::scroll_conversation(
-        &mut state.model,
-        state.config.theme,
-        &mut state.render_cache,
-        cells,
-    );
+    let theme = state.theme();
+    crate::view::scroll_conversation(&mut state.model, theme, &mut state.render_cache, cells);
 }
 
 fn handle_shortcut(intent: ShortcutIntent, state: &mut RuntimeState) -> bool {

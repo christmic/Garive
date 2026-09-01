@@ -267,6 +267,7 @@ fn runtime(pending: Vec<PendingCommand>) -> RuntimeState {
         client,
         sender,
         action_sender,
+        crate::runtime::TerminalTheme::default(),
         RestoredState {
             store,
             preferences: preferences.clone(),

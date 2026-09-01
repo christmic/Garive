@@ -15,7 +15,7 @@ use crate::{
 use super::{
     super::{
         controller::handle_terminal, external_editor, terminal_events::TerminalEventReader,
-        SystemTerminal, TerminalGuard, TerminalOptions,
+        SystemTerminal, TerminalGuard, TerminalOptions, TerminalTheme,
     },
     handle_host, map_terminal_error,
     scheduling::{self, FairScheduler, ResizeCoalescer, Scheduled, ShutdownSignal},
@@ -42,7 +42,14 @@ pub(super) async fn run(
     }
     let (sender, mut receiver) = mpsc::channel(256);
     let (action_sender, mut action_receiver) = mpsc::channel(64);
-    let mut state = RuntimeState::new(config, client, sender, action_sender, restored);
+    let mut state = RuntimeState::new(
+        config,
+        client,
+        sender,
+        action_sender,
+        TerminalTheme::default(),
+        restored,
+    );
     state.dispatch(AppAction::BootStarted);
     let mut events = TerminalEventReader::start().map_err(|_| TuiError::TerminalIo)?;
     let mut interrupted = None;

@@ -20,8 +20,9 @@ use crate::{
 };
 
 use super::{
-    controller::handle_terminal, external_editor, terminal_events::TerminalEventReader,
-    SystemTerminal, TerminalError, TerminalGuard, TerminalOptions,
+    controller::handle_terminal, external_editor, terminal_appearance,
+    terminal_events::TerminalEventReader, SystemTerminal, TerminalError, TerminalGuard,
+    TerminalOptions,
 };
 
 mod messages;
@@ -103,6 +104,7 @@ pub async fn run(config: LaunchConfig) -> Result<(), TuiError> {
     if config.test_crash_hook == Some(crate::args::TestCrashHook::TerminalAcquiredPanic) {
         panic!("injected panic after terminal acquisition");
     }
+    let terminal_theme = terminal_appearance::probe(terminal_appearance::PROBE_TIMEOUT);
     let mut terminal = match Terminal::new(CrosstermBackend::new(io::stderr())) {
         Ok(terminal) => terminal,
         Err(_) => return Err(terminal_setup_failure(&mut guard, &mut shutdown).await),
@@ -110,10 +112,16 @@ pub async fn run(config: LaunchConfig) -> Result<(), TuiError> {
     if terminal.clear().is_err() {
         return Err(terminal_setup_failure(&mut guard, &mut shutdown).await);
     }
-
     let (sender, mut receiver) = mpsc::channel(256);
     let (action_sender, mut action_receiver) = mpsc::channel(64);
-    let mut state = RuntimeState::new(config, client, sender, action_sender, restored);
+    let mut state = RuntimeState::new(
+        config,
+        client,
+        sender,
+        action_sender,
+        terminal_theme,
+        restored,
+    );
     state.dispatch(AppAction::BootStarted);
     let mut events = TerminalEventReader::start().map_err(|_| TuiError::TerminalIo)?;
     let mut interrupted = None;
@@ -310,7 +318,7 @@ fn draw(
             let cursor = if state.config.reduced_motion {
                 view::render_cached(
                     &state.model,
-                    state.config.theme,
+                    state.theme(),
                     area,
                     frame.buffer_mut(),
                     &mut state.render_cache,
@@ -318,7 +326,7 @@ fn draw(
             } else {
                 view::render_cached_with_motion(
                     &state.model,
-                    state.config.theme,
+                    state.theme(),
                     view::MotionFrame::animated(motion_tick),
                     area,
                     frame.buffer_mut(),

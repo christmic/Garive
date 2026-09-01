@@ -25,6 +25,7 @@ impl RuntimeState {
             client,
             sender,
             action_sender,
+            crate::runtime::TerminalTheme::default(),
             RestoredState {
                 store,
                 preferences: preferences.clone(),

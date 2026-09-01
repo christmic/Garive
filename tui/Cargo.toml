@@ -40,6 +40,9 @@ windows-sys = { version = "0.61.2", features = [
     "Win32_System_Threading",
 ] }
 
+[target.'cfg(unix)'.dependencies]
+rustix.workspace = true
+
 [dev-dependencies]
 garive-core = { path = "../engine/core" }
 garive-ledger = { path = "../engine/ledger" }
