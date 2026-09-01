@@ -7,10 +7,11 @@ use garive_ledger::{
 use garive_llm::{ModelItem, TokenCount};
 use garive_runtime::{
     bind_completed_plan_proposal_result, commit_planned_turn, parse_bound_plan_proposal_result,
-    plan_core_terminal, plan_start_plan_proposal_execution, BoundPlanProposalResult,
-    CoreTerminalContext, EffectiveRuntimeLimits, HostClock, InstalledAgent, LiveHost,
-    LiveHostLimits, PlanProposalResultError, RuntimeCommandId, SqliteLedger,
-    StartPlanProposalExecutionCommand, StartTurnCommand, TurnDispatchError, TurnDispatcher,
+    plan_core_terminal, plan_start_plan_proposal_execution,
+    plan_start_plan_replan_proposal_execution, BoundPlanProposalResult, CoreTerminalContext,
+    EffectiveRuntimeLimits, HostClock, InstalledAgent, LiveHost, LiveHostLimits,
+    PlanProposalResultError, RuntimeCommandId, SqliteLedger, StartPlanProposalExecutionCommand,
+    StartPlanReplanProposalExecutionCommand, StartTurnCommand, TurnDispatchError, TurnDispatcher,
 };
 use serde_json::{json, Value};
 use tempfile::tempdir;
@@ -40,6 +41,7 @@ fn bound(topology: Value) -> BoundPlanProposalResult {
         proposer_reference: "planner-v1".into(),
         result_digest: response.sha256().into(),
         response_items_json: response.as_json().into(),
+        replan: None,
     }
 }
 
@@ -129,7 +131,7 @@ fn completed_planner_result_is_bound_once_from_ledger() {
     };
     let planned = plan_start_plan_proposal_execution(
         &StartPlanProposalExecutionCommand {
-            start,
+            start: start.clone(),
             goal_id: "goal-1".into(),
             goal_revision: 1,
             goal_definition_digest: "b".repeat(64),
@@ -199,4 +201,91 @@ fn completed_planner_result_is_bound_once_from_ledger() {
     )
     .unwrap();
     assert_eq!(replay, bound);
+
+    let replan_start = StartTurnCommand {
+        command_id: RuntimeCommandId::new("replanner-request").unwrap(),
+        trusted_input: "replan".into(),
+        recorded_at: "2026-09-01T00:00:04Z".into(),
+        ..start
+    };
+    let planned = plan_start_plan_replan_proposal_execution(
+        &StartPlanReplanProposalExecutionCommand {
+            proposal: StartPlanProposalExecutionCommand {
+                start: replan_start,
+                goal_id: "goal-1".into(),
+                goal_revision: 2,
+                goal_definition_digest: "b".repeat(64),
+                expected_session_version: 4,
+                proposer_reference: "planner-v1".into(),
+                output_schema_digest: "c".repeat(64),
+            },
+            admission_fact_id: "fact-replan-admitted".into(),
+            source_plan_id: "plan-1".into(),
+            source_plan_revision: 1,
+            source_plan_definition_digest: "d".repeat(64),
+        },
+        8,
+    )
+    .unwrap();
+    let replan_turn_id = planned.turn_id.clone();
+    let replan_execution_id = planned.execution_id.clone().unwrap();
+    commit_planned_turn(
+        &mut ledger,
+        SessionId::try_from(session.session_id.as_str()).unwrap(),
+        4,
+        &planned,
+    )
+    .unwrap();
+    let terminals = plan_core_terminal(
+        &CoreTerminalContext {
+            turn_id: replan_turn_id.clone(),
+            execution_id: replan_execution_id,
+            recorded_at: "2026-09-01T00:00:05Z".into(),
+        },
+        &ExecutionReport {
+            outcome: AgentOutcome::Completed {
+                response_items: vec![ModelItem::Text {
+                    text: "{\"steps\":[]}".into(),
+                }],
+                usage,
+            },
+            completed_iterations: 1,
+            usage,
+        },
+    )
+    .unwrap();
+    ledger
+        .commit(
+            SessionId::try_from(session.session_id.as_str()).unwrap(),
+            5,
+            terminals,
+        )
+        .unwrap();
+    let bound = bind_completed_plan_proposal_result(
+        &mut ledger,
+        &SessionId::try_from(session.session_id.as_str()).unwrap(),
+        &replan_turn_id,
+        6,
+        "2026-09-01T00:00:06Z",
+    )
+    .unwrap();
+    let replan = bound.replan.unwrap();
+    assert_eq!(replan.admission_fact_id, "fact-replan-admitted");
+    assert_eq!(replan.source_plan_id, "plan-1");
+    assert_eq!(replan.source_plan_revision, 1);
+    assert_eq!(replan.source_plan_definition_digest, "d".repeat(64));
+    assert_eq!(bound.binding_position, 15);
+    assert_eq!(
+        ledger
+            .read_facts(
+                &SessionId::try_from(session.session_id.as_str()).unwrap(),
+                14,
+                15,
+                None,
+            )
+            .unwrap()[0]
+            .kind
+            .as_str(),
+        "plan.replan.proposal.result_bound"
+    );
 }

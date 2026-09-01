@@ -234,7 +234,8 @@ pub use plan_dispatch_runtime::{
 pub use plan_proposal_execution::{
     bind_completed_plan_proposal_result, is_plan_proposal_execution,
     parse_bound_plan_proposal_result, plan_proposal_output_schema, BoundPlanProposalResult,
-    PlanProposalBindingError, PlanProposalOutputSchema, PlanProposalResultError,
+    BoundPlanReplanResult, PlanProposalBindingError, PlanProposalOutputSchema,
+    PlanProposalResultError,
 };
 pub use plan_proposal_runtime::{
     commit_completed_plan_proposal_once, propose_initial_goal_plan_once,

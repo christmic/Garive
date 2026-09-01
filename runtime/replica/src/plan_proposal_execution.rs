@@ -32,6 +32,21 @@ pub struct BoundPlanProposalResult {
     pub result_digest: String,
     /// Canonical model-item array read from the durable terminal fact.
     pub response_items_json: String,
+    /// Exact source authority when this result proposes revision N+1.
+    pub replan: Option<BoundPlanReplanResult>,
+}
+
+/// Durable source binding copied from one admitted replan request.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct BoundPlanReplanResult {
+    /// Failure-policy admission fact authorizing the proposal.
+    pub admission_fact_id: String,
+    /// Source Plan identity retained by the next revision.
+    pub source_plan_id: String,
+    /// Exact immutable source revision.
+    pub source_plan_revision: u64,
+    /// Canonical source Plan definition digest.
+    pub source_plan_definition_digest: String,
 }
 
 /// Stable failures while binding a Planner terminal.
@@ -287,12 +302,18 @@ pub fn bind_completed_plan_proposal_result(
         .read_facts(session_id, 0, watermark.max_position, None)
         .map_err(|_| PlanProposalBindingError::DurabilityFailure)?;
     let request = one(&facts, |fact| {
-        fact.kind.as_str() == "plan.proposal.requested"
+        is_proposal_request_kind(fact.kind.as_str())
             && payload(fact).ok().is_some_and(|value| {
                 value.get("turn_id").and_then(Value::as_str) == Some(planner_turn_id.as_str())
             })
     })?;
     let request_value = payload(request)?;
+    let replan = bound_replan_request(request, &request_value)?;
+    let binding_kind = if replan.is_some() {
+        "plan.replan.proposal.result_bound"
+    } else {
+        "plan.proposal.result_bound"
+    };
     let execution_id = text(&request_value, "execution_id")?;
     let started = one(&facts, |fact| {
         fact.kind.as_str() == "turn.started" && fact.turn_id.as_ref() == Some(planner_turn_id)
@@ -347,7 +368,7 @@ pub fn bind_completed_plan_proposal_result(
         return Err(PlanProposalBindingError::CorruptState);
     }
     let mut bindings = facts.iter().filter(|fact| {
-        fact.kind.as_str() == "plan.proposal.result_bound"
+        fact.kind.as_str() == binding_kind
             && payload(fact).ok().is_some_and(|value| {
                 value.get("request_fact_id").and_then(Value::as_str)
                     == Some(request.fact_id.as_str())
@@ -367,6 +388,7 @@ pub fn bind_completed_plan_proposal_result(
             || number(&value, "goal_revision")? != number(&request_value, "goal_revision")?
             || text(&value, "goal_definition_digest")?
                 != text(&request_value, "goal_definition_digest")?
+            || !same_replan_binding(&value, replan.as_ref())?
         {
             return Err(PlanProposalBindingError::CorruptState);
         }
@@ -380,6 +402,34 @@ pub fn bind_completed_plan_proposal_result(
         &digest(format!("{}:{}", request.fact_id.as_str(), terminal.fact_id.as_str()).as_bytes())
             [..32]
     );
+    let mut binding_payload = json!({
+        "command_id":command_id,
+        "goal_id":text(&request_value,"goal_id")?,
+        "goal_revision":number(&request_value,"goal_revision")?,
+        "goal_definition_digest":text(&request_value,"goal_definition_digest")?,
+        "request_fact_id":request.fact_id.as_str(),
+        "planner_turn_id":planner_turn_id.as_str(),
+        "planner_execution_id":execution_id,
+        "terminal_fact_id":terminal.fact_id.as_str(),
+        "terminal_payload_digest":terminal.payload.sha256(),
+        "result_digest":result_digest,
+    });
+    if let Some(replan) = &replan {
+        binding_payload
+            .as_object_mut()
+            .ok_or(PlanProposalBindingError::CorruptState)?
+            .extend(
+                json!({
+                    "admission_fact_id":replan.admission_fact_id,
+                    "source_plan_id":replan.source_plan_id,
+                    "source_plan_revision":replan.source_plan_revision,
+                    "source_plan_definition_digest":replan.source_plan_definition_digest,
+                })
+                .as_object()
+                .cloned()
+                .ok_or(PlanProposalBindingError::CorruptState)?,
+            );
+    }
     let fact = FactDraft {
         fact_id: FactId::try_from(format!("fact-{}", digest(command_id.as_bytes())).as_str())
             .map_err(|_| PlanProposalBindingError::InvalidInput)?,
@@ -387,22 +437,10 @@ pub fn bind_completed_plan_proposal_result(
         execution_id: None,
         model_request_id: None,
         tool_invocation_id: None,
-        kind: FactKind::new("plan.proposal.result_bound")
-            .map_err(|_| PlanProposalBindingError::InvalidInput)?,
+        kind: FactKind::new(binding_kind).map_err(|_| PlanProposalBindingError::InvalidInput)?,
         schema_version: 1,
-        payload: CanonicalPayload::from_value(&json!({
-            "command_id":command_id,
-            "goal_id":text(&request_value,"goal_id")?,
-            "goal_revision":number(&request_value,"goal_revision")?,
-            "goal_definition_digest":text(&request_value,"goal_definition_digest")?,
-            "request_fact_id":request.fact_id.as_str(),
-            "planner_turn_id":planner_turn_id.as_str(),
-            "planner_execution_id":execution_id,
-            "terminal_fact_id":terminal.fact_id.as_str(),
-            "terminal_payload_digest":terminal.payload.sha256(),
-            "result_digest":result_digest,
-        }))
-        .map_err(|_| PlanProposalBindingError::CorruptState)?,
+        payload: CanonicalPayload::from_value(&binding_payload)
+            .map_err(|_| PlanProposalBindingError::CorruptState)?,
         recorded_at: recorded_at.into(),
     };
     let committed = ledger
@@ -427,6 +465,7 @@ pub fn bind_completed_plan_proposal_result(
         proposer_reference: text(&request_value, "proposer_reference")?.into(),
         result_digest: result_digest.into(),
         response_items_json: response_items_json.into(),
+        replan,
     })
 }
 
@@ -445,7 +484,49 @@ fn result(
         proposer_reference: text(request, "proposer_reference")?.into(),
         result_digest: digest.into(),
         response_items_json: json.into(),
+        replan: bound_replan_request(fact, request)?,
     })
+}
+
+fn is_proposal_request_kind(kind: &str) -> bool {
+    matches!(
+        kind,
+        "plan.proposal.requested" | "plan.replan.proposal.requested"
+    )
+}
+
+fn bound_replan_request(
+    fact: &DurableFact,
+    value: &Value,
+) -> Result<Option<BoundPlanReplanResult>, PlanProposalBindingError> {
+    if !matches!(
+        fact.kind.as_str(),
+        "plan.replan.proposal.requested" | "plan.replan.proposal.result_bound"
+    ) {
+        return Ok(None);
+    }
+    Ok(Some(BoundPlanReplanResult {
+        admission_fact_id: text(value, "admission_fact_id")?.into(),
+        source_plan_id: text(value, "source_plan_id")?.into(),
+        source_plan_revision: number(value, "source_plan_revision")?,
+        source_plan_definition_digest: text(value, "source_plan_definition_digest")?.into(),
+    }))
+}
+
+fn same_replan_binding(
+    value: &Value,
+    expected: Option<&BoundPlanReplanResult>,
+) -> Result<bool, PlanProposalBindingError> {
+    let Some(expected) = expected else {
+        return Ok(true);
+    };
+    Ok(
+        text(value, "admission_fact_id")? == expected.admission_fact_id
+            && text(value, "source_plan_id")? == expected.source_plan_id
+            && number(value, "source_plan_revision")? == expected.source_plan_revision
+            && text(value, "source_plan_definition_digest")?
+                == expected.source_plan_definition_digest,
+    )
 }
 
 fn one(
