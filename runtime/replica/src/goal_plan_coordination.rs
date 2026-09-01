@@ -1,11 +1,15 @@
-use garive_goal::GoalEvidenceV1;
-use garive_ledger::{CanonicalPayload, SessionId};
+use std::collections::BTreeSet;
+
+use garive_goal::{GoalEvidenceV1, GoalState};
+use garive_ledger::{CanonicalPayload, SessionId, TurnId};
 use garive_plan::{PlanDefinitionV1, PlanState};
 use serde_json::{json, Value};
 
 use crate::{
-    plan_goal_transition, reconstruct_goal, reconstruct_plan_graph, GoalCommandContext,
-    GoalRuntimeError, GoalRuntimeTransition, PlannedGoalCommand, SqliteLedger,
+    get_turn, plan_cancel_turn, plan_goal_transition, reconstruct_goal, reconstruct_plan_graph,
+    CancelReason, CancelTurnCommand, GetTurnQuery, GoalCommandContext, GoalRuntimeError,
+    GoalRuntimeTransition, PlannedGoalCommand, PlannedTurn, RuntimeCommandError, RuntimeCommandId,
+    RuntimeTurnStatus, SqliteLedger,
 };
 
 /// Stable failure classes for cross-aggregate Goal/Plan coordination.
@@ -19,8 +23,152 @@ pub enum GoalPlanCoordinationError {
     CompletedPlanUnavailable,
     /// Goal planning rejected the derived activation.
     Goal(GoalRuntimeError),
+    /// Durable Turn planning rejected a derived cancellation.
+    Runtime(RuntimeCommandError),
     /// Plan recovery or canonical reference derivation failed closed.
     CorruptState,
+}
+
+/// One deterministic cancellation propagation step for a Goal-owned Turn.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PlannedGoalTurnCancellation {
+    /// Session version against which this one-fact command must commit.
+    pub expected_session_version: u64,
+    /// Goal-owned Turn selected in stable identity order.
+    pub turn_id: TurnId,
+    /// Exact idempotent C6 cancellation request.
+    pub planned: PlannedTurn,
+}
+
+/// Plans the next missing Turn cancellation caused by a committed Goal cancellation.
+///
+/// Callers commit at most one result and evaluate again. This makes multi-Turn
+/// propagation restart-safe without an authoritative process-local queue.
+pub fn plan_next_turn_cancellation_for_goal(
+    ledger: &SqliteLedger,
+    session_id: &SessionId,
+    goal_id: &str,
+    recorded_at: &str,
+) -> Result<Option<PlannedGoalTurnCancellation>, GoalPlanCoordinationError> {
+    let goal =
+        reconstruct_goal(ledger, session_id, goal_id).map_err(GoalPlanCoordinationError::Goal)?;
+    if goal.snapshot.state() != GoalState::Cancelled {
+        return Err(GoalPlanCoordinationError::Goal(
+            GoalRuntimeError::TransitionInvalid,
+        ));
+    }
+    let plans = reconstruct_plan_graph(ledger, session_id)
+        .map_err(|_| GoalPlanCoordinationError::CorruptState)?;
+    if plans.values().any(|plan| {
+        plan.session_version != goal.session_version
+            || plan.through_position != goal.through_position
+    }) {
+        return Err(GoalPlanCoordinationError::ConcurrentModification);
+    }
+    let plan_coordinates = plans
+        .values()
+        .filter(|plan| plan.snapshot.definition().goal_id() == goal_id)
+        .map(|plan| {
+            (
+                plan.snapshot.definition().plan_id().as_str().to_owned(),
+                plan.snapshot.definition().plan_revision(),
+            )
+        })
+        .collect::<BTreeSet<_>>();
+    let facts = ledger
+        .read_facts(session_id, 0, goal.through_position, None)
+        .map_err(|_| GoalPlanCoordinationError::CorruptState)?;
+    let cancellations = facts
+        .iter()
+        .filter(|fact| fact.kind.as_str() == "goal.cancelled")
+        .filter_map(|fact| {
+            let value = serde_json::from_str::<Value>(fact.payload.as_json()).ok()?;
+            (value.get("goal_id")?.as_str()? == goal_id).then_some(fact)
+        })
+        .collect::<Vec<_>>();
+    let [cancellation] = cancellations.as_slice() else {
+        return Err(GoalPlanCoordinationError::CorruptState);
+    };
+    let mut turns = BTreeSet::new();
+    for start in facts
+        .iter()
+        .filter(|fact| fact.kind.as_str() == "plan.step.started")
+    {
+        let value = serde_json::from_str::<Value>(start.payload.as_json())
+            .map_err(|_| GoalPlanCoordinationError::CorruptState)?;
+        let plan_id = value
+            .get("plan_id")
+            .and_then(Value::as_str)
+            .ok_or(GoalPlanCoordinationError::CorruptState)?;
+        let plan_revision = value
+            .get("plan_revision")
+            .and_then(Value::as_u64)
+            .ok_or(GoalPlanCoordinationError::CorruptState)?;
+        if !plan_coordinates.contains(&(plan_id.into(), plan_revision)) {
+            continue;
+        }
+        let execution_id = value
+            .get("execution_id")
+            .and_then(Value::as_str)
+            .ok_or(GoalPlanCoordinationError::CorruptState)?;
+        let executions = facts
+            .iter()
+            .filter(|fact| fact.kind.as_str() == "execution.started")
+            .filter(|fact| fact.execution_id.as_ref().map(|id| id.as_str()) == Some(execution_id))
+            .collect::<Vec<_>>();
+        let [execution] = executions.as_slice() else {
+            return Err(GoalPlanCoordinationError::CorruptState);
+        };
+        turns.insert(
+            execution
+                .turn_id
+                .clone()
+                .ok_or(GoalPlanCoordinationError::CorruptState)?,
+        );
+    }
+    for turn_id in turns {
+        let view = get_turn(
+            ledger,
+            &GetTurnQuery {
+                session_id: session_id.clone(),
+                turn_id: turn_id.clone(),
+                through_position: None,
+            },
+        )
+        .map_err(GoalPlanCoordinationError::Runtime)?;
+        if view.cancellation_requested
+            || matches!(
+                view.status,
+                RuntimeTurnStatus::Completed
+                    | RuntimeTurnStatus::Stopped
+                    | RuntimeTurnStatus::Failed
+            )
+        {
+            continue;
+        }
+        let command_id = RuntimeCommandId::new(format!(
+            "goal-cancel:{}:{}:{}",
+            goal_id,
+            cancellation.fact_id.as_str(),
+            turn_id.as_str()
+        ))
+        .map_err(GoalPlanCoordinationError::Runtime)?;
+        let planned = plan_cancel_turn(&CancelTurnCommand {
+            command_id,
+            session_id: session_id.clone(),
+            turn_id: turn_id.clone(),
+            reason: CancelReason::Policy,
+            requested_through_position: goal.through_position,
+            recorded_at: recorded_at.into(),
+        })
+        .map_err(GoalPlanCoordinationError::Runtime)?;
+        return Ok(Some(PlannedGoalTurnCancellation {
+            expected_session_version: goal.session_version,
+            turn_id,
+            planned,
+        }));
+    }
+    Ok(None)
 }
 
 /// Plans Goal success from the unique completed Plan's reverified reduction evidence.

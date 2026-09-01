@@ -13,14 +13,15 @@ use garive_plan::{
     PlanStepV1, StepState,
 };
 use garive_runtime::{
-    commit_goal_command, commit_plan_command, commit_plan_replacement, get_turn, plan_adopt_plan,
-    plan_complete_plan, plan_plan_replacement, plan_plan_transition, plan_propose_plan,
-    plan_start_step_execution, plan_start_turn, plan_succeed_goal_from_completed_plan,
-    reconstruct_execution_work_binding, reconstruct_goal, reconstruct_plan, reconstruct_plan_graph,
-    verify_plan_carry_forward, EffectiveRuntimeLimits, GetTurnQuery, GoalCommandContext,
-    PlanCommandContext, PlanRetryPosture, PlanRuntimeError, PlanRuntimeState,
-    PlanRuntimeTransition, PlanStepExecutionStart, RuntimeCommandId, SqliteLedger,
-    StartTurnCommand,
+    commit_goal_command, commit_plan_command, commit_plan_replacement, commit_planned_turn,
+    get_turn, plan_adopt_plan, plan_complete_plan, plan_goal_transition,
+    plan_next_turn_cancellation_for_goal, plan_plan_replacement, plan_plan_transition,
+    plan_propose_plan, plan_start_step_execution, plan_start_turn,
+    plan_succeed_goal_from_completed_plan, reconstruct_execution_work_binding, reconstruct_goal,
+    reconstruct_plan, reconstruct_plan_graph, verify_plan_carry_forward, EffectiveRuntimeLimits,
+    GetTurnQuery, GoalCommandContext, GoalRuntimeTransition, PlanCommandContext, PlanRetryPosture,
+    PlanRuntimeError, PlanRuntimeState, PlanRuntimeTransition, PlanStepExecutionStart,
+    RuntimeCommandId, SqliteLedger, StartTurnCommand,
 };
 use serde_json::json;
 use sha2::{Digest, Sha256};
@@ -719,7 +720,7 @@ fn step_start_and_c6_execution_commit_as_one_restart_safe_command() {
     .unwrap();
     drop(ledger);
 
-    let ledger = SqliteLedger::open(&path).unwrap();
+    let mut ledger = SqliteLedger::open(&path).unwrap();
     let recovered = recover(&ledger, &session);
     assert_eq!(
         recovered.active_claims[&step_id("prepare")]
@@ -727,16 +728,56 @@ fn step_start_and_c6_execution_commit_as_one_restart_safe_command() {
             .as_deref(),
         Some(execution_id.as_str())
     );
+    let turn_id = turn.turn_id.clone();
+    let cancellation = plan_goal_transition(
+        &ledger,
+        &session,
+        "goal-1",
+        2,
+        &goal_context("cancel-started-goal"),
+        GoalRuntimeTransition::Cancel {
+            reason: "user_request".into(),
+        },
+    )
+    .unwrap();
+    commit_goal_command(
+        &mut ledger,
+        session.clone(),
+        recovered.session_version,
+        &cancellation,
+    )
+    .unwrap();
+    let propagation =
+        plan_next_turn_cancellation_for_goal(&ledger, &session, "goal-1", "2026-08-31T00:00:01Z")
+            .unwrap()
+            .unwrap();
+    assert_eq!(propagation.turn_id, turn_id);
+    commit_planned_turn(
+        &mut ledger,
+        session.clone(),
+        propagation.expected_session_version,
+        &propagation.planned,
+    )
+    .unwrap();
     let turn = get_turn(
         &ledger,
         &GetTurnQuery {
-            session_id: session,
-            turn_id: turn.turn_id,
+            session_id: session.clone(),
+            turn_id: turn_id.clone(),
             through_position: None,
         },
     )
     .unwrap();
     assert_eq!(turn.execution_id.as_ref(), Some(&execution_id));
+    assert!(turn.cancellation_requested);
+    assert!(plan_next_turn_cancellation_for_goal(
+        &ledger,
+        &session,
+        "goal-1",
+        "2026-08-31T00:00:02Z",
+    )
+    .unwrap()
+    .is_none());
     let binding = reconstruct_execution_work_binding(&ledger, &turn.session_id, &execution_id)
         .unwrap()
         .unwrap();
@@ -756,6 +797,16 @@ fn step_start_and_c6_execution_commit_as_one_restart_safe_command() {
             "revision":1,
         })
     );
+    drop(ledger);
+    let ledger = SqliteLedger::open(&path).unwrap();
+    assert!(plan_next_turn_cancellation_for_goal(
+        &ledger,
+        &session,
+        "goal-1",
+        "2026-08-31T00:00:03Z",
+    )
+    .unwrap()
+    .is_none());
 }
 
 #[test]

@@ -184,6 +184,13 @@ must durably request cancellation of related live Turn/Execution work and stop
 new claims. Already-started effects follow C5 uncertainty/reconciliation; a
 terminal Goal does not erase or rewrite their facts.
 
+Propagation walks only ledger-proven `Plan step -> Execution -> Turn`
+ownership. It selects one still-open uncancelled Turn in stable identity order,
+derives a command identity from the Goal cancellation fact and Turn, commits
+`turn.cancel_requested`, then re-evaluates the new prefix. A crash therefore
+resumes at the next missing Turn; terminal or already-requested Turns are not
+rewritten, and no in-memory fan-out list is authoritative.
+
 The Plan commit boundary revalidates the exact current Goal binding before any
 Adopt/Resume/Claim/Start fact can commit. This fence also applies when a caller
 reconstructs a Plan after cancellation; pure readiness alone is not authority.
