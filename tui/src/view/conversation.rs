@@ -42,7 +42,7 @@ pub(super) fn render_conversation(
     let mut lines = Vec::new();
     let mut scroll = 0;
     if model.turn_blocks.is_empty() && model.live_answer.current().is_none() {
-        lines = empty_state::render(model.boot, colors);
+        lines = empty_state::render(model.boot, inner.width, colors);
     } else if let Some(window) = window {
         lines = window.lines;
         scroll = window.scroll;

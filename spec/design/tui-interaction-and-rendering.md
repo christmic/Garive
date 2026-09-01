@@ -59,15 +59,17 @@ commands, recovery, and decisions use bounded overlays. At wide sizes an
 explicitly opened `Inspector` may share the work surface without changing
 transcript truth.
 
-Selection surfaces that originate from composition remain spatially attached
-to the Composer. The command palette docks to the transcript's lower edge,
-never covers a Composer that can be preserved, grows only with visible content,
-and shows at most eight command rows per window. Filtering to one result must
-shrink the surface instead of retaining an empty modal canvas. Garive may add
-truthful unavailable-reason detail beyond the Codex baseline, but cannot buy
-that detail with an unbounded catalogue or a second navigation axis. Only an
-extreme-height fallback whose transcript cannot fit the minimum surface may
-temporarily use the whole terminal.
+Selection surfaces that originate from composition are a `BottomPane`, not a
+desktop modal. The command palette and slash suggestions inherit the Composer's
+left axis and usable width, meet it without a floating gap, clear only their own
+rows, and use one quiet top rule instead of a surrounding box or dimmed
+workspace. They grow only with visible content and show at most eight command
+rows per window. Filtering to one result shrinks the pane instead of retaining
+an empty canvas. Garive may add truthful unavailable-reason detail beyond the
+Codex baseline, but cannot buy that detail with an unbounded catalogue, a
+centered island, or a second navigation axis. Only an extreme-height fallback
+whose transcript cannot fit the minimum surface may temporarily use the whole
+terminal.
 
 The transcript composes `TurnBlock` values. A Turn owns one restrained User
 request, its `ActivityStack`, one `LiveAnswer` or committed `MarkdownAnswer`,
@@ -126,8 +128,11 @@ alone names the currently executable `Esc`, `Enter`, or decision action. Closing
 the overlay restores the background cue without changing execution state.
 While a Turn runs, this Composer-adjacent rail is the single lifecycle voice:
 `Preparing…`, `Writing…`, `Finishing…`, `Saving…`, or an honest unavailability
-state. Before the first presented text delta, `LiveAnswer` contributes no
-transcript row. Once text exists, the Agent `•` shares its first Markdown line;
+state. It is right-aligned above the prompt like secondary input context, uses
+no answer/list marker, and keeps one stable phrase such as
+`Writing…  ·  Esc interrupt`. Before the first presented text delta,
+`LiveAnswer` contributes no transcript row. Once text exists, the Agent `•`
+shares its first Markdown line;
 phase copy is never repeated above that answer and the interrupt binding never
 floats as a separate row.
 After cancellation is admitted, the same Turn-control component is the only

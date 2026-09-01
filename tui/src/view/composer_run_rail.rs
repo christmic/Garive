@@ -1,12 +1,17 @@
 //! Running-Turn state and control adjacent to the retained Composer draft.
 
-use ratatui::{buffer::Buffer, layout::Rect, text::Line, widgets::Widget};
+use ratatui::{
+    buffer::Buffer,
+    layout::{Alignment, Rect},
+    text::Line,
+    widgets::{Paragraph, Widget},
+};
 
 use crate::application::{
     AppModel, CancelRequestPhase, ExecutionState, LiveAnswerAvailability, LiveAnswerPhase,
 };
 
-use super::{motion::status_motion, style::Palette, MotionFrame};
+use super::{style::Palette, MotionFrame};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum TurnControlState {
@@ -41,7 +46,9 @@ pub(super) fn render(
         return;
     }
     if let Some(line) = line(model, colors, motion) {
-        line.render(area, buffer);
+        Paragraph::new(line)
+            .alignment(Alignment::Right)
+            .render(area, buffer);
     }
 }
 
@@ -88,49 +95,44 @@ pub(super) fn minimum_status(model: &AppModel) -> Option<&'static str> {
     }
 }
 
-fn line(model: &AppModel, colors: Palette, motion: MotionFrame) -> Option<Line<'static>> {
+fn line(model: &AppModel, colors: Palette, _motion: MotionFrame) -> Option<Line<'static>> {
     let state = project(model)?;
     if !matches!(state, TurnControlState::Running { .. }) {
-        let (marker, label, tone) = match state {
-            TurnControlState::CancelRequesting => (" … ", "Cancelling…", colors.warning),
-            TurnControlState::CancelAwaitingTerminal => (" … ", "Stopping…", colors.notice),
-            TurnControlState::CancelOutcomeUnknown => {
-                (" ! ", "Cancel status unknown", colors.warning)
-            }
+        let (label, tone) = match state {
+            TurnControlState::CancelRequesting => ("Cancelling…", colors.warning),
+            TurnControlState::CancelAwaitingTerminal => ("Stopping…", colors.notice),
+            TurnControlState::CancelOutcomeUnknown => ("Cancel status unknown", colors.warning),
             TurnControlState::Running { .. } => unreachable!("running state handled above"),
         };
-        return Some(Line::from(vec![
-            ratatui::text::Span::styled(marker, tone),
-            ratatui::text::Span::styled(label, colors.title),
-        ]));
+        return Some(Line::styled(label, colors.title.patch(tone)));
     }
     let TurnControlState::Running { cancel_available } = state else {
         unreachable!("cancellation states handled above")
     };
-    let label = running_label(model, motion);
+    let label = running_label(model);
     if cancel_available {
         Some(Line::from(vec![
             ratatui::text::Span::styled(label, colors.accent),
-            ratatui::text::Span::styled(" (esc to interrupt)", colors.muted),
+            ratatui::text::Span::styled("  ·  Esc interrupt", colors.muted),
         ]))
     } else {
         Some(Line::styled(label, colors.accent))
     }
 }
 
-fn running_label(model: &AppModel, motion: MotionFrame) -> String {
+fn running_label(model: &AppModel) -> String {
     match model.live_answer.current() {
         Some(answer) if answer.availability == LiveAnswerAvailability::Unavailable => {
-            "• Live feedback unavailable".into()
+            "Live feedback unavailable".into()
         }
-        Some(answer) if answer.ended => "• Saving…".into(),
+        Some(answer) if answer.ended => "Saving…".into(),
         Some(answer) => match answer.phase {
-            Some(LiveAnswerPhase::Preparing) => "• Preparing…".into(),
-            Some(LiveAnswerPhase::Generating) => "• Writing…".into(),
-            Some(LiveAnswerPhase::Finalizing) => "• Finishing…".into(),
-            None => status_motion(model, motion).execution_label,
+            Some(LiveAnswerPhase::Preparing) => "Preparing…".into(),
+            Some(LiveAnswerPhase::Generating) => "Writing…".into(),
+            Some(LiveAnswerPhase::Finalizing) => "Finishing…".into(),
+            None => "Working…".into(),
         },
-        None => status_motion(model, motion).execution_label,
+        None => "Working…".into(),
     }
 }
 
@@ -153,7 +155,7 @@ mod tests {
             line(&model, colors, MotionFrame::reduced())
                 .unwrap()
                 .to_string(),
-            "• Working… (esc to interrupt)"
+            "Working…  ·  Esc interrupt"
         );
 
         model.push_test_timeline_item(TimelineItem {
@@ -174,7 +176,7 @@ mod tests {
             line(&model, colors, MotionFrame::reduced())
                 .unwrap()
                 .to_string(),
-            "• Working… (esc to interrupt)"
+            "Working…  ·  Esc interrupt"
         );
 
         model.overlay = Some(Overlay::Help);
@@ -182,21 +184,21 @@ mod tests {
             line(&model, colors, MotionFrame::reduced())
                 .unwrap()
                 .to_string(),
-            "• Working…"
+            "Working…"
         );
         model.turn_blocks.clear();
         assert_eq!(
             line(&model, colors, MotionFrame::reduced())
                 .unwrap()
                 .to_string(),
-            "• Working…"
+            "Working…"
         );
         model.overlay = None;
         assert_eq!(
             line(&model, colors, MotionFrame::reduced())
                 .unwrap()
                 .to_string(),
-            "• Working… (esc to interrupt)"
+            "Working…  ·  Esc interrupt"
         );
     }
 
@@ -217,14 +219,14 @@ mod tests {
             line(&model, colors, MotionFrame::reduced())
                 .unwrap()
                 .to_string(),
-            " … Cancelling…"
+            "Cancelling…"
         );
         model.cancel_requests.mark_accepted("command");
         assert_eq!(
             line(&model, colors, MotionFrame::reduced())
                 .unwrap()
                 .to_string(),
-            " … Stopping…"
+            "Stopping…"
         );
     }
 }

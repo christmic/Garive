@@ -343,7 +343,7 @@ fn resolved_suspension_cannot_return_from_quit_to_a_stale_sheet() {
 }
 
 #[test]
-fn modal_hierarchy_dims_the_workspace_and_highlights_selection() {
+fn bottom_pane_preserves_the_workspace_and_highlights_selection() {
     let model = AppModel {
         overlay: Some(Overlay::CommandPalette),
         ..Default::default()
@@ -357,7 +357,7 @@ fn modal_hierarchy_dims_the_workspace_and_highlights_selection() {
         &mut buffer,
         &mut view::RenderCache::default(),
     );
-    assert!(buffer[(0, 0)].modifier.contains(Modifier::DIM));
+    assert!(!buffer[(0, 0)].modifier.contains(Modifier::DIM));
     let selected = (0..area.height)
         .flat_map(|y| (0..area.width).map(move |x| (x, y)))
         .find(|&(x, y)| buffer[(x, y)].symbol() == "›")
@@ -673,11 +673,11 @@ fn compact_command_palette_keeps_visual_and_accessible_windows_in_lockstep() {
     let visual = frame(&model, 40, 8);
     let linear = view::linear_overlay(&model);
     assert!(visual.contains("Search  type to search"));
-    assert!(visual.contains("Showing 20–21 / 21 · ↑19"));
+    assert!(visual.contains("Showing 19–21 / 21 · ↑18"));
     assert!(visual.contains("› /quit"));
     assert!(visual.contains("Enter run"));
     assert!(visual.contains("Esc close"));
-    assert!(linear.contains("Showing commands 20 through 21 of 21"));
+    assert!(linear.contains("Showing commands 19 through 21 of 21"));
     assert!(linear.contains("Selected 21 of 21: /quit. Exit safely."));
 
     model.command_filter = "not present anywhere".into();

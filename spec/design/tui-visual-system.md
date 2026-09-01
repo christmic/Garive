@@ -172,11 +172,26 @@ execution belongs to the Composer run rail instead of a distant second status
 owner. Brand background fills, padded status chips, clocks, raw IDs, and a
 second persistent status row are prohibited.
 
+An empty ready conversation is not an unanchored blank terminal. It renders one
+compact, left-aligned `WelcomeAnchor` near the transcript origin with the
+Garive name and the two truthful discovery affordances (`/` commands and `?`
+help). It has the density of Codex's welcome block, never expands into a hero,
+does not repeat the Composer invitation, and disappears as soon as a Turn or
+live answer exists. Loading and blocked states keep their own truthful copy.
+
 Spacing is the transcript's primary structure. Borders are reserved for modal
 boundaries and an explicitly opened Inspector. The ComposerDock is an open
 surface; focus changes its lead/caret styling without moving content. Accent is
 limited to the insertion caret, current selection, active work cue, and primary
 decision. Large accent fills and repeated nested boxes are prohibited.
+
+Composer-derived lists are the exception to modal framing: `BottomPane` owns a
+single top rule, Composer-aligned width, a shared leading-marker gutter,
+selected-row surface, and content-driven height. Its selected `›` occupies the
+same column as the Composer marker. It never centers, dims the transcript, or
+draws left, right, or bottom borders. CommandPalette and CommandSuggestions
+consume this same primitive so mouse, keyboard, visual, and compact geometry
+cannot drift.
 
 `TurnNavigator` reuses `ModalFrame`, `SelectionRow`, and the shared filtered
 list geometry rather than inventing a second picker surface. Its title is

@@ -42,8 +42,9 @@ fn palette_docks_above_the_composer_with_a_bounded_item_window() {
     assert_eq!(layout.item_capacity(), MAX_VISIBLE_ITEMS);
     assert_eq!(layout.popup.bottom(), frame.transcript.bottom());
     assert_eq!(layout.popup.bottom(), frame.composer.y);
-    assert!(layout.popup.x >= frame.transcript.x);
-    assert!(layout.popup.right() <= frame.transcript.right());
+    assert_eq!(layout.popup.x, frame.transcript.x);
+    assert_eq!(layout.popup.width, frame.transcript.width);
+    assert_eq!(layout.inner.x, frame.composer.x);
     assert_eq!(layout.visible_count(), MAX_VISIBLE_ITEMS);
 }
 

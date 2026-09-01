@@ -265,7 +265,7 @@ fn mouse_click_activates_the_visible_overlay_row_without_background_routing() {
                 expect "Garive"
                 send "\020"
                 expect "/help"
-                send "\033\[<0;21;8M"
+                send "\033\[<0;21;16M"
                 send "\014"
                 expect -exact "\033\[2J"
                 expect "Details"
@@ -454,7 +454,8 @@ fn shift_selection_is_visible_in_a_real_mono_pty() {
             send "a界b"
             after 100
             send "\033\[1;2D\033\[1;2D"
-            after 100
+            send "\014"
+            expect -exact "\033\[2J"
             send "\033\[D"
             send "X"
             expect "aX界b"
@@ -689,9 +690,11 @@ fn mouse_drag_selects_composer_graphemes_in_a_real_mono_pty() {
             expect "Garive"
             send "a界b"
             after 100
-            send "\033\[<0;6;23M"
-            send "\033\[<32;8;23M"
-            send "\033\[<0;8;23m"
+            send "\033\[<0;4;23M"
+            send "\033\[<32;6;23M"
+            send "\014"
+            expect -exact "\033\[2J"
+            send "\033\[<0;6;23m"
             after 100
             send "X"
             send "\014"
@@ -734,7 +737,8 @@ fn double_and_triple_click_replace_a_word_then_the_line_in_a_real_pty() {
             after 100
             send "\033\[<0;11;23M\033\[<0;11;23m"
             send "\033\[<0;11;23M\033\[<0;11;23m"
-            after 100
+            send "\014"
+            expect -exact "\033\[2J"
             send "X"
             expect "alpha X"
             after 600

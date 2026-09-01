@@ -2,7 +2,7 @@ use ratatui::{
     buffer::Buffer,
     layout::Rect,
     text::{Line, Span},
-    widgets::{Block, Borders, Clear, Padding, Paragraph, Widget},
+    widgets::{Paragraph, Widget},
 };
 use unicode_width::UnicodeWidthStr;
 
@@ -10,13 +10,12 @@ use crate::{
     application::AppModel,
     input::COMMAND_PALETTE,
     view::{
-        primitives::{selection_window, truncate_display, SelectionRow},
+        primitives::{selection_window, truncate_display, BottomPaneFrame, SelectionRow},
         style::Palette,
     },
 };
 
 const MAX_VISIBLE_ROWS: usize = 5;
-const MAX_WIDTH: u16 = 76;
 
 pub(super) fn render(model: &AppModel, composer: Rect, colors: Palette, buffer: &mut Buffer) {
     let Some(area) = area(model, composer) else {
@@ -28,15 +27,9 @@ pub(super) fn render(model: &AppModel, composer: Rect, colors: Palette, buffer: 
         model.command_suggestion_selection,
         MAX_VISIBLE_ROWS,
     );
-    Clear.render(area, buffer);
-    let block = Block::default()
-        .title(Line::styled(" Commands ", colors.title))
-        .borders(Borders::ALL)
-        .border_set(colors.border_set())
-        .border_style(colors.overlay_border)
-        .padding(Padding::horizontal(1));
-    let inner = inner_area(area);
-    block.render(area, buffer);
+    let pane = BottomPaneFrame::resolve(area);
+    let inner = pane.inner();
+    pane.render(Line::styled(" Commands ", colors.title), colors, buffer);
     for (row, match_index) in matches[start..end].iter().enumerate() {
         let command = COMMAND_PALETTE[*match_index];
         let selected = start + row == model.command_suggestion_selection;
@@ -90,12 +83,11 @@ pub(super) fn area(model: &AppModel, composer: Rect) -> Option<Rect> {
         .matching_command_suggestion_indices()
         .len()
         .min(MAX_VISIBLE_ROWS) as u16;
-    let height = rows + 2;
-    let width = composer.width.min(MAX_WIDTH);
+    let height = rows + 1;
     Some(Rect::new(
         composer.x,
         composer.y.saturating_sub(height),
-        width,
+        composer.width,
         height,
     ))
 }
@@ -126,12 +118,7 @@ pub(crate) fn selection_at(
 }
 
 fn inner_area(area: Rect) -> Rect {
-    Rect::new(
-        area.x.saturating_add(2),
-        area.y.saturating_add(1),
-        area.width.saturating_sub(4),
-        area.height.saturating_sub(2),
-    )
+    BottomPaneFrame::resolve(area).inner()
 }
 
 #[cfg(test)]
@@ -154,11 +141,11 @@ mod tests {
         let composer = Rect::new(28, 20, 72, 3);
         let popup = area(&model, composer).unwrap();
         assert_eq!(
-            selection_at(&model, composer, popup.x + 2, popup.y + 1),
+            selection_at(&model, composer, popup.x, popup.y + 1),
             Some(4)
         );
         assert_eq!(
-            selection_at(&model, composer, popup.x + 1, popup.y + 1),
+            selection_at(&model, composer, popup.x - 1, popup.y + 1),
             None
         );
         assert_eq!(selection_at(&model, composer, popup.x, popup.y), None);

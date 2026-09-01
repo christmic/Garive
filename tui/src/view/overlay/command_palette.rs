@@ -2,19 +2,18 @@ use ratatui::{
     buffer::Buffer,
     layout::Rect,
     text::{Line, Span},
-    widgets::{Padding, Paragraph, Widget},
+    widgets::{Paragraph, Widget},
 };
 
 use crate::{application::AppModel, input::COMMAND_PALETTE};
 
 use super::super::{
     layout::FrameLayout,
-    primitives::{key_hints, selection_window, truncate_display, ModalFrame, SelectionRow},
+    primitives::{key_hints, selection_window, truncate_display, BottomPaneFrame, SelectionRow},
     safe_text,
     style::Palette,
 };
 
-const DESIRED_WIDTH: u16 = 74;
 const COMPACT_WIDTH: u16 = 50;
 const MAX_VISIBLE_ITEMS: usize = 8;
 
@@ -94,24 +93,26 @@ fn layout(model: &AppModel, area: Rect) -> PaletteLayout {
         area
     };
     let modal_area = transcript_area;
-    let gutter = if compact { 0 } else { 4 };
-    let popup_width = DESIRED_WIDTH.min(modal_area.width.saturating_sub(gutter));
     let visible_items = projection.items.len().clamp(1, MAX_VISIBLE_ITEMS);
-    // Border + search + result window + item rows + action region. The palette
-    // grows with useful content instead of reserving an empty modal canvas.
+    // Top rule + search + result window + item rows + action region. The pane
+    // grows with useful content and remains on the Composer axis.
+    let chrome_rows = if compact { 5 } else { 4 };
     let popup_height = u16::try_from(visible_items)
         .unwrap_or(u16::MAX)
-        .saturating_add(6)
+        .saturating_add(chrome_rows)
         .min(modal_area.height);
-    let popup = composer_adjacent_popup(modal_area, popup_width, popup_height);
-    let inner = ModalFrame::resolve(popup, Padding::horizontal(2)).inner();
+    let popup = Rect::new(
+        modal_area.x,
+        modal_area.bottom().saturating_sub(popup_height),
+        modal_area.width,
+        popup_height,
+    );
+    let inner = BottomPaneFrame::resolve(popup).inner();
     let first_item_row = inner.y.saturating_add(2);
     let action_rows = if compact { 2 } else { 1 };
-    let spacer_rows = u16::from(!compact);
     let action_row = inner
         .bottom()
         .saturating_sub(action_rows)
-        .saturating_sub(spacer_rows)
         .max(first_item_row.saturating_add(1));
     let capacity = usize::from(action_row.saturating_sub(first_item_row)).max(1);
     let window = selection_window(projection.items.len(), projection.selected, capacity);
@@ -125,20 +126,10 @@ fn layout(model: &AppModel, area: Rect) -> PaletteLayout {
     }
 }
 
-fn composer_adjacent_popup(area: Rect, width: u16, height: u16) -> Rect {
-    Rect::new(
-        area.x + area.width.saturating_sub(width) / 2,
-        area.bottom().saturating_sub(height),
-        width,
-        height,
-    )
-}
-
 pub(super) fn render(model: &AppModel, colors: Palette, area: Rect, buffer: &mut Buffer) {
     let projection = project(model);
     let layout = layout(model, area);
-    ModalFrame::resolve(layout.popup, Padding::horizontal(2)).render(
-        area,
+    BottomPaneFrame::resolve(layout.popup).render(
         Line::styled(" Command palette ", colors.title),
         colors,
         buffer,
@@ -188,7 +179,6 @@ pub(super) fn render(model: &AppModel, colors: Palette, area: Rect, buffer: &mut
     }
 
     if !layout.compact {
-        render_line(Line::default(), layout.inner, layout.action_row, buffer);
         render_line(
             key_hints(
                 &[
@@ -200,7 +190,7 @@ pub(super) fn render(model: &AppModel, colors: Palette, area: Rect, buffer: &mut
                 colors,
             ),
             layout.inner,
-            layout.action_row.saturating_add(1),
+            layout.action_row,
             buffer,
         );
     } else {

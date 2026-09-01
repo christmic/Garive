@@ -103,6 +103,35 @@ pub(super) struct ModalFrame {
     inner: Rect,
 }
 
+/// Composer-aligned selection surface with one quiet top boundary.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) struct BottomPaneFrame {
+    pane: Rect,
+    inner: Rect,
+}
+
+impl BottomPaneFrame {
+    pub(super) fn resolve(pane: Rect) -> Self {
+        let inner = Block::default().borders(Borders::TOP).inner(pane);
+        Self { pane, inner }
+    }
+
+    pub(super) const fn inner(self) -> Rect {
+        self.inner
+    }
+
+    pub(super) fn render(self, title: Line<'static>, colors: Palette, buffer: &mut Buffer) {
+        Clear.render(self.pane, buffer);
+        buffer.set_style(self.pane, colors.request_surface);
+        Block::default()
+            .title(title)
+            .borders(Borders::TOP)
+            .border_set(colors.border_set())
+            .border_style(colors.border)
+            .render(self.pane, buffer);
+    }
+}
+
 impl ModalFrame {
     pub(super) fn resolve(popup: Rect, padding: Padding) -> Self {
         let inner = Block::default()
@@ -247,6 +276,22 @@ mod tests {
         for y in [popup.top() - 1, popup.bottom()] {
             assert!((viewport.left()..viewport.right()).all(|x| buffer[(x, y)].symbol() == "x"));
         }
+    }
+
+    #[test]
+    fn bottom_pane_uses_one_top_rule_and_keeps_the_composer_axis() {
+        let pane = Rect::new(0, 1, 20, 5);
+        let frame = BottomPaneFrame::resolve(pane);
+        let mut buffer = Buffer::empty(Rect::new(0, 0, 20, 6));
+        let colors = super::super::palette(crate::Theme::Mono);
+
+        frame.render(Line::raw(" Commands "), colors, &mut buffer);
+
+        assert_eq!(frame.inner(), Rect::new(0, 2, 20, 4));
+        let rule = colors.border_set().horizontal_top;
+        assert!((0..20).any(|column| buffer[(column, 1)].symbol() == rule));
+        assert!((2..6).all(|row| buffer[(0, row)].symbol() != "│"));
+        assert!((2..6).all(|row| buffer[(19, row)].symbol() != "│"));
     }
 
     #[test]
