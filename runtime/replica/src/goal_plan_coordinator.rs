@@ -1038,9 +1038,11 @@ fn pending_replan_admission(
     plan_revision: u64,
     failed_step_ids: &[String],
 ) -> Result<Option<String>, GoalPlanCoordinationError> {
-    let Some(fact) = facts
-        .last()
-        .filter(|fact| fact.kind.as_str() == "plan.replan.admitted")
+    let Some((admission_index, fact)) = facts
+        .iter()
+        .enumerate()
+        .rev()
+        .find(|(_, fact)| fact.kind.as_str() == "plan.replan.admitted")
     else {
         return Ok(None);
     };
@@ -1073,17 +1075,101 @@ fn pending_replan_admission(
             .get("expected_session_version")
             .and_then(Value::as_u64)
             .and_then(|version| version.checked_add(1))
-            != Some(goal.session_version)
+            .is_none_or(|version| version > goal.session_version)
         || value
             .get("through_position")
             .and_then(Value::as_u64)
             .and_then(|position| position.checked_add(1))
-            != Some(goal.through_position)
+            != Some(fact.position)
         || stored_failed != failed_step_ids
+        || !valid_pending_replan_tail(&facts[admission_index + 1..], fact, &value)?
     {
         return Err(GoalPlanCoordinationError::CorruptState);
     }
     Ok(Some(fact.fact_id.as_str().into()))
+}
+
+fn valid_pending_replan_tail(
+    tail: &[DurableFact],
+    admission: &DurableFact,
+    admission_value: &Value,
+) -> Result<bool, GoalPlanCoordinationError> {
+    if tail.is_empty() {
+        return Ok(true);
+    }
+    let request = &tail[0];
+    if request.kind.as_str() != "plan.replan.proposal.requested"
+        || admission.position.checked_add(1) != Some(request.position)
+    {
+        return Ok(false);
+    }
+    let request_value = serde_json::from_str::<Value>(request.payload.as_json())
+        .map_err(|_| GoalPlanCoordinationError::CorruptState)?;
+    let turn_id = request_value
+        .get("turn_id")
+        .and_then(Value::as_str)
+        .ok_or(GoalPlanCoordinationError::CorruptState)?;
+    let execution_id = request_value
+        .get("execution_id")
+        .and_then(Value::as_str)
+        .ok_or(GoalPlanCoordinationError::CorruptState)?;
+    let same_source = request_value
+        .get("admission_fact_id")
+        .and_then(Value::as_str)
+        == Some(admission.fact_id.as_str())
+        && request_value.get("source_plan_id").and_then(Value::as_str)
+            == admission_value
+                .get("source_plan_id")
+                .and_then(Value::as_str)
+        && request_value
+            .get("source_plan_revision")
+            .and_then(Value::as_u64)
+            == admission_value
+                .get("source_plan_revision")
+                .and_then(Value::as_u64)
+        && request_value
+            .get("source_plan_definition_digest")
+            .and_then(Value::as_str)
+            == admission_value
+                .get("source_plan_definition_digest")
+                .and_then(Value::as_str)
+        && request_value
+            .get("expected_session_version")
+            .and_then(Value::as_u64)
+            == admission_value
+                .get("expected_session_version")
+                .and_then(Value::as_u64)
+                .and_then(|value| value.checked_add(1))
+        && request_value
+            .get("through_position")
+            .and_then(Value::as_u64)
+            == Some(admission.position);
+    if !same_source {
+        return Ok(false);
+    }
+    for (index, fact) in tail.iter().enumerate().skip(1) {
+        if fact.kind.as_str() == "plan.replan.proposal.result_bound" {
+            if index + 1 != tail.len() {
+                return Ok(false);
+            }
+            let value = serde_json::from_str::<Value>(fact.payload.as_json())
+                .map_err(|_| GoalPlanCoordinationError::CorruptState)?;
+            if value.get("admission_fact_id").and_then(Value::as_str)
+                != Some(admission.fact_id.as_str())
+                || value.get("request_fact_id").and_then(Value::as_str)
+                    != Some(request.fact_id.as_str())
+                || value.get("planner_turn_id").and_then(Value::as_str) != Some(turn_id)
+                || value.get("planner_execution_id").and_then(Value::as_str) != Some(execution_id)
+            {
+                return Ok(false);
+            }
+        } else if fact.turn_id.as_ref().map(|value| value.as_str()) != Some(turn_id)
+            && fact.execution_id.as_ref().map(|value| value.as_str()) != Some(execution_id)
+        {
+            return Ok(false);
+        }
+    }
+    Ok(true)
 }
 
 fn decide(
