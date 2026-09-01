@@ -68,6 +68,20 @@ func workloadDigestRejectsInvalidInputs() throws {
     #expect(throws: ProcessDigestFailure.invalidWorkload) {
         try processWorkloadDigest(identity: identity(), workload: bad)
     }
+    bad = workload(); bad.environment = [environment("A", "1"), environment("A", "2")]
+    #expect(throws: ProcessDigestFailure.invalidWorkload) {
+        try processWorkloadDigest(identity: identity(), workload: bad)
+    }
+    let invalidBounds: [(inout GRVProcessWorkloadV1) -> Void] = [
+        { $0.maxOutputBytes = 0 }, { $0.timeoutMilliseconds = 0 },
+        { $0.timeoutMilliseconds = 300_001 }, { $0.maxProcesses = 0 }, { $0.maxOpenFiles = 0 },
+    ]
+    for mutate in invalidBounds {
+        bad = workload(); mutate(&bad)
+        #expect(throws: ProcessDigestFailure.invalidWorkload) {
+            try processWorkloadDigest(identity: identity(), workload: bad)
+        }
+    }
 }
 
 @Test("Swift receipt digest matches Rust and requires terminal proof")
@@ -84,6 +98,26 @@ func receiptDigestVector() throws {
     #expect(throws: ProcessDigestFailure.invalidReceipt) { try processReceiptDigest(receipt) }
     receipt.processTreeTerminated = true; receipt.exit.timedOut = false
     #expect(throws: ProcessDigestFailure.invalidReceipt) { try processReceiptDigest(receipt) }
+}
+
+@Test("every terminal receipt input is digest-bound or invalid")
+func everyReceiptInputIsBound() throws {
+    var receiptIdentity = identity()
+    receiptIdentity.workloadDigest = try processWorkloadDigest(identity: receiptIdentity, workload: workload())
+    var exit = GRVProcessExitV1(); exit.code = 0
+    var base = GRVProcessTerminalReceiptV1()
+    base.identity = receiptIdentity; base.exit = exit; base.stdout = Data("ok\n".utf8)
+    base.processTreeTerminated = true
+    let digest = try processReceiptDigest(base)
+    var variants: [GRVProcessTerminalReceiptV1] = []
+    var value = base; value.identity.workloadDigest[0] ^= 1; variants.append(value)
+    value = base; value.exit.code = 1; variants.append(value)
+    value = base; value.stdout.append(120); variants.append(value)
+    value = base; value.stderr.append(101); variants.append(value)
+    value = base; value.truncated = true; variants.append(value)
+    for value in variants { #expect(try processReceiptDigest(value) != digest) }
+    base.processTreeTerminated = false
+    #expect(throws: ProcessDigestFailure.invalidReceipt) { try processReceiptDigest(base) }
 }
 
 private func identity() -> GRVProcessIdentityV1 {

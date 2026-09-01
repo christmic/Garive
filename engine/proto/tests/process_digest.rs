@@ -153,6 +153,35 @@ fn workload_digest_rejects_invalid_identity_order_bounds_and_paths() {
         process_workload_digest(&identity(), &invalid),
         Err(ProcessDigestError::InvalidWorkload)
     );
+    invalid = workload();
+    invalid.environment = vec![
+        ProcessEnvironmentEntryV1 {
+            key: "A".into(),
+            value: "1".into(),
+        },
+        ProcessEnvironmentEntryV1 {
+            key: "A".into(),
+            value: "2".into(),
+        },
+    ];
+    assert_eq!(
+        process_workload_digest(&identity(), &invalid),
+        Err(ProcessDigestError::InvalidWorkload)
+    );
+    for mutate in [
+        |value: &mut ProcessWorkloadV1| value.max_output_bytes = 0,
+        |value: &mut ProcessWorkloadV1| value.timeout_milliseconds = 0,
+        |value: &mut ProcessWorkloadV1| value.timeout_milliseconds = 300_001,
+        |value: &mut ProcessWorkloadV1| value.max_processes = 0,
+        |value: &mut ProcessWorkloadV1| value.max_open_files = 0,
+    ] {
+        invalid = workload();
+        mutate(&mut invalid);
+        assert_eq!(
+            process_workload_digest(&identity(), &invalid),
+            Err(ProcessDigestError::InvalidWorkload)
+        );
+    }
 }
 
 #[test]
@@ -192,6 +221,50 @@ fn receipt_digest_matches_vector_and_requires_terminal_proof() {
     invalid.exit = Some(ProcessExitV1 {
         classification: Some(process_exit_v1::Classification::TimedOut(false)),
     });
+    assert_eq!(
+        process_receipt_digest(&invalid),
+        Err(ProcessDigestError::InvalidReceipt)
+    );
+}
+
+#[test]
+fn every_terminal_receipt_input_is_digest_bound_or_invalid() {
+    let workload_digest = process_workload_digest(&identity(), &workload()).unwrap();
+    let mut receipt_identity = identity();
+    receipt_identity.workload_digest = workload_digest.to_vec();
+    let base = ProcessTerminalReceiptV1 {
+        identity: Some(receipt_identity),
+        exit: Some(ProcessExitV1 {
+            classification: Some(process_exit_v1::Classification::Code(0)),
+        }),
+        stdout: b"ok\n".to_vec(),
+        stderr: Vec::new(),
+        truncated: false,
+        process_tree_terminated: true,
+        receipt_digest: Vec::new(),
+    };
+    let digest = process_receipt_digest(&base).unwrap();
+    let mut variants = Vec::new();
+    let mut value = base.clone();
+    value.identity.as_mut().unwrap().workload_digest[0] ^= 1;
+    variants.push(value);
+    let mut value = base.clone();
+    value.exit.as_mut().unwrap().classification = Some(process_exit_v1::Classification::Code(1));
+    variants.push(value);
+    let mut value = base.clone();
+    value.stdout.push(b'x');
+    variants.push(value);
+    let mut value = base.clone();
+    value.stderr.push(b'e');
+    variants.push(value);
+    let mut value = base.clone();
+    value.truncated = true;
+    variants.push(value);
+    for value in variants {
+        assert_ne!(process_receipt_digest(&value).unwrap(), digest);
+    }
+    let mut invalid = base;
+    invalid.process_tree_terminated = false;
     assert_eq!(
         process_receipt_digest(&invalid),
         Err(ProcessDigestError::InvalidReceipt)
