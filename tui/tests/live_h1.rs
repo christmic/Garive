@@ -19,7 +19,7 @@ fn system_theme_uses_paired_terminal_colors_in_a_real_pty() {
     let temporary = tempfile::tempdir().unwrap();
     let transcript = temporary.path().join("system-theme.log");
     let status = Command::new("expect")
-        .env_remove("NO_COLOR")
+        .env("NO_COLOR", "1")
         .env("TERM", "xterm-256color")
         .env("GARIVE_TUI_BIN", env!("CARGO_BIN_EXE_garive-tui"))
         .env("GARIVE_TUI_HOST", format!("http://{address}/"))

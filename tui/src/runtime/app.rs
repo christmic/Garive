@@ -74,11 +74,13 @@ pub async fn run(config: LaunchConfig) -> Result<(), TuiError> {
     if !config.reduced_motion_explicit {
         config.reduced_motion = preferences.reduced_motion;
     }
+    let no_color = std::env::var_os("NO_COLOR").is_some();
     crate::args::apply_terminal_environment(
         &mut config,
         std::env::var("TERM").ok().as_deref(),
-        std::env::var_os("NO_COLOR").is_some(),
+        no_color,
     );
+    crossterm::style::force_color_output(config.theme != crate::Theme::Mono);
     let client = LiveHostClient::new(&config.host, LIMITS).map_err(|_| TuiError::InvalidHost)?;
     let restored = RestoredState {
         store,
