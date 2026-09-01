@@ -1606,12 +1606,17 @@ async fn retry_posture_reopens_within_bounds_and_stops_at_failure_policy_after_e
             .state(),
         GoalState::Active
     );
+    drop(ledger);
+    let replan_path = directory.path().join("replan.sqlite3");
+    std::fs::copy(&path, &replan_path).unwrap();
+    let mut ledger = SqliteLedger::open(&path).unwrap();
+    let mut replan_ledger = SqliteLedger::open(&replan_path).unwrap();
     let replan = StaticFailurePolicy::new(PlanFailureDecision::Replan {
         policy_reference: "failure-policy-v1".into(),
     });
     assert!(matches!(
         advance_goal_plan_with_failure_once(
-            &mut ledger,
+            &mut replan_ledger,
             &session,
             "goal-1",
             &GoalPlanCoordinationTick {
@@ -1625,13 +1630,32 @@ async fn retry_posture_reopens_within_bounds_and_stops_at_failure_policy_after_e
         )
         .unwrap(),
         GoalPlanAdvanceOutcome::ReplanRequested {
+            admission_fact_id,
             policy_reference,
             ..
-        } if policy_reference == "failure-policy-v1"
+        } if admission_fact_id.starts_with("g2-") && policy_reference == "failure-policy-v1"
     ));
     assert_eq!(
-        recover(&ledger, &session).snapshot.state(),
+        recover(&replan_ledger, &session).snapshot.state(),
         PlanState::Running
+    );
+    assert!(matches!(
+        evaluate_goal_plan_once(&replan_ledger, &session, "goal-1")
+            .unwrap()
+            .decision,
+        GoalPlanDecision::ProposeReplacement {
+            source_plan_revision: 1,
+            ..
+        }
+    ));
+    assert_eq!(
+        replan_ledger
+            .read_facts(&session, 0, u64::MAX, None)
+            .unwrap()
+            .into_iter()
+            .filter(|fact| fact.kind.as_str() == "plan.replan.admitted")
+            .count(),
+        1
     );
     let failure = StaticFailurePolicy::new(PlanFailureDecision::Fail {
         policy_reference: "failure-policy-v1".into(),

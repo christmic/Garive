@@ -13,6 +13,7 @@ pub(super) fn validate(kind: &str, value: &Map<String, Value>) -> Result<(), Led
     match kind {
         "plan.proposal.requested" => proposal_requested(value),
         "plan.proposal.result_bound" => proposal_result_bound(value),
+        "plan.replan.admitted" => replan_admitted(value),
         "plan.proposed" => proposed(value),
         "plan.adopted" => adopted(value),
         "plan.rejected" => rejected(value),
@@ -24,6 +25,58 @@ pub(super) fn validate(kind: &str, value: &Map<String, Value>) -> Result<(), Led
         step_kind if step_kind.starts_with("plan.step.") => plan_step::validate(step_kind, value),
         _ => Err(LedgerError::InvalidFact),
     }
+}
+
+fn replan_admitted(value: &Map<String, Value>) -> Result<(), LedgerError> {
+    fields(
+        value,
+        &[
+            "command_id",
+            "source_plan_id",
+            "source_plan_revision",
+            "source_plan_definition_digest",
+            "goal_id",
+            "goal_revision",
+            "goal_definition_digest",
+            "failed_step_ids",
+            "policy_reference",
+            "expected_session_version",
+            "through_position",
+            "decision_evidence",
+        ],
+        &[],
+    )?;
+    for key in [
+        "command_id",
+        "source_plan_id",
+        "goal_id",
+        "policy_reference",
+    ] {
+        non_empty(value, key)?;
+    }
+    unsigned(value, "source_plan_revision", true)?;
+    unsigned(value, "goal_revision", true)?;
+    unsigned(value, "expected_session_version", true)?;
+    unsigned(value, "through_position", false)?;
+    digest(value, "source_plan_definition_digest")?;
+    digest(value, "goal_definition_digest")?;
+    content(value, "decision_evidence")?;
+    let failed = value
+        .get("failed_step_ids")
+        .and_then(Value::as_array)
+        .ok_or(LedgerError::InvalidFact)?;
+    let mut unique = std::collections::BTreeSet::new();
+    if failed.is_empty()
+        || failed.iter().any(|value| {
+            value
+                .as_str()
+                .filter(|value| !value.is_empty())
+                .is_none_or(|value| !unique.insert(value))
+        })
+    {
+        return Err(LedgerError::InvalidFact);
+    }
+    Ok(())
 }
 
 fn proposal_result_bound(value: &Map<String, Value>) -> Result<(), LedgerError> {

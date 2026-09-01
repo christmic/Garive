@@ -1,7 +1,7 @@
 //! Fixed-prefix Goal/Plan coordination decisions.
 
 use garive_goal::GoalState;
-use garive_ledger::{CanonicalPayload, SessionId};
+use garive_ledger::{CanonicalPayload, DurableFact, FactDraft, FactId, FactKind, SessionId};
 use garive_plan::{PlanState, PlanStepId, StepState};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
@@ -24,6 +24,15 @@ pub enum GoalPlanDecision {
     NoAction,
     /// A planning policy must produce a bounded Plan proposal.
     ProposePlan,
+    /// One durable failure-policy admission is waiting for revision N+1 planning.
+    ProposeReplacement {
+        /// Exact source Plan identity.
+        source_plan_id: String,
+        /// Exact source Plan revision.
+        source_plan_revision: u64,
+        /// Durable replan admission fact identity.
+        admission_fact_id: String,
+    },
     /// One exact proposal is waiting for an injected admission policy.
     AdmitProposedPlan {
         /// Exact proposed Plan identity.
@@ -244,6 +253,8 @@ pub enum GoalPlanAdvanceOutcome {
     ReplanRequested {
         /// Fixed-prefix failed Plan decision.
         decision: GoalPlanDecision,
+        /// Durable policy-admission fact committed before proposal work.
+        admission_fact_id: String,
         /// Stable policy revision granting the proposal attempt.
         policy_reference: String,
     },
@@ -298,7 +309,26 @@ pub fn evaluate_goal_plan_once(
                 && definition.goal_revision() <= goal.snapshot.revision()
         })
         .collect::<Vec<_>>();
-    let decision = decide(&goal, &related)?;
+    let mut decision = decide(&goal, &related)?;
+    if let GoalPlanDecision::ResolveFailedPlan {
+        plan_id,
+        plan_revision,
+        failed_step_ids,
+    } = &decision
+    {
+        let facts = ledger
+            .read_facts(session_id, 0, goal.through_position, None)
+            .map_err(|_| GoalPlanCoordinationError::CorruptState)?;
+        if let Some(admission_fact_id) =
+            pending_replan_admission(&facts, &goal, plan_id, *plan_revision, failed_step_ids)?
+        {
+            decision = GoalPlanDecision::ProposeReplacement {
+                source_plan_id: plan_id.clone(),
+                source_plan_revision: *plan_revision,
+                admission_fact_id,
+            };
+        }
+    }
     Ok(GoalPlanCoordinationSnapshot {
         through_position: goal.through_position,
         session_version: goal.session_version,
@@ -396,7 +426,9 @@ fn advance_goal_plan_internal(
     let decision = snapshot.decision.clone();
     match &decision {
         GoalPlanDecision::NoAction => Ok(GoalPlanAdvanceOutcome::NoAction),
-        GoalPlanDecision::ProposePlan | GoalPlanDecision::NeedsOperator { .. } => {
+        GoalPlanDecision::ProposePlan
+        | GoalPlanDecision::ProposeReplacement { .. }
+        | GoalPlanDecision::NeedsOperator { .. } => {
             Ok(GoalPlanAdvanceOutcome::AwaitingPolicy(decision))
         }
         GoalPlanDecision::ResolveFailedPlan {
@@ -542,8 +574,31 @@ fn advance_goal_plan_internal(
                     if input.suspension_reference.is_none() =>
                 {
                     validate_failure_policy_metadata(&policy_reference, None)?;
+                    let evidence =
+                        failure_policy_evidence(&input, &policy_reference, "replan", None)?;
+                    let command_id = coordination_command_id(&snapshot, "admit-replan");
+                    let admission = plan_replan_admission_fact(
+                        &command_id,
+                        tick,
+                        &input,
+                        &policy_reference,
+                        evidence,
+                    )?;
+                    let admission_fact_id = admission.fact_id.as_str().to_owned();
+                    let planned = crate::PlannedPlanCommand {
+                        facts: vec![admission],
+                        next: plan.clone(),
+                    };
+                    commit_plan_command(
+                        ledger,
+                        session_id.clone(),
+                        snapshot.session_version,
+                        &planned,
+                    )
+                    .map_err(GoalPlanCoordinatorError::Plan)?;
                     return Ok(GoalPlanAdvanceOutcome::ReplanRequested {
                         decision,
+                        admission_fact_id,
                         policy_reference,
                     });
                 }
@@ -877,6 +932,42 @@ fn failure_policy_evidence(
     .map_err(|_| GoalPlanCoordinatorError::InvalidTick)
 }
 
+fn plan_replan_admission_fact(
+    command_id: &str,
+    tick: &GoalPlanCoordinationTick,
+    input: &PlanFailureInput,
+    policy_reference: &str,
+    evidence: CanonicalPayload,
+) -> Result<FactDraft, GoalPlanCoordinatorError> {
+    let payload = CanonicalPayload::from_value(&serde_json::json!({
+        "command_id":command_id,
+        "source_plan_id":input.plan_id,
+        "source_plan_revision":input.plan_revision,
+        "source_plan_definition_digest":input.plan_definition_digest,
+        "goal_id":input.goal_id,
+        "goal_revision":input.goal_revision,
+        "goal_definition_digest":input.goal_definition_digest,
+        "failed_step_ids":input.failed_step_ids,
+        "policy_reference":policy_reference,
+        "expected_session_version":input.session_version,
+        "through_position":input.through_position,
+        "decision_evidence":{"digest":evidence.sha256(),"inline_utf8":evidence.as_json()},
+    }))
+    .map_err(|_| GoalPlanCoordinatorError::InvalidTick)?;
+    Ok(FactDraft {
+        fact_id: FactId::try_from(command_id).map_err(|_| GoalPlanCoordinatorError::InvalidTick)?,
+        turn_id: None,
+        execution_id: None,
+        model_request_id: None,
+        tool_invocation_id: None,
+        kind: FactKind::new("plan.replan.admitted")
+            .map_err(|_| GoalPlanCoordinatorError::InvalidTick)?,
+        schema_version: 1,
+        payload,
+        recorded_at: tick.recorded_at.clone(),
+    })
+}
+
 fn policy_suspension_reference(
     ledger: &SqliteLedger,
     session_id: &SessionId,
@@ -938,6 +1029,61 @@ fn continuation_policy_reference(value: &str) -> Option<&str> {
             .bytes()
             .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase()))
     .then_some(reference)
+}
+
+fn pending_replan_admission(
+    facts: &[DurableFact],
+    goal: &crate::GoalRuntimeState,
+    plan_id: &str,
+    plan_revision: u64,
+    failed_step_ids: &[String],
+) -> Result<Option<String>, GoalPlanCoordinationError> {
+    let Some(fact) = facts
+        .last()
+        .filter(|fact| fact.kind.as_str() == "plan.replan.admitted")
+    else {
+        return Ok(None);
+    };
+    let value = serde_json::from_str::<Value>(fact.payload.as_json())
+        .map_err(|_| GoalPlanCoordinationError::CorruptState)?;
+    let stored_failed = value
+        .get("failed_step_ids")
+        .and_then(Value::as_array)
+        .ok_or(GoalPlanCoordinationError::CorruptState)?
+        .iter()
+        .map(|value| {
+            value
+                .as_str()
+                .map(str::to_owned)
+                .ok_or(GoalPlanCoordinationError::CorruptState)
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    let goal_digest = goal
+        .snapshot
+        .definition()
+        .digest()
+        .map_err(|_| GoalPlanCoordinationError::CorruptState)?;
+    if value.get("source_plan_id").and_then(Value::as_str) != Some(plan_id)
+        || value.get("source_plan_revision").and_then(Value::as_u64) != Some(plan_revision)
+        || value.get("goal_id").and_then(Value::as_str)
+            != Some(goal.snapshot.definition().goal_id().as_str())
+        || value.get("goal_revision").and_then(Value::as_u64) != Some(goal.snapshot.revision())
+        || value.get("goal_definition_digest").and_then(Value::as_str) != Some(goal_digest.as_str())
+        || value
+            .get("expected_session_version")
+            .and_then(Value::as_u64)
+            .and_then(|version| version.checked_add(1))
+            != Some(goal.session_version)
+        || value
+            .get("through_position")
+            .and_then(Value::as_u64)
+            .and_then(|position| position.checked_add(1))
+            != Some(goal.through_position)
+        || stored_failed != failed_step_ids
+    {
+        return Err(GoalPlanCoordinationError::CorruptState);
+    }
+    Ok(Some(fact.fact_id.as_str().into()))
 }
 
 fn decide(
