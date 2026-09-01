@@ -57,8 +57,15 @@ pub(super) fn render(
     } else {
         EditorLayout::new(&model.composer, dock.content.width).text(colors)
     };
-    let (_, scroll) =
+    let (_, cursor_scroll) =
         EditorLayout::new(&model.composer, dock.content.width).visible_cursor(dock.content.height);
+    // A frozen Composer is evidence, not an editing viewport. Keep its beginning
+    // visible so compact layouts never degrade into a meaningless trailing word.
+    let scroll = if variant == ComposerVariant::Frozen {
+        0
+    } else {
+        cursor_scroll
+    };
     Paragraph::new(text)
         .style(colors.request_surface)
         .scroll((scroll, 0))

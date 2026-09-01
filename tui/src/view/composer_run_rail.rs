@@ -75,9 +75,9 @@ pub(super) fn linear_status(model: &AppModel) -> Option<&'static str> {
 
 pub(super) fn minimum_status(model: &AppModel) -> Option<&'static str> {
     match project(model) {
-        Some(TurnControlState::CancelRequesting) => Some("Requesting cancellation…"),
-        Some(TurnControlState::CancelAwaitingTerminal) => Some("Cancellation accepted · waiting"),
-        Some(TurnControlState::CancelOutcomeUnknown) => Some("Cancellation outcome unknown"),
+        Some(TurnControlState::CancelRequesting) => Some("Cancelling…"),
+        Some(TurnControlState::CancelAwaitingTerminal) => Some("Stopping…"),
+        Some(TurnControlState::CancelOutcomeUnknown) => Some("Cancel status unknown"),
         Some(TurnControlState::Running {
             cancel_available: false,
             ..
@@ -93,28 +93,17 @@ pub(super) fn minimum_status(model: &AppModel) -> Option<&'static str> {
 fn line(model: &AppModel, colors: Palette, motion: MotionFrame) -> Option<Line<'static>> {
     let state = project(model)?;
     if !matches!(state, TurnControlState::Running { .. }) {
-        let (marker, label, detail, tone) = match state {
-            TurnControlState::CancelRequesting => {
-                (" … ", "Requesting cancellation", "", colors.warning)
+        let (marker, label, tone) = match state {
+            TurnControlState::CancelRequesting => (" … ", "Cancelling…", colors.warning),
+            TurnControlState::CancelAwaitingTerminal => (" … ", "Stopping…", colors.notice),
+            TurnControlState::CancelOutcomeUnknown => {
+                (" ! ", "Cancel status unknown", colors.warning)
             }
-            TurnControlState::CancelAwaitingTerminal => (
-                " … ",
-                "Cancellation accepted",
-                " · waiting for Turn to stop",
-                colors.notice,
-            ),
-            TurnControlState::CancelOutcomeUnknown => (
-                " ! ",
-                "Cancellation outcome unknown",
-                " · recovery required",
-                colors.warning,
-            ),
             TurnControlState::Running { .. } => unreachable!("running state handled above"),
         };
         return Some(Line::from(vec![
             ratatui::text::Span::styled(marker, tone),
             ratatui::text::Span::styled(label, colors.title),
-            ratatui::text::Span::styled(detail, colors.muted),
         ]));
     }
     let TurnControlState::Running {
@@ -138,7 +127,7 @@ fn line(model: &AppModel, colors: Palette, motion: MotionFrame) -> Option<Line<'
     }
     if show_cancel {
         line.push_span(ratatui::text::Span::styled(" Esc ", colors.keycap));
-        line.push_span(ratatui::text::Span::styled("cancel Turn", colors.muted));
+        line.push_span(ratatui::text::Span::styled("interrupt", colors.muted));
     }
     Some(line)
 }
@@ -171,7 +160,7 @@ mod tests {
             line(&model, colors, MotionFrame::reduced())
                 .unwrap()
                 .to_string(),
-            "Agent running ·  Esc cancel Turn"
+            "• Working… ·  Esc interrupt"
         );
 
         model.push_test_timeline_item(TimelineItem {
@@ -192,7 +181,7 @@ mod tests {
             line(&model, colors, MotionFrame::reduced())
                 .unwrap()
                 .to_string(),
-            " Esc cancel Turn"
+            " Esc interrupt"
         );
 
         model.overlay = Some(Overlay::Help);
@@ -205,14 +194,14 @@ mod tests {
             line(&model, colors, MotionFrame::reduced())
                 .unwrap()
                 .to_string(),
-            "Agent running"
+            "• Working…"
         );
         model.overlay = None;
         assert_eq!(
             line(&model, colors, MotionFrame::reduced())
                 .unwrap()
                 .to_string(),
-            "Agent running ·  Esc cancel Turn"
+            "• Working… ·  Esc interrupt"
         );
     }
 
@@ -233,14 +222,14 @@ mod tests {
             line(&model, colors, MotionFrame::reduced())
                 .unwrap()
                 .to_string(),
-            " … Requesting cancellation"
+            " … Cancelling…"
         );
         model.cancel_requests.mark_accepted("command");
         assert_eq!(
             line(&model, colors, MotionFrame::reduced())
                 .unwrap()
                 .to_string(),
-            " … Cancellation accepted · waiting for Turn to stop"
+            " … Stopping…"
         );
     }
 }

@@ -46,7 +46,7 @@ fn running_composer_names_the_retained_draft_and_keeps_cancel_nearby() {
         })
         .collect::<Vec<_>>()
         .join("\n");
-    assert!(rendered.contains("Agent running ·  Esc cancel Turn"));
+    assert!(rendered.contains("• Working… ·  Esc interrupt"));
     assert!(rendered.contains("Draft while current Turn runs"));
 }
 

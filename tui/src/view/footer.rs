@@ -10,10 +10,16 @@ use crate::{
     Theme,
 };
 
+use super::composer_run_rail;
 use super::{palette, primitives::key_hints};
 
 pub(super) fn render_footer(model: &AppModel, theme: Theme, area: Rect, buffer: &mut Buffer) {
     if area.is_empty() {
+        return;
+    }
+    // Cancellation already owns the Composer's single status slot. Repeating a
+    // generic frozen-state sentence here creates a competing second voice.
+    if composer_run_rail::has_cancel_request(model) {
         return;
     }
     let colors = palette(theme);

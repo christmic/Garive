@@ -520,8 +520,8 @@ async fn shipping_tui_keeps_input_help_and_cancel_responsive_during_a_live_flood
     }
     assert!(transcript.contains("draft-under-flood"));
     assert!(transcript.contains("Keyboard guide"));
-    assert!(transcript.contains("Requesting cancellation"));
-    assert!(transcript.contains("Cancellation accepted"));
+    assert!(transcript.contains("Cancelling…"));
+    assert!(transcript.contains("Stopping…"));
     assert!(transcript.contains("stopped"));
     assert!(transcript.contains("\x1b[?1049h") && transcript.contains("\x1b[?1049l"));
     server_shutdown.send(()).unwrap();
@@ -755,6 +755,19 @@ const FAIRNESS_EXPECT_SCRIPT: &str = r#"
             eof { exit [expr {$code + 1}] }
         }
     }
+    proc must_redrawn {pattern code} {
+        set previous_timeout $::timeout
+        set ::timeout 1
+        for {set attempt 0} {$attempt < 10} {incr attempt} {
+            send "\014"
+            expect {
+                -exact $pattern { set ::timeout $previous_timeout; return }
+                timeout {}
+                eof { exit [expr {$code + 1}] }
+            }
+        }
+        exit $code
+    }
     log_file -a -noappend $env(GARIVE_FAIRNESS_LOG)
     spawn -noecho /bin/sh -c {stty rows 24 columns 100; exec "$GARIVE_TUI_BIN" --host "$GARIVE_TUI_HOST" --session "$GARIVE_TUI_SESSION" --state-dir "$GARIVE_TUI_STATE" --theme mono --mouse off}
     fconfigure $spawn_id -encoding utf-8
@@ -786,25 +799,22 @@ const FAIRNESS_EXPECT_SCRIPT: &str = r#"
     after 500
     send "\014"
     must "\033\[2J" 32
-    must "cancel" 33
+    must "interrupt" 33
     send "\033"
     mark $env(GARIVE_FAIRNESS_CANCELLED)
     after 100
     send "\014"
     must "\033\[2J" 34
-    must "Requesting cancellation" 35
+    must "Cancelling…" 35
     must "draft-under-flood" 36
     mark $env(GARIVE_FAIRNESS_REQUESTING)
     wait_file $env(GARIVE_FAIRNESS_HOST_ACCEPTED) 37
-    after 100
-    send "\014"
-    must "\033\[2J" 38
-    must "Cancellation accepted" 39
+    must_redrawn "Stopping…" 39
     must "draft-under-flood" 40
     mark $env(GARIVE_FAIRNESS_ACCEPTED)
     set timeout 10
     wait_file $env(GARIVE_FAIRNESS_TERMINAL) 41
-    must "stopped" 42
+    must_redrawn "stopped" 42
     send "x"
     after 100
     send "\014"

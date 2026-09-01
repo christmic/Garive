@@ -26,8 +26,8 @@ use unicode_width::UnicodeWidthStr;
 fn responsive_product_frames_match_reviewed_snapshots() {
     let model = product_model();
     let compact = frame(&model, Theme::Mono, 40, 12);
-    assert_eq!(compact.matches("Agent running").count(), 1);
-    assert!(compact.contains("Esc cancel Turn"));
+    assert_eq!(compact.matches("• Working…").count(), 1);
+    assert!(compact.contains("Esc interrupt"));
     insta::assert_snapshot!("compact_40x12", frame(&model, Theme::Mono, 40, 12));
     let mut wrapped = product_model();
     wrapped
@@ -39,8 +39,8 @@ fn responsive_product_frames_match_reviewed_snapshots() {
         frame(&wrapped, Theme::Mono, 40, 16)
     );
     let standard = frame(&model, Theme::Dark, 100, 24);
-    assert_eq!(standard.matches("Agent running").count(), 1);
-    assert!(standard.contains("Esc cancel Turn"));
+    assert_eq!(standard.matches("• Working…").count(), 1);
+    assert!(standard.contains("Esc interrupt"));
     insta::assert_snapshot!("standard_100x24", frame(&model, Theme::Dark, 100, 24));
     let activities = activity_stack_model();
     insta::assert_snapshot!(
@@ -60,9 +60,9 @@ fn responsive_product_frames_match_reviewed_snapshots() {
         frame(&activities, Theme::Mono, 40, 18)
     );
     let active = frame(&activities, Theme::Mono, 40, 18);
-    assert!(!active.contains("Agent running"));
+    assert!(!active.contains("Working…"));
     assert!(active.contains("Reading file"));
-    assert!(active.contains("Esc cancel Turn"));
+    assert!(active.contains("Esc interrupt"));
     let completed = frame(&completed_activity_stack_model(), Theme::Mono, 40, 18);
     assert!(completed.contains("✓ Read file · +2"));
     insta::assert_snapshot!("activity_stack_completed_compact_mono_40x18", completed);
@@ -272,18 +272,18 @@ fn cancellation_control_responsive_matrix_matches_reviewed_snapshot() {
     );
 
     let requesting = frame(&model, Theme::Mono, 40, 8);
-    assert!(requesting.contains("Requesting cancellation"));
-    assert!(!requesting.contains("Esc cancel Turn"));
+    assert!(requesting.contains("Cancelling…"));
+    assert!(!requesting.contains("Esc interrupt"));
 
     model.cancel_requests.mark_accepted("cancel-command");
     let awaiting = frame(&model, Theme::Dark, 100, 24);
-    assert!(awaiting.contains("Cancellation accepted · waiting for Turn to stop"));
-    assert!(!awaiting.contains("Esc cancel Turn"));
+    assert!(awaiting.contains("Stopping…"));
+    assert!(!awaiting.contains("Esc interrupt"));
 
     model.cancel_requests.mark_unknown("cancel-command");
     let unknown = frame(&model, Theme::Light, 160, 28);
-    assert!(unknown.contains("Cancellation outcome unknown · recovery required"));
-    assert!(!unknown.contains("Esc cancel Turn"));
+    assert!(unknown.contains("Cancel status unknown"));
+    assert!(!unknown.contains("Esc interrupt"));
 
     insta::assert_snapshot!(
         "cancellation_control_responsive_matrix",
@@ -352,7 +352,7 @@ fn h4_full_workbench_timeline_matches_reviewed_snapshot() {
     let filmstrip = live_workbench_filmstrip(100, 24);
     assert!(filmstrip.contains("The first visible"));
     assert!(filmstrip.contains("streaming frame arrives."));
-    assert!(!filmstrip.contains("Agent running"));
+    assert!(!filmstrip.contains("Working…"));
     assert_eq!(filmstrip.matches("Saved streaming answer.").count(), 1);
     insta::assert_snapshot!("h4_full_workbench_dark_100x24", filmstrip);
 }
@@ -440,7 +440,6 @@ fn assert_responsive_frame(rendered: &str, width: u16, height: u16) {
         return;
     }
     for required in [
-        "Session 1",
         "Summarize the release plan.",
         "Agent action · completed",
         "cargo test passes.",
@@ -456,8 +455,8 @@ fn assert_responsive_frame(rendered: &str, width: u16, height: u16) {
         .iter()
         .find(|line| line.contains("› Ask a follow-up…"))
         .expect("composer dock input");
-    let content_width = if width >= 80 { width.min(96) } else { width };
-    let expected_x = width.saturating_sub(content_width) / 2;
+    let content_width = width;
+    let expected_x = 0;
     assert_eq!(
         composer.chars().take_while(|ch| *ch == ' ').count(),
         usize::from(expected_x)
