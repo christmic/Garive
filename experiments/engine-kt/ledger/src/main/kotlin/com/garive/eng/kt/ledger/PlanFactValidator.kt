@@ -1,9 +1,17 @@
 package com.garive.eng.kt.ledger
 
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.contentOrNull
 
 internal fun validatePlanFact(kind: String, value: JsonObject) {
     when {
+        kind == "plan.proposal.requested" -> value.proposalRequested()
+        kind == "plan.proposal.result_bound" -> value.proposalResultBound()
+        kind == "plan.replan.admitted" -> value.replanAdmitted()
+        kind == "plan.replan.proposal.requested" -> value.replanProposalRequested()
+        kind == "plan.replan.proposal.result_bound" -> value.replanProposalResultBound()
         kind == "plan.proposed" -> value.proposed()
         kind == "plan.adopted" -> value.adopted()
         kind == "plan.rejected" -> value.rejected()
@@ -19,6 +27,94 @@ internal fun validatePlanFact(kind: String, value: JsonObject) {
 
 private val BASE: Set<String> = setOf("command_id", "plan_id", "plan_revision")
 private val VERSION: Set<String> = setOf("previous_state_version", "state_version")
+private val PROPOSAL_REQUEST: Set<String> = setOf(
+    "command_id", "goal_id", "goal_revision", "goal_definition_digest",
+    "expected_session_version", "through_position", "proposer_reference",
+    "request_digest", "output_schema_digest", "turn_id", "execution_id",
+)
+private val PROPOSAL_RESULT: Set<String> = setOf(
+    "command_id", "goal_id", "goal_revision", "goal_definition_digest",
+    "request_fact_id", "planner_turn_id", "planner_execution_id", "terminal_fact_id",
+    "terminal_payload_digest", "result_digest",
+)
+private val REPLAN_SOURCE: Set<String> = setOf(
+    "admission_fact_id", "source_plan_id", "source_plan_revision",
+    "source_plan_definition_digest",
+)
+
+private fun JsonObject.proposalRequested() {
+    exact(PROPOSAL_REQUEST)
+    proposalRequestValues()
+}
+
+private fun JsonObject.proposalResultBound() {
+    exact(PROPOSAL_RESULT)
+    proposalResultValues()
+}
+
+private fun JsonObject.replanProposalRequested() {
+    exact(PROPOSAL_REQUEST + REPLAN_SOURCE)
+    proposalRequestValues()
+    replanSourceValues()
+}
+
+private fun JsonObject.replanProposalResultBound() {
+    exact(PROPOSAL_RESULT + REPLAN_SOURCE)
+    proposalResultValues()
+    replanSourceValues()
+}
+
+private fun JsonObject.proposalRequestValues() {
+    listOf("command_id", "goal_id", "proposer_reference", "turn_id", "execution_id")
+        .forEach(::nonEmpty)
+    ulong("goal_revision", true)
+    ulong("expected_session_version", true)
+    ulong("through_position")
+    listOf("goal_definition_digest", "request_digest", "output_schema_digest")
+        .forEach(::digest)
+}
+
+private fun JsonObject.proposalResultValues() {
+    listOf(
+        "command_id", "goal_id", "request_fact_id", "planner_turn_id",
+        "planner_execution_id", "terminal_fact_id",
+    ).forEach(::nonEmpty)
+    ulong("goal_revision", true)
+    listOf("goal_definition_digest", "terminal_payload_digest", "result_digest")
+        .forEach(::digest)
+}
+
+private fun JsonObject.replanSourceValues() {
+    nonEmpty("admission_fact_id")
+    nonEmpty("source_plan_id")
+    ulong("source_plan_revision", true)
+    digest("source_plan_definition_digest")
+}
+
+private fun JsonObject.replanAdmitted() {
+    exact(
+        setOf(
+            "command_id", "source_plan_id", "source_plan_revision",
+            "source_plan_definition_digest", "goal_id", "goal_revision",
+            "goal_definition_digest", "failed_step_ids", "policy_reference",
+            "expected_session_version", "through_position", "decision_evidence",
+        ),
+    )
+    listOf("command_id", "source_plan_id", "goal_id", "policy_reference").forEach(::nonEmpty)
+    ulong("source_plan_revision", true)
+    ulong("goal_revision", true)
+    ulong("expected_session_version", true)
+    ulong("through_position")
+    digest("source_plan_definition_digest")
+    digest("goal_definition_digest")
+    content("decision_evidence")
+    val failed = getValue("failed_step_ids") as? JsonArray ?: throw IllegalArgumentException()
+    val steps = failed.map {
+        (it as? JsonPrimitive)?.takeIf(JsonPrimitive::isString)?.contentOrNull
+            ?.takeIf(String::isNotEmpty) ?: throw IllegalArgumentException()
+    }
+    require(steps.isNotEmpty() && steps.distinct().size == steps.size)
+}
 
 private fun JsonObject.proposed() {
     exact(
@@ -105,7 +201,7 @@ internal fun JsonObject.planMutation(
 }
 
 internal fun JsonObject.continuation() {
-    enum("continuation_kind", setOf("interaction", "reconciliation"))
+    enum("continuation_kind", setOf("interaction", "policy", "reconciliation"))
     nonEmpty("continuation_reference")
 }
 
