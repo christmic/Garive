@@ -69,6 +69,7 @@ describe("Desktop visual accessibility contract", () => {
     expect(CSS).toContain(".app-shell:has(.workspace-panel) .timeline { width: calc(100% - 20px); }");
     expect(CSS).toContain("grid-template-columns: minmax(0, 1fr); grid-template-rows: var(--height-window-bar) minmax(0, 1fr)");
     expect(CSS).toContain(".navigation-collapsed > .sidebar { display: none; }");
+    expect(CSS).toContain(".task-groups { display: grid; align-content: start; gap: 8px;");
     expect(CSS).toContain(".environment-panel { position: absolute");
     expect(CSS).toContain("@keyframes environment-enter");
     expect(CSS).toContain("@keyframes workspace-content-enter");

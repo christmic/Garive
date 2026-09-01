@@ -36,7 +36,8 @@ import { useDesktopProduct } from "./app/useDesktopProduct";
 import type { ProductEffectPort } from "./app/ProductRuntime";
 import type { AppIntent, DefinitionItem, SessionItem } from "./state/controller";
 import {
-  classifyTask, filterAndOrderTasks, summarizeTasks, type RecentTask, type TaskFilter,
+  classifyTask, filterAndOrderTasks, groupSidebarTasks,
+  type RecentTask, type TaskFilter,
 } from "./taskPresentation";
 
 type Screen = "work" | "search" | "agents" | "settings";
@@ -147,9 +148,9 @@ export function App({ client = "desktop", webCapabilities, createProductPort,
     window.matchMedia("(max-width: 480px)").matches);
   const locale = resolveDesktopLocale(preferences.locale);
   const t = useMemo(() => createTranslator(locale), [locale]);
-  const taskSummary = useMemo(() => summarizeTasks(recents), [recents]);
   const orderedRecents = useMemo(() => filterAndOrderTasks(recents, "all", "", recentTitles),
     [recentTitles, recents]);
+  const sidebarTaskGroups = useMemo(() => groupSidebarTasks(orderedRecents), [orderedRecents]);
   const visibleUsage = usageBudget ?? (visualTestMode === "usage" ? visualUsageBudget : undefined);
   const composer = useRef<HTMLTextAreaElement>(null);
   const approvalAction = useRef<HTMLButtonElement>(null);
@@ -304,6 +305,20 @@ export function App({ client = "desktop", webCapabilities, createProductPort,
           "queue-complete": "Draft the partner onboarding brief",
         });
         setCommandOpen(true);
+      }
+      if (visualTestMode === "sidebar") {
+        setRecents([{ session_id: "sidebar-attention", definition_id: "garive-work",
+          opened_at: "2026-08-31T00:12:00Z", latest_turn_state: "suspended", turn_count: 3 },
+        { session_id: "sidebar-running", definition_id: "garive-work",
+          opened_at: "2026-08-31T00:11:00Z", latest_turn_state: "running", turn_count: 2 },
+        { session_id: "sidebar-failed", definition_id: "garive-work",
+          opened_at: "2026-08-31T00:10:00Z", latest_turn_state: "failed", turn_count: 2 },
+        { session_id: "sidebar-recent", definition_id: "garive-workspace",
+          opened_at: "2026-08-31T00:09:00Z", latest_turn_state: "completed", turn_count: 4 }]);
+        setRecentTitles({ "sidebar-attention": "Approve the release boundary",
+          "sidebar-running": "Audit the Runtime architecture",
+          "sidebar-failed": "Review the interrupted deployment",
+          "sidebar-recent": "Document the source installation" });
       }
       if (visualTestMode === "usage") { setSettingsSection("usage"); setScreen("settings"); }
       if (visualTestMode === "approval") dispatch({ type: "session_loaded", timeline: {
@@ -620,23 +635,27 @@ export function App({ client = "desktop", webCapabilities, createProductPort,
           <NavItem icon="memory" label={t("shell.memory")} disabled
             hint={t("shell.requiresMemory")} soon={t("shell.soon")} />
         </nav>
-        <div className="sidebar-section">
-          <div className="section-label"><span>{t("nav.recents")}</span>{taskSummary.attention > 0
-            ? <span className="attention-count" aria-label={`${taskSummary.attention} ${t("tasks.attention")}`}>{taskSummary.attention}</span>
-            : !state.capabilities?.durable_navigation && <span className="beta-tag">{t("shell.live")}</span>}</div>
-          {orderedRecents.length > 0 ? orderedRecents.slice(0, 6).map((recent) => (
-            <button className={screen === "work" && state.messages.length > 0
+        <div className="sidebar-section task-groups">
+          {sidebarTaskGroups.length > 0 ? sidebarTaskGroups.map((group) => <section
+            className={`task-group task-group-${group.kind}`} key={group.kind}
+            aria-labelledby={`sidebar-${group.kind}-label`}>
+            <div className="section-label" id={`sidebar-${group.kind}-label`}><span>{t(group.kind === "priority"
+              ? "nav.priorityWork" : "nav.recents")}</span></div>
+            {group.tasks.map((recent) => <button className={screen === "work" && state.messages.length > 0
               && recent.session_id === state.sessionId ? "recent-item selected" : "recent-item"}
               type="button" key={recent.session_id} onClick={() => void openRecent(recent.session_id)}>
-              <span>{recent.session_id === state.sessionId && state.messages.length ? title : recentTitles[recent.session_id] || recentLabel(recent)}</span>
+              <span>{recent.session_id === state.sessionId && state.messages.length ? title
+                : recentTitles[recent.session_id] || recentLabel(recent)}</span>
               <small><TaskStateDot task={recent} />{taskStateCopy(recent, t)}</small>
-            </button>
-          )) : state.messages.length > 0 ? (
-            <button className="recent-item selected" type="button" onClick={() => setScreen("work")}>
-              <span>{title}</span><small>{state.phase === "submitting" ? t("status.working")
-                : terminalCopy(state.messages.at(-1)?.terminal, t)}</small>
-            </button>
-          ) : <p className="sidebar-empty">{t("shell.recentsEmpty")}</p>}
+            </button>)}
+          </section>) : <section className="task-group task-group-recent" aria-labelledby="sidebar-recent-label">
+            <div className="section-label" id="sidebar-recent-label"><span>{t("nav.recents")}</span>{!state.capabilities?.durable_navigation
+              && <span className="beta-tag">{t("shell.live")}</span>}</div>
+            {state.messages.length > 0 ? <button className="recent-item selected" type="button"
+              onClick={() => setScreen("work")}><span>{title}</span><small>{state.phase === "submitting"
+                ? t("status.working") : terminalCopy(state.messages.at(-1)?.terminal, t)}</small></button>
+              : <p className="sidebar-empty">{t("shell.recentsEmpty")}</p>}
+          </section>}
         </div>
         <div className="sidebar-footer">
           <NavItem icon="settings" label={t("nav.settings")} selected={screen === "settings"}

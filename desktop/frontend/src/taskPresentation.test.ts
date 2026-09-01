@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { classifyTask, filterAndOrderTasks, summarizeTasks, type RecentTask } from "./taskPresentation";
+import { classifyTask, filterAndOrderTasks, groupSidebarTasks, summarizeTasks,
+  type RecentTask } from "./taskPresentation";
 
 const tasks: readonly RecentTask[] = [
   { session_id: "completed", definition_id: "agent", opened_at: "2026-08-30T10:00:00Z",
@@ -33,5 +34,15 @@ describe("durable task presentation", () => {
 
   it("summarizes work requiring intervention separately from active work", () => {
     expect(summarizeTasks(tasks)).toEqual({ attention: 1, active: 1, failed: 1, completed: 1, total: 4 });
+  });
+
+  it("groups truthful priority work ahead of quiet recents without duplication", () => {
+    expect(groupSidebarTasks(filterAndOrderTasks(tasks, "all", "", {}))).toEqual([
+      { kind: "priority", tasks: [tasks[2], tasks[1], tasks[3]] },
+      { kind: "recent", tasks: [tasks[0]] },
+    ]);
+    const limited = groupSidebarTasks(tasks, 2).flatMap((group) => group.tasks);
+    expect(limited).toHaveLength(2);
+    expect(new Set(limited.map((task) => task.session_id))).toEqual(new Set(["completed", "running"]));
   });
 });
