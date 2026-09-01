@@ -1,0 +1,9 @@
+{
+  "invocations": [
+    {
+      "protoPath": "../../spec/proto",
+      "protoFiles": ["garive/process/v1/process.proto"],
+      "visibility": "Public"
+    }
+  ]
+}
