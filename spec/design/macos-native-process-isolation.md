@@ -28,10 +28,13 @@ cpu_count, memory_size_bytes
 control_timeout_milliseconds
 ```
 
-URLs are Runtime-private file URLs. Digests are lowercase 64-character SHA-256
-hex strings. The guest protocol revision is non-empty printable ASCII. CPU,
-memory, and timeout are positive and within Virtualization framework plus V0-A
-bounds. Unknown or omitted values fail construction; there are no defaults.
+URLs are Runtime-private absolute file URLs. Their `absoluteString` UTF-8 bytes
+are the binding representation. Digests are lowercase 64-character SHA-256 hex
+strings. The guest protocol revision is 1--128 ASCII bytes from `[a-z0-9.-]`
+and begins and ends with an alphanumeric byte, so it cannot inject a kernel
+argument. CPU, memory, and timeout are positive and within Virtualization
+framework plus V0-A bounds. Unknown or omitted values fail construction; there
+are no defaults.
 
 ## Configuration projection
 
@@ -39,6 +42,7 @@ One plan constructs exactly:
 
 | Property | Required value |
 |---|---|
+| platform | explicit `VZGenericPlatformConfiguration` |
 | boot loader | `VZLinuxBootLoader` with the exact kernel and initial ramdisk |
 | root storage | one read-only Virtio block device over the exact root disk |
 | workspace | one `VZVirtioFileSystemDeviceConfiguration` tagged `garive-workspace` |
@@ -71,9 +75,11 @@ control timeout big-endian u64
 fixed kernel command-line bytes
 ```
 
-Every variable field is prefixed by an unsigned big-endian 64-bit byte length.
-The digest is Runtime-private and contains no secret. Logs and public errors
-must not expose any input URL.
+The format label is raw UTF-8. Every URL, digest, revision, and command-line
+field is prefixed by an unsigned big-endian 64-bit byte length. The mode is its
+single declared byte and numeric fields are raw big-endian `u64`. The digest is
+Runtime-private and contains no secret. Logs and public errors must not expose
+any input URL.
 
 ## Failures
 
@@ -87,6 +93,7 @@ The constructor returns one closed safe category:
 | `invalid_cpu_count` | the CPU count is outside framework bounds |
 | `invalid_memory_size` | memory is outside framework bounds or not MiB-aligned |
 | `invalid_control_timeout` | timeout is zero or above 60 seconds |
+| `resource_unavailable` | an admitted local disk attachment cannot be opened |
 
 Errors contain only the safe category. They never include paths, URLs, digest
 values, boot arguments, or framework diagnostics.
@@ -102,6 +109,10 @@ Swift tests must prove:
 5. invalid URLs, digests, revisions, CPU, memory, and timeout fail closed; and
 6. source scans find no `ProcessInfo.environment`, `getenv`, `sandbox-exec`,
    `sandbox_init`, shell launch, or VM start call in the V0-A target.
+
+The mutable SDK configuration and attachment are module-private. A caller
+cannot alter them after the binding digest is formed; V0-C will instantiate
+the VM inside this same ownership boundary.
 
 V0-A is complete only after `swift test --package-path desktop/macos-native`
 passes on the admitted stable Swift/Xcode toolchain. F0, T1, and the native
