@@ -80,7 +80,7 @@ pub(crate) fn render_cached_with_motion(
     context_line::render(model, theme, motion, frame.context, buffer);
     render_conversation(model, theme, motion, frame.transcript, buffer, cache);
     if let Some(area) = frame.inspector {
-        inspector::render(model, theme, area, buffer, false);
+        inspector::render(model, theme, area, buffer);
     }
     composer::render(model, palette(theme), frame.composer, buffer);
     render_footer(model, theme, frame.hint, buffer);

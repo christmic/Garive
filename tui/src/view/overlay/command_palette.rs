@@ -2,14 +2,16 @@ use ratatui::{
     buffer::Buffer,
     layout::Rect,
     text::{Line, Span},
-    widgets::{Block, BorderType, Borders, Clear, Padding, Paragraph, Widget},
+    widgets::{Padding, Paragraph, Widget},
 };
 
 use crate::{application::AppModel, input::COMMAND_PALETTE};
 
 use super::super::{
     layout::FrameLayout,
-    primitives::{centered_popup, key_hints, selection_marker, selection_window, truncate_display},
+    primitives::{
+        centered_popup, key_hints, selection_marker, selection_window, truncate_display, ModalFrame,
+    },
     safe_text,
     style::Palette,
 };
@@ -100,10 +102,7 @@ fn layout(model: &AppModel, area: Rect) -> PaletteLayout {
     let popup_width = DESIRED_WIDTH.min(modal_area.width.saturating_sub(gutter));
     let popup_height = DESIRED_HEIGHT.min(modal_area.height);
     let popup = centered_popup(modal_area, popup_width, popup_height);
-    let inner = Block::default()
-        .borders(Borders::ALL)
-        .padding(Padding::horizontal(2))
-        .inner(popup);
+    let inner = ModalFrame::resolve(popup, Padding::horizontal(2)).inner();
     let first_item_row = inner.y.saturating_add(2);
     let action_rows = if compact { 2 } else { 1 };
     let spacer_rows = u16::from(!compact);
@@ -127,18 +126,12 @@ fn layout(model: &AppModel, area: Rect) -> PaletteLayout {
 pub(super) fn render(model: &AppModel, colors: Palette, area: Rect, buffer: &mut Buffer) {
     let projection = project(model);
     let layout = layout(model, area);
-    buffer.set_style(area, colors.modal_backdrop);
-    let halo = modal_halo(layout.popup, area);
-    Clear.render(halo, buffer);
-    buffer.set_style(halo, colors.modal_backdrop);
-    Clear.render(layout.popup, buffer);
-    Block::default()
-        .title(Line::styled(" Command palette ", colors.title))
-        .borders(Borders::ALL)
-        .border_type(BorderType::Rounded)
-        .border_style(colors.overlay_border)
-        .padding(Padding::horizontal(2))
-        .render(layout.popup, buffer);
+    ModalFrame::resolve(layout.popup, Padding::horizontal(2)).render(
+        area,
+        Line::styled(" Command palette ", colors.title),
+        colors,
+        buffer,
+    );
 
     render_line(
         search_line(projection.query, colors),
@@ -402,17 +395,6 @@ fn render_line(line: Line<'static>, inner: Rect, row: u16, buffer: &mut Buffer) 
     if row < inner.bottom() {
         Paragraph::new(line).render(Rect::new(inner.x, row, inner.width, 1), buffer);
     }
-}
-
-fn modal_halo(popup: Rect, area: Rect) -> Rect {
-    let x = popup.x.saturating_sub(2).max(area.x);
-    let right = popup.right().saturating_add(2).min(area.right());
-    Rect::new(
-        x,
-        popup.y.max(area.y),
-        right.saturating_sub(x),
-        popup.bottom().min(area.bottom()).saturating_sub(popup.y),
-    )
 }
 
 #[cfg(test)]
