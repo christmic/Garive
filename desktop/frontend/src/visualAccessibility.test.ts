@@ -185,6 +185,7 @@ describe("Desktop visual accessibility contract", () => {
     expect(CSS).toContain(".product-menu-status { display: grid; grid-template-columns: 18px minmax(0, 1fr) 8px;");
     expect(CSS).toContain("grid-template-columns: 18px minmax(0, 1fr) auto");
     expect(CSS).toContain(".user-message-bubble { position: relative; display: flex; max-width: var(--user-chat-width); min-width: 0; padding: 10px var(--thread-content-margin);");
+    expect(CSS).not.toContain(".theme-dark .user-message > div");
     expect(CSS).toContain("background: var(--surface-user-message)");
     expect(CSS).toContain(".user-turn { display: flex; width: 100%; flex-direction: column; align-items: flex-end; gap: 4px;");
     expect(CSS).toContain(".user-message-content.collapsed { max-height: calc(19 * 1.55em); overflow: hidden; }");

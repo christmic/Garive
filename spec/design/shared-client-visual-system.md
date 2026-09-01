@@ -598,6 +598,10 @@ space. The same rule applies in light and dark themes and at narrow widths.
 | User Turn | short, measured-long, expanded, hover, focus | 70% bubble, 22 px radius, 16 px inset, 10 px vertical padding; actions belong to the full-width right-aligned Turn |
 | Thread scroll owner | attached, detached, unread, returning | 24 px threshold; only user intent detaches; layout changes preserve distance; browser anchoring is off |
 
+The full-width User Turn wrapper is always transparent. Only
+`.user-message-bubble` may consume `--surface-user-message`; dark and light
+themes must not paint the alignment/action wrapper as a card.
+
 High-frequency icon actions use the shared Tooltip primitive. Pointer hover has
 a 350ms disclosure delay to avoid noise while crossing a toolbar; keyboard
 focus discloses immediately. The trigger keeps its independent `aria-label` and

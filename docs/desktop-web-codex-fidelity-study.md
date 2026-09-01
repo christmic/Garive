@@ -1133,6 +1133,23 @@ starter rows at 672×40px, shows immediate keyboard disclosure fully inside a
 1280×720 viewport, proves the action menu replaces its Tooltip on open and
 reports zero horizontal overflow.
 
+### XXXVI. A user Turn is not a full-width dark slab
+
+Installed `app-initial-B6Gk5KCN.js` composes the user-message surface from
+`bg-user-message`, `max-w-(--user-chat-width)`, horizontal
+`--thread-content-margin`, `py-2.5` and a continuous rounded bubble. This is the
+rendered component contract behind the already recorded 70%, 16px, 10px and
+22px tokens. The full-width Turn wrapper exists only to right-align the bubble
+and its progressive actions.
+
+Garive's inner bubble satisfied that contract, but an older dark-theme rule
+still painted the direct `.user-turn` wrapper `#292a27`. It visually expanded
+every request into a square, pane-wide card and hid the correct 70% bubble
+hierarchy. The legacy fill is removed and an executable CSS gate forbids its
+return. Live 1280×720 split-Workbench evidence measures a transparent 332px
+Turn wrapper and a 232.4px bubble (70%) with 10×16px padding, 22px radius and
+zero horizontal overflow.
+
 ## Gate 1 — Codex fidelity
 
 This gate passes only when both Desktop and Web show:

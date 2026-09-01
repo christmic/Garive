@@ -562,7 +562,6 @@ kbd { color: var(--subtle); font: 11px -apple-system, sans-serif; }
 .theme-dark .brand-mark { color: white; }
 .theme-dark .new-work, .theme-dark .suggestion-grid button, .theme-dark .agent-card, .theme-dark .settings-card { background: rgba(255,255,255,.035); }
 .theme-dark .nav-item:hover:not(:disabled), .theme-dark .nav-item.selected, .theme-dark .recent-item:hover, .theme-dark .recent-item.selected { background: rgba(255,255,255,.06); color: var(--text); }
-.theme-dark .user-message > div { background: #292a27; }
 .theme-dark .inspector { background: #1b1c1a; }
 .theme-dark .state-chip.ready { color: #8bd8b3; background: #18382b; }
 .theme-dark .state-chip.attention { color: #f1c27d; background: #47351d; }
