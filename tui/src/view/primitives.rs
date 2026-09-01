@@ -3,7 +3,7 @@ use ratatui::{
     layout::Rect,
     style::Style,
     text::{Line, Span},
-    widgets::{Block, BorderType, Borders, Clear, Padding, Widget},
+    widgets::{Block, Borders, Clear, Padding, Widget},
 };
 use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::UnicodeWidthStr;
@@ -137,7 +137,7 @@ impl ModalFrame {
         Block::default()
             .title(title)
             .borders(Borders::ALL)
-            .border_type(BorderType::Rounded)
+            .border_set(colors.border_set())
             .border_style(colors.overlay_border)
             .padding(Padding::ZERO)
             .render(self.popup, buffer);
@@ -165,7 +165,7 @@ pub(super) fn focus_frame(
 ) -> Block<'static> {
     let block = Block::default()
         .borders(Borders::ALL)
-        .border_type(BorderType::Rounded)
+        .border_set(colors.border_set())
         .border_style(match tone {
             FocusFrameTone::Neutral => colors.border,
             FocusFrameTone::Warning => colors.warning,

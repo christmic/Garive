@@ -605,8 +605,7 @@ fn run_expect(
             log_file -noappend $env(GARIVE_TUI_LOG)
             spawn -noecho /bin/sh -c {stty rows 24 columns 100; exec "$GARIVE_TUI_BIN" --host "$GARIVE_TUI_HOST" --state-dir "$GARIVE_TUI_STATE" --theme mono}
             fconfigure $spawn_id -encoding utf-8
-            expect -exact "\033\[6n"
-            send "\033\[1;1R"
+            expect -exact "\033\[2J"
             expect "Agent"
             send -- "\033\[200~"
             send -- "hello durable\n\u8010\u4e45 tuX"

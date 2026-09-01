@@ -333,8 +333,7 @@ const EXPECT_SCRIPT: &str = r#"
     log_file -a -noappend $env(GARIVE_ALL_LOG)
     spawn -noecho /bin/sh -c {stty rows 24 columns 100; exec "$GARIVE_TUI_BIN" --host "$GARIVE_TUI_HOST" --session "$GARIVE_TUI_SESSION" --state-dir "$GARIVE_TUI_STATE" --theme mono}
     fconfigure $spawn_id -encoding utf-8
-    expect -exact "\033\[6n"
-    send "\033\[1;1R"
+    expect -exact "\033\[2J"
     must "before-disconnect" 21
     send "\033\[Z"
     send "\033\[H"
@@ -344,8 +343,7 @@ const EXPECT_SCRIPT: &str = r#"
     log_file -a -noappend $env(GARIVE_END_LOG)
     send "\033\[F"
     send "\014"
-    must "\033\[6n" 25
-    send "\033\[1;1R"
+    must "\033\[2J" 25
     must "before-disconnect" 27
     must "second-live-frame" 29
     log_file
@@ -355,8 +353,7 @@ const EXPECT_SCRIPT: &str = r#"
     log_file
     log_file -a -noappend $env(GARIVE_CLEAR_LOG)
     send "\014"
-    must "\033\[6n" 33
-    send "\033\[1;1R"
+    must "\033\[2J" 33
     must "Live feedback unavailable" 35
     log_file
     log_file -a $env(GARIVE_ALL_LOG)
@@ -365,8 +362,7 @@ const EXPECT_SCRIPT: &str = r#"
     log_file
     log_file -a -noappend $env(GARIVE_RECOVERED_LOG)
     send "\014"
-    must "\033\[6n" 43
-    send "\033\[1;1R"
+    must "\033\[2J" 43
     must "before-disconnect" 45
     must "second-live-frame" 47
     must "after-reconnect" 49
@@ -377,8 +373,7 @@ const EXPECT_SCRIPT: &str = r#"
     log_file
     log_file -a -noappend $env(GARIVE_FINAL_LOG)
     send "\014"
-    must "\033\[6n" 53
-    send "\033\[1;1R"
+    must "\033\[2J" 53
     must "durable-authoritative-answer" 55
     log_file
     log_file -a $env(GARIVE_ALL_LOG)

@@ -4,7 +4,7 @@ use ratatui::{
     buffer::Buffer,
     layout::Rect,
     text::{Line, Span},
-    widgets::{Block, BorderType, Borders, Padding, Widget},
+    widgets::{Block, Borders, Padding, Widget},
 };
 
 use crate::{
@@ -53,7 +53,7 @@ pub(super) fn render(model: &AppModel, theme: Theme, area: Rect, buffer: &mut Bu
     let block = Block::default()
         .title(Line::styled(title(model), colors.title))
         .borders(Borders::ALL)
-        .border_type(BorderType::Rounded)
+        .border_set(colors.border_set())
         .border_style(if model.focus == FocusTarget::Inspector {
             colors.overlay_border
         } else {

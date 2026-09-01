@@ -30,6 +30,7 @@ pub(crate) mod presentation;
 mod primitives;
 mod session;
 mod style;
+pub(crate) mod terminal_profile;
 mod title;
 
 use conversation::render_conversation;
