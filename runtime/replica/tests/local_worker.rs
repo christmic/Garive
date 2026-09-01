@@ -203,7 +203,19 @@ impl ExecutorPort for CompleteEffect {
     }
 }
 
-struct GovernedFactory;
+struct GovernedFactory {
+    goal_reference: Option<String>,
+    plan_reference: Option<String>,
+}
+
+impl GovernedFactory {
+    fn unbound() -> Self {
+        Self {
+            goal_reference: None,
+            plan_reference: None,
+        }
+    }
+}
 
 struct WriteResolver;
 impl ToolAccessResolver for WriteResolver {
@@ -342,8 +354,8 @@ impl LocalGovernedExecutionFactory for GovernedFactory {
                 sandbox: Box::new(LocalF0Sandbox),
                 context: F0GovernanceContext {
                     actor_authority_reference: "actor:test".into(),
-                    goal_reference: None,
-                    plan_reference: None,
+                    goal_reference: self.goal_reference.clone(),
+                    plan_reference: self.plan_reference.clone(),
                     effective_policy_revision: "desktop-test-1".into(),
                 },
             },
@@ -549,11 +561,36 @@ async fn explicit_governed_factory_runs_the_complete_f0_effect_fact_chain() {
     let mut governed_policy = policy();
     governed_policy.required_capabilities = vec![ModelCapability::Text, ModelCapability::Tools];
     let model = Arc::new(ToolThenTextModel(AtomicUsize::new(0)));
+    let committed = CommittedTurn {
+        session_id: SessionId::try_from(session.session_id.as_str()).unwrap(),
+        turn_id: TurnId::try_from(turn.turn_id.as_str()).unwrap(),
+        execution_id: ExecutionId::try_from(turn.execution_id.as_str()).unwrap(),
+        definition_id: "definition-main".into(),
+        definition_revision: "revision-1".into(),
+        snapshot_digest: "a".repeat(64),
+        session_version: 2,
+        committed_position: turn.committed_position,
+    };
+    let mismatched = LocalExecutionWorker::new_governed(
+        &database,
+        governed_policy.clone(),
+        model.clone(),
+        Arc::new(GovernedFactory {
+            goal_reference: Some("caller-invented-goal".into()),
+            plan_reference: Some("caller-invented-plan".into()),
+        }),
+    )
+    .unwrap();
+    assert_eq!(
+        mismatched.execute(&committed, &attempt()).await,
+        Err(LocalWorkerError::InvalidComposition)
+    );
+    assert_eq!(model.0.load(Ordering::SeqCst), 0);
     let worker = LocalExecutionWorker::new_governed(
         &database,
         governed_policy,
         model.clone(),
-        Arc::new(GovernedFactory),
+        Arc::new(GovernedFactory::unbound()),
     )
     .expect("governed worker");
     assert!(matches!(

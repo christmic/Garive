@@ -106,6 +106,14 @@ canonical set from Runtime's admitted public catalogue; it is audit metadata,
 not authority. Private rule identifiers/evidence stay behind a Runtime content
 reference.
 
+`goal_reference` and `plan_reference` are Runtime-owned. For a Plan step they
+are canonical identity/revision/definition-digest JSON derived from the atomic
+`plan.step.started` + C6 Execution prefix. Factories must leave both unset;
+Runtime injects them for normal execution and recovery. The SQLite effect port
+reconstructs the same binding and rejects caller-invented, stale, partial or
+unexpected references before any Prepared-v3 fact is committed. Unplanned
+Executions require both fields absent.
+
 An Allow decision binds every request field and may only narrow access,
 controls, duration, output, process count or open-file count. Runtime converts
 it into the existing C5 grant only after committing `safety.decided`. Deny maps

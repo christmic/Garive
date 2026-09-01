@@ -18,8 +18,10 @@ use garive_tools::{
 use serde_json::{json, Map, Value};
 
 use crate::{
-    plan_f0_prepared, plan_f0_safety_decision, plan_f0_sandbox_admission, F0EffectAdmissionContext,
-    F0SafetyDecisionContext, RecoveredF0Prepared, SafetyDisposition, SafetyRequestV1, SqliteLedger,
+    execution_work_binding::governance_matches, plan_f0_prepared, plan_f0_safety_decision,
+    plan_f0_sandbox_admission, reconstruct_execution_work_binding, ExecutionWorkBinding,
+    F0EffectAdmissionContext, F0SafetyDecisionContext, RecoveredF0Prepared, SafetyDisposition,
+    SafetyRequestV1, SqliteLedger,
 };
 
 use super::encoding::digest;
@@ -37,6 +39,7 @@ pub struct SqliteGovernedEffectPort<'a> {
     authority: &'a mut dyn AuthorityPort,
     executor: &'a mut dyn ExecutorPort,
     config: GovernedEffectConfig,
+    work_binding: Option<ExecutionWorkBinding>,
     f0_context: Option<F0GovernanceContext>,
     safety: Option<&'a mut dyn SafetyPort>,
     sandbox: Option<&'a mut dyn SandboxAdmissionPort>,
@@ -64,6 +67,9 @@ impl<'a> SqliteGovernedEffectPort<'a> {
         {
             return Err(GovernedRuntimePortError::InvalidBinding);
         }
+        let work_binding =
+            reconstruct_execution_work_binding(ledger, &config.session_id, &config.execution_id)
+                .map_err(|_| GovernedRuntimePortError::InvalidBinding)?;
         let writer = DirectEffectLedger {
             ledger,
             session_id: config.session_id.clone(),
@@ -75,6 +81,7 @@ impl<'a> SqliteGovernedEffectPort<'a> {
             authority,
             executor,
             config,
+            work_binding,
             f0_context: None,
             safety: None,
             sandbox: None,
@@ -93,7 +100,7 @@ impl<'a> SqliteGovernedEffectPort<'a> {
     {
         chrono::DateTime::parse_from_rfc3339(&config.recorded_at)
             .map_err(|_| GovernedRuntimePortError::InvalidBinding)?;
-        {
+        let work_binding = {
             let current = coordinator
                 .lock()
                 .map_err(|_| GovernedRuntimePortError::InvalidBinding)?;
@@ -102,12 +109,16 @@ impl<'a> SqliteGovernedEffectPort<'a> {
             {
                 return Err(GovernedRuntimePortError::InvalidBinding);
             }
-        }
+            current
+                .execution_work_binding(&config.execution_id)
+                .map_err(|_| GovernedRuntimePortError::InvalidBinding)?
+        };
         Ok(Self {
             writer: Box::new(CoordinatedEffectLedger { coordinator }),
             authority,
             executor,
             config,
+            work_binding,
             f0_context: None,
             safety: None,
             sandbox: None,
@@ -127,6 +138,9 @@ impl<'a> SqliteGovernedEffectPort<'a> {
             || context.goal_reference.as_deref() == Some("")
             || context.plan_reference.as_deref() == Some("")
         {
+            return Err(GovernedRuntimePortError::InvalidBinding);
+        }
+        if !governance_matches(self.work_binding.as_ref(), &context) {
             return Err(GovernedRuntimePortError::InvalidBinding);
         }
         self.f0_context = Some(context);

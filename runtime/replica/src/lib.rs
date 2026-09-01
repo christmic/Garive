@@ -18,6 +18,7 @@ mod effect_batch_facts;
 mod effect_batch_recovery;
 mod effect_batch_runtime;
 mod effect_batch_sqlite;
+mod execution_work_binding;
 mod executor_router;
 mod goal_evidence;
 mod goal_recovery;
@@ -126,6 +127,7 @@ pub use effect_batch_runtime::{
     EffectBatchPublisher, EffectBatchReport, EffectBatchRuntimeLimits, EffectCancellation,
 };
 pub use effect_batch_sqlite::SqliteEffectBatchPublisher;
+pub use execution_work_binding::{reconstruct_execution_work_binding, ExecutionWorkBinding};
 pub use executor_router::{ExecutorRoute, RoutedExecutorPort};
 pub use goal_recovery::reconstruct_goal;
 pub use goal_runtime::{

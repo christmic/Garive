@@ -15,10 +15,10 @@ use garive_plan::{
 use garive_runtime::{
     commit_plan_command, commit_plan_replacement, get_turn, plan_adopt_plan, plan_plan_replacement,
     plan_plan_transition, plan_propose_plan, plan_start_step_execution, plan_start_turn,
-    reconstruct_plan, verify_plan_carry_forward, EffectiveRuntimeLimits, GetTurnQuery,
-    PlanCommandContext, PlanRetryPosture, PlanRuntimeError, PlanRuntimeState,
-    PlanRuntimeTransition, PlanStepExecutionStart, RuntimeCommandId, SqliteLedger,
-    StartTurnCommand,
+    reconstruct_execution_work_binding, reconstruct_plan, verify_plan_carry_forward,
+    EffectiveRuntimeLimits, GetTurnQuery, PlanCommandContext, PlanRetryPosture, PlanRuntimeError,
+    PlanRuntimeState, PlanRuntimeTransition, PlanStepExecutionStart, RuntimeCommandId,
+    SqliteLedger, StartTurnCommand,
 };
 use serde_json::json;
 use sha2::{Digest, Sha256};
@@ -566,6 +566,25 @@ fn step_start_and_c6_execution_commit_as_one_restart_safe_command() {
     )
     .unwrap();
     assert_eq!(turn.execution_id.as_ref(), Some(&execution_id));
+    let binding = reconstruct_execution_work_binding(&ledger, &turn.session_id, &execution_id)
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        serde_json::from_str::<serde_json::Value>(binding.goal_reference()).unwrap(),
+        json!({
+            "definition_digest":goal_definition().digest().unwrap(),
+            "goal_id":"goal-1",
+            "revision":2,
+        })
+    );
+    assert_eq!(
+        serde_json::from_str::<serde_json::Value>(binding.plan_reference()).unwrap(),
+        json!({
+            "definition_digest":definition().digest().unwrap(),
+            "plan_id":"plan-1",
+            "revision":1,
+        })
+    );
 }
 
 #[test]

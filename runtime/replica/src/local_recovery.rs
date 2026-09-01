@@ -12,12 +12,14 @@ use serde_json::Value;
 
 use crate::runtime_turn::recovered_completed_iterations;
 use crate::{
-    derive_knowledge_recovery, derive_runtime_recovery, plan_core_terminal,
+    derive_knowledge_recovery, derive_runtime_recovery,
+    execution_work_binding::bind_governance_context, plan_core_terminal,
     plan_knowledge_recovery_uncertain, plan_recovery_action_facts, plan_recovery_restart,
-    recover_f0_prepared_with_port, select_runtime_recovery, CommittedTurn, CoreTerminalContext,
-    EffectiveRuntimeLimits, ExecutorRecoveryRequest, GovernedEffectConfig, KnowledgeRecoveryAction,
-    KnowledgeRecoveryContext, LocalGovernedExecutionFactory, RecoveryRestartCommand,
-    RuntimeCommandId, RuntimeRecoveryAction, SqliteGovernedEffectPort, SqliteLedger,
+    reconstruct_execution_work_binding, recover_f0_prepared_with_port, select_runtime_recovery,
+    CommittedTurn, CoreTerminalContext, EffectiveRuntimeLimits, ExecutorRecoveryRequest,
+    GovernedEffectConfig, KnowledgeRecoveryAction, KnowledgeRecoveryContext,
+    LocalGovernedExecutionFactory, RecoveryRestartCommand, RuntimeCommandId, RuntimeRecoveryAction,
+    SqliteGovernedEffectPort, SqliteLedger,
 };
 
 /// Stable secret-free local restart failure.
@@ -496,6 +498,11 @@ fn resume_f0(
         .create(&committed)
         .map_err(|_| LocalRecoveryError::F0RecoveryFailed)?;
     let mut f0 = governed.f0;
+    let binding = reconstruct_execution_work_binding(ledger, session_id, &execution_id)
+        .map_err(|_| LocalRecoveryError::CorruptRecoveryState)?;
+    if !bind_governance_context(binding.as_ref(), &mut f0.context) {
+        return Err(LocalRecoveryError::F0RecoveryFailed);
+    }
     let recovered = recover_f0_prepared_with_port(
         snapshot,
         pending.as_str(),

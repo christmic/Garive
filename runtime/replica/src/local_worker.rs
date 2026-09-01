@@ -15,6 +15,7 @@ use garive_llm::{ModelCancellation, ModelPort};
 
 use crate::{
     execute_durable_agent_with_capabilities, execute_durable_model_only_with_capabilities,
+    execution_work_binding::bind_governance_context, reconstruct_execution_work_binding,
     reconstruct_local_start, AuthorityPort, CommittedTurn, ExecutorPort, F0ExecutionGovernance,
     F0GovernanceContext, F0RecoveryContentPort, LiveOutputEndReason, LiveOutputHub, LiveOutputSink,
     LocalExecutionAttempt, LocalExecutionPolicy, LocalReconstructionError, LocalRecoveryReport,
@@ -296,6 +297,15 @@ impl LocalExecutionWorker {
                 return Err(LocalWorkerError::InvalidComposition);
             }
             let mut f0 = governed.f0;
+            let binding = reconstruct_execution_work_binding(
+                &ledger,
+                &committed.session_id,
+                &committed.execution_id,
+            )
+            .map_err(|_| LocalWorkerError::InvalidComposition)?;
+            if !bind_governance_context(binding.as_ref(), &mut f0.context) {
+                return Err(LocalWorkerError::InvalidComposition);
+            }
             execute_durable_agent_with_capabilities(
                 &mut ledger,
                 &reconstructed.durable,

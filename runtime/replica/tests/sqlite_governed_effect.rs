@@ -734,14 +734,26 @@ fn prepared_v3_commits_exact_f0_chain_before_dispatch() {
     let mut sandbox = LocalSandbox("1");
     let request_id = setup.request_id.clone();
     let prepared = setup.prepared.clone();
+    assert!(port(&mut setup, &mut authority, &mut executor)
+        .with_f0_governance(
+            &mut safety,
+            &mut sandbox,
+            F0GovernanceContext {
+                actor_authority_reference: "actor".into(),
+                goal_reference: Some("caller-invented-goal".into()),
+                plan_reference: Some("caller-invented-plan".into()),
+                effective_policy_revision: "policy-1".into(),
+            },
+        )
+        .is_err());
     let mut port = port(&mut setup, &mut authority, &mut executor)
         .with_f0_governance(
             &mut safety,
             &mut sandbox,
             F0GovernanceContext {
                 actor_authority_reference: "actor".into(),
-                goal_reference: Some("goal:1".into()),
-                plan_reference: Some("plan:1".into()),
+                goal_reference: None,
+                plan_reference: None,
                 effective_policy_revision: "policy-1".into(),
             },
         )

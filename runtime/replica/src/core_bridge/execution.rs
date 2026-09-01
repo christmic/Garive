@@ -761,6 +761,13 @@ pub(super) struct CommitCoordinator<'a> {
 }
 
 impl CommitCoordinator<'_> {
+    pub(super) fn execution_work_binding(
+        &self,
+        execution_id: &garive_ledger::ExecutionId,
+    ) -> Result<Option<crate::ExecutionWorkBinding>, crate::PlanRuntimeError> {
+        crate::reconstruct_execution_work_binding(self.ledger, &self.session_id, execution_id)
+    }
+
     pub(super) fn commit(
         &mut self,
         facts: Vec<FactDraft>,

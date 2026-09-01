@@ -257,6 +257,14 @@ must compose the Plan mutation with the C6 Turn/Execution start batch; recovery
 requires their persisted SQLite commit versions, command identity, Turn,
 Execution and snapshot digest to match before accepting the prefix.
 
+Runtime derives an `ExecutionWorkBinding` from that atomic prefix. Goal and
+Plan references are canonical JSON strings containing exact identity, revision
+and definition digest; no model, App, worker factory or policy adapter supplies
+them. The local worker injects the derived pair into F0, restart recovery
+re-derives it, and `SqliteGovernedEffectPort` independently refuses missing,
+extra or changed references before `effect.prepared`. An Execution without a
+`plan.step.started` owner must carry neither reference.
+
 ## Recovery
 
 | Position | Decision |
