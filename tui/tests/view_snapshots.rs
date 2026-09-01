@@ -197,6 +197,13 @@ fn responsive_product_frames_match_reviewed_snapshots() {
     insta::assert_snapshot!("action_100x24", frame(&action, Theme::Dark, 100, 24));
     insta::assert_snapshot!("action_light_100x24", frame(&action, Theme::Light, 100, 24));
     insta::assert_snapshot!("action_mono_100x24", frame(&action, Theme::Mono, 100, 24));
+    for theme in [Theme::Dark, Theme::Light, Theme::Mono] {
+        let compact = frame(&action, theme, 40, 8);
+        assert!(compact.contains("1/2 ↑↓"));
+        assert!(compact.contains("Enter submit response"));
+        assert!(compact.contains("Ctrl+Q leave safely"));
+        assert!(compact.lines().all(|line| line.width() <= 40));
+    }
     insta::assert_snapshot!(
         "action_compact_mono_40x8",
         frame(&action, Theme::Mono, 40, 8)

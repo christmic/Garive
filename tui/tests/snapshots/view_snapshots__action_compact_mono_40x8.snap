@@ -5,7 +5,7 @@ expression: "frame(&action, Theme::Mono, 40, 8)"
   ╭ Approval required ───────────────╮
   │                                  │
   │  !  Review the public request    │
-  │  › true                          │
+  │  › true · 1/2 ↑↓                 │
   │    Enter submit response         │
   │    Ctrl+Q leave safely           │
   │                                  │

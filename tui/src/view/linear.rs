@@ -151,11 +151,18 @@ fn linear_decision_sheet(model: &AppModel, overlay: Overlay) -> String {
                 guidance,
                 choices,
                 selected,
-            } => format!(
-                " Choices: {}. Selected: {}. {guidance}",
-                choices.join(", "),
-                choices.get(selected).map(String::as_str).unwrap_or("none")
-            ),
+            } => {
+                let navigation = if choices.len() > 1 {
+                    " Use Up or Down to select."
+                } else {
+                    ""
+                };
+                format!(
+                    " Choices: {}. Selected: {}.{navigation} {guidance}",
+                    choices.join(", "),
+                    choices.get(selected).map(String::as_str).unwrap_or("none")
+                )
+            }
         });
     let guidance = spec
         .actions
