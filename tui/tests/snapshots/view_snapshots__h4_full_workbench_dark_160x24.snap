@@ -81,9 +81,16 @@ expression: wide
 
 
 ===== overlay while streaming =====
+
+› Show every verified streaming stage.
+  ●  Verifying streamed output
+• The first visible streaming frame arrives.▍
+
+
+
                                            ╭ Command palette ───────────────────────────────────────────────────────╮
                                            │  Search  type to search                                                │
-                                           │  21 commands · showing 1–15 · ↓ 6 more                                 │
+                                           │  21 commands · showing 1–8 · ↓ 13 more                                 │
                                            │  › /new                unavailable · no Agent is installed             │
                                            │    /sessions           Switch session                                  │
                                            │    /jump               unavailable · fewer than two Turns are loaded   │
@@ -92,13 +99,6 @@ expression: wide
                                            │    /edit-prompt        Edit draft externally                           │
                                            │    /retry              unavailable · no unknown command                │
                                            │    /reconnect          Resume event stream                             │
-                                           │    /cancel             Cancel running turn                             │
-                                           │    /theme system       Follow terminal theme                           │
-                                           │    /theme dark         Use dark theme                                  │
-                                           │    /theme light        Use light theme                                 │
-                                           │    /theme mono         Use mono theme                                  │
-                                           │    /mouse auto         Keep terminal selection and scrolling           │
-                                           │    /mouse on           Enable mouse capture now                        │
                                            │                                                                        │
                                            │    ↑/↓ select   Home/End edge   Enter run   Esc close                  │
                                            ╰────────────────────────────────────────────────────────────────────────╯

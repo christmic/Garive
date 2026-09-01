@@ -3,20 +3,19 @@ source: tui/tests/view_snapshots.rs
 expression: "frame(&palette, Theme::Light, 160, 28)"
 ---
 
-                                           ╭ Command palette · 21 commands · type to filter · ↑/↓ · Enter · Esc ────╮
-                                           │    /new                Create session                                  │
-                                           │    /sessions           Switch session                                  │
-                                           │    /jump               unavailable · fewer than two Turns are loaded   │
-                                           │    /inspect            Open Inspector                                  │
-                                           │    /status             Connection details                              │
-                                           │    /edit-prompt        Edit draft externally                           │
-                                           │    /retry              unavailable · no unknown command                │
-                                           │    /reconnect          Resume event stream                             │
-                                           │    /cancel             Cancel running turn                             │
-                                           │    /theme system       Follow terminal theme                           │
-                                           │    /theme dark         Use dark theme                                  │
-                                           │    /theme light        Use light theme                                 │
-                                           │    /theme mono         Use mono theme                                  │
+› Summarize the release plan.
+  ✓  Agent action · completed
+• ## Release plan
+
+  • Verify the Runtime
+  • Ship with evidence
+
+  cargo test passes.
+
+
+                                           ╭ Command palette ───────────────────────────────────────────────────────╮
+                                           │  Search  type to search                                                │
+                                           │  21 commands · showing 14–21 · ↑ 13 earlier                            │
                                            │    /mouse auto         Keep terminal selection and scrolling           │
                                            │    /mouse on           Enable mouse capture now                        │
                                            │    /mouse off          Disable mouse capture now                       │
@@ -25,7 +24,8 @@ expression: "frame(&palette, Theme::Light, 160, 28)"
                                            │    /copy session-id    Copy Session ID                                 │
                                            │    /help               Keyboard guide                                  │
                                            │  › /quit               Exit safely                                     │
+                                           │                                                                        │
+                                           │    ↑/↓ select   Home/End edge   Enter run   Esc close                  │
                                            ╰────────────────────────────────────────────────────────────────────────╯
-
 • Working…
 › Ask a follow-up…

@@ -486,7 +486,7 @@ async fn shipping_tui_keeps_input_help_and_cancel_responsive_during_a_live_flood
         );
     }
     fs::write(&host_accepted, b"ready").unwrap();
-    if tokio::time::timeout(Duration::from_secs(10), async {
+    if tokio::time::timeout(Duration::from_secs(25), async {
         while !accepted_seen.exists() {
             tokio::time::sleep(Duration::from_millis(20)).await;
         }

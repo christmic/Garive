@@ -9,16 +9,14 @@ use crate::{application::AppModel, input::COMMAND_PALETTE};
 
 use super::super::{
     layout::FrameLayout,
-    primitives::{
-        centered_popup, key_hints, selection_window, truncate_display, ModalFrame, SelectionRow,
-    },
+    primitives::{key_hints, selection_window, truncate_display, ModalFrame, SelectionRow},
     safe_text,
     style::Palette,
 };
 
 const DESIRED_WIDTH: u16 = 74;
-const DESIRED_HEIGHT: u16 = 21;
 const COMPACT_WIDTH: u16 = 50;
+const MAX_VISIBLE_ITEMS: usize = 8;
 
 mod highlight;
 use highlight::highlighted_field;
@@ -46,17 +44,12 @@ struct PaletteLayout {
     first_item_row: u16,
     action_row: u16,
     compact: bool,
-    full_catalog: bool,
 }
 
 impl PaletteLayout {
     #[cfg(test)]
     fn item_capacity(self) -> usize {
-        if self.full_catalog {
-            usize::from(self.inner.bottom().saturating_sub(self.first_item_row))
-        } else {
-            usize::from(self.action_row.saturating_sub(self.first_item_row))
-        }
+        usize::from(self.action_row.saturating_sub(self.first_item_row))
     }
 
     fn visible_count(self) -> usize {
@@ -94,34 +87,25 @@ fn layout(model: &AppModel, area: Rect) -> PaletteLayout {
     let projection = project(model);
     let compact = area.width < COMPACT_WIDTH || area.height <= 8;
     let frame = FrameLayout::resolve(model, area);
-    let transcript_area = if compact {
-        area
+    let transcript = frame.transcript;
+    let transcript_area = if transcript.height >= 7 {
+        transcript
     } else {
-        let transcript = frame.transcript;
-        if transcript.height >= 8 {
-            transcript
-        } else {
-            area
-        }
+        area
     };
-    let catalog_height = u16::try_from(projection.items.len())
-        .unwrap_or(u16::MAX)
-        .saturating_add(2);
-    let full_catalog = !compact
-        && projection.query.is_empty()
-        && !projection.items.is_empty()
-        && transcript_area.height >= catalog_height;
     let modal_area = transcript_area;
     let gutter = if compact { 0 } else { 4 };
     let popup_width = DESIRED_WIDTH.min(modal_area.width.saturating_sub(gutter));
-    let popup_height = if full_catalog {
-        catalog_height
-    } else {
-        DESIRED_HEIGHT.min(modal_area.height)
-    };
-    let popup = centered_popup(modal_area, popup_width, popup_height);
+    let visible_items = projection.items.len().clamp(1, MAX_VISIBLE_ITEMS);
+    // Border + search + result window + item rows + action region. The palette
+    // grows with useful content instead of reserving an empty modal canvas.
+    let popup_height = u16::try_from(visible_items)
+        .unwrap_or(u16::MAX)
+        .saturating_add(6)
+        .min(modal_area.height);
+    let popup = composer_adjacent_popup(modal_area, popup_width, popup_height);
     let inner = ModalFrame::resolve(popup, Padding::horizontal(2)).inner();
-    let first_item_row = inner.y.saturating_add(if full_catalog { 0 } else { 2 });
+    let first_item_row = inner.y.saturating_add(2);
     let action_rows = if compact { 2 } else { 1 };
     let spacer_rows = u16::from(!compact);
     let action_row = inner
@@ -129,12 +113,7 @@ fn layout(model: &AppModel, area: Rect) -> PaletteLayout {
         .saturating_sub(action_rows)
         .saturating_sub(spacer_rows)
         .max(first_item_row.saturating_add(1));
-    let capacity = usize::from(if full_catalog {
-        inner.bottom().saturating_sub(first_item_row)
-    } else {
-        action_row.saturating_sub(first_item_row)
-    })
-    .max(1);
+    let capacity = usize::from(action_row.saturating_sub(first_item_row)).max(1);
     let window = selection_window(projection.items.len(), projection.selected, capacity);
     PaletteLayout {
         popup,
@@ -143,8 +122,16 @@ fn layout(model: &AppModel, area: Rect) -> PaletteLayout {
         first_item_row,
         action_row,
         compact,
-        full_catalog,
     }
+}
+
+fn composer_adjacent_popup(area: Rect, width: u16, height: u16) -> Rect {
+    Rect::new(
+        area.x + area.width.saturating_sub(width) / 2,
+        area.bottom().saturating_sub(height),
+        width,
+        height,
+    )
 }
 
 pub(super) fn render(model: &AppModel, colors: Palette, area: Rect, buffer: &mut Buffer) {
@@ -152,29 +139,22 @@ pub(super) fn render(model: &AppModel, colors: Palette, area: Rect, buffer: &mut
     let layout = layout(model, area);
     ModalFrame::resolve(layout.popup, Padding::horizontal(2)).render(
         area,
-        if layout.full_catalog {
-            full_catalog_title(projection.items.len(), colors)
-        } else {
-            Line::styled(" Command palette ", colors.title)
-        },
+        Line::styled(" Command palette ", colors.title),
         colors,
         buffer,
     );
-
-    if !layout.full_catalog {
-        render_line(
-            search_line(projection.query, colors),
-            layout.inner,
-            layout.inner.y,
-            buffer,
-        );
-        render_line(
-            window_line(&projection, layout, colors),
-            layout.inner,
-            layout.inner.y.saturating_add(1),
-            buffer,
-        );
-    }
+    render_line(
+        search_line(projection.query, colors),
+        layout.inner,
+        layout.inner.y,
+        buffer,
+    );
+    render_line(
+        window_line(&projection, layout, colors),
+        layout.inner,
+        layout.inner.y.saturating_add(1),
+        buffer,
+    );
 
     if projection.items.is_empty() {
         render_line(
@@ -207,10 +187,7 @@ pub(super) fn render(model: &AppModel, colors: Palette, area: Rect, buffer: &mut
         }
     }
 
-    if layout.full_catalog {
-        // The catalogue consumes the complete transcript height. The border
-        // title retains discovery and actions without entering content rows.
-    } else if !layout.compact {
+    if !layout.compact {
         render_line(Line::default(), layout.inner, layout.action_row, buffer);
         render_line(
             key_hints(
@@ -366,16 +343,6 @@ fn search_line(query: &str, colors: Palette) -> Line<'static> {
             } else {
                 colors.normal
             },
-        ),
-    ])
-}
-
-fn full_catalog_title(total: usize, colors: Palette) -> Line<'static> {
-    Line::from(vec![
-        Span::styled(" Command palette ", colors.title),
-        Span::styled(
-            format!("· {total} commands · type to filter · ↑/↓ · Enter · Esc "),
-            colors.muted,
         ),
     ])
 }

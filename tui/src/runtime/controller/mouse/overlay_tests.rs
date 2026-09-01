@@ -16,6 +16,13 @@ fn mouse(kind: MouseEventKind, column: u16, row: u16) -> MouseEvent {
     }
 }
 
+fn overlay_point(model: &AppModel) -> (u16, u16) {
+    (0..model.terminal_size.height)
+        .flat_map(|row| (0..model.terminal_size.width).map(move |column| (column, row)))
+        .find(|(column, row)| crate::view::overlay_contains(model, *column, *row))
+        .expect("overlay geometry must expose one mouse-owned cell")
+}
+
 #[test]
 fn selectable_overlay_routes_visible_rows_and_wheel() {
     let model = AppModel {
@@ -27,8 +34,9 @@ fn selectable_overlay_routes_visible_rows_and_wheel() {
         command_selection: 11,
         ..Default::default()
     };
+    let (column, row) = overlay_point(&model);
     assert_eq!(
-        route(&model, mouse(MouseEventKind::ScrollUp, 50, 6)),
+        route(&model, mouse(MouseEventKind::ScrollUp, column, row)),
         Some(MouseAction::OverlayMove { backwards: true })
     );
     let activated = (0..24)
@@ -43,7 +51,7 @@ fn selectable_overlay_routes_visible_rows_and_wheel() {
             }
         })
         .collect::<std::collections::BTreeSet<_>>();
-    assert_eq!(activated, (0..14).collect());
+    assert_eq!(activated, (4..12).collect());
 
     let compact = AppModel {
         terminal_size: TerminalSize {

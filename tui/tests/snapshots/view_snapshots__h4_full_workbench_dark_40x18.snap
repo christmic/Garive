@@ -63,9 +63,10 @@ expression: compact
 
 
 ===== overlay while streaming =====
+
 ╭ Command palette ─────────────────────╮
 │  Search  type to search              │
-│  Showing 1–12 / 21 · ↓9              │
+│  Showing 1–8 / 21 · ↓13              │
 │  › /new              unavailable ·…  │
 │    /sessions         Switch session  │
 │    /jump             unavailable ·…  │
@@ -74,13 +75,12 @@ expression: compact
 │    /edit-prompt      Edit draft ex…  │
 │    /retry            unavailable ·…  │
 │    /reconnect        Resume event …  │
-│    /cancel           Cancel runnin…  │
-│    /theme system     Follow termin…  │
-│    /theme dark       Use dark theme  │
-│    /theme light      Use light the…  │
 │    ↑/↓ select   Home/End edge        │
 │    Enter run   Esc close             │
 ╰──────────────────────────────────────╯
+• Writing…
+› A retained follow-up draft
+
 
 ===== stream restored after overlay =====
 

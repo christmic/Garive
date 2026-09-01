@@ -59,6 +59,16 @@ commands, recovery, and decisions use bounded overlays. At wide sizes an
 explicitly opened `Inspector` may share the work surface without changing
 transcript truth.
 
+Selection surfaces that originate from composition remain spatially attached
+to the Composer. The command palette docks to the transcript's lower edge,
+never covers a Composer that can be preserved, grows only with visible content,
+and shows at most eight command rows per window. Filtering to one result must
+shrink the surface instead of retaining an empty modal canvas. Garive may add
+truthful unavailable-reason detail beyond the Codex baseline, but cannot buy
+that detail with an unbounded catalogue or a second navigation axis. Only an
+extreme-height fallback whose transcript cannot fit the minimum surface may
+temporarily use the whole terminal.
+
 The transcript composes `TurnBlock` values. A Turn owns one restrained User
 request, its `ActivityStack`, one `LiveAnswer` or committed `MarkdownAnswer`,
 and its terminal outcome. Durable, ephemeral, and local values remain separate
