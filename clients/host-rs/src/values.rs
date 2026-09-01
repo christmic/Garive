@@ -258,6 +258,48 @@ pub struct SessionView {
     pub observed_max_position: u64,
 }
 
+/// One bounded, redacted durable Goal projection.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
+pub struct GoalSummary {
+    /// Exact Host API version.
+    pub api_version: String,
+    /// Stable Goal identity.
+    pub goal_id: String,
+    /// Current contiguous Goal revision.
+    pub revision: u64,
+    /// Stable public lifecycle state.
+    pub state: String,
+    /// Lowercase SHA-256 of the current private definition.
+    pub definition_digest: String,
+    /// Bounded objective display text.
+    pub objective: String,
+    /// Whether objective display text was truncated.
+    pub objective_truncated: bool,
+    /// Parent Goal identity, when present.
+    pub parent_goal_id: Option<String>,
+    /// Number of attempts started from Draft.
+    pub attempt_number: u32,
+    /// Number of declared success criteria.
+    pub criteria_total: u32,
+    /// Number of verified terminal success criteria.
+    pub criteria_satisfied: u32,
+}
+
+/// Complete bounded Goal page at one Session watermark.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
+pub struct GoalPage {
+    /// Exact Host API version.
+    pub api_version: String,
+    /// Owning Session identity.
+    pub session_id: String,
+    /// Goals in stable identity order.
+    pub goals: Vec<GoalSummary>,
+    /// Session version used for optimistic commands.
+    pub session_version: u64,
+    /// Highest durable position included in this response.
+    pub observed_max_position: u64,
+}
+
 /// Restart-safe coordinates and public schemas for one suspension.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
 pub struct SuspensionView {

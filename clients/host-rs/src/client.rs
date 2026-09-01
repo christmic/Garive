@@ -1,5 +1,7 @@
 //! Bounded loopback HTTP/SSE Host client.
 
+use std::collections::{BTreeMap, BTreeSet};
+
 use futures::StreamExt;
 use reqwest::{redirect::Policy, StatusCode, Url};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
@@ -8,9 +10,9 @@ use tokio::time::{timeout, Duration};
 
 use crate::{
     reduce_host_events, reducer::validate_activity, AgentDefinitionPage, ClientLimits,
-    CreateSessionResponse, HostClientError, HostClientErrorCode, HostEvent, HostView,
-    LiveOutputEndReason, LiveOutputEvent, LiveOutputEventKind, SessionPage, SessionSummary,
-    SessionView, SuspensionView, TurnCommandResponse, TurnTimelinePage,
+    CreateSessionResponse, GoalPage, GoalSummary, HostClientError, HostClientErrorCode, HostEvent,
+    HostView, LiveOutputEndReason, LiveOutputEvent, LiveOutputEventKind, SessionPage,
+    SessionSummary, SessionView, SuspensionView, TurnCommandResponse, TurnTimelinePage,
 };
 
 const KNOWN_HOST_ERRORS: [&str; 8] = [
@@ -144,6 +146,19 @@ impl LiveHostClient {
             return Err(invalid_event());
         }
         Ok(view)
+    }
+
+    /// Reads the complete bounded Goal graph at one durable Session watermark.
+    pub async fn get_goals(&self, session_id: &str) -> Result<GoalPage, HostClientError> {
+        if session_id.is_empty() {
+            return Err(HostClientError::new(HostClientErrorCode::InvalidCommand));
+        }
+        let path = format!("v1/sessions/{}/goals", encode_segment(session_id));
+        let page: GoalPage = decode(self.get(&path).await?)?;
+        if !valid_goal_page(&page, session_id, self.limits.max_events) {
+            return Err(invalid_event());
+        }
+        Ok(page)
     }
 
     /// Reads one bounded page of complete durable Turn projections.
@@ -863,6 +878,65 @@ fn valid_session(value: &SessionSummary) -> bool {
             (count, Some(id), Some(state)) => count > 0 && !id.is_empty() && valid_state(state),
             _ => false,
         }
+}
+
+fn valid_goal_page(page: &GoalPage, session_id: &str, max_goals: usize) -> bool {
+    if page.api_version != "v1"
+        || page.session_id != session_id
+        || page.session_version == 0
+        || page.observed_max_position == 0
+        || page.goals.len() > max_goals
+        || page
+            .goals
+            .windows(2)
+            .any(|pair| pair[0].goal_id >= pair[1].goal_id)
+        || page.goals.iter().any(|goal| !valid_goal(goal))
+    {
+        return false;
+    }
+    let graph: BTreeMap<&str, Option<&str>> = page
+        .goals
+        .iter()
+        .map(|goal| (goal.goal_id.as_str(), goal.parent_goal_id.as_deref()))
+        .collect();
+    page.goals.iter().all(|goal| {
+        let mut seen = BTreeSet::new();
+        let mut cursor = Some(goal.goal_id.as_str());
+        while let Some(id) = cursor {
+            if !seen.insert(id) {
+                return false;
+            }
+            cursor = match graph.get(id) {
+                Some(parent) => *parent,
+                None => return false,
+            };
+        }
+        true
+    })
+}
+
+fn valid_goal(goal: &GoalSummary) -> bool {
+    let terminal_evidence_valid = if goal.state == "succeeded" {
+        goal.criteria_satisfied == goal.criteria_total
+    } else {
+        goal.criteria_satisfied == 0
+    };
+    goal.api_version == "v1"
+        && !goal.goal_id.is_empty()
+        && goal.goal_id.len() <= 256
+        && goal.revision > 0
+        && matches!(
+            goal.state.as_str(),
+            "draft" | "active" | "suspended" | "succeeded" | "failed" | "cancelled"
+        )
+        && valid_digest(&goal.definition_digest)
+        && goal.objective.len() <= 16 * 1_024
+        && (!goal.objective.is_empty() || goal.objective_truncated)
+        && goal.parent_goal_id.as_deref().is_none_or(|parent| {
+            !parent.is_empty() && parent.len() <= 256 && parent != goal.goal_id
+        })
+        && u64::from(goal.attempt_number) <= goal.revision
+        && terminal_evidence_valid
 }
 
 fn valid_state(value: &str) -> bool {

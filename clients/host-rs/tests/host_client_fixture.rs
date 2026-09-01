@@ -280,6 +280,52 @@ async fn live_snapshot_uses_h4_bounds_instead_of_h1_event_bound() {
 }
 
 #[tokio::test]
+async fn goal_page_is_typed_ordered_and_graph_checked() {
+    let fixture = fixture();
+    let valid = serde_json::json!({
+        "api_version": "v1",
+        "session_id": "session-goals",
+        "goals": [
+            {"api_version":"v1","goal_id":"child","revision":2,"state":"active","definition_digest":"a".repeat(64),"objective":"child","objective_truncated":false,"parent_goal_id":"root","attempt_number":1,"criteria_total":1,"criteria_satisfied":0},
+            {"api_version":"v1","goal_id":"root","revision":1,"state":"draft","definition_digest":"b".repeat(64),"objective":"root","objective_truncated":false,"attempt_number":0,"criteria_total":1,"criteria_satisfied":0}
+        ],
+        "session_version": 3,
+        "observed_max_position": 3
+    });
+    let cyclic = serde_json::json!({
+        "api_version": "v1",
+        "session_id": "session-goals",
+        "goals": [
+            {"api_version":"v1","goal_id":"a","revision":1,"state":"draft","definition_digest":"a".repeat(64),"objective":"a","objective_truncated":false,"parent_goal_id":"b","attempt_number":0,"criteria_total":1,"criteria_satisfied":0},
+            {"api_version":"v1","goal_id":"b","revision":1,"state":"draft","definition_digest":"b".repeat(64),"objective":"b","objective_truncated":false,"parent_goal_id":"a","attempt_number":0,"criteria_total":1,"criteria_satisfied":0}
+        ],
+        "session_version": 3,
+        "observed_max_position": 3
+    });
+    let requests = Arc::new(Mutex::new(Vec::new()));
+    let (base_url, server) = serve(
+        vec![
+            http_json(200, &valid.to_string()),
+            http_json(200, &cyclic.to_string()),
+        ],
+        Arc::clone(&requests),
+    )
+    .await;
+    let client = LiveHostClient::new(&base_url, limits(&fixture)).expect("client");
+
+    let page = client.get_goals("session-goals").await.expect("goals");
+    assert_eq!(page.goals[0].parent_goal_id.as_deref(), Some("root"));
+    assert_eq!(
+        client.get_goals("session-goals").await.unwrap_err().code,
+        HostClientErrorCode::InvalidEvent
+    );
+    server.await.expect("server task");
+    assert!(
+        requests.lock().await[0].starts_with("GET /v1/sessions/session-goals/goals HTTP/1.1\r\n")
+    );
+}
+
+#[tokio::test]
 async fn live_delta_accepts_max_raw_text_after_json_escaping() {
     let fixture = fixture();
     let text = "\0".repeat(32 * 1_024);

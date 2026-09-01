@@ -86,6 +86,9 @@ async fn shared_client_completes_a_real_runtime_host_turn() {
         .create_session("create-e2e", "definition-main")
         .await
         .unwrap();
+    let goals = client.get_goals(&session.session_id).await.unwrap();
+    assert!(goals.goals.is_empty());
+    assert_eq!(goals.session_version, 1);
     let started = client
         .start_turn("start-e2e", &session.session_id, "hello")
         .await
