@@ -3,4 +3,4 @@ source: tui/tests/view_snapshots.rs
 expression: "composer_selection_style_preview(Theme::Light)"
 ---
 "Selected" <fg=Black bg=Magenta +NONE>
-" tail" <fg=Black bg=Reset +NONE>
+" tail" <fg=Black bg=Rgb(235, 238, 244) +NONE>

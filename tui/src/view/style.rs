@@ -77,7 +77,7 @@ pub(super) fn palette_for(theme: Theme, profile: TerminalProfile) -> Palette {
             Color::Reset,
             Color::Reset,
             Color::Reset,
-            Color::DarkGray,
+            Color::Reset,
         )
     } else {
         (
@@ -255,6 +255,24 @@ mod tests {
         let mono = palette_for(Theme::Mono, TerminalProfile::default());
         assert_eq!(mono.request_surface.bg, None);
         assert_eq!(mono.accent.fg, Some(Color::Reset));
+        for style in [
+            mono.normal,
+            mono.muted,
+            mono.accent,
+            mono.title,
+            mono.border,
+            mono.overlay_border,
+            mono.request_surface,
+            mono.request_marker,
+            mono.activity,
+            mono.placeholder,
+            mono.success,
+            mono.warning,
+            mono.danger,
+        ] {
+            assert!(matches!(style.fg, None | Some(Color::Reset)));
+            assert!(matches!(style.bg, None | Some(Color::Reset)));
+        }
     }
 
     #[test]

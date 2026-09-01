@@ -170,7 +170,9 @@ async fn shipping_tui_recovers_live_snapshot_then_converges_to_durable_truth() {
     proxy_control.send_replace(true);
     wait_for(&stage_two).await;
     let unavailable = fs::read_to_string(&clear_log).unwrap();
-    assert!(unavailable.contains("Live feedback unavailable"));
+    assert!(unavailable.contains("Live"));
+    assert!(unavailable.contains("feedback"));
+    assert!(unavailable.contains("unavailable"));
     assert!(!unavailable.contains("before-disconnect"));
     assert!(!unavailable.contains("second-live-frame"));
 
@@ -349,32 +351,39 @@ const EXPECT_SCRIPT: &str = r#"
     log_file
     log_file -a $env(GARIVE_ALL_LOG)
     mark $env(GARIVE_STAGE_PRECOMMIT)
-    must "Live feedback unavailable" 31
+    must "Live" 31
+    must "feedback" 33
+    must "unavailable" 35
     log_file
     log_file -a -noappend $env(GARIVE_CLEAR_LOG)
     send "\014"
-    must "\033\[2J" 33
-    must "Live feedback unavailable" 35
+    must "\033\[2J" 37
+    must "Live" 39
+    must "feedback" 41
+    must "unavailable" 43
     log_file
     log_file -a $env(GARIVE_ALL_LOG)
     mark $env(GARIVE_STAGE_TWO)
-    must "before-disconnect second-live-frame after-reconnect" 41
+    must "before-disconnect" 45
+    must "second-live-frame" 47
+    must "after-r" 49
+    must "connect" 50
     log_file
     log_file -a -noappend $env(GARIVE_RECOVERED_LOG)
     send "\014"
-    must "\033\[2J" 43
-    must "before-disconnect" 45
-    must "second-live-frame" 47
-    must "after-reconnect" 49
+    must "\033\[2J" 51
+    must "before-disconnect" 53
+    must "second-live-frame" 55
+    must "after-reconnect" 57
     log_file
     log_file -a $env(GARIVE_ALL_LOG)
     mark $env(GARIVE_STAGE_THREE)
-    must "durable-authoritative-answer" 51
+    must "durable-authoritative-answer" 59
     log_file
     log_file -a -noappend $env(GARIVE_FINAL_LOG)
     send "\014"
-    must "\033\[2J" 53
-    must "durable-authoritative-answer" 55
+    must "\033\[2J" 61
+    must "durable-authoritative-answer" 63
     log_file
     log_file -a $env(GARIVE_ALL_LOG)
     mark $env(GARIVE_STAGE_FOUR)

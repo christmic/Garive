@@ -43,7 +43,7 @@ fn selectable_overlay_routes_visible_rows_and_wheel() {
             }
         })
         .collect::<std::collections::BTreeSet<_>>();
-    assert_eq!(activated, (0..13).collect());
+    assert_eq!(activated, (0..14).collect());
 
     let compact = AppModel {
         terminal_size: TerminalSize {

@@ -43,7 +43,8 @@ fn full_catalog_uses_the_safe_area_without_covering_the_composer() {
     assert!(layout.full_catalog);
     assert_eq!(layout.item_capacity(), COMMAND_PALETTE.len());
     assert_eq!(layout.popup.y, frame.transcript.y);
-    assert_eq!(layout.popup.bottom(), frame.composer.y);
+    assert!(layout.popup.bottom() <= frame.composer.y);
+    assert!(frame.composer.y.saturating_sub(layout.popup.bottom()) <= 1);
     assert!(layout.popup.x >= frame.transcript.x);
     assert!(layout.popup.right() <= frame.transcript.right());
     assert_eq!(

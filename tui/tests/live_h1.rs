@@ -53,8 +53,8 @@ fn system_theme_uses_paired_terminal_colors_in_a_real_pty() {
         "fullscreen startup must not query the cursor position"
     );
     assert!(
-        text.contains("\x1b[38;5;4;49m"),
-        "light palette blue accent rendered"
+        text.contains("\x1b[38;5;4;48;5;255m"),
+        "light palette blue accent rendered on the composer surface"
     );
     assert!(
         text.contains("\x1b[38;5;0;48;5;255m"),
@@ -310,23 +310,25 @@ fn inspector_survives_live_width_breakpoints_and_escape_restores_the_composer() 
             must_expect "\033\[2J" 80
             must_expect "Garive" 81
             send "/status \r"
-            must_expect "None selected" 82
-            must_expect "Following latest" 83
+            must_expect "None" 82
+            must_expect "selected" 83
+            must_expect "Following" 84
+            must_expect "latest" 85
             send "\033\[F"
             exec stty rows 24 columns 39 < $spawn_out(slave,name)
-            must_expect "Garive needs 40 columns" 84
+            must_expect "Garive needs 40 columns" 86
             exec stty rows 24 columns 119 < $spawn_out(slave,name)
-            must_expect "Following latest" 85
+            must_expect "Following latest" 87
             send "\033"
             after 100
             send "\033\[200~closed\033\[201~"
-            must_expect "closed" 86
+            must_expect "closed" 88
             send "\021"
-            must_expect "Garive?" 87
+            must_expect "Garive?" 89
             send "\r"
             expect {
                 eof { exit 0 }
-                timeout { exit 88 }
+                timeout { exit 90 }
             }
         "#])
         .status()
@@ -677,9 +679,9 @@ fn mouse_drag_selects_composer_graphemes_in_a_real_mono_pty() {
             expect "Garive"
             send "a界b"
             after 100
-            send "\033\[<0;6;22M"
-            send "\033\[<32;8;22M"
-            send "\033\[<0;8;22m"
+            send "\033\[<0;6;23M"
+            send "\033\[<32;8;23M"
+            send "\033\[<0;8;23m"
             after 100
             send "X"
             expect "aX"
@@ -718,15 +720,15 @@ fn double_and_triple_click_replace_a_word_then_the_line_in_a_real_pty() {
             expect "Garive"
             send "alpha beta"
             after 100
-            send "\033\[<0;11;22M\033\[<0;11;22m"
-            send "\033\[<0;11;22M\033\[<0;11;22m"
+            send "\033\[<0;11;23M\033\[<0;11;23m"
+            send "\033\[<0;11;23M\033\[<0;11;23m"
             after 100
             send "X"
             expect "alpha X"
             after 600
-            send "\033\[<0;6;22M\033\[<0;6;22m"
-            send "\033\[<0;6;22M\033\[<0;6;22m"
-            send "\033\[<0;6;22M\033\[<0;6;22m"
+            send "\033\[<0;6;23M\033\[<0;6;23m"
+            send "\033\[<0;6;23M\033\[<0;6;23m"
+            send "\033\[<0;6;23M\033\[<0;6;23m"
             after 100
             send "Y"
             expect "Y"
@@ -1034,7 +1036,7 @@ fn turn_navigator_filters_commits_only_on_activation_and_shares_mouse_geometry()
             must_expect "Jump to a Turn" 76
             send "\033\[H"
             after 100
-            send "\033\[<0;50;5M"
+            send "\033\[<0;50;6M"
             must_expect "answer-0" 77
             send "\021"
             must_expect "Garive?" 78
@@ -1146,19 +1148,20 @@ fn live_resize_crosses_layout_breakpoints_without_losing_draft() {
             expect "Garive"
             send "draft survives"
             exec stty rows 7 columns 19 < $spawn_out(slave,name)
-            expect "Need 20"
+            expect "Need"
+            expect "20×8"
             exec stty rows 12 columns 40 < $spawn_out(slave,name)
-            expect "draft survives"
+            expect "draft"
+            expect "survives"
             exec stty rows 28 columns 160 < $spawn_out(slave,name)
-            expect "draft survives"
+            expect "draft"
+            expect "survives"
             send "\011"
-            expect "select"
-            send "\177"
+            expect "browse"
+            expect "history"
             send "\011"
-            expect "scroll"
-            send "\177"
-            send "\011"
-            expect "draft survives"
+            send "!"
+            expect "!"
             send "\021"
             send "\r"
             expect eof
@@ -1168,7 +1171,8 @@ fn live_resize_crosses_layout_breakpoints_without_losing_draft() {
         server.join().unwrap();
         assert!(status.success());
         let text = fs::read_to_string(transcript).unwrap();
-        assert!(text.contains("Need 20"));
+        assert!(text.contains("Need"));
+        assert!(text.contains("20×8"));
         assert!(text.contains("draft"));
         assert!(text.contains("survives"));
         assert!(text.contains("\x1b[?1049l"));

@@ -14,5 +14,5 @@ Light
 
 Mono
   suggestions plain=fg=Reset bg=Reset modifier=NONE selected=fg=Reset bg=Reset modifier=BOLD | REVERSED
-  palette     plain=fg=DarkGray bg=Reset modifier=NONE selected=fg=Reset bg=Reset modifier=BOLD | REVERSED
-  navigator   plain=fg=DarkGray bg=Reset modifier=NONE selected=fg=Reset bg=Reset modifier=BOLD | REVERSED
+  palette     plain=fg=Reset bg=Reset modifier=NONE selected=fg=Reset bg=Reset modifier=BOLD | REVERSED
+  navigator   plain=fg=Reset bg=Reset modifier=NONE selected=fg=Reset bg=Reset modifier=BOLD | REVERSED

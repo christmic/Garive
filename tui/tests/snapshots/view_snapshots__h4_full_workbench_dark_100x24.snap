@@ -23,9 +23,9 @@ expression: filmstrip
 
 
 
-  ╭ › ───────────────────────────────────────────────────────────────────────────────────────────╮
-  │ A retained follow-up draft                                                                   │
-  ╰──────────────────────────────────────────────────────────────────────────────────────────────╯
+
+
+  › A retained follow-up draft
     Esc cancel run
 
 ===== first presented delta =====
@@ -49,9 +49,9 @@ expression: filmstrip
 
 
 
-  ╭ › ───────────────────────────────────────────────────────────────────────────────────────────╮
-  │ A retained follow-up draft                                                                   │
-  ╰──────────────────────────────────────────────────────────────────────────────────────────────╯
+
+
+  › A retained follow-up draft
     Esc cancel run
 
 ===== second delta with activity =====
@@ -75,16 +75,16 @@ expression: filmstrip
 
 
 
-  ╭ › ───────────────────────────────────────────────────────────────────────────────────────────╮
-  │ A retained follow-up draft                                                                   │
-  ╰──────────────────────────────────────────────────────────────────────────────────────────────╯
+
+
+  › A retained follow-up draft
     Esc cancel run
 
 ===== overlay while streaming =====
   Current session  ·  Garive
              ╭ Command palette ───────────────────────────────────────────────────────╮
     › Show   │  Search  type to search                                                │
-      ●  Ve  │  21 commands · showing 1–13 · ↓ 8 more                                 │
+      ●  Ve  │  21 commands · showing 1–14 · ↓ 7 more                                 │
     ◆ Gariv  │  › /new                unavailable · no Agent is installed             │
       The f  │    /sessions           Switch session                                  │
              │    /jump               unavailable · fewer than two Turns are loaded   │
@@ -98,12 +98,12 @@ expression: filmstrip
              │    /theme dark         Use dark theme                                  │
              │    /theme light        Use light theme                                 │
              │    /theme mono         Use mono theme                                  │
+             │    /mouse auto         Use automatic mouse capture now                 │
              │                                                                        │
              │    ↑/↓ select   Home/End edge   Enter run   Esc close                  │
              ╰────────────────────────────────────────────────────────────────────────╯
-  ╭ › ───────────────────────────────────────────────────────────────────────────────────────────╮
-  │ A retained follow-up draft                                                                   │
-  ╰──────────────────────────────────────────────────────────────────────────────────────────────╯
+
+  › A retained follow-up draft
     Esc cancel run
 
 ===== stream restored after overlay =====
@@ -127,9 +127,9 @@ expression: filmstrip
 
 
 
-  ╭ › ───────────────────────────────────────────────────────────────────────────────────────────╮
-  │ A retained follow-up draft                                                                   │
-  ╰──────────────────────────────────────────────────────────────────────────────────────────────╯
+
+
+  › A retained follow-up draft
     Esc cancel run
 
 ===== finalizing =====
@@ -153,9 +153,9 @@ expression: filmstrip
 
 
 
-  ╭ › ───────────────────────────────────────────────────────────────────────────────────────────╮
-  │ A retained follow-up draft                                                                   │
-  ╰──────────────────────────────────────────────────────────────────────────────────────────────╯
+
+
+  › A retained follow-up draft
     Esc cancel run
 
 ===== ended awaiting durable =====
@@ -179,9 +179,9 @@ expression: filmstrip
 
 
 
-  ╭ › ───────────────────────────────────────────────────────────────────────────────────────────╮
-  │ A retained follow-up draft                                                                   │
-  ╰──────────────────────────────────────────────────────────────────────────────────────────────╯
+
+
+  › A retained follow-up draft
     Esc cancel run
 
 ===== durable takeover =====
@@ -205,6 +205,6 @@ expression: filmstrip
 
 
 
-  ╭ › ───────────────────────────────────────────────────────────────────────────────────────────╮
-  │ A retained follow-up draft                                                                   │
-  ╰──────────────────────────────────────────────────────────────────────────────────────────────╯
+
+
+  › A retained follow-up draft

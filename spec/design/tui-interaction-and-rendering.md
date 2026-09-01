@@ -188,9 +188,9 @@ otherwise hard-wraps at an extended-grapheme boundary. Sanitization happens
 before terminal-cell measurement, so a visible safety marker and its width
 cannot disagree. A cursor exactly after a full-width row advances to column
 zero of a continuation row and is scrolled into view by the same layout.
-The composer requests frame height from that visual result: content plus two
-border rows, clamped to `3..=7`. Terminals whose content area is below 12 rows
-hold the composer at three rows and scroll internally. Thus a long single-line
+The ComposerDock requests height from that visual result: content plus one
+status/separator row, clamped to `2..=6`. Terminals whose content area is below
+12 rows hold the dock at two rows and scroll internally. Thus a long single-line
 draft expands like an explicit multiline draft when space exists, without
 stealing the highest-priority hint or minimum conversation surface.
 
@@ -242,8 +242,8 @@ grapheme selection used by Shift movement; release commits the endpoint and
 ends capture. Drag events remain composer-owned after the pointer leaves the
 viewport and clamp to its nearest visible insertion point. A new press or
 terminal focus loss cancels transient drag ownership. Modal and inline-command
-hit regions retain higher priority, and composer border/padding never places a
-cursor. Mouse coordinates are interpreted by the composer's shared wrapped
+hit regions retain higher priority, and the ComposerDock status/separator row
+never places a cursor. Mouse coordinates are interpreted by the composer's shared wrapped
 layout rather than by controller-owned row math.
 
 A single left click places the grapheme cursor and may begin a drag. A second

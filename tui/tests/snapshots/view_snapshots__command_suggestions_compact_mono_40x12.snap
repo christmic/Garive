@@ -4,13 +4,13 @@ expression: "command_suggestion_frame_at(Theme::Mono, 40, 12)"
 ---
 Session 1
 
+    ✓ Agent action · completed
 ╭ Commands ────────────────────────────╮
 │   /theme system  Follow terminal th… │
 │ › /theme dark  Use dark theme        │
 │   /theme light  Use light theme      │
 │   /theme mono  Use mono theme        │
 ╰──────────────────────────────────────╯
-╭ › ───────────────────────────────────╮
-│ /theme                               │
-╰──────────────────────────────────────╯
+
+› /theme
   Tab complete command

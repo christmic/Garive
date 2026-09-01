@@ -74,22 +74,23 @@ Host mutations in that mode.
 
 At standard and wide sizes the screen has four regions:
 
-1. The header shows the selected Agent definition and Session, connection
-   state, and Turn state.
-2. The Session rail lists durable Sessions and their latest public Turn state.
-3. The conversation presents bounded public timeline cells from the Host.
-4. The composer and footer provide multiline editing, byte usage, and relevant
-   shortcuts.
+1. The one-row ContextLine shows the safe Session/Agent breadcrumb and only
+   exceptional connection or active execution state.
+2. The conversation presents bounded public Turn, Activity, and answer cells.
+3. The open ComposerDock owns multiline editing and the next draft.
+4. The contextual HintLine exposes at most one relevant shortcut or recovery
+   action.
 
-The Session rail spans the workspace height, while the conversation, composer,
-and contextual shortcut footer stay aligned in one main column. The selected
-Session has a `▌` marker; state remains readable without color through `✓`
-completed, `●` running, `!` action required, `×` failed, and `■` stopped.
+Session switching, Turn navigation, and Activity details open on demand; they
+do not permanently narrow the answer. State remains readable without color
+through `✓` completed, `●` running, `!` action required, `×` failed, and `■`
+stopped.
 
 At widths below 100 columns the Session rail is hidden and the conversation
 uses the available width. At very wide sizes the main column is centered and
-capped to a readable measure. A focused composer has a double border. Opening a
-picker or palette visibly dims the workspace and highlights the selected row.
+capped to a readable measure. The open ComposerDock uses one low-contrast input
+surface and a `›` lead; focus never adds a surrounding box. Opening a picker or
+palette visibly dims the workspace and highlights the selected row.
 Below 20 columns or 8 rows the client displays `Need 20×8`; the draft and
 viewport state remain intact while the terminal is resized back.
 
@@ -224,7 +225,7 @@ restores both the text and cursor position you had before browsing, so editing
 continues at the same place. Typing, pasting, submitting, clearing, or switching
 the composer ends that browse session. Shift+Up/Down remains text selection,
 and `Ctrl+R` remains searchable history rather than sequential recall.
-When height permits, the composer grows from three to seven rows according to
+When height permits, the ComposerDock grows from two to six rows according to
 what is visibly wrapped, even if the draft contains no explicit newline. On an
 extremely short terminal it stays compact and scrolls internally so the
 conversation and active footer controls remain available.

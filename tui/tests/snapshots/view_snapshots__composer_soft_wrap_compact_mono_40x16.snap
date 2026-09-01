@@ -13,8 +13,8 @@ Session 1                  Agent running
     cargo test passes.
 
 
-╭ › ───────────────────────────────────╮
-│ Composer grows with soft wrapping    │
-│ and keeps every visible row.         │
-╰──────────────────────────────────────╯
+
+
+› Composer grows with soft wrapping and
+  keeps every visible row.
   Esc cancel run
