@@ -6,11 +6,23 @@ use crate::{F0GovernanceContext, PlanRuntimeError, SqliteLedger, SqliteLedgerErr
 /// Exact Goal and Plan definition references durably owning one Execution.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ExecutionWorkBinding {
+    goal_id: String,
+    goal_revision: u64,
     goal_reference: String,
     plan_reference: String,
 }
 
 impl ExecutionWorkBinding {
+    /// Returns the owning Goal identity proven by the Plan start transaction.
+    pub fn goal_id(&self) -> &str {
+        &self.goal_id
+    }
+
+    /// Returns the Goal revision anchored when the Plan was adopted.
+    pub const fn goal_revision(&self) -> u64 {
+        self.goal_revision
+    }
+
     /// Returns canonical JSON binding the Goal identity, revision and digest.
     pub fn goal_reference(&self) -> &str {
         &self.goal_reference
@@ -136,6 +148,8 @@ fn reconstruct_bound(
     }))
     .map_err(|_| PlanRuntimeError::RecoveryCorrupt)?;
     Ok(ExecutionWorkBinding {
+        goal_id: goal_id.into(),
+        goal_revision,
         goal_reference,
         plan_reference,
     })

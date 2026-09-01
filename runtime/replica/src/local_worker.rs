@@ -14,14 +14,18 @@ use garive_core::{AgentOutcome, AgentTurnRequest, ToolPreparationPort};
 use garive_llm::{ModelCancellation, ModelPort};
 
 use crate::{
-    execute_durable_agent_with_capabilities, execute_durable_model_only_with_capabilities,
-    execution_work_binding::bind_governance_context, reconstruct_execution_work_binding,
-    reconstruct_local_start, AuthorityPort, CommittedTurn, ExecutorPort, F0ExecutionGovernance,
-    F0GovernanceContext, F0RecoveryContentPort, LiveOutputEndReason, LiveOutputHub, LiveOutputSink,
-    LocalExecutionAttempt, LocalExecutionPolicy, LocalReconstructionError, LocalRecoveryReport,
-    PreparedAgentCapabilities, SafetyPort, SandboxAdmissionPort, SqliteLedger,
+    commit_plan_command, execute_durable_agent_with_capabilities,
+    execute_durable_model_only_with_capabilities, execution_work_binding::bind_governance_context,
+    get_turn, plan_complete_owned_step_from_turn, reconstruct_execution_work_binding,
+    reconstruct_goal, reconstruct_local_start, AuthorityPort, CommittedTurn, ExecutorPort,
+    F0ExecutionGovernance, F0GovernanceContext, F0RecoveryContentPort, GetTurnQuery,
+    LiveOutputEndReason, LiveOutputHub, LiveOutputSink, LocalExecutionAttempt,
+    LocalExecutionPolicy, LocalReconstructionError, LocalRecoveryReport, PlanCommandContext,
+    PreparedAgentCapabilities, RuntimeTurnStatus, SafetyPort, SandboxAdmissionPort, SqliteLedger,
     TerminalPublicationError, TerminalPublisher, TurnDispatchError, TurnDispatcher,
 };
+
+const PLAN_REDUCTION_ACTOR: &str = "runtime:local-worker-plan-reducer";
 
 /// Bounded non-blocking dispatcher installed behind [`crate::LiveHost`].
 pub struct LocalTurnDispatcher {
@@ -269,7 +273,7 @@ impl LocalExecutionWorker {
             match reconstruct_local_start(&ledger, committed, &self.policy, attempt) {
                 Ok(value) => value,
                 Err(LocalReconstructionError::AlreadyTerminal) => {
-                    return Ok(LocalWorkerDisposition::AlreadyTerminal)
+                    return self.reduce_replayed_completion(&mut ledger, committed, attempt)
                 }
                 Err(error) => return Err(LocalWorkerError::Reconstruction(error)),
             };
@@ -356,10 +360,117 @@ impl LocalExecutionWorker {
             AgentOutcome::Stopped { .. } => LiveOutputEndReason::Stopped,
             AgentOutcome::Failed { .. } => LiveOutputEndReason::Failed,
         };
+        let mut positions = result.terminal_commit.positions;
+        if matches!(result.report.outcome, AgentOutcome::Completed { .. }) {
+            match self.reduce_completed_plan_step(&mut ledger, committed, &attempt.recorded_at) {
+                Ok(Some(mut reduced)) => positions.append(&mut reduced),
+                Ok(None) => {}
+                Err(error) => {
+                    self.end_live(committed, live_end);
+                    return Err(error);
+                }
+            }
+        }
         self.end_live(committed, live_end);
-        Ok(LocalWorkerDisposition::TerminalCommitted {
-            positions: result.terminal_commit.positions,
-        })
+        Ok(LocalWorkerDisposition::TerminalCommitted { positions })
+    }
+
+    fn reduce_replayed_completion(
+        &self,
+        ledger: &mut SqliteLedger,
+        committed: &CommittedTurn,
+        attempt: &LocalExecutionAttempt,
+    ) -> Result<LocalWorkerDisposition, LocalWorkerError> {
+        match self.reduce_completed_plan_step(ledger, committed, &attempt.recorded_at)? {
+            Some(positions) => Ok(LocalWorkerDisposition::TerminalCommitted { positions }),
+            None => Ok(LocalWorkerDisposition::AlreadyTerminal),
+        }
+    }
+
+    fn reduce_completed_plan_step(
+        &self,
+        ledger: &mut SqliteLedger,
+        committed: &CommittedTurn,
+        recorded_at: &str,
+    ) -> Result<Option<Vec<u64>>, LocalWorkerError> {
+        let binding = reconstruct_execution_work_binding(
+            ledger,
+            &committed.session_id,
+            &committed.execution_id,
+        )
+        .map_err(|_| LocalWorkerError::PlanCoordinationFailed)?;
+        let Some(binding) = binding else {
+            return Ok(None);
+        };
+        let turn = get_turn(
+            ledger,
+            &GetTurnQuery {
+                session_id: committed.session_id.clone(),
+                turn_id: committed.turn_id.clone(),
+                through_position: None,
+            },
+        )
+        .map_err(|_| LocalWorkerError::PlanCoordinationFailed)?;
+        if turn.status != RuntimeTurnStatus::Completed {
+            return Ok(None);
+        }
+        let watermark = ledger
+            .session_watermark(&committed.session_id)
+            .map_err(|_| LocalWorkerError::PlanCoordinationFailed)?
+            .ok_or(LocalWorkerError::PlanCoordinationFailed)?;
+        let facts = ledger
+            .read_facts(&committed.session_id, 0, watermark.max_position, None)
+            .map_err(|_| LocalWorkerError::PlanCoordinationFailed)?;
+        let reductions = facts
+            .iter()
+            .filter(|fact| fact.kind.as_str() == "plan.step.completed")
+            .filter(|fact| {
+                serde_json::from_str::<serde_json::Value>(fact.payload.as_json())
+                    .ok()
+                    .and_then(|value| {
+                        value
+                            .get("execution_id")
+                            .and_then(serde_json::Value::as_str)
+                            .map(str::to_owned)
+                    })
+                    .as_deref()
+                    == Some(committed.execution_id.as_str())
+            })
+            .count();
+        if reductions > 1 {
+            return Err(LocalWorkerError::PlanCoordinationFailed);
+        }
+        if reductions == 1 {
+            return Ok(None);
+        }
+        let goal = reconstruct_goal(ledger, &committed.session_id, binding.goal_id())
+            .map_err(|_| LocalWorkerError::PlanCoordinationFailed)?;
+        let planned = plan_complete_owned_step_from_turn(
+            ledger,
+            &committed.session_id,
+            binding.goal_id(),
+            &committed.turn_id,
+            goal.session_version,
+            goal.snapshot.revision(),
+            &PlanCommandContext {
+                command_id: format!(
+                    "worker-reduce:{}:{}",
+                    committed.turn_id.as_str(),
+                    committed.execution_id.as_str()
+                ),
+                actor_reference: PLAN_REDUCTION_ACTOR.into(),
+                recorded_at: recorded_at.into(),
+            },
+        )
+        .map_err(|_| LocalWorkerError::PlanCoordinationFailed)?;
+        let commit = commit_plan_command(
+            ledger,
+            committed.session_id.clone(),
+            goal.session_version,
+            &planned,
+        )
+        .map_err(|_| LocalWorkerError::PlanCoordinationFailed)?;
+        Ok(Some(commit.positions))
     }
 
     fn end_live(&self, committed: &CommittedTurn, reason: LiveOutputEndReason) {
@@ -427,6 +538,8 @@ pub enum LocalWorkerError {
     KnowledgePreparationFailed,
     /// Durable Core execution did not reach a committed terminal.
     ExecutionFailed,
+    /// A completed Plan-owned Turn could not reduce to its exact Step.
+    PlanCoordinationFailed,
     /// Bounded startup recovery could not classify or continue durable work.
     StartupRecoveryFailed,
 }
@@ -446,6 +559,7 @@ impl LocalWorkerError {
             Self::MemoryPreparationFailed => "memory_preparation_failed",
             Self::KnowledgePreparationFailed => "knowledge_preparation_failed",
             Self::ExecutionFailed => "execution_failed",
+            Self::PlanCoordinationFailed => "plan_coordination_failed",
             Self::StartupRecoveryFailed => "startup_recovery_failed",
         }
     }
