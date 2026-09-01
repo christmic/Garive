@@ -220,17 +220,19 @@ an accepted regression margin. Completion requires those values to be Baseline
 or Gate, not Proposed. Correctness gates remain blocking regardless of speed.
 
 The macOS arm64 release first-frame, idle CPU, and resident-memory metrics are
-now Gates. Pinned evidence at Garive
-`d0cfc1c01da30d9389907fbb1bb4b61db1eee34b` runs the shipping binary against
-production `LiveHost` plus file SQLite in a real PTY. Three independent
-20-sample first-frame runs observed p95 `24.971 ms`, `26.098 ms`, and
-`25.113 ms`; the unsmoothed distributions retain the `527.282 ms` first-run
-maximum. Three 60-second online-idle runs recorded `<10 ms` CPU time each at
-the measurement backend's resolution, proving `<0.017%` of one logical core.
+now Gates. Latest first-frame and idle evidence at Garive `06398a03` runs the
+shipping binary against production `LiveHost` plus file SQLite in a real PTY.
+Three independent 20-sample first-frame runs observed p95 `31.902 ms`,
+`34.039 ms`, and `45.759 ms`. Schema v3 retains all raw samples and uses
+nearest-rank percentiles, exposing the `400.507 ms` first-run maximum. Three
+60-second online-idle runs consumed 60 ms CPU time each, or 0.1% of one logical
+core. Explicit themes MUST NOT issue the System-only OSC 10/11 probe before the
+first frame.
+
 Three isolated release children containing exactly 10 Sessions and 5,000
 loaded production timeline cells peaked at `4,128,768`, `4,210,688`, and
 `4,145,152` bytes. Raw reports are stored in
-`docs/evidence/tui-release-process-2026-08-30.json` and
+`docs/evidence/tui-release-process-2026-09-01.json` and
 `docs/evidence/tui-release-memory-2026-08-30.json`. These acceptances are
 specific to the named reference environment.
 

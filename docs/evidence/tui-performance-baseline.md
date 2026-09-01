@@ -1,6 +1,6 @@
 # TUI interactive latency baseline
 
-> Recorded: 2026-08-30; candidate rerun: 2026-08-31. This is reproducible local evidence, not a claim about
+> Recorded: 2026-08-30; latest candidate rerun: 2026-09-01. This is reproducible local evidence, not a claim about
 > every terminal, operating system, or CPU.
 
 ## Environment
@@ -41,8 +41,9 @@ other-platform numbers remain external compatibility evidence.
 The release gate launches 60 independent shipping `garive-tui` processes under
 a real `expect` PTY: three runs of 20 samples. Every process connects to the
 production `LiveHost` backed by a fresh file SQLite database. Time begins before
-process spawn and ends after terminal negotiation and the first interactive
-`GARIVE` frame. Each process then takes the normal confirmed quit path.
+process spawn and ends after terminal setup and the first interactive `Garive`
+frame. Explicit themes do not perform the System-only OSC color probe. Each
+process then takes the normal confirmed quit path.
 
 ```sh
 cargo build --release -p garive-tui --bin garive-tui \
@@ -50,26 +51,27 @@ cargo build --release -p garive-tui --bin garive-tui \
 cargo run --release -p garive-tui --example release_process_baseline
 ```
 
-Latest pinned evidence: [`tui-release-process-2026-08-31.json`](tui-release-process-2026-08-31.json),
-Garive `d907ea633f024474de21bd3be50b63f5b53f7875`. Earlier reports remain
+Latest pinned evidence: [`tui-release-process-2026-09-01.json`](tui-release-process-2026-09-01.json),
+Garive `06398a03f9a8c186d47ae0d15cc6a604c2cd5328`. Earlier reports remain
 retained for audit history.
 
 | Run | p50 | p95 | p99 | max | Gate |
 |---:|---:|---:|---:|---:|---:|
-| 1 | 26.200 ms | 29.907 ms | 29.907 ms | 54.150 ms | p95 < 150 ms |
-| 2 | 25.810 ms | 27.146 ms | 27.146 ms | 27.169 ms | p95 < 150 ms |
-| 3 | 26.900 ms | 29.520 ms | 29.520 ms | 31.488 ms | p95 < 150 ms |
+| 1 | 28.993 ms | 31.902 ms | 400.507 ms | 400.507 ms | p95 < 150 ms |
+| 2 | 31.050 ms | 34.039 ms | 40.929 ms | 40.929 ms | p95 < 150 ms |
+| 3 | 33.991 ms | 45.759 ms | 96.995 ms | 96.995 ms | p95 < 150 ms |
 
-All three p95 values pass, and every unsmoothed maximum is retained. This
-closes the first-frame metric on the pinned macOS reference only.
+All three p95 values pass. Schema v3 uses nearest-rank percentiles and retains
+all 60 sorted samples, exposing the first run's isolated 400.507 ms tail rather
+than smoothing it away. This closes the first-frame metric on the pinned macOS
+reference only.
 
 ## Release idle CPU and bounded-model peak RSS
 
 After the production Host reaches the online empty state, the same outer-process
-gate samples each shipping TUI for 60 seconds. Three runs recorded no measurable
-CPU-time increase at the Darwin `ps` 10 ms resolution. Therefore each run is
-strictly below `10 ms / 60 s = 0.017%` of one logical core, satisfying the
-`<0.5%` gate. Empty-state RSS samples are retained in the JSON but do not stand
+gate samples each shipping TUI for 60 seconds. The three runs consumed 60 ms
+CPU time each, or 0.1% of one logical core, satisfying the `<0.5%` gate.
+Empty-state RSS peaked between 10,768 and 10,832 KiB; those samples do not stand
 in for the separate loaded-model workload.
 
 The RSS gate launches three isolated release children under `/usr/bin/time -l`.

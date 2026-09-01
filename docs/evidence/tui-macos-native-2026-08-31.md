@@ -418,14 +418,16 @@ close physical Terminal/iTerm2-class window behavior or screenshots.
 
 ## Related performance gate
 
-Revision `d907ea63`, which includes this evidence plus concurrent integration,
-was rerun through the release outer-process and bounded-memory gates. Three
-first-frame p95 values were 29.907, 27.146, and 29.520 ms; three 60-second idle
-runs recorded no CPU-time increase at the measurement resolution; three loaded
-10-Session/5,000-cell processes peaked at 4,177,920, 4,227,072, and 4,227,072
-bytes. Raw reports are stored beside this document as
-`tui-release-process-2026-08-31.json`,
-`tui-release-memory-2026-08-31.json`, and
+Revision `06398a03` was rerun through the release outer-process gate after
+removing the unnecessary 100 ms terminal-color probe from explicit themes.
+Three first-frame p95 values were 31.902, 34.039, and 45.759 ms; all 60 raw
+samples are retained, including the isolated 400.507 ms first-run maximum.
+Three 60-second idle runs each consumed 60 ms CPU time (0.1% of one logical
+core) and peaked between 10,768 and 10,832 KiB RSS. The raw schema-v3 report is
+stored beside this document as `tui-release-process-2026-09-01.json`.
+
+The previously pinned loaded-memory and in-process reports remain
+`tui-release-memory-2026-08-31.json` and
 `tui-release-in-process-2026-08-31.json`.
 
 The same source candidate lineage has a passing 30-minute production
