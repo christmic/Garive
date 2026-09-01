@@ -7,9 +7,9 @@ use serde_json::{json, Value};
 
 use crate::{
     get_turn, plan_cancel_turn, plan_goal_transition, reconstruct_goal, reconstruct_plan_graph,
-    CancelReason, CancelTurnCommand, GetTurnQuery, GoalCommandContext, GoalRuntimeError,
-    GoalRuntimeTransition, PlannedGoalCommand, PlannedTurn, RuntimeCommandError, RuntimeCommandId,
-    RuntimeTurnStatus, SqliteLedger,
+    reconstruct_suspended_turn, CancelReason, CancelTurnCommand, GetTurnQuery, GoalCommandContext,
+    GoalRuntimeError, GoalRuntimeTransition, PlannedGoalCommand, PlannedTurn, RuntimeCommandError,
+    RuntimeCommandId, RuntimeSuspensionKind, RuntimeTurnStatus, SqliteLedger,
 };
 
 /// Stable failure classes for cross-aggregate Goal/Plan coordination.
@@ -21,6 +21,8 @@ pub enum GoalPlanCoordinationError {
     AuthoritativePlanUnavailable,
     /// No unique completed Plan binds the exact Goal revision.
     CompletedPlanUnavailable,
+    /// No unique ledger-proven resumable Turn can suspend the Goal.
+    ResumableSuspensionUnavailable,
     /// Goal planning rejected the derived activation.
     Goal(GoalRuntimeError),
     /// Durable Turn planning rejected a derived cancellation.
@@ -38,6 +40,157 @@ pub struct PlannedGoalTurnCancellation {
     pub turn_id: TurnId,
     /// Exact idempotent C6 cancellation request.
     pub planned: PlannedTurn,
+}
+
+/// Plans Goal suspension from the unique resumable Turn owned by its authoritative Plan.
+///
+/// The suspension identity and reason are reconstructed from the Turn terminal. Callers
+/// cannot provide either value. Parallel live work fails closed because one Goal fact
+/// cannot faithfully represent more than one continuation identity.
+pub fn plan_suspend_goal_from_owned_turn(
+    ledger: &SqliteLedger,
+    session_id: &SessionId,
+    goal_id: &str,
+    expected_session_version: u64,
+    expected_goal_revision: u64,
+    context: &GoalCommandContext,
+) -> Result<PlannedGoalCommand, GoalPlanCoordinationError> {
+    let goal =
+        reconstruct_goal(ledger, session_id, goal_id).map_err(GoalPlanCoordinationError::Goal)?;
+    if goal.snapshot.state() != GoalState::Active {
+        return Err(GoalPlanCoordinationError::Goal(
+            GoalRuntimeError::TransitionInvalid,
+        ));
+    }
+    let plans = reconstruct_plan_graph(ledger, session_id)
+        .map_err(|_| GoalPlanCoordinationError::CorruptState)?;
+    if goal.session_version != expected_session_version
+        || plans.values().any(|plan| {
+            plan.session_version != goal.session_version
+                || plan.through_position != goal.through_position
+        })
+    {
+        return Err(GoalPlanCoordinationError::ConcurrentModification);
+    }
+    if goal.snapshot.revision() != expected_goal_revision {
+        return Err(GoalPlanCoordinationError::Goal(
+            GoalRuntimeError::RevisionConflict,
+        ));
+    }
+    let goal_digest = goal
+        .snapshot
+        .definition()
+        .digest()
+        .map_err(|_| GoalPlanCoordinationError::CorruptState)?;
+    let mut authoritative = plans.values().filter(|plan| {
+        let definition = plan.snapshot.definition();
+        definition.goal_id() == goal_id
+            && definition.goal_revision() == expected_goal_revision
+            && definition.goal_definition_digest() == goal_digest
+            && matches!(
+                plan.snapshot.state(),
+                PlanState::Running | PlanState::Suspended
+            )
+    });
+    let plan = authoritative
+        .next()
+        .ok_or(GoalPlanCoordinationError::AuthoritativePlanUnavailable)?;
+    if authoritative.next().is_some() {
+        return Err(GoalPlanCoordinationError::CorruptState);
+    }
+    let definition = plan.snapshot.definition();
+    let facts = ledger
+        .read_facts(session_id, 0, goal.through_position, None)
+        .map_err(|_| GoalPlanCoordinationError::CorruptState)?;
+    let mut turns = BTreeSet::new();
+    for start in facts
+        .iter()
+        .filter(|fact| fact.kind.as_str() == "plan.step.started")
+    {
+        let value = serde_json::from_str::<Value>(start.payload.as_json())
+            .map_err(|_| GoalPlanCoordinationError::CorruptState)?;
+        if value.get("plan_id").and_then(Value::as_str) != Some(definition.plan_id().as_str())
+            || value.get("plan_revision").and_then(Value::as_u64)
+                != Some(definition.plan_revision())
+        {
+            continue;
+        }
+        let execution_id = value
+            .get("execution_id")
+            .and_then(Value::as_str)
+            .ok_or(GoalPlanCoordinationError::CorruptState)?;
+        let executions = facts
+            .iter()
+            .filter(|fact| fact.kind.as_str() == "execution.started")
+            .filter(|fact| fact.execution_id.as_ref().map(|id| id.as_str()) == Some(execution_id))
+            .collect::<Vec<_>>();
+        let [execution] = executions.as_slice() else {
+            return Err(GoalPlanCoordinationError::CorruptState);
+        };
+        turns.insert(
+            execution
+                .turn_id
+                .clone()
+                .ok_or(GoalPlanCoordinationError::CorruptState)?,
+        );
+    }
+    let mut resumable = Vec::new();
+    for turn_id in turns {
+        let view = get_turn(
+            ledger,
+            &GetTurnQuery {
+                session_id: session_id.clone(),
+                turn_id: turn_id.clone(),
+                through_position: None,
+            },
+        )
+        .map_err(GoalPlanCoordinationError::Runtime)?;
+        if view.observed_session_version != goal.session_version {
+            return Err(GoalPlanCoordinationError::ConcurrentModification);
+        }
+        match view.status {
+            RuntimeTurnStatus::Open => {
+                return Err(GoalPlanCoordinationError::ResumableSuspensionUnavailable)
+            }
+            RuntimeTurnStatus::Suspended => {
+                let snapshot = ledger
+                    .load_turn(&turn_id)
+                    .map_err(|_| GoalPlanCoordinationError::CorruptState)?;
+                resumable.push(
+                    reconstruct_suspended_turn(&snapshot)
+                        .map_err(GoalPlanCoordinationError::Runtime)?,
+                );
+            }
+            RuntimeTurnStatus::Completed
+            | RuntimeTurnStatus::Stopped
+            | RuntimeTurnStatus::Failed => {}
+        }
+    }
+    let [suspension] = resumable.as_slice() else {
+        return Err(GoalPlanCoordinationError::ResumableSuspensionUnavailable);
+    };
+    let reason = match suspension.suspension_kind {
+        RuntimeSuspensionKind::ApprovalRequired => "approval_required",
+        RuntimeSuspensionKind::ExternalInputRequired => "external_input_required",
+        RuntimeSuspensionKind::OperatorReconciliation => "operator_reconciliation",
+        RuntimeSuspensionKind::PartialOutput
+        | RuntimeSuspensionKind::ResourceUnavailable
+        | RuntimeSuspensionKind::DelegationPending => {
+            return Err(GoalPlanCoordinationError::ResumableSuspensionUnavailable)
+        }
+    };
+    plan_goal_transition(
+        ledger,
+        session_id,
+        goal_id,
+        expected_goal_revision,
+        context,
+        GoalRuntimeTransition::Suspend {
+            reason: reason.into(),
+            suspension_reference: Some(suspension.suspension_id.clone()),
+        },
+    )
+    .map_err(GoalPlanCoordinationError::Goal)
 }
 
 /// Plans the next missing Turn cancellation caused by a committed Goal cancellation.
@@ -311,6 +464,11 @@ pub fn plan_activate_goal_from_authoritative_plan(
     if goal.snapshot.revision() != expected_goal_revision {
         return Err(GoalPlanCoordinationError::Goal(
             GoalRuntimeError::RevisionConflict,
+        ));
+    }
+    if goal.snapshot.state() != GoalState::Draft {
+        return Err(GoalPlanCoordinationError::Goal(
+            GoalRuntimeError::TransitionInvalid,
         ));
     }
     let goal_digest = goal

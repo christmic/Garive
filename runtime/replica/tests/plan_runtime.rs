@@ -1,27 +1,33 @@
 use std::collections::BTreeSet;
 
+use garive_core::{
+    AgentOutcome, ExecutionReport, GovernedSuspensionBinding, SuspensionReason, UsageSummary,
+};
 use garive_goal::{
     GoalBoundsV1, GoalCapabilityReference, GoalCriterion, GoalCriterionId, GoalDefinitionV1,
     GoalEvidenceId, GoalEvidenceKind, GoalEvidenceV1, GoalId, GoalScopeV1, GoalState,
 };
 use garive_ledger::{
     AgentDefinitionId, AgentDefinitionRevision, AgentInstanceId, CanonicalPayload, FactDraft,
-    FactId, FactKind, SessionId,
+    FactId, FactKind, SessionId, ToolInvocationId,
 };
+use garive_llm::TokenCount;
 use garive_plan::{
     PlanBoundsV1, PlanCapabilityReference, PlanDefinitionV1, PlanId, PlanState, PlanStepId,
     PlanStepV1, StepState,
 };
 use garive_runtime::{
     commit_goal_command, commit_plan_command, commit_plan_replacement, commit_planned_turn,
-    get_turn, plan_adopt_plan, plan_complete_plan, plan_goal_transition,
-    plan_next_turn_cancellation_for_goal, plan_plan_replacement, plan_plan_transition,
-    plan_propose_plan, plan_start_step_execution, plan_start_turn,
-    plan_succeed_goal_from_completed_plan, reconstruct_execution_work_binding, reconstruct_goal,
-    reconstruct_plan, reconstruct_plan_graph, verify_plan_carry_forward, EffectiveRuntimeLimits,
-    GetTurnQuery, GoalCommandContext, GoalRuntimeTransition, PlanCommandContext, PlanRetryPosture,
-    PlanRuntimeError, PlanRuntimeState, PlanRuntimeTransition, PlanStepExecutionStart,
-    RuntimeCommandId, SqliteLedger, StartTurnCommand,
+    get_turn, plan_activate_goal_from_authoritative_plan, plan_adopt_plan, plan_complete_plan,
+    plan_core_terminal, plan_goal_transition, plan_next_turn_cancellation_for_goal,
+    plan_plan_replacement, plan_plan_transition, plan_propose_plan, plan_start_step_execution,
+    plan_start_turn, plan_succeed_goal_from_completed_plan, plan_suspend_goal_from_owned_turn,
+    reconstruct_execution_work_binding, reconstruct_goal, reconstruct_plan, reconstruct_plan_graph,
+    verify_plan_carry_forward, CoreTerminalContext, EffectiveRuntimeLimits, GetTurnQuery,
+    GoalCommandContext, GoalPlanCoordinationError, GoalRuntimeError, GoalRuntimeTransition,
+    PlanCommandContext, PlanRetryPosture, PlanRuntimeError, PlanRuntimeState,
+    PlanRuntimeTransition, PlanStepExecutionStart, RuntimeCommandId, SqliteLedger,
+    StartTurnCommand,
 };
 use serde_json::json;
 use sha2::{Digest, Sha256};
@@ -729,11 +735,109 @@ fn step_start_and_c6_execution_commit_as_one_restart_safe_command() {
         Some(execution_id.as_str())
     );
     let turn_id = turn.turn_id.clone();
+    assert_eq!(
+        plan_suspend_goal_from_owned_turn(
+            &ledger,
+            &session,
+            "goal-1",
+            recovered.session_version,
+            2,
+            &goal_context("suspend-open-turn"),
+        ),
+        Err(GoalPlanCoordinationError::ResumableSuspensionUnavailable)
+    );
+    ledger
+        .commit(
+            session.clone(),
+            recovered.session_version,
+            interaction_request(&turn_id, &execution_id),
+        )
+        .unwrap();
+    let report = ExecutionReport {
+        outcome: AgentOutcome::Suspended {
+            reason: SuspensionReason::ExternalInputRequired,
+            partial_items: vec![],
+            last_durable_position: recovered.through_position,
+            governed_binding: Some(GovernedSuspensionBinding::Interaction {
+                suspension_id: "suspension-external-input".into(),
+                interaction_id: "interaction-external-input".into(),
+                invocation_id: "tool-external-input".into(),
+                prepared_digest: digest('d'),
+            }),
+        },
+        completed_iterations: 1,
+        usage: UsageSummary {
+            input_tokens: TokenCount::Known(1),
+            output_tokens: TokenCount::Known(1),
+            estimated: false,
+        },
+    };
+    let terminal = plan_core_terminal(
+        &CoreTerminalContext {
+            turn_id: turn_id.clone(),
+            execution_id: execution_id.clone(),
+            recorded_at: timestamp().into(),
+        },
+        &report,
+    )
+    .unwrap();
+    ledger
+        .commit(session.clone(), recovered.session_version + 1, terminal)
+        .unwrap();
+    let active = reconstruct_goal(&ledger, &session, "goal-1").unwrap();
+    let suspension = plan_suspend_goal_from_owned_turn(
+        &ledger,
+        &session,
+        "goal-1",
+        active.session_version,
+        2,
+        &goal_context("suspend-goal-from-turn"),
+    )
+    .unwrap();
+    let payload: serde_json::Value =
+        serde_json::from_str(suspension.facts[0].payload.as_json()).unwrap();
+    assert_eq!(payload["reason"], "external_input_required");
+    assert_eq!(payload["suspension_reference"], "suspension-external-input");
+    commit_goal_command(
+        &mut ledger,
+        session.clone(),
+        active.session_version,
+        &suspension,
+    )
+    .unwrap();
+    let suspended = reconstruct_goal(&ledger, &session, "goal-1").unwrap();
+    assert_eq!(suspended.snapshot.state(), GoalState::Suspended);
+    assert_eq!(
+        plan_suspend_goal_from_owned_turn(
+            &ledger,
+            &session,
+            "goal-1",
+            suspended.session_version,
+            3,
+            &goal_context("duplicate-goal-suspension"),
+        ),
+        Err(GoalPlanCoordinationError::Goal(
+            GoalRuntimeError::TransitionInvalid
+        ))
+    );
+    assert_eq!(
+        plan_activate_goal_from_authoritative_plan(
+            &ledger,
+            &session,
+            "goal-1",
+            suspended.session_version,
+            3,
+            &goal_context("bypass-turn-continuation"),
+        ),
+        Err(GoalPlanCoordinationError::Goal(
+            GoalRuntimeError::TransitionInvalid
+        ))
+    );
     let cancellation = plan_goal_transition(
         &ledger,
         &session,
         "goal-1",
-        2,
+        3,
         &goal_context("cancel-started-goal"),
         GoalRuntimeTransition::Cancel {
             reason: "user_request".into(),
@@ -743,7 +847,7 @@ fn step_start_and_c6_execution_commit_as_one_restart_safe_command() {
     commit_goal_command(
         &mut ledger,
         session.clone(),
-        recovered.session_version,
+        suspended.session_version,
         &cancellation,
     )
     .unwrap();
@@ -1319,6 +1423,53 @@ fn session_fact(id: &str, kind: &str, payload: serde_json::Value) -> FactDraft {
         payload: CanonicalPayload::from_value(&payload).unwrap(),
         recorded_at: timestamp().into(),
     }
+}
+
+fn interaction_request(
+    turn_id: &garive_ledger::TurnId,
+    execution_id: &garive_ledger::ExecutionId,
+) -> Vec<FactDraft> {
+    let response_schema = CanonicalPayload::from_value(&json!({"type":"string"})).unwrap();
+    let effect = FactDraft {
+        fact_id: FactId::try_from("effect-prepared-external-input").unwrap(),
+        turn_id: Some(turn_id.clone()),
+        execution_id: Some(execution_id.clone()),
+        model_request_id: None,
+        tool_invocation_id: Some(ToolInvocationId::try_from("tool-external-input").unwrap()),
+        kind: FactKind::new("effect.prepared").unwrap(),
+        schema_version: 1,
+        payload: CanonicalPayload::from_value(&json!({
+            "prepared_digest":digest('d'),
+            "tool_name":"external_input",
+            "tool_revision":"revision-1",
+            "replay_class":"never_replay",
+            "model_call_id":"model-call-external-input",
+        }))
+        .unwrap(),
+        recorded_at: timestamp().into(),
+    };
+    let interaction = FactDraft {
+        fact_id: FactId::try_from("interaction-request-external-input").unwrap(),
+        turn_id: Some(turn_id.clone()),
+        execution_id: Some(execution_id.clone()),
+        model_request_id: None,
+        tool_invocation_id: Some(ToolInvocationId::try_from("tool-external-input").unwrap()),
+        kind: FactKind::new("interaction.requested").unwrap(),
+        schema_version: 1,
+        payload: CanonicalPayload::from_value(&json!({
+            "interaction_id":"interaction-external-input",
+            "suspension_id":"suspension-external-input",
+            "prepared_digest":digest('d'),
+            "kind":"external_input",
+            "prompt":{"digest":format!("{:x}", Sha256::digest(b"Provide input")),"inline_utf8":"Provide input"},
+            "response_schema":{"digest":response_schema.sha256(),"inline_utf8":response_schema.as_json()},
+            "response_schema_digest":response_schema.sha256(),
+            "expiry_code":"none",
+        }))
+        .unwrap(),
+        recorded_at: timestamp().into(),
+    };
+    vec![effect, interaction]
 }
 
 fn evidence() -> CanonicalPayload {

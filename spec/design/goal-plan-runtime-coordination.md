@@ -165,9 +165,17 @@ Plan completion evidence is not a boolean shortcut around Goal verification.
   suspension may produce `Goal Suspended` only with the exact committed
   suspension reference.
 - Goal suspension does not invent a second continuation identity.
+- The coordinator proves ownership through the authoritative Plan's exact
+  `plan.step.started -> execution.started -> Turn` chain and reconstructs the
+  typed suspended Turn. An Open owned Turn, zero resumable Turns or multiple
+  resumable continuation identities fails closed; one Goal suspension fact
+  cannot stand in for parallel live work.
 - Continuing the Turn creates a fresh Execution under C6. The coordinator
   resumes the same Goal attempt and authoritative Plan only after the durable
   continuation commit is visible.
+- Initial activation from an authoritative Plan applies only to Draft. A
+  Suspended Goal uses the separate continuation-derived resume path and cannot
+  reuse initial activation as a bypass.
 - Resource unavailability without a resumable durable reference stays a Turn
   outcome/policy decision; it is not automatically a Goal suspension.
 

@@ -132,7 +132,8 @@ pub use execution_work_binding::{reconstruct_execution_work_binding, ExecutionWo
 pub use executor_router::{ExecutorRoute, RoutedExecutorPort};
 pub use goal_plan_coordination::{
     plan_activate_goal_from_authoritative_plan, plan_next_turn_cancellation_for_goal,
-    plan_succeed_goal_from_completed_plan, GoalPlanCoordinationError, PlannedGoalTurnCancellation,
+    plan_succeed_goal_from_completed_plan, plan_suspend_goal_from_owned_turn,
+    GoalPlanCoordinationError, PlannedGoalTurnCancellation,
 };
 pub use goal_recovery::reconstruct_goal;
 pub use goal_runtime::{
