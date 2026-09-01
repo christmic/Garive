@@ -24,22 +24,103 @@ public func encodeProcessFrame<M: SwiftProtobuf.Message>(_ message: M) throws ->
 
 /// Strictly decodes one Runtime-to-XPC request frame.
 public func decodeHostRequestFrame(_ frame: Data) throws -> GRVProcessHostRequestV1 {
-    try decodeFrame(frame) { $0.command != nil }
+    try decodeFrame(frame, admitsBody: validHostRequest)
 }
 
 /// Strictly decodes one XPC-to-Runtime response frame.
 public func decodeHostResponseFrame(_ frame: Data) throws -> GRVProcessHostResponseV1 {
-    try decodeFrame(frame) { $0.result != nil }
+    try decodeFrame(frame, admitsBody: validHostResponse)
 }
 
 /// Strictly decodes one XPC-to-guest request frame.
 public func decodeGuestRequestFrame(_ frame: Data) throws -> GRVProcessGuestRequestV1 {
-    try decodeFrame(frame) { $0.command != nil }
+    try decodeFrame(frame, admitsBody: validGuestRequest)
 }
 
 /// Strictly decodes one guest-to-XPC response frame.
 public func decodeGuestResponseFrame(_ frame: Data) throws -> GRVProcessGuestResponseV1 {
-    try decodeFrame(frame) { $0.result != nil }
+    try decodeFrame(frame, admitsBody: validGuestResponse)
+}
+
+private func validHostRequest(_ value: GRVProcessHostRequestV1) -> Bool {
+    switch value.command {
+    case let .preflight(dispatch)?, let .start(dispatch)?:
+        validDispatch(dispatch)
+    case let .query(request)?, let .terminate(request)?:
+        request.hasIdentity
+    case let .acknowledge(request)?:
+        request.hasIdentity && request.receiptDigest.count == 32
+    case nil:
+        false
+    }
+}
+
+private func validHostResponse(_ value: GRVProcessHostResponseV1) -> Bool {
+    switch value.result {
+    case let .preflighted(result)?: result.hasIdentity
+    case let .status(status)?: validStatus(status)
+    case let .terminal(receipt)?: validTerminalShape(receipt)
+    case let .error(error)?: validProtocolError(error)
+    case nil: false
+    }
+}
+
+private func validGuestRequest(_ value: GRVProcessGuestRequestV1) -> Bool {
+    switch value.command {
+    case let .hello(hello)?: hello.hasIdentity && hello.challenge.count == 32
+    case let .execute(execute)?:
+        execute.hasIdentity && execute.hasWorkload && validWorkspaceMode(execute.workload.workspaceMode)
+    case let .terminate(request)?: request.hasIdentity
+    case nil: false
+    }
+}
+
+private func validGuestResponse(_ value: GRVProcessGuestResponseV1) -> Bool {
+    switch value.result {
+    case let .ready(ready)?:
+        ready.hasIdentity && ready.challenge.count == 32 && !ready.guestAgentRevision.isEmpty
+    case let .terminal(receipt)?: validTerminalShape(receipt)
+    case let .error(error)?: validProtocolError(error)
+    case nil: false
+    }
+}
+
+private func validDispatch(_ value: GRVProcessDispatchV1) -> Bool {
+    value.hasIdentity && value.hasVmPlan && value.hasWorkload
+        && validWorkspaceMode(value.vmPlan.workspaceMode)
+        && validWorkspaceMode(value.workload.workspaceMode)
+}
+
+private func validStatus(_ value: GRVProcessStatusV1) -> Bool {
+    guard value.hasIdentity else { return false }
+    return switch value.state {
+    case .processServiceStateAbsent, .processServiceStateStarting, .processServiceStateRunning:
+        !value.hasTerminal
+    case .processServiceStateTerminalRetained:
+        value.hasTerminal && validTerminalShape(value.terminal)
+    case .processServiceStateUnspecified, .UNRECOGNIZED:
+        false
+    }
+}
+
+private func validTerminalShape(_ value: GRVProcessTerminalReceiptV1) -> Bool {
+    value.hasIdentity && value.hasExit && value.exit.classification != nil
+}
+
+private func validProtocolError(_ value: GRVProcessProtocolErrorV1) -> Bool {
+    switch value.failure {
+    case .processProtocolFailureMalformed, .processProtocolFailureVersionMismatch,
+         .processProtocolFailureBoundsExceeded, .processProtocolFailureIdentityMismatch,
+         .processProtocolFailureStateConflict, .processProtocolFailureResourceUnavailable,
+         .processProtocolFailureServiceUnavailable, .processProtocolFailureStateUnknown:
+        true
+    case .processProtocolFailureUnspecified, .UNRECOGNIZED:
+        false
+    }
+}
+
+private func validWorkspaceMode(_ value: GRVProcessWorkspaceModeV1) -> Bool {
+    value == .processWorkspaceModeReadOnly || value == .processWorkspaceModeReadWrite
 }
 
 private func decodeFrame<M: SwiftProtobuf.Message>(

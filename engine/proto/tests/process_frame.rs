@@ -2,6 +2,7 @@ use garive_proto::com::garive::process::v1::{
     process_guest_request_v1, process_guest_response_v1, process_host_request_v1,
     process_host_response_v1, ProcessGuestRequestV1, ProcessGuestResponseV1, ProcessHostRequestV1,
     ProcessHostResponseV1, ProcessIdentityRequestV1, ProcessProtocolErrorV1,
+    ProcessProtocolFailureV1,
 };
 use garive_proto::{
     decode_guest_request_frame, decode_guest_response_frame, decode_host_request_frame,
@@ -18,22 +19,30 @@ fn envelopes() -> (
     (
         ProcessHostRequestV1 {
             command: Some(process_host_request_v1::Command::Query(
-                ProcessIdentityRequestV1::default(),
+                ProcessIdentityRequestV1 {
+                    identity: Some(Default::default()),
+                },
             )),
         },
         ProcessHostResponseV1 {
             result: Some(process_host_response_v1::Result::Error(
-                ProcessProtocolErrorV1::default(),
+                ProcessProtocolErrorV1 {
+                    failure: ProcessProtocolFailureV1::ProcessProtocolFailureMalformed.into(),
+                },
             )),
         },
         ProcessGuestRequestV1 {
             command: Some(process_guest_request_v1::Command::Terminate(
-                ProcessIdentityRequestV1::default(),
+                ProcessIdentityRequestV1 {
+                    identity: Some(Default::default()),
+                },
             )),
         },
         ProcessGuestResponseV1 {
             result: Some(process_guest_response_v1::Result::Error(
-                ProcessProtocolErrorV1::default(),
+                ProcessProtocolErrorV1 {
+                    failure: ProcessProtocolFailureV1::ProcessProtocolFailureMalformed.into(),
+                },
             )),
         },
     )
@@ -117,6 +126,26 @@ fn absent_body_and_wrong_direction_fail_closed() {
     );
     assert_eq!(
         decode_host_response_frame(&encode_process_frame(&guest_response).unwrap()),
+        Err(ProcessFrameError::Malformed)
+    );
+}
+
+#[test]
+fn unknown_and_unspecified_enums_fail_closed() {
+    let mut unknown = ProcessHostResponseV1 {
+        result: Some(process_host_response_v1::Result::Error(
+            ProcessProtocolErrorV1 { failure: 99 },
+        )),
+    };
+    assert_eq!(
+        decode_host_response_frame(&encode_process_frame(&unknown).unwrap()),
+        Err(ProcessFrameError::Malformed)
+    );
+    unknown.result = Some(process_host_response_v1::Result::Error(
+        ProcessProtocolErrorV1 { failure: 0 },
+    ));
+    assert_eq!(
+        decode_host_response_frame(&encode_process_frame(&unknown).unwrap()),
         Err(ProcessFrameError::Malformed)
     );
 }

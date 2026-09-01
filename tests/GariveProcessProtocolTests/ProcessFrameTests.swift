@@ -5,13 +5,17 @@ import Testing
 @Test("all four protocol directions round-trip canonical frames")
 func protocolDirectionsRoundTrip() throws {
     var hostRequest = GRVProcessHostRequestV1()
-    hostRequest.query = GRVProcessIdentityRequestV1()
+    var identityRequest = GRVProcessIdentityRequestV1()
+    identityRequest.identity = GRVProcessIdentityV1()
+    hostRequest.query = identityRequest
     var hostResponse = GRVProcessHostResponseV1()
-    hostResponse.error = GRVProcessProtocolErrorV1()
+    var protocolError = GRVProcessProtocolErrorV1()
+    protocolError.failure = .processProtocolFailureMalformed
+    hostResponse.error = protocolError
     var guestRequest = GRVProcessGuestRequestV1()
-    guestRequest.terminate = GRVProcessIdentityRequestV1()
+    guestRequest.terminate = identityRequest
     var guestResponse = GRVProcessGuestResponseV1()
-    guestResponse.error = GRVProcessProtocolErrorV1()
+    guestResponse.error = protocolError
 
     #expect(try decodeHostRequestFrame(encodeProcessFrame(hostRequest)) == hostRequest)
     #expect(try decodeHostResponseFrame(encodeProcessFrame(hostResponse)) == hostResponse)
@@ -30,7 +34,9 @@ func malformedFramesFailClosed() throws {
         try decodeHostRequestFrame(Data(oversized.bigEndianBytes))
     }
     var request = GRVProcessHostRequestV1()
-    request.query = GRVProcessIdentityRequestV1()
+    var identityRequest = GRVProcessIdentityRequestV1()
+    identityRequest.identity = GRVProcessIdentityV1()
+    request.query = identityRequest
     let payload = try encodeProcessFrame(request).dropFirst(4)
     #expect(throws: ProcessFrameFailure.malformed) {
         try decodeHostRequestFrame(framed(with: Data(payload) + Data([0x98, 0x06, 0x01])))
@@ -46,14 +52,30 @@ func malformedFramesFailClosed() throws {
 @Test("a frame cannot cross a protocol direction")
 func protocolDirectionsAreDisjoint() throws {
     var host = GRVProcessHostRequestV1()
-    host.query = GRVProcessIdentityRequestV1()
+    var identityRequest = GRVProcessIdentityRequestV1()
+    identityRequest.identity = GRVProcessIdentityV1()
+    host.query = identityRequest
     var guest = GRVProcessGuestRequestV1()
-    guest.terminate = GRVProcessIdentityRequestV1()
+    guest.terminate = identityRequest
     #expect(throws: ProcessFrameFailure.malformed) {
         try decodeGuestRequestFrame(encodeProcessFrame(host))
     }
     #expect(throws: ProcessFrameFailure.malformed) {
         try decodeHostRequestFrame(encodeProcessFrame(guest))
+    }
+}
+
+@Test("unknown and unspecified protocol enums fail closed")
+func unknownEnumsFailClosed() throws {
+    var error = GRVProcessProtocolErrorV1()
+    error.failure = .UNRECOGNIZED(99)
+    var response = GRVProcessHostResponseV1(); response.error = error
+    #expect(throws: ProcessFrameFailure.malformed) {
+        try decodeHostResponseFrame(encodeProcessFrame(response))
+    }
+    error.failure = .processProtocolFailureUnspecified; response.error = error
+    #expect(throws: ProcessFrameFailure.malformed) {
+        try decodeHostResponseFrame(encodeProcessFrame(response))
     }
 }
 
