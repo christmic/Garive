@@ -3,9 +3,9 @@ source: tui/tests/view_snapshots.rs
 expression: "frame(&activities, Theme::Mono, 100, 24)"
 ---
 
-  › Verify the release candidate.
-    ✓  Read file · +1 completed
-    ●  Reading file
+› Verify the release candidate.
+  ✓  Read file · +1 completed
+  ●  Reading file
 
 
 
@@ -23,5 +23,5 @@ expression: "frame(&activities, Theme::Mono, 100, 24)"
 
 
 
- Esc interrupt
+• Working… (esc to interrupt)
 › Ask a follow-up…

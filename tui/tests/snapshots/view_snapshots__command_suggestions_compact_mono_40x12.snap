@@ -3,8 +3,8 @@ source: tui/tests/view_snapshots.rs
 expression: "command_suggestion_frame_at(Theme::Mono, 40, 12)"
 ---
 
-    ✓ Agent action · completed
-  • ## Release plan
+  ✓ Agent action · completed
+• ## Release plan
 ╭ Commands ────────────────────────────╮
 │   /theme system  Follow terminal th… │
 │ › /theme dark  Use dark theme        │

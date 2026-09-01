@@ -3,13 +3,13 @@ source: tui/tests/view_snapshots.rs
 expression: "frame(&model, Theme::Mono, 40, 12)"
 ---
 
-    ✓ Agent action · completed
-  • ## Release plan
+  ✓ Agent action · completed
+• ## Release plan
 
-    • Verify the Runtime
-    • Ship with evidence
+  • Verify the Runtime
+  • Ship with evidence
 
-    cargo test passes.
+  cargo test passes.
 
-• Working… ·  Esc interrupt
+• Working… (esc to interrupt)
 › Ask a follow-up…

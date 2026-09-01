@@ -3,8 +3,8 @@ source: tui/tests/view_snapshots.rs
 expression: completed
 ---
 
-  › Verify the release candidate.
-    ✓ Read file · +2
+› Verify the release candidate.
+  ✓ Read file · +2
 
 
 
