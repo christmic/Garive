@@ -71,8 +71,9 @@ essential label is clipped or replaced by an icon.
 |---|---|
 | space | `--space-1` 4, `--space-2` 8, `--space-3` 12, `--space-4` 16, `--space-5` 24, `--space-6` 32 px |
 | radius | `--radius-control` 8, `--radius-card` 12, `--radius-panel` 14, `--radius-composer` 20/25, `--radius-pill` 999 px |
-| depth | `--shadow-raised`, `--shadow-overlay`; no other shadow families |
+| depth | `--shadow-raised` = 8/16/-4, `--shadow-overlay` = 16/32/-8; no other shadow families |
 | motion | `--motion-basic` 150 ms, `--motion-relaxed` 300 ms; exact basic, enter, exit and snappy curves |
+| material | `--blur-lg` 16 px; floating transparency only |
 | desktop chrome | `--height-window-bar` 34, `--height-file-toolbar` 30 px |
 | conversation rhythm | `--conversation-item-gap` 16, `--conversation-grouped-item-gap` 4 px |
 
@@ -86,6 +87,13 @@ drawer movement may use 300 ms. Enter is `cubic-bezier(.19, 1, .22, 1)`, exit
 is `cubic-bezier(.8, 0, .4, 1)`, and compact floating surfaces use the snappy
 `cubic-bezier(.23, 1, .32, 1)`. Reduced motion sets both duration sources to
 zero, so compatibility aliases cannot accidentally retain animation.
+
+Floating depth follows the installed desktop scale rather than a generic web
+modal shadow. Raised controls use the 8/16/-4 profile; Environment, menus and
+selectors use the 16/32/-8 profile. Both resolve to 12–19% black instead of
+becoming heavier in dark mode. Translucent title and compact floating controls
+use one 16px blur, including the WebKit-prefixed property required by native
+macOS WebViews. Opaque docked surfaces never blur.
 
 ### Color and surface aliases
 

@@ -52,6 +52,9 @@ describe("Desktop visual accessibility contract", () => {
     expect(TOKENS).toContain("--scrollbar-thumb-hover: var(--border-strong)");
     expect(TOKENS).toContain("--motion-basic: 150ms");
     expect(TOKENS).toContain("--motion-relaxed: 300ms");
+    expect(TOKENS).toContain("--blur-lg: 16px");
+    expect(TOKENS).toContain("--shadow-raised: 0 8px 16px -4px rgba(0, 0, 0, .12)");
+    expect(TOKENS).toContain("--shadow-overlay: 0 16px 32px -8px rgba(0, 0, 0, .19)");
     expect(TOKENS).toContain("--ease-enter: cubic-bezier(.19, 1, .22, 1)");
     expect(TOKENS).toContain("--ease-exit: cubic-bezier(.8, 0, .4, 1)");
     expect(TOKENS).toContain("--ease-enter-snappy: cubic-bezier(.23, 1, .32, 1)");
@@ -137,6 +140,7 @@ describe("Desktop visual accessibility contract", () => {
     expect(CSS).not.toContain(".conversation-tail-button { bottom:");
     expect(CSS).toContain("padding-left: 10px; padding-right: 0;");
     expect(CSS).toContain("box-shadow: var(--shadow-composer)");
+    expect(CSS).toContain("-webkit-backdrop-filter: blur(var(--blur-lg)); backdrop-filter: blur(var(--blur-lg))");
     expect(CSS).toContain("scrollbar-color: var(--scrollbar-thumb) transparent");
     expect(CSS).toContain("::-webkit-scrollbar-thumb");
     expect(CSS).toContain("background: var(--scrollbar-thumb-hover)");

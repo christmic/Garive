@@ -43,6 +43,7 @@ and bundled-module inspection of the installed package established these facts:
 | thread measure | 40 rem default, with 42/48 rem and 480/500 px variants |
 | composer | thread measure plus 24 px inline overhang; 4 px base spacing |
 | conversation rhythm | 16 px between conversation items; 4 px inside grouped items |
+| floating material | 16 px large blur; 8/16/-4 raised and 16/32/-8 overlay shadows |
 | motion | 150 ms basic, 300 ms relaxed; `.19,1,.22,1` enter, `.8,0,.4,1` exit, `.23,1,.32,1` snappy |
 | neutral ramp | `#fff`, `#f9f9f9`, `#ededed`, `#cdcdcd`, `#afafaf`, `#414141`, `#303030`, `#212121`, `#181818`, `#0d0d0d` |
 
@@ -683,6 +684,20 @@ wrapper and sits 25px above that wrapper rather than above the viewport bottom.
 The long running fixture exercises the same document density as the supplied
 reference; unit contracts cover both motion branches and variable Composer
 ownership without turning development fixture text into production state.
+
+### XXI. Desktop material depth
+
+The installed stylesheet provides one 16px large blur, an 8/16/-4 raised
+shadow and a 16/32/-8 overlay shadow. Garive's previous material system mixed
+10, 12 and 18px blur with 22–80px shadows; in dark mode Environment used 42%
+black over 80px, making a compact desktop fact panel read like a web modal.
+
+Desktop and Web now share the source-backed material scale. The 1280×720
+running fixture resolves Environment to `rgba(0,0,0,.19) 0 16px 32px -8px`,
+retains its exact x=1044/y=42/224px geometry and keeps document overflow at
+zero. The translucent 34px title row and return-to-tail control use the same
+16px blur with a WebKit-prefixed declaration for the native macOS WebView.
+Docked rail, conversation and file surfaces remain opaque and shadowless.
 
 ## Gate 1 — Codex fidelity
 
