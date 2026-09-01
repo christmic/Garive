@@ -1,5 +1,9 @@
 use std::collections::BTreeSet;
 
+use garive_goal::{
+    GoalBoundsV1, GoalCapabilityReference, GoalCriterion, GoalCriterionId, GoalDefinitionV1,
+    GoalId, GoalScopeV1,
+};
 use garive_ledger::{
     AgentDefinitionId, AgentDefinitionRevision, AgentInstanceId, CanonicalPayload, FactDraft,
     FactId, FactKind, SessionId,
@@ -9,7 +13,7 @@ use garive_plan::{
     PlanStepV1, StepState,
 };
 use garive_runtime::{
-    commit_plan_command, commit_plan_replacement, get_turn, plan_plan_replacement,
+    commit_plan_command, commit_plan_replacement, get_turn, plan_adopt_plan, plan_plan_replacement,
     plan_plan_transition, plan_propose_plan, plan_start_step_execution, plan_start_turn,
     reconstruct_plan, verify_plan_carry_forward, EffectiveRuntimeLimits, GetTurnQuery,
     PlanCommandContext, PlanRetryPosture, PlanRuntimeError, PlanRuntimeState,
@@ -17,6 +21,7 @@ use garive_runtime::{
     StartTurnCommand,
 };
 use serde_json::json;
+use sha2::{Digest, Sha256};
 use tempfile::tempdir;
 
 #[test]
@@ -26,11 +31,13 @@ fn claims_expire_before_start_and_started_work_recovers_to_completion() {
     let session = SessionId::try_from("session-1").unwrap();
     let mut ledger = SqliteLedger::open(&path).unwrap();
     open_session(&mut ledger, &session);
-    let proposed = plan_propose_plan(&context("propose"), definition()).unwrap();
+    let proposed = plan_propose_plan(&ledger, &session, &context("propose"), definition()).unwrap();
     commit_plan_command(&mut ledger, session.clone(), 1, &proposed).unwrap();
     let mut state = recover(&ledger, &session);
 
-    let adopted = plan_plan_transition(
+    let adopted = plan_adopt_plan(
+        &ledger,
+        &session,
         &state,
         1,
         &context("adopt"),
@@ -208,10 +215,13 @@ fn competing_sqlite_claims_have_one_winner_and_exact_command_replay() {
     let session = SessionId::try_from("session-1").unwrap();
     let mut first = SqliteLedger::open(&path).unwrap();
     open_session(&mut first, &session);
-    let proposed = plan_propose_plan(&context("race-propose"), definition()).unwrap();
+    let proposed =
+        plan_propose_plan(&first, &session, &context("race-propose"), definition()).unwrap();
     commit_plan_command(&mut first, session.clone(), 1, &proposed).unwrap();
     let draft = recover(&first, &session);
-    let adopted = plan_plan_transition(
+    let adopted = plan_adopt_plan(
+        &first,
+        &session,
         &draft,
         1,
         &context("race-adopt"),
@@ -237,16 +247,84 @@ fn competing_sqlite_claims_have_one_winner_and_exact_command_replay() {
 }
 
 #[test]
+fn proposal_and_adoption_require_the_current_durable_goal_binding() {
+    let directory = tempdir().unwrap();
+    let path = directory.path().join("goal-binding.sqlite3");
+    let session = SessionId::try_from("session-1").unwrap();
+    let mut ledger = SqliteLedger::open(&path).unwrap();
+    open_session(&mut ledger, &session);
+    assert_eq!(
+        plan_propose_plan(
+            &ledger,
+            &session,
+            &context("wrong-binding"),
+            definition_with_goal_digest(1, &digest('f')),
+        ),
+        Err(PlanRuntimeError::BindingStale)
+    );
+
+    let proposed =
+        plan_propose_plan(&ledger, &session, &context("bound-proposal"), definition()).unwrap();
+    commit_plan_command(&mut ledger, session.clone(), 1, &proposed).unwrap();
+    let replay =
+        plan_propose_plan(&ledger, &session, &context("bound-proposal"), definition()).unwrap();
+    assert_eq!(
+        commit_plan_command(&mut ledger, session.clone(), 0, &replay)
+            .unwrap()
+            .disposition,
+        garive_ledger::CommitDisposition::Replayed
+    );
+
+    ledger
+        .commit(
+            session.clone(),
+            2,
+            vec![session_fact(
+                "goal-cancel",
+                "goal.cancelled",
+                json!({
+                    "command_id":"goal-cancel",
+                    "goal_id":"goal-1",
+                    "revision":3,
+                    "reason":"user_request",
+                    "actor_reference":"user:fixture",
+                }),
+            )],
+        )
+        .unwrap();
+    let state = recover(&ledger, &session);
+    assert_eq!(
+        plan_adopt_plan(
+            &ledger,
+            &session,
+            &state,
+            state.state_version,
+            &context("adopt-terminal-goal"),
+            PlanRuntimeTransition::Adopt {
+                expected_goal_revision: 2,
+                expected_prior_plan_revision: None,
+                policy_reference: "plan-policy-v1".into(),
+                carry_forward_evidence: evidence(),
+            },
+        ),
+        Err(PlanRuntimeError::BindingStale)
+    );
+}
+
+#[test]
 fn retry_posture_reopens_within_bounds_and_refuses_exhaustion_after_restart() {
     let directory = tempdir().unwrap();
     let path = directory.path().join("retry.sqlite3");
     let session = SessionId::try_from("session-1").unwrap();
     let mut ledger = SqliteLedger::open(&path).unwrap();
     open_session(&mut ledger, &session);
-    let proposed = plan_propose_plan(&context("retry-propose"), definition()).unwrap();
+    let proposed =
+        plan_propose_plan(&ledger, &session, &context("retry-propose"), definition()).unwrap();
     commit_plan_command(&mut ledger, session.clone(), 1, &proposed).unwrap();
     let draft = recover(&ledger, &session);
-    let adopted = plan_plan_transition(
+    let adopted = plan_adopt_plan(
+        &ledger,
+        &session,
         &draft,
         draft.state_version,
         &context("retry-adopt"),
@@ -369,10 +447,13 @@ fn step_start_and_c6_execution_commit_as_one_restart_safe_command() {
     let session = SessionId::try_from("session-1").unwrap();
     let mut ledger = SqliteLedger::open(&path).unwrap();
     open_session(&mut ledger, &session);
-    let proposed = plan_propose_plan(&context("atomic-propose"), definition()).unwrap();
+    let proposed =
+        plan_propose_plan(&ledger, &session, &context("atomic-propose"), definition()).unwrap();
     commit_plan_command(&mut ledger, session.clone(), 1, &proposed).unwrap();
     let draft = recover(&ledger, &session);
-    let adopted = plan_plan_transition(
+    let adopted = plan_adopt_plan(
+        &ledger,
+        &session,
         &draft,
         draft.state_version,
         &context("atomic-adopt"),
@@ -494,10 +575,18 @@ fn replacement_atomically_supersedes_and_reconstructs_verified_carry_forward() {
     let session = SessionId::try_from("session-1").unwrap();
     let mut ledger = SqliteLedger::open(&path).unwrap();
     open_session(&mut ledger, &session);
-    let proposed = plan_propose_plan(&context("carry-propose-1"), definition_revision(1)).unwrap();
+    let proposed = plan_propose_plan(
+        &ledger,
+        &session,
+        &context("carry-propose-1"),
+        definition_revision(1),
+    )
+    .unwrap();
     commit_plan_command(&mut ledger, session.clone(), 1, &proposed).unwrap();
     let mut source = recover_revision(&ledger, &session, 1);
-    let adopted = plan_plan_transition(
+    let adopted = plan_adopt_plan(
+        &ledger,
+        &session,
         &source,
         source.state_version,
         &context("carry-adopt-1"),
@@ -562,8 +651,13 @@ fn replacement_atomically_supersedes_and_reconstructs_verified_carry_forward() {
     )
     .unwrap();
     source = recover_revision(&ledger, &session, 1);
-    let target_proposal =
-        plan_propose_plan(&context("carry-propose-2"), definition_revision(2)).unwrap();
+    let target_proposal = plan_propose_plan(
+        &ledger,
+        &session,
+        &context("carry-propose-2"),
+        definition_revision(2),
+    )
+    .unwrap();
     commit_plan_command(
         &mut ledger,
         session.clone(),
@@ -590,7 +684,7 @@ fn replacement_atomically_supersedes_and_reconstructs_verified_carry_forward() {
                 carry_forward_evidence: verified.evidence().clone(),
             },
         ),
-        Err(PlanRuntimeError::Invalid)
+        Err(PlanRuntimeError::TransitionInvalid)
     );
     let replacement = plan_plan_replacement(
         &source,
@@ -854,6 +948,10 @@ fn definition() -> PlanDefinitionV1 {
 }
 
 fn definition_revision(revision: u64) -> PlanDefinitionV1 {
+    definition_with_goal_digest(revision, &goal_definition().digest().unwrap())
+}
+
+fn definition_with_goal_digest(revision: u64, goal_digest: &str) -> PlanDefinitionV1 {
     let capability = PlanCapabilityReference::new("tools", "catalogue-v1").unwrap();
     let steps = vec![
         PlanStepV1::new(
@@ -882,7 +980,7 @@ fn definition_revision(revision: u64) -> PlanDefinitionV1 {
         revision,
         "goal-1",
         2,
-        digest('a'),
+        goal_digest,
         digest('b'),
         digest('c'),
         "safety-v1",
@@ -896,23 +994,79 @@ fn definition_revision(revision: u64) -> PlanDefinitionV1 {
 }
 
 fn open_session(ledger: &mut SqliteLedger, session: &SessionId) {
+    let goal = goal_definition();
+    let goal_json = goal.canonical_json().unwrap();
     ledger
         .commit(
             session.clone(),
             0,
-            vec![FactDraft {
-                fact_id: FactId::try_from("session-open").unwrap(),
-                turn_id: None,
-                execution_id: None,
-                model_request_id: None,
-                tool_invocation_id: None,
-                kind: FactKind::new("session.opened").unwrap(),
-                schema_version: 1,
-                payload: CanonicalPayload::from_value(&json!({})).unwrap(),
-                recorded_at: timestamp().into(),
-            }],
+            vec![
+                session_fact("session-open", "session.opened", json!({})),
+                session_fact(
+                    "goal-create",
+                    "goal.created",
+                    json!({
+                        "command_id":"goal-create",
+                        "goal_id":"goal-1",
+                        "revision":1,
+                        "definition_digest":goal.digest().unwrap(),
+                        "definition":{
+                            "digest":format!("{:x}", Sha256::digest(goal_json.as_bytes())),
+                            "inline_utf8":goal_json,
+                        },
+                        "actor_reference":"user:fixture",
+                    }),
+                ),
+                session_fact(
+                    "goal-activate",
+                    "goal.activated",
+                    json!({
+                        "command_id":"goal-activate",
+                        "goal_id":"goal-1",
+                        "revision":2,
+                        "attempt_number":1,
+                    }),
+                ),
+            ],
         )
         .unwrap();
+}
+
+fn goal_definition() -> GoalDefinitionV1 {
+    GoalDefinitionV1::new(
+        GoalId::new("goal-1").unwrap(),
+        "Execute the durable Plan",
+        vec![
+            GoalCriterion::UserAcceptance {
+                criterion_id: GoalCriterionId::new("accepted").unwrap(),
+                response_schema_digest: digest('d'),
+            },
+            GoalCriterion::Artifact {
+                criterion_id: GoalCriterionId::new("artifact").unwrap(),
+                artifact_kind: "file".into(),
+                required_digest: None,
+            },
+        ],
+        GoalScopeV1::new(Some("session-1".into()), []).unwrap(),
+        GoalBoundsV1::new(2, 3, 2, None, None).unwrap(),
+        None,
+        [GoalCapabilityReference::new("tools", "catalogue-v1").unwrap()],
+    )
+    .unwrap()
+}
+
+fn session_fact(id: &str, kind: &str, payload: serde_json::Value) -> FactDraft {
+    FactDraft {
+        fact_id: FactId::try_from(id).unwrap(),
+        turn_id: None,
+        execution_id: None,
+        model_request_id: None,
+        tool_invocation_id: None,
+        kind: FactKind::new(kind).unwrap(),
+        schema_version: 1,
+        payload: CanonicalPayload::from_value(&payload).unwrap(),
+        recorded_at: timestamp().into(),
+    }
 }
 
 fn evidence() -> CanonicalPayload {

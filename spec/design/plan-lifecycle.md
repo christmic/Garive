@@ -32,6 +32,15 @@ Any binding change requires a new Plan revision. A model-generated title,
 Markdown list or tool-call list is untrusted proposal content until the exact
 portable Plan validates and Runtime adopts it.
 
+Proposal and adoption are authoritative Runtime operations over one fixed
+Session prefix. Runtime reconstructs the complete Goal graph and requires the
+bound Goal ID, current revision and definition digest to match, the Goal to be
+non-terminal, and the number of proposed revisions to remain within
+`max_plan_revisions`. Exact proposal-command replay is admitted even at the
+bound; reuse of the same Plan identity/revision with another command or digest
+is `plan_command_conflict`. The general pure transition entry point rejects
+both Adopt and Step Start so neither binding can bypass the ledger check.
+
 ## Definition
 
 ```text
@@ -274,6 +283,8 @@ Execution and snapshot digest to match before accepting the prefix.
 - competing claim/adoption races and fake-monotonic-clock lease tests;
 - process-restart fault injection at every recovery row;
 - one Runtime integration binding a step to C6/F0/C5 without bypass paths.
+- stale/terminal Goal, wrong digest/revision, proposal replay and Plan-revision
+  bound tests over a real fixed SQLite prefix.
 
 ## Meta
 

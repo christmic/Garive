@@ -6,7 +6,8 @@ use garive_plan::{PlanSnapshot, PlanStepId};
 mod command;
 
 pub use command::{
-    commit_plan_command, plan_plan_transition, plan_propose_plan, plan_start_step_execution,
+    commit_plan_command, plan_adopt_plan, plan_plan_transition, plan_propose_plan,
+    plan_start_step_execution,
 };
 
 /// Authenticated metadata bound to one idempotent Plan command.
@@ -231,6 +232,8 @@ pub enum PlanRuntimeError {
     ClaimStale,
     /// A hard Plan or step bound was exhausted.
     BoundExceeded,
+    /// Bound Goal identity, revision, digest, state, or Session watermark is stale.
+    BindingStale,
     /// Persisted Plan facts cannot reconstruct a legal prefix.
     RecoveryCorrupt,
     /// SQLite or Ledger durability failed.

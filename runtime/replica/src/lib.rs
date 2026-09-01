@@ -205,9 +205,10 @@ pub use plan_carry_forward::{
 };
 pub use plan_recovery::reconstruct_plan;
 pub use plan_runtime::{
-    commit_plan_command, plan_plan_transition, plan_propose_plan, plan_start_step_execution,
-    ActivePlanClaim, PlanCommandContext, PlanRetryPosture, PlanRuntimeError, PlanRuntimeState,
-    PlanRuntimeTransition, PlanStepExecutionStart, PlannedPlanCommand,
+    commit_plan_command, plan_adopt_plan, plan_plan_transition, plan_propose_plan,
+    plan_start_step_execution, ActivePlanClaim, PlanCommandContext, PlanRetryPosture,
+    PlanRuntimeError, PlanRuntimeState, PlanRuntimeTransition, PlanStepExecutionStart,
+    PlannedPlanCommand,
 };
 #[cfg(unix)]
 pub use podman_process_backend::{PodmanProcessBackend, PodmanProcessConfig};

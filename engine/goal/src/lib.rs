@@ -199,6 +199,11 @@ impl GoalBoundsV1 {
         self.max_child_goals
     }
 
+    /// Returns the hard limit on immutable Plan revisions for this Goal.
+    pub const fn max_plan_revisions(&self) -> u32 {
+        self.max_plan_revisions
+    }
+
     fn is_within(&self, parent: &Self) -> bool {
         self.max_attempts <= parent.max_attempts
             && self.max_plan_revisions <= parent.max_plan_revisions

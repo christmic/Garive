@@ -10,14 +10,63 @@ use super::{
 };
 use crate::{PlannedTurn, SqliteLedger, SqliteLedgerError};
 
+struct GoalPrefix {
+    facts: Vec<garive_ledger::DurableFact>,
+    graph: BTreeMap<String, crate::GoalRuntimeState>,
+    session_version: u64,
+    through_position: u64,
+}
+
 /// Plans `plan.proposed` state version 1 without mutating durable state.
 pub fn plan_propose_plan(
+    ledger: &SqliteLedger,
+    session_id: &SessionId,
     context: &PlanCommandContext,
     definition: PlanDefinitionV1,
 ) -> Result<PlannedPlanCommand, PlanRuntimeError> {
     validate_context(context)?;
+    let prefix = goal_prefix(ledger, session_id)?;
+    validate_goal_binding(&definition, &prefix.graph)?;
     let canonical = definition.canonical_json().map_err(map_plan)?;
     let digest = definition.digest().map_err(map_plan)?;
+    let mut existing = 0usize;
+    let mut exact_replay = false;
+    for fact in prefix
+        .facts
+        .iter()
+        .filter(|fact| fact.kind.as_str() == "plan.proposed")
+    {
+        let value: Value = serde_json::from_str(fact.payload.as_json())
+            .map_err(|_| PlanRuntimeError::RecoveryCorrupt)?;
+        if value.get("goal_id").and_then(Value::as_str) != Some(definition.goal_id()) {
+            continue;
+        }
+        existing = existing
+            .checked_add(1)
+            .ok_or(PlanRuntimeError::RecoveryCorrupt)?;
+        if value.get("plan_id").and_then(Value::as_str) == Some(definition.plan_id().as_str())
+            && value.get("plan_revision").and_then(Value::as_u64)
+                == Some(definition.plan_revision())
+        {
+            if value.get("command_id").and_then(Value::as_str) != Some(context.command_id.as_str())
+                || value.get("plan_digest").and_then(Value::as_str) != Some(digest.as_str())
+            {
+                return Err(PlanRuntimeError::CommandConflict);
+            }
+            exact_replay = true;
+        }
+    }
+    let goal = prefix
+        .graph
+        .get(definition.goal_id())
+        .ok_or(PlanRuntimeError::BindingStale)?;
+    if !exact_replay
+        && existing
+            >= usize::try_from(goal.snapshot.definition().bounds().max_plan_revisions())
+                .map_err(|_| PlanRuntimeError::Invalid)?
+    {
+        return Err(PlanRuntimeError::BoundExceeded);
+    }
     let payload = json!({
         "command_id": context.command_id,
         "plan_id": definition.plan_id().as_str(),
@@ -39,10 +88,41 @@ pub fn plan_propose_plan(
             snapshot: PlanSnapshot::new(definition),
             state_version: 1,
             active_claims: BTreeMap::new(),
-            session_version: 0,
-            through_position: 0,
+            session_version: prefix.session_version,
+            through_position: prefix.through_position,
         },
     })
+}
+
+/// Adopts one proposal only while its exact durable Goal binding is current.
+pub fn plan_adopt_plan(
+    ledger: &SqliteLedger,
+    session_id: &SessionId,
+    current: &PlanRuntimeState,
+    expected_state_version: u64,
+    context: &PlanCommandContext,
+    request: PlanRuntimeTransition,
+) -> Result<PlannedPlanCommand, PlanRuntimeError> {
+    if !matches!(request, PlanRuntimeTransition::Adopt { .. }) {
+        return Err(PlanRuntimeError::TransitionInvalid);
+    }
+    let prefix = goal_prefix(ledger, session_id)?;
+    if current.session_version != prefix.session_version
+        || current.through_position != prefix.through_position
+    {
+        return Err(PlanRuntimeError::RevisionConflict);
+    }
+    validate_goal_binding(current.snapshot.definition(), &prefix.graph)?;
+    if let PlanRuntimeTransition::Adopt {
+        expected_goal_revision,
+        ..
+    } = &request
+    {
+        if *expected_goal_revision != current.snapshot.definition().goal_revision() {
+            return Err(PlanRuntimeError::BindingStale);
+        }
+    }
+    plan_transition(current, expected_state_version, context, request)
 }
 
 /// Plans one exact-state-version normal-path transition.
@@ -52,10 +132,59 @@ pub fn plan_plan_transition(
     context: &PlanCommandContext,
     request: PlanRuntimeTransition,
 ) -> Result<PlannedPlanCommand, PlanRuntimeError> {
-    if matches!(request, PlanRuntimeTransition::Start { .. }) {
+    if matches!(
+        request,
+        PlanRuntimeTransition::Start { .. } | PlanRuntimeTransition::Adopt { .. }
+    ) {
         return Err(PlanRuntimeError::TransitionInvalid);
     }
     plan_transition(current, expected_state_version, context, request)
+}
+
+fn goal_prefix(
+    ledger: &SqliteLedger,
+    session_id: &SessionId,
+) -> Result<GoalPrefix, PlanRuntimeError> {
+    let watermark = ledger
+        .session_watermark(session_id)
+        .map_err(map_ledger)?
+        .ok_or(PlanRuntimeError::BindingStale)?;
+    let facts = ledger
+        .read_facts(session_id, 0, watermark.max_position, None)
+        .map_err(map_ledger)?;
+    let graph = crate::goal_recovery::reconstruct_goal_graph_from_facts(
+        &facts,
+        watermark.session_version,
+        watermark.max_position,
+    )
+    .map_err(|_| PlanRuntimeError::BindingStale)?;
+    Ok(GoalPrefix {
+        facts,
+        graph,
+        session_version: watermark.session_version,
+        through_position: watermark.max_position,
+    })
+}
+
+fn validate_goal_binding(
+    definition: &PlanDefinitionV1,
+    graph: &BTreeMap<String, crate::GoalRuntimeState>,
+) -> Result<(), PlanRuntimeError> {
+    let goal = graph
+        .get(definition.goal_id())
+        .ok_or(PlanRuntimeError::BindingStale)?;
+    if goal.snapshot.state().is_terminal()
+        || goal.snapshot.revision() != definition.goal_revision()
+        || goal
+            .snapshot
+            .definition()
+            .digest()
+            .map_err(|_| PlanRuntimeError::RecoveryCorrupt)?
+            != definition.goal_definition_digest()
+    {
+        return Err(PlanRuntimeError::BindingStale);
+    }
+    Ok(())
 }
 
 fn plan_transition(
