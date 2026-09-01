@@ -9,7 +9,8 @@ use std::{
 };
 
 use garive_core::{
-    MissingUsagePolicy, ModelRecoveryPolicy, OutputLimitAction, TerminalRecoveryAction,
+    AgentOutcome, ExecutionReport, MissingUsagePolicy, ModelRecoveryPolicy, OutputLimitAction,
+    TerminalRecoveryAction, UsageSummary,
 };
 use garive_desktop::{
     builtin_desktop_agent_installation, builtin_desktop_workspace_agent_installation, DesktopHost,
@@ -37,10 +38,11 @@ use garive_llm::{
 use garive_memory::{MemoryAuthorizedScope, MemoryDocumentLimits, MemoryScope, MemoryScopeClass};
 use garive_plan::{PlanBoundsV1, PlanStepId, PlanStepV1};
 use garive_runtime::{
-    commit_goal_command, plan_create_goal, reconstruct_goal, CatalogueCapabilityPreparationFactory,
-    CataloguePlanStepDispatchFactory, CommittedTurn, GoalCommandContext, HostClock,
-    KnowledgeConnector, KnowledgeConnectorFuture, KnowledgeConnectorOutcome, LiveHostLimits,
-    LiveOutputEventKind, LocalCapabilityPreparationFactory, LocalExecutionAttempt,
+    commit_goal_command, plan_core_terminal, plan_create_goal, reconstruct_goal,
+    start_initial_goal_plan_proposal_execution, CatalogueCapabilityPreparationFactory,
+    CataloguePlanStepDispatchFactory, CommittedTurn, CoreTerminalContext, GoalCommandContext,
+    HostClock, KnowledgeConnector, KnowledgeConnectorFuture, KnowledgeConnectorOutcome,
+    LiveHostLimits, LiveOutputEventKind, LocalCapabilityPreparationFactory, LocalExecutionAttempt,
     LocalExecutionPolicy, LocalGovernedExecution, LocalGovernedExecutionFactory,
     LocalKnowledgeSystemBinding, LocalMemorySystemBinding, LocalWorkerError, MemoryControlAction,
     MemoryControlGrant, PlanAdmissionDecision, PlanAdmissionInput, PlanAdmissionPolicy,
@@ -400,6 +402,138 @@ async fn desktop_goal_pump_runs_durable_model_planner_before_step_worker() {
 }
 
 #[tokio::test]
+async fn desktop_goal_pump_recovers_terminal_planner_without_second_model_call() {
+    let directory = tempdir().unwrap();
+    let database = directory.path().join("model-planner-crash.sqlite3");
+    let catalogue = Arc::new(
+        RuntimeAgentCatalogue::new([builtin_desktop_agent_installation(
+            "definition-main",
+            "desktop-main",
+        )
+        .unwrap()])
+        .unwrap(),
+    );
+    let mut original_config = desktop_host_config(&database, Arc::new(CompletingModel));
+    original_config.capability_preparation = test_capability_preparation(catalogue.clone());
+    original_config.agent_catalogue = catalogue.clone();
+    original_config.model_plan_proposer_reference = Some("planner:model-test-v1".into());
+    let original = DesktopHost::new_governed(
+        original_config,
+        Arc::new(
+            DesktopWorkspaceExecutionFactory::new(
+                database.clone(),
+                DesktopWorkspaceService::default(),
+                "main",
+            )
+            .unwrap(),
+        ),
+    )
+    .unwrap();
+    let session_id = original.create_session("definition-main").unwrap();
+    let session = SessionId::try_from(session_id.as_str()).unwrap();
+    let mut ledger = SqliteLedger::open(&database).unwrap();
+    let opened = ledger.read_facts(&session, 0, 1, None).unwrap().remove(0);
+    let goal = GoalDefinitionV1::new(
+        GoalId::new("goal-pump").unwrap(),
+        "Complete one installed Plan",
+        vec![GoalCriterion::DurableFact {
+            criterion_id: GoalCriterionId::new("session-opened").unwrap(),
+            fact_kind: "session.opened".into(),
+            subject_digest: opened.payload.sha256().into(),
+        }],
+        GoalScopeV1::new(Some(session_id.clone()), []).unwrap(),
+        GoalBoundsV1::new(1, 1, 1, None, None).unwrap(),
+        None,
+        [],
+    )
+    .unwrap();
+    let created = plan_create_goal(
+        &ledger,
+        &session,
+        &GoalCommandContext {
+            command_id: "model-planner-crash-goal".into(),
+            actor_reference: "user:test".into(),
+            recorded_at: "2026-08-29T00:00:00Z".into(),
+        },
+        goal,
+    )
+    .unwrap();
+    commit_goal_command(&mut ledger, session.clone(), 1, &created).unwrap();
+    drop(ledger);
+    let committed = start_initial_goal_plan_proposal_execution(
+        &database,
+        &session,
+        "goal-pump",
+        "planner:model-test-v1",
+        "2026-08-29T00:00:01Z",
+        catalogue,
+    )
+    .unwrap();
+    let usage = UsageSummary {
+        input_tokens: TokenCount::Known(3),
+        output_tokens: TokenCount::Known(4),
+        estimated: false,
+    };
+    let terminal = plan_core_terminal(
+        &CoreTerminalContext {
+            turn_id: committed.turn_id.clone(),
+            execution_id: committed.execution_id.clone(),
+            recorded_at: "2026-08-29T00:00:01Z".into(),
+        },
+        &ExecutionReport {
+            outcome: AgentOutcome::Completed {
+                response_items: vec![ModelItem::Text {
+                    text: model_plan_topology(),
+                }],
+                usage,
+            },
+            completed_iterations: 1,
+            usage,
+        },
+    )
+    .unwrap();
+    let mut ledger = SqliteLedger::open(&database).unwrap();
+    let version = ledger.session_version(&session).unwrap().unwrap();
+    ledger.commit(session.clone(), version, terminal).unwrap();
+    assert!(!ledger
+        .read_facts(&session, 0, u64::MAX, None)
+        .unwrap()
+        .iter()
+        .any(|fact| fact.kind.as_str() == "plan.proposal.result_bound"));
+    drop(ledger);
+    drop(original);
+
+    let mut restarted_config = desktop_host_config(&database, Arc::new(CompletingModel));
+    restarted_config.plan_admission_policy = Some(Arc::new(AdoptExactProposal));
+    restarted_config.model_plan_proposer_reference = Some("planner:model-test-v1".into());
+    let restarted = DesktopHost::new_governed(
+        restarted_config,
+        Arc::new(
+            DesktopWorkspaceExecutionFactory::new(
+                database.clone(),
+                DesktopWorkspaceService::default(),
+                "main",
+            )
+            .unwrap(),
+        ),
+    )
+    .unwrap();
+    let report = restarted
+        .drive_goal(&session_id, "goal-pump", 12)
+        .await
+        .unwrap();
+    assert_eq!(report.executions, 2);
+    let ledger = SqliteLedger::open(database).unwrap();
+    assert_eq!(
+        reconstruct_goal(&ledger, &session, "goal-pump")
+            .unwrap()
+            .snapshot
+            .state(),
+        GoalState::Succeeded
+    );
+}
+
+#[tokio::test]
 async fn desktop_goal_pump_requires_policy_before_failed_plan_closes_goal() {
     let directory = tempdir().unwrap();
     let database = directory.path().join("goal-failure.sqlite3");
@@ -557,15 +691,7 @@ impl ModelPort for PlanningThenCompletingModel {
                     request.output.text_mode,
                     TextMode::JsonSchema { .. }
                 ));
-                serde_jcs::to_string(&serde_json::json!({
-                    "contract":"garive.plan-proposal-topology", "version":1,
-                    "steps":[{"step_id":"complete","objective":"Complete one installed Plan",
-                        "depends_on":[],"completion_criteria":["session-opened"],
-                        "required_capabilities":[],"input_bindings":[],"max_attempts":1}],
-                    "bounds":{"max_steps":1,"max_parallel_ready":1,"max_total_attempts":1,
-                        "token_budget":null,"duration_budget_ms":null}
-                }))
-                .unwrap()
+                model_plan_topology()
             } else {
                 "completed".into()
             };
@@ -576,6 +702,18 @@ impl ModelPort for PlanningThenCompletingModel {
             })
         })
     }
+}
+
+fn model_plan_topology() -> String {
+    serde_jcs::to_string(&serde_json::json!({
+        "contract":"garive.plan-proposal-topology", "version":1,
+        "steps":[{"step_id":"complete","objective":"Complete one installed Plan",
+            "depends_on":[],"completion_criteria":["session-opened"],
+            "required_capabilities":[],"input_bindings":[],"max_attempts":1}],
+        "bounds":{"max_steps":1,"max_parallel_ready":1,"max_total_attempts":1,
+            "token_budget":null,"duration_budget_ms":null}
+    }))
+    .unwrap()
 }
 
 struct UnavailableSafety;
