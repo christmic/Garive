@@ -418,6 +418,30 @@ footer inset/bottom space and 5 px inline-control gap. These values are bundle
 facts; Garive's textarea implementation remains a product-specific native
 control rather than a claim of matching Codex's ProseMirror internals.
 
+#### Progressive single-line admission
+
+The installed `app-initial-B6Gk5KCN.js` contains the complete admission rule,
+not merely an animation. `auto-single-line` is rejected when attachments are
+visible, the editor contains more than one block or a newline, or voice layout
+is active. Otherwise the measured text must fit the measured input width with
+a 32px reserve. Its paired CSS resolves the compact root to 44px high, the
+input row to 36px and the single-line radius token to 22px; the adaptive footer
+places leading controls, input and trailing controls in one grid row.
+
+Garive maps “expanded capability” to facts it actually owns: an executing Turn
+and its progress rail, a suspension/approval, an attached Workspace or selected
+next-Turn context. With none of those present, the shared client measures the
+rendered draft against the real remaining input width and applies the same 32px
+reserve. Newline and capability checks remain semantic; no character-count
+heuristic is used. This is an independent textarea implementation of the source
+state machine, not a claim that Garive embeds Codex's ProseMirror editor.
+
+Measured Desktop and Web output at 1280×720 is identical: empty and short-draft
+states resolve to 672×44px, 22px radius and 28px actions; a long draft expands
+to 66px, while Running remains 99px and Approval 253.34px. At 480px the compact
+Composer is 432×44px with a 235.45px measured input lane; a draft that no longer
+fits expands to 66px. Every state has zero document overflow.
+
 ### T. Installed Codex desktop document-system audit
 
 The user clarified that fidelity must cover desktop composition, not only UX

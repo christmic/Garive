@@ -98,7 +98,7 @@ essential label is clipped or replaced by an icon.
 | Family | Tokens |
 |---|---|
 | space | `--space-1` 4, `--space-2` 8, `--space-3` 12, `--space-4` 16, `--space-5` 24, `--space-6` 32 px |
-| radius | `--radius-control` 8, `--radius-card` 12, `--radius-panel` 14, `--radius-composer` 24, `--radius-pill` 999 px |
+| radius | `--radius-control` 8, `--radius-card` 12, `--radius-panel` 14, `--radius-composer` 24, `--radius-composer-single-line` 22, `--radius-pill` 999 px |
 | depth | `--shadow-raised` = 8/16/-4, `--shadow-overlay` = 16/32/-8; no other shadow families |
 | motion | `--motion-basic` 150 ms, `--motion-relaxed` 300 ms; exact basic, enter, exit and snappy curves |
 | material | `--blur-lg` 16 px; floating transparency only |
@@ -437,6 +437,21 @@ Composer submit, stop and circular context actions are 28px. The multiline
 input has a 12px inline inset; its footer uses an 8px inline and bottom inset
 with a 5px gap between inline controls. These values come from the installed
 Codex desktop bundle's Composer layout and action tokens.
+
+The quiet Composer uses `--height-composer-single-line` 44px and
+`--radius-composer-single-line` 22px. It admits the compact row only when all
+of the following are true:
+
+- no running Turn rail, suspension, approval, Workspace attachment or selected
+  next-Turn context requires vertical disclosure;
+- the draft contains one semantic line;
+- measured draft width plus a 32px reserve fits the measured input lane.
+
+Leading authority/context controls, the input and the trailing primary action
+then occupy one adaptive grid row. Any failed condition restores the multiline
+layout. The transition uses the relaxed/snappy token and resolves to zero under
+reduced motion. Desktop and Web must use the same pure admission function and
+DOM; platform adapters may not decide layout independently.
 
 The unified Desktop/Web main toolbar is 46px; compact chrome uses 36px. The file
 tab shares the main row, its location toolbar is 40px including its

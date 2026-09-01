@@ -56,6 +56,8 @@ describe("Desktop visual accessibility contract", () => {
     expect(TOKENS).toContain("--height-file-toolbar: var(--height-toolbar-pane)");
     expect(TOKENS).toContain("--radius-composer: 24px");
     expect(TOKENS).toContain("--size-composer-action: 28px");
+    expect(TOKENS).toContain("--radius-composer-single-line: 22px");
+    expect(TOKENS).toContain("--height-composer-single-line: 44px");
     expect(TOKENS).toContain("--shadow-composer: 0 0 0 1px rgba(0, 0, 0, .04)");
     expect(TOKENS).toContain("--shadow-composer: inset 0 0 1px rgba(255, 255, 255, .2)");
     expect(TOKENS).toContain("--surface-composer: #2a2a2a");
@@ -169,6 +171,9 @@ describe("Desktop visual accessibility contract", () => {
     expect(CSS).toContain(".composer-toolbar { min-height: var(--size-composer-action); padding: 0 8px 8px;");
     expect(CSS).toContain(".composer-tools { gap: 5px; }");
     expect(CSS).toContain("width: var(--size-composer-action); height: var(--size-composer-action);");
+    expect(CSS).toContain('.composer[data-layout="single-line"] {');
+    expect(CSS).toContain("grid-template-columns: auto minmax(0, 1fr) auto");
+    expect(CSS).toContain("min-height: var(--height-composer-single-line)");
     expect(CSS).toContain("-webkit-backdrop-filter: blur(var(--blur-lg)); backdrop-filter: blur(var(--blur-lg))");
     expect(CSS).toContain("scrollbar-color: var(--scrollbar-thumb) transparent");
     expect(CSS).toContain("::-webkit-scrollbar-thumb");

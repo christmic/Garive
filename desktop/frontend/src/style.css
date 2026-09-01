@@ -759,7 +759,7 @@ kbd { font-size: var(--text-2xs); }
 @media (prefers-reduced-motion: reduce) { .live-pulse > span, .live-answer .result-markdown::after, .task-state-dot.active::after { animation: none; } }
 
 .composer-wrap { padding: 24px 24px 8px; background: linear-gradient(transparent, var(--surface-canvas) 24%, var(--surface-canvas)); }
-.composer { width: min(var(--thread-content-max-width), 100%); border: 0; border-radius: var(--radius-composer); background: var(--surface-composer); box-shadow: var(--shadow-composer); }
+.composer { width: min(var(--thread-content-max-width), 100%); border: 0; border-radius: var(--radius-composer); background: var(--surface-composer); box-shadow: var(--shadow-composer); transition: border-radius var(--motion-relaxed) var(--ease-enter-snappy), box-shadow var(--motion-basic) var(--ease-basic); }
 .composer.busy { opacity: 1; }
 .composer:focus-within { box-shadow: var(--shadow-composer); }
 .composer textarea { min-height: 30px; max-height: 168px; padding: 6px 12px 0; font-size: var(--text-md); line-height: 1.5; }
@@ -777,6 +777,13 @@ kbd { font-size: var(--text-2xs); }
 .composer-stop-button { color: var(--surface-canvas); background: var(--text-primary); }
 .composer-stop-button:hover { background: var(--text-secondary); }
 .composer-stop-button svg { width: 15px; fill: currentColor; stroke-width: 0; }
+.composer-text-measure { position: absolute; width: max-content; height: 0; overflow: hidden; visibility: hidden; white-space: pre; font-size: var(--text-md); }
+.composer[data-layout="single-line"] { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; column-gap: var(--composer-single-line-gap); min-height: var(--height-composer-single-line); padding: 0 var(--composer-single-line-inset); overflow: hidden; border-radius: var(--radius-composer-single-line); }
+.composer[data-layout="single-line"] textarea { grid-column: 2; grid-row: 1; min-height: 36px; max-height: 36px; padding: 7px 0; overflow: hidden; white-space: nowrap; }
+.composer[data-layout="single-line"] .composer-toolbar { display: contents; }
+.composer[data-layout="single-line"] .composer-tools { grid-column: 1; grid-row: 1; flex-wrap: nowrap; }
+.composer[data-layout="single-line"] .access-pill { white-space: nowrap; }
+.composer[data-layout="single-line"] :is(.send-button, .composer-stop-button) { grid-column: 3; grid-row: 1; }
 @supports (corner-shape: superellipse(1.5)) { .composer { corner-shape: superellipse(1.5); } }
 .error-banner { bottom: 136px; }
 .approval-card { border-color: var(--border-subtle); border-left-color: var(--state-attention); color: var(--text-primary); background: color-mix(in srgb, var(--state-attention-surface) 22%, var(--surface-raised)); }

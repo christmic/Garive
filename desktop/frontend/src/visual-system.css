@@ -35,7 +35,11 @@
   --radius-card: 12px;
   --radius-panel: 14px;
   --radius-composer: 24px;
+  --radius-composer-single-line: 22px;
   --size-composer-action: 28px;
+  --height-composer-single-line: 44px;
+  --composer-single-line-inset: 8px;
+  --composer-single-line-gap: 5px;
   --radius-pill: 999px;
   --height-toolbar: 46px;
   --height-toolbar-sm: 36px;

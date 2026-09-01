@@ -257,6 +257,7 @@ describe("Desktop product experience", () => {
     expect(view.container.querySelector(".brand-mark, .hero-mark, .message-mark")).toBeNull();
     const composer = screen.getByRole("textbox", { name: "Describe the outcome you want" });
     expect(composer.getAttribute("rows")).toBe("1");
+    expect(composer.closest(".composer")?.getAttribute("data-layout")).toBe("single-line");
     expect(composer.getAttribute("aria-describedby")).toBe("composer-commit-note");
     expect(screen.getByRole("button", { name: "Add context" }).textContent).toBe("");
     expect(document.querySelector("#composer-commit-note")?.classList.contains("sr-only")).toBe(true);

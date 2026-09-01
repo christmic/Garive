@@ -1,4 +1,4 @@
-import { Children, isValidElement, useCallback, useEffect, useMemo, useReducer, useRef, useState,
+import { Children, isValidElement, useCallback, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState,
   type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
@@ -29,7 +29,7 @@ import {
   type DesktopLocalePreference, type DesktopPreferences, type DesktopTheme,
 } from "./preferences";
 import { createTranslator, resolveDesktopLocale, type MessageKey } from "./i18n";
-import { shouldSubmitComposer } from "./composer";
+import { resolveComposerLayout, shouldSubmitComposer, type ComposerLayout } from "./composer";
 import { isNearConversationTail, scrollConversationToTail } from "./conversationTail";
 import { visibleScrollEdges } from "./scrollEdges";
 import { nextDesktopZoom } from "./zoom";
@@ -905,9 +905,40 @@ function WorkSurface({ state, composer, submit, startSuggestion, dispatch, conte
   const [followingTail, setFollowingTail] = useState(true);
   const [newOutputBelow, setNewOutputBelow] = useState(false);
   const [scrolledFromTop, setScrolledFromTop] = useState(false);
+  const composerShell = useRef<HTMLDivElement>(null);
+  const composerMeasure = useRef<HTMLSpanElement>(null);
+  const [composerLayout, setComposerLayout] = useState<ComposerLayout>("single-line");
   const pendingTailFrame = useRef<number | undefined>(undefined);
   const tailRevision = `${state.messages.length}:${state.messages.at(-1)?.text.length ?? 0}:${state.livePreview?.sequence ?? -1}:${state.phase}`;
   const previousTailRevision = useRef(tailRevision);
+  const hasExpandedComposerCapability = state.phase === "submitting"
+    || state.messages.some((message) => Boolean(message.suspension))
+    || state.workspaces.length > 0 || Boolean(context);
+
+  useLayoutEffect(() => {
+    const shell = composerShell.current;
+    const measure = composerMeasure.current;
+    if (!shell || !measure) return;
+    const update = () => {
+      const style = getComputedStyle(shell);
+      const inset = Number.parseFloat(style.getPropertyValue("--composer-single-line-inset")) || 8;
+      const gap = Number.parseFloat(style.getPropertyValue("--composer-single-line-gap")) || 5;
+      const leading = shell.querySelector<HTMLElement>(".composer-tools")?.offsetWidth ?? 0;
+      const trailing = shell.querySelector<HTMLElement>(".send-button, .composer-stop-button")?.offsetWidth ?? 0;
+      const availableInputWidth = shell.clientWidth > 0
+        ? Math.max(0, shell.clientWidth - inset * 2 - gap * 2 - leading - trailing)
+        : undefined;
+      const measuredTextWidth = state.draft.length > 0
+        ? measure.getBoundingClientRect().width : 0;
+      setComposerLayout(resolveComposerLayout({ text: state.draft, hasExpandedCapability:
+        hasExpandedComposerCapability, measuredTextWidth, availableInputWidth }));
+    };
+    update();
+    if (typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(update);
+    observer.observe(shell);
+    return () => observer.disconnect();
+  }, [hasExpandedComposerCapability, state.draft]);
 
   useEffect(() => {
     if (previousTailRevision.current === tailRevision) return;
@@ -989,7 +1020,8 @@ function WorkSurface({ state, composer, submit, startSuggestion, dispatch, conte
         aria-label={t(newOutputBelow ? "timeline.newOutput" : "timeline.jumpLatest")}
         onClick={jumpToLatest}><Icon name="chevron" /><span>{t(newOutputBelow
           ? "timeline.newOutput" : "timeline.jumpLatest")}</span></button>}
-      <div className={state.phase === "submitting" ? "composer busy" : "composer"}>
+      <div ref={composerShell} className={state.phase === "submitting" ? "composer busy" : "composer"}
+        data-layout={composerLayout}>
         {(state.phase === "submitting" || suspension) && <TurnProgress goal={activeGoal}
           status={suspension ? t("status.needsInput") : undefined} activities={state.activities}
           onOpen={() => dispatch({ type: "inspector_selected", tab: "activity" })} t={t} />}
@@ -1021,6 +1053,7 @@ function WorkSurface({ state, composer, submit, startSuggestion, dispatch, conte
             <button type="button" disabled={state.phase === "submitting"} onClick={removeContext}
               aria-label={t("context.remove")}><Icon name="close" /></button>
           </span>)}</div>}
+        <span ref={composerMeasure} className="composer-text-measure" aria-hidden="true">{state.draft}</span>
         <textarea ref={composer} rows={1} value={state.draft} disabled={blockedSuspension}
           aria-describedby="composer-commit-note"
           aria-label={t(state.phase === "submitting" ? "work.composer.draftNext" : needsInput ? "work.composer.continue" : "work.composer.describe")}
