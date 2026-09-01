@@ -42,6 +42,7 @@
   --radius-composer-rail: 20px;
   --size-composer-action: 28px;
   --height-composer-single-line: 44px;
+  --composer-multiline-input-min-height: 44px;
   --composer-single-line-inset: 8px;
   --composer-single-line-gap: 5px;
   --composer-rail-inline-inset: 13px;

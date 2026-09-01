@@ -63,6 +63,7 @@ import { App, CommittedActivity, selectDisplayedGoal, TurnActivityDisclosure, Tu
   WorkspaceLoading } from "./App";
 import { createTranslator } from "./i18n";
 import type { WorkState } from "./state/workspace";
+import { ComposerRail } from "./ui/ComposerRail";
 
 afterEach(cleanup);
 
@@ -524,7 +525,7 @@ describe("Desktop product experience", () => {
 
   it("renders progressive work from admitted Activity instead of invented stages", () => {
     const open = vi.fn();
-    const view = render(<TurnProgress t={createTranslator("en")} onOpen={open}
+    const view = render(<ComposerRail visible><TurnProgress t={createTranslator("en")} onOpen={open}
       goal={{ api_version: "v1", goal_id: "goal-1", revision: 2, state: "active",
         definition_digest: "a".repeat(64), objective: "Prepare the launch decision memo",
         objective_truncated: false, attempt_number: 1, criteria_total: 3, criteria_satisfied: 1 }} activities={[{
@@ -534,14 +535,15 @@ describe("Desktop product experience", () => {
     }, { api_version: "v1", activity_id: "write-1", kind: "tool",
       label_key: "agent.activity.write_file", state: "running", source_position: 7,
       terminal: false,
-    }]} />);
+    }]} /></ComposerRail>);
     expect(screen.getByText("Pursuing goal")).toBeTruthy();
     expect(screen.getByText("Prepare the launch decision memo")).toBeTruthy();
     expect(screen.getByText("1 / 3 criteria")).toBeTruthy();
-    const rail = view.container.querySelector(".turn-progress");
-    expect(rail?.getAttribute("data-composer-rail-item")).toBe("present");
+    const rail = view.container.querySelector("[data-composer-rail]");
+    const item = view.container.querySelector("[data-composer-rail-item]");
     expect(rail?.getAttribute("data-composer-rail-placement")).toBe("above");
-    expect(rail?.getAttribute("data-composer-rail-variant")).toBe("controls");
+    expect(item?.getAttribute("data-composer-rail-item")).toBe("present");
+    expect(item?.getAttribute("data-composer-rail-variant")).toBe("default");
     expect(screen.getByText("Read scoped file")).toBeTruthy();
     expect(screen.getByText("Write scoped file")).toBeTruthy();
     expect(view.container.querySelector(".progress-state")?.textContent).toBe("1 / 3 criteria");

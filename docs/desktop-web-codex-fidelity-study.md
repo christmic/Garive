@@ -1446,6 +1446,25 @@ requires the exact source width, shift and thresholds. Files, diffs, terminals
 and committed artifacts remain the only surfaces allowed to resize the actual
 workbench.
 
+### XLIX. Composer rail is a presence primitive, not a status card
+
+The installed Codex `26.825.51511` source defines a generic Composer Rail with
+`rail`, `target`, `item`, `attached` and `content` layers. Its item carries
+`data-composer-rail-item=present|exiting`, placement, overlap, containment and
+variant attributes. Exit animates the grid row from `1fr` to `0fr` while
+opacity, margin and border width collapse; the concealed item is both inert and
+`aria-hidden`. Goal progress uses the default variant and a static 20×20 target
+glyph. It does not pulse and is not a controls variant.
+
+The same source sets the multiline input floor to `2.75rem` (44 px), caps the
+rich input at `25dvh`, and keeps the 36 px action row below it. Garive now owns
+these rules in one Desktop/Web component and token set. At 1280×800, the live
+fixture measures a 672×80 px Composer with a 646×33 px attached rail; at
+480×720 it measures 432×80 px and retains zero horizontal overflow. The hidden
+fixture collapses the rail to exactly 0 px while preserving its mounted exit
+state. Desktop and Web report the same default variant, exact target SVG and
+80 px Composer height.
+
 ## Gate 1 — Codex fidelity
 
 This gate passes only when both Desktop and Web show:

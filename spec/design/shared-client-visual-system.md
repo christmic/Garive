@@ -695,6 +695,12 @@ product admits those actions.
   in-bubble toggle exposes `aria-expanded`. Copy is disclosed on Turn
   hover/focus. Timestamp and Edit stay absent without admitted product facts
   and mutation semantics.
+- Composer attachments use one shared presence rail. Each item exposes
+  `present|exiting`, placement and variant attributes; a concealed item remains
+  mounted for its grid-row transition but is `aria-hidden`, inert and exactly
+  zero-height afterward. Goal progress uses the default variant and the static
+  source target glyph. The multiline input floor is 44 px, its maximum is
+  `25dvh`, and the action row remains a separate 36 px footer.
 
 ## Content rules
 

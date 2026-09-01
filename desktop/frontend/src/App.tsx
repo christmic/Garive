@@ -20,6 +20,7 @@ import type { DesktopUpdateClient } from "./ipc/desktop-update";
 import { canSubmit, initialWorkState, reduceWork, type WorkState } from "./state/workspace";
 import type { DesktopUpdateState } from "./state/desktop-update";
 import { Icon, type IconName } from "./ui/Icon";
+import { ComposerRail } from "./ui/ComposerRail";
 import { Tooltip } from "./ui/Tooltip";
 import { UsageBudgetCard, UsageBudgetTrigger, type UsageBudgetSnapshot } from "./ui/UsageBudget";
 import { WindowZoomBanner } from "./ui/WindowZoomBanner";
@@ -1241,9 +1242,9 @@ function WorkSurface({ state, composer, submit, startSuggestion, dispatch, conte
         onClick={jumpToLatest}><Icon name="chevron" /><span>{t(newOutputBelow
           ? "timeline.newOutput" : "timeline.jumpLatest")}</span></button>}
       <div className="composer-stack">
-        {(state.phase === "submitting" || suspension) && <TurnProgress goal={activeGoal}
+        <ComposerRail visible={state.phase === "submitting" || Boolean(suspension)}><TurnProgress goal={activeGoal}
           status={suspension ? t("status.needsInput") : undefined} activities={state.activities}
-          onOpen={() => dispatch({ type: "inspector_selected", tab: "activity" })} t={t} />}
+          onOpen={() => dispatch({ type: "inspector_selected", tab: "activity" })} t={t} /></ComposerRail>
         <div ref={composerShell} className={state.phase === "submitting" ? "composer busy" : "composer"}
           data-layout={composerLayout}>
         {needsApproval && <div className="approval-card" role="alert" aria-live="assertive" aria-label={t("approval.aria")}>
@@ -1493,10 +1494,8 @@ export function TurnProgress({ goal, status, activities, onOpen, t }: { goal?: H
     ? t("timeline.criteriaProgress").replace("{satisfied}", String(goal.criteria_satisfied))
       .replace("{total}", String(goal.criteria_total)) : undefined;
   return <article className={status || goal?.state === "suspended" ? "turn-progress attention" : "turn-progress"}
-    data-composer-rail-item="present" data-composer-rail-placement="above"
-    data-composer-rail-variant="controls"
     aria-label={t("timeline.progressTitle")}>
-    <div className="turn-progress-head"><span className="live-pulse" aria-hidden="true"><span /></span><div className="progress-summary">
+    <div className="turn-progress-head"><Icon className="progress-goal-icon" name="target" /><div className="progress-summary">
       <strong>{title}</strong><p>{goal?.objective || t("timeline.progressBody")}</p></div>
       {(status || criteria) && <span className="progress-state" aria-label={criteria}>{status || criteria}</span>}
       <Tooltip label={t("timeline.openActivity")} side="top" align="end"><button type="button" onClick={onOpen}

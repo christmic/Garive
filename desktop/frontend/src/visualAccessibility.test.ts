@@ -65,6 +65,7 @@ describe("Desktop visual accessibility contract", () => {
     expect(TOKENS).toContain("--radius-composer-single-line: 22px");
     expect(TOKENS).toContain("--radius-composer-rail: 20px");
     expect(TOKENS).toContain("--height-composer-single-line: 44px");
+    expect(TOKENS).toContain("--composer-multiline-input-min-height: 44px");
     expect(TOKENS).toContain("--composer-rail-inline-inset: 13px");
     expect(TOKENS).toContain("--composer-rail-tuck: 4px");
     expect(TOKENS).toContain("--shadow-composer: 0 0 0 1px rgba(0, 0, 0, .04)");
@@ -117,10 +118,10 @@ describe("Desktop visual accessibility contract", () => {
     expect(CSS).toContain(".artifact-row:hover { background: var(--surface-hover); }");
     expect(CSS).toContain(".task-state-dot { position: relative; display: grid; place-items: center; width: 10px; height: 10px;");
     expect(CSS).toContain(".task-state-dot.active::after { position: absolute; inset: -1.25px;");
-    expect(CSS).toContain(".turn-progress.attention .live-pulse > span { background: var(--state-attention); animation: none; }");
+    expect(CSS).toContain(".turn-progress.attention .progress-goal-icon { color: var(--state-attention); }");
     expect(TOKENS).toContain("--composer-rail-indicator: color-mix(in srgb, var(--text-tertiary) 70%, transparent)");
     expect(CSS).toContain(".turn-progress-head { display: grid; grid-template-columns: 14px minmax(0, 1fr) auto auto;");
-    expect(CSS).toContain(".live-pulse > span { width: 5px; height: 5px; border-radius: 50%; background: currentColor;");
+    expect(CSS).toContain(".progress-goal-icon { width: 14px; height: 14px; color: var(--composer-rail-indicator); }");
     expect(CSS).toContain(".workspace-tab { display: grid; grid-template-columns: minmax(0, 1fr) 22px; width: min(120px, 100%);");
     expect(CSS).toContain("min-height: var(--height-file-toolbar);");
     expect(CSS).toContain(".app-shell:has(.workspace-panel) .timeline { width: calc(100% - 20px); }");
@@ -218,7 +219,10 @@ describe("Desktop visual accessibility contract", () => {
     expect(CSS).toContain(".turn-activity > summary { display: flex; align-items: center; gap: 6px;");
     expect(CSS).toContain(".turn-activity-body { display: grid; gap: 2px; margin-top: 4px; animation: turn-activity-enter 220ms");
     expect(CSS).toContain(".composer-stack { width: min(var(--thread-content-max-width), 100%); margin: 0 auto;");
-    expect(CSS).toContain("margin: 0 var(--composer-rail-inline-inset) calc(var(--composer-rail-tuck) * -1)");
+    expect(CSS).toContain(".composer-rail { --composer-rail-transition-duration: var(--motion-relaxed);");
+    expect(CSS).toContain("grid-template-rows: 1fr");
+    expect(CSS).toContain('[data-composer-rail-item="exiting"] { grid-template-rows: 0fr;');
+    expect(CSS).toContain("margin-inline: var(--composer-rail-inline-inset)");
     expect(CSS).toContain("border-radius: var(--radius-composer-rail) var(--radius-composer-rail) 0 0");
     expect(CSS).toContain("background: var(--surface-composer-action-bar)");
     expect(CSS).toContain(".composer-stack > .composer { width: 100%; margin: 0;");
@@ -232,7 +236,7 @@ describe("Desktop visual accessibility contract", () => {
     expect(CSS).not.toContain(".conversation-tail-button { bottom:");
     expect(CSS).toContain("padding-left: 10px; padding-right: 0;");
     expect(CSS).toContain("box-shadow: var(--shadow-composer)");
-    expect(CSS).toContain(".composer textarea { min-height: 30px; max-height: 168px; padding: 6px 12px 0;");
+    expect(CSS).toContain(".composer textarea { min-height: var(--composer-multiline-input-min-height); max-height: 25dvh; padding: 6px 12px 0;");
     expect(CSS).toContain(".composer-toolbar { min-height: var(--size-composer-action); padding: 0 8px 8px;");
     expect(CSS).toContain(".composer-tools { gap: 5px; }");
     expect(CSS).toContain(".composer { container: composer-footer / inline-size;");
