@@ -25,7 +25,7 @@ use garive_runtime::{
     commit_goal_command, commit_plan_command, commit_plan_replacement, commit_planned_turn,
     get_turn, plan_activate_goal_from_authoritative_plan, plan_adopt_plan,
     plan_complete_owned_step_from_turn, plan_complete_plan, plan_continue_owned_plan_turn,
-    plan_continue_turn, plan_core_terminal, plan_goal_transition,
+    plan_continue_turn, plan_core_terminal, plan_fail_plan, plan_goal_transition,
     plan_next_turn_cancellation_for_goal, plan_plan_replacement, plan_plan_transition,
     plan_propose_plan, plan_resume_goal_from_continued_turn, plan_start_step_execution,
     plan_start_turn, plan_succeed_goal_from_completed_plan, plan_suspend_goal_from_owned_turn,
@@ -777,6 +777,57 @@ fn retry_posture_reopens_within_bounds_and_refuses_exhaustion_after_restart() {
             "retry-fail-second",
         ),
         Err(PlanRuntimeError::BoundExceeded)
+    );
+    let exhausted = plan_plan_transition(
+        &state,
+        state.state_version,
+        &context("retry-exhausted-step"),
+        PlanRuntimeTransition::FailStep {
+            step_id: step_id("prepare"),
+            attempt_id: "retry-attempt-2".into(),
+            execution_id: second_execution,
+            reason: "attempts_exhausted".into(),
+            evidence: None,
+            retry_posture: PlanRetryPosture::Fail,
+        },
+    )
+    .unwrap();
+    commit_plan_command(
+        &mut ledger,
+        session.clone(),
+        state.session_version,
+        &exhausted,
+    )
+    .unwrap();
+    state = recover(&ledger, &session);
+    assert_eq!(
+        plan_plan_transition(
+            &state,
+            state.state_version,
+            &context("bypass-plan-failure"),
+            PlanRuntimeTransition::FailPlan {
+                reason: "attempts_exhausted".into(),
+                evidence: None,
+            },
+        ),
+        Err(PlanRuntimeError::TransitionInvalid)
+    );
+    let failed = plan_fail_plan(
+        &ledger,
+        &session,
+        &state,
+        state.state_version,
+        &context("fail-exhausted-plan"),
+        "attempts_exhausted".into(),
+        None,
+    )
+    .unwrap();
+    commit_plan_command(&mut ledger, session.clone(), state.session_version, &failed).unwrap();
+    drop(ledger);
+    let ledger = SqliteLedger::open(&path).unwrap();
+    assert_eq!(
+        recover(&ledger, &session).snapshot.state(),
+        PlanState::Failed
     );
 }
 

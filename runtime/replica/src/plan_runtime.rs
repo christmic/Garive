@@ -7,7 +7,7 @@ use garive_plan::{PlanDefinitionV1, PlanSnapshot, PlanStepId};
 mod command;
 
 pub use command::{
-    commit_plan_command, plan_adopt_plan, plan_complete_plan, plan_plan_transition,
+    commit_plan_command, plan_adopt_plan, plan_complete_plan, plan_fail_plan, plan_plan_transition,
     plan_propose_plan, plan_start_step_execution,
 };
 pub(crate) use command::{plan_resume_step_execution, plan_suspend_step_and_plan};
@@ -308,6 +308,13 @@ pub enum PlanRuntimeTransition {
     CompletePlan {
         /// Canonical complete reduction evidence.
         reduction_evidence: CanonicalPayload,
+    },
+    /// Terminalize a Plan after Runtime proves failed work cannot continue.
+    FailPlan {
+        /// Stable safe terminal reason.
+        reason: String,
+        /// Optional canonical failure evidence.
+        evidence: Option<CanonicalPayload>,
     },
 }
 

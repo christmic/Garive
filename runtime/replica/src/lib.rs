@@ -216,7 +216,7 @@ pub use plan_carry_forward::{
 };
 pub use plan_recovery::{reconstruct_plan, reconstruct_plan_graph};
 pub use plan_runtime::{
-    commit_plan_command, plan_adopt_plan, plan_complete_plan, plan_plan_transition,
+    commit_plan_command, plan_adopt_plan, plan_complete_plan, plan_fail_plan, plan_plan_transition,
     plan_propose_plan, plan_start_step_execution, ActivePlanClaim, PlanCommandContext,
     PlanRetryPosture, PlanRuntimeError, PlanRuntimeState, PlanRuntimeTransition,
     PlanStepContinuation, PlanStepExecutionStart, PlanStepSuspension, PlannedPlanCommand,

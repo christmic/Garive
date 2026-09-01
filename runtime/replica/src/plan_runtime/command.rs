@@ -146,10 +146,50 @@ pub fn plan_plan_transition(
             | PlanRuntimeTransition::ResumePlan { .. }
             | PlanRuntimeTransition::ResumeStep { .. }
             | PlanRuntimeTransition::CompletePlan { .. }
+            | PlanRuntimeTransition::FailPlan { .. }
     ) {
         return Err(PlanRuntimeError::TransitionInvalid);
     }
     plan_transition(current, expected_state_version, context, request)
+}
+
+/// Fails one Plan only after Runtime proves failed work has no active owner.
+pub fn plan_fail_plan(
+    ledger: &SqliteLedger,
+    session_id: &SessionId,
+    current: &PlanRuntimeState,
+    expected_state_version: u64,
+    context: &PlanCommandContext,
+    reason: String,
+    evidence: Option<CanonicalPayload>,
+) -> Result<PlannedPlanCommand, PlanRuntimeError> {
+    let prefix = goal_prefix(ledger, session_id)?;
+    if current.session_version != prefix.session_version
+        || current.through_position != prefix.through_position
+    {
+        return Err(PlanRuntimeError::RevisionConflict);
+    }
+    validate_active_goal_binding(
+        current.snapshot.definition(),
+        goal(&prefix, current.snapshot.definition().goal_id())?,
+    )?;
+    if !current.active_claims.is_empty()
+        || !current.snapshot.definition().steps().iter().any(|step| {
+            current
+                .snapshot
+                .step(step.step_id())
+                .map(|value| value.state())
+                == Some(garive_plan::StepState::Failed)
+        })
+    {
+        return Err(PlanRuntimeError::TransitionInvalid);
+    }
+    plan_transition(
+        current,
+        expected_state_version,
+        context,
+        PlanRuntimeTransition::FailPlan { reason, evidence },
+    )
 }
 
 /// Completes one Plan only after Runtime verifies complete Goal evidence at the fixed prefix.
@@ -577,6 +617,19 @@ fn plan_transition(
                 vec![PlanTransition::Complete {
                     criteria_complete: true,
                 }],
+            )
+        }
+        PlanRuntimeTransition::FailPlan { reason, evidence } => {
+            require_non_empty(&reason)?;
+            let mut value = mutation(context, definition, expected_state_version, next_version);
+            value.insert("reason".into(), json!(reason));
+            if let Some(evidence) = evidence {
+                value.insert("evidence".into(), content(&evidence));
+            }
+            (
+                "plan.failed",
+                Value::Object(value),
+                vec![PlanTransition::Fail],
             )
         }
     };
