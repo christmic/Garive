@@ -11,8 +11,8 @@ mod input;
 mod view;
 
 use application::{
-    reduce, AppAction, AppModel, BootState, ConversationLandmark, FocusTarget, InspectorVariant,
-    Overlay, TimelineItem, TimelineRole,
+    reduce, AppAction, AppModel, BootState, ConversationLandmark, ExecutionState, FocusTarget,
+    InspectorVariant, Overlay, TimelineItem, TimelineRole,
 };
 use garive_host_client::{SessionSummary, SuspensionView};
 use ratatui::{buffer::Buffer, layout::Rect, style::Modifier};
@@ -410,7 +410,7 @@ fn frozen_composer_is_read_only_in_visual_cursor_and_pointer_surfaces() {
 }
 
 #[test]
-fn screen_reader_names_frozen_composer_without_editing_affordance() {
+fn screen_reader_names_frozen_running_and_ready_composer_contracts() {
     let mut model = AppModel {
         composer_is_frozen: true,
         ..Default::default()
@@ -420,6 +420,12 @@ fn screen_reader_names_frozen_composer_without_editing_affordance() {
         "Composer locked. Draft retained. Editing is unavailable until durable command truth."
     );
     model.composer_is_frozen = false;
+    model.execution = ExecutionState::Following;
+    assert_eq!(
+        view::linear_composer_status(&model),
+        "Current Turn running. Draft retained. Enter reports the boundary; Escape requests cancellation."
+    );
+    model.execution = ExecutionState::Idle;
     assert_eq!(
         view::linear_composer_status(&model),
         "Composer ready. Editing is available."

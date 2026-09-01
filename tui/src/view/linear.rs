@@ -1,4 +1,4 @@
-use crate::application::{AppModel, Overlay};
+use crate::application::{AppModel, ExecutionState, Overlay};
 
 use super::{agent_label, decision_sheet, presentation::HELP_NOTES, primitives::selection_window};
 use crate::input::help_hints;
@@ -8,6 +8,8 @@ const LIST_CAPACITY: usize = 10;
 pub(crate) fn composer_status(model: &AppModel) -> &'static str {
     if model.composer_is_frozen {
         "Composer locked. Draft retained. Editing is unavailable until durable command truth."
+    } else if model.execution == ExecutionState::Following {
+        "Current Turn running. Draft retained. Enter reports the boundary; Escape requests cancellation."
     } else {
         "Composer ready. Editing is available."
     }

@@ -13,6 +13,7 @@ use ratatui::{
 mod activity_stack;
 mod command_suggestions;
 mod composer;
+mod composer_run_rail;
 mod context_line;
 mod conversation;
 mod decision_sheet;
@@ -80,12 +81,12 @@ pub(crate) fn render_cached_with_motion(
         return None;
     }
     let frame = FrameLayout::resolve(model, area);
-    context_line::render(model, theme, motion, frame.context, buffer);
+    context_line::render(model, theme, frame.context, buffer);
     render_conversation(model, theme, motion, frame.transcript, buffer, cache);
     if let Some(area) = frame.inspector {
         inspector::render(model, theme, area, buffer);
     }
-    composer::render(model, palette(theme), frame.composer, buffer);
+    composer::render(model, palette(theme), motion, frame.composer, buffer);
     render_footer(model, theme, frame.hint, buffer);
     command_suggestions::render(model, frame.composer, palette(theme), buffer);
     if let Some(overlay) = model.overlay {

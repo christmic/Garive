@@ -6,7 +6,7 @@ use ratatui::{
 };
 
 use crate::{
-    application::{AppModel, ConnectionState, ExecutionState, FocusTarget},
+    application::{AppModel, ConnectionState, FocusTarget},
     Theme,
 };
 
@@ -44,7 +44,6 @@ enum HintPriority {
     ByteLimit,
     Suggestion,
     Selection,
-    Cancellation,
     Recovery,
 }
 
@@ -136,14 +135,6 @@ fn project(model: &AppModel) -> Option<HintLine> {
             }),
             ConnectionState::Connecting | ConnectionState::Online => {}
         }
-    }
-    if model.execution == ExecutionState::Following {
-        candidates.push(HintLine::Action {
-            priority: HintPriority::Cancellation,
-            key: "Esc",
-            verb: "cancel run",
-            detail: None,
-        });
     }
     if model.composer.has_selection() {
         candidates.push(HintLine::Action {

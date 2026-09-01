@@ -2,7 +2,7 @@
 source: tui/tests/view_snapshots.rs
 expression: "frame(&sessions, Theme::Mono, 100, 24)"
 ---
-  Session 12  ·  Agent                                                               Agent running
+  Session 12  ·  Agent
 
     › Summarize the release plan.
                    ╭ Switch session ────────────────────────────────────────────╮
@@ -23,6 +23,5 @@ expression: "frame(&sessions, Theme::Mono, 100, 24)"
                    ╰────────────────────────────────────────────────────────────╯
 
 
-
+  Agent running ·  Esc cancel Turn
   › Ask a follow-up…
-    Esc cancel run

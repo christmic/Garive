@@ -2,7 +2,7 @@
 source: tui/tests/view_snapshots.rs
 expression: "frame(&palette, Theme::Mono, 160, 28)"
 ---
-                                Session 1  ·  Agent                                                                Agent running
+                                Session 1  ·  Agent
                                            ╭ Command palette · 21 commands · type to filter · ↑/↓ · Enter · Esc ────╮
                                            │    /new                Create session                                  │
                                            │    /sessions           Switch session                                  │
@@ -27,6 +27,5 @@ expression: "frame(&palette, Theme::Mono, 160, 28)"
                                            │  › /quit               Exit safely                                     │
                                            ╰────────────────────────────────────────────────────────────────────────╯
 
-
+                                Agent running ·  Esc cancel Turn
                                 › Ask a follow-up…
-                                  Esc cancel run

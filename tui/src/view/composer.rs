@@ -12,7 +12,7 @@ use crate::{
     input::EditorState,
 };
 
-use super::{safe_text, style::Palette};
+use super::{composer_run_rail, safe_text, style::Palette, MotionFrame};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum ComposerVariant {
@@ -22,10 +22,16 @@ enum ComposerVariant {
     ActionResponse,
 }
 
-pub(super) fn render(model: &AppModel, colors: Palette, area: Rect, buffer: &mut Buffer) {
+pub(super) fn render(
+    model: &AppModel,
+    colors: Palette,
+    motion: MotionFrame,
+    area: Rect,
+    buffer: &mut Buffer,
+) {
     let variant = variant(model);
     let dock = ComposerDock::resolve(area);
-    dock.render_status(variant, colors, buffer);
+    dock.render_status(model, variant, colors, motion, buffer);
     Clear.render(dock.body, buffer);
     buffer.set_style(dock.body, colors.request_surface);
     let marker_style = match variant {
@@ -39,6 +45,8 @@ pub(super) fn render(model: &AppModel, colors: Palette, area: Rect, buffer: &mut
     let text = if model.composer.text().is_empty() {
         let placeholder = if variant == ComposerVariant::Frozen {
             "Draft retained · waiting for durable truth"
+        } else if model.execution == ExecutionState::Following {
+            "Draft while current Turn runs"
         } else {
             "Ask Garive anything  ·  / commands"
         };
@@ -87,7 +95,14 @@ impl ComposerDock {
         }
     }
 
-    fn render_status(self, variant: ComposerVariant, colors: Palette, buffer: &mut Buffer) {
+    fn render_status(
+        self,
+        model: &AppModel,
+        variant: ComposerVariant,
+        colors: Palette,
+        motion: MotionFrame,
+        buffer: &mut Buffer,
+    ) {
         let line = match variant {
             ComposerVariant::Frozen => Some(Line::from(vec![
                 Span::styled(" ! ", colors.warning),
@@ -102,6 +117,8 @@ impl ComposerDock {
         };
         if let Some(line) = line {
             Paragraph::new(line).render(self.status, buffer);
+        } else {
+            composer_run_rail::render(model, colors, motion, self.status, buffer);
         }
     }
 }

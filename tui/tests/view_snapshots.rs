@@ -25,6 +25,9 @@ use unicode_width::UnicodeWidthStr;
 #[test]
 fn responsive_product_frames_match_reviewed_snapshots() {
     let model = product_model();
+    let compact = frame(&model, Theme::Mono, 40, 12);
+    assert_eq!(compact.matches("Agent running").count(), 1);
+    assert!(compact.contains("Esc cancel Turn"));
     insta::assert_snapshot!("compact_40x12", frame(&model, Theme::Mono, 40, 12));
     let mut wrapped = product_model();
     wrapped
@@ -35,6 +38,9 @@ fn responsive_product_frames_match_reviewed_snapshots() {
         "composer_soft_wrap_compact_mono_40x16",
         frame(&wrapped, Theme::Mono, 40, 16)
     );
+    let standard = frame(&model, Theme::Dark, 100, 24);
+    assert_eq!(standard.matches("Agent running").count(), 1);
+    assert!(standard.contains("Esc cancel Turn"));
     insta::assert_snapshot!("standard_100x24", frame(&model, Theme::Dark, 100, 24));
     let activities = activity_stack_model();
     insta::assert_snapshot!(
@@ -53,6 +59,10 @@ fn responsive_product_frames_match_reviewed_snapshots() {
         "activity_stack_compact_mono_40x18",
         frame(&activities, Theme::Mono, 40, 18)
     );
+    let active = frame(&activities, Theme::Mono, 40, 18);
+    assert!(!active.contains("Agent running"));
+    assert!(active.contains("Reading file"));
+    assert!(active.contains("Esc cancel Turn"));
     let completed = frame(&completed_activity_stack_model(), Theme::Mono, 40, 18);
     assert!(completed.contains("✓ Read file · +2"));
     insta::assert_snapshot!("activity_stack_completed_compact_mono_40x18", completed);

@@ -9,7 +9,7 @@ fn composer_dock_uses_one_accent_marker_without_a_persistent_frame() {
     let area = Rect::new(0, 0, 24, 3);
     let mut buffer = Buffer::empty(area);
 
-    render(&model, colors, area, &mut buffer);
+    render(&model, colors, MotionFrame::reduced(), area, &mut buffer);
 
     let marker = &buffer[(0, 1)];
     assert_eq!(marker.symbol(), "›");
@@ -19,6 +19,35 @@ fn composer_dock_uses_one_accent_marker_without_a_persistent_frame() {
     assert!((0..area.height).all(|y| (0..area.width).all(|x| {
         !matches!(buffer[(x, y)].symbol(), "╭" | "╮" | "╰" | "╯" | "│" | "─")
     })));
+}
+
+#[test]
+fn running_composer_names_the_retained_draft_and_keeps_cancel_nearby() {
+    let model = AppModel {
+        execution: ExecutionState::Following,
+        ..Default::default()
+    };
+    let area = Rect::new(0, 0, 40, 3);
+    let mut buffer = Buffer::empty(area);
+
+    render(
+        &model,
+        palette(Theme::Mono),
+        MotionFrame::reduced(),
+        area,
+        &mut buffer,
+    );
+
+    let rendered = (0..area.height)
+        .map(|y| {
+            (0..area.width)
+                .map(|x| buffer[(x, y)].symbol())
+                .collect::<String>()
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    assert!(rendered.contains("Agent running ·  Esc cancel Turn"));
+    assert!(rendered.contains("Draft while current Turn runs"));
 }
 
 #[test]

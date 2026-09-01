@@ -2,7 +2,7 @@
 source: tui/tests/view_snapshots.rs
 expression: rendered
 ---
-Session 1                              Agent running
+Session 1
 
   › Summarize the release plan.
     ✓ Agent action · completed
@@ -17,6 +17,5 @@ Session 1                              Agent running
 
 
 
-
+Agent running ·  Esc cancel Turn
 › Ask a follow-up…
-  Esc cancel run

@@ -18,9 +18,9 @@ Current session
 
 
 
-
+ Esc cancel Turn
 › A retained follow-up draft
-  Esc cancel run
+
 
 ===== first presented delta =====
 Current session
@@ -38,9 +38,9 @@ Current session
 
 
 
-
+ Esc cancel Turn
 › A retained follow-up draft
-  Esc cancel run
+
 
 ===== second delta with activity =====
 Current session
@@ -58,9 +58,9 @@ Current session
 
 
 
-
+ Esc cancel Turn
 › A retained follow-up draft
-  Esc cancel run
+
 
 ===== overlay while streaming =====
 ╭ Command palette ─────────────────────╮
@@ -98,9 +98,9 @@ Current session
 
 
 
-
+ Esc cancel Turn
 › A retained follow-up draft
-  Esc cancel run
+
 
 ===== finalizing =====
 Current session
@@ -118,9 +118,9 @@ Current session
 
 
 
-
+ Esc cancel Turn
 › A retained follow-up draft
-  Esc cancel run
+
 
 ===== ended awaiting durable =====
 Current session
@@ -138,9 +138,9 @@ Current session
 
 
 
-
+ Esc cancel Turn
 › A retained follow-up draft
-  Esc cancel run
+
 
 ===== durable takeover =====
 Current session

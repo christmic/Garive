@@ -2,7 +2,7 @@
 source: tui/tests/view_snapshots.rs
 expression: "frame(&turns, Theme::Mono, 100, 24)"
 ---
-  Session 1  ·  Agent                                                                Agent running
+  Session 1  ·  Agent
 
               ╭ Jump to a Turn ──────────────────────────────────────────────────────╮
               │                                                                      │
@@ -23,6 +23,5 @@ expression: "frame(&turns, Theme::Mono, 100, 24)"
               │                                                                      │
               ╰──────────────────────────────────────────────────────────────────────╯
 
-
+  Agent running ·  Esc cancel Turn
   › Ask a follow-up…
-    Esc cancel run

@@ -2,7 +2,7 @@
 source: tui/tests/view_snapshots.rs
 expression: "frame(&model, Theme::Mono, 40, 12)"
 ---
-Session 1                  Agent running
+Session 1
   ◆ Garive
     ## Release plan
 
@@ -11,6 +11,5 @@ Session 1                  Agent running
 
     cargo test passes.
 
-
+Agent running ·  Esc cancel Turn
 › Ask a follow-up…
-  Esc cancel run
