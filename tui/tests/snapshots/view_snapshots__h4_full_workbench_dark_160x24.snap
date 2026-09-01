@@ -3,11 +3,9 @@ source: tui/tests/view_snapshots.rs
 expression: wide
 ---
 ===== preparing =====
-                                Current session  ·  Garive
 
-                                  › Show every verified streaming stage.
-                                  ◆ Garive · Preparing context
-
+  › Show every verified streaming stage.
+  • Preparing context
 
 
 
@@ -24,17 +22,17 @@ expression: wide
 
 
 
-                                 Esc cancel Turn
-                                › A retained follow-up draft
+
+
+ Esc interrupt
+› A retained follow-up draft
 
 
 ===== first presented delta =====
-                                Current session  ·  Garive
 
-                                  › Show every verified streaming stage.
-                                  ◆ Garive · Preparing context
-                                    The first visible▍
-
+  › Show every verified streaming stage.
+  • Preparing context
+    The first visible▍
 
 
 
@@ -50,18 +48,18 @@ expression: wide
 
 
 
-                                 Esc cancel Turn
-                                › A retained follow-up draft
+
+
+ Esc interrupt
+› A retained follow-up draft
 
 
 ===== second delta with activity =====
-                                Current session  ·  Garive
 
-                                  › Show every verified streaming stage.
-                                    ●  Verifying streamed output
-                                  ◆ Garive · Generating response
-                                    The first visible streaming frame arrives.▍
-
+  › Show every verified streaming stage.
+    ●  Verifying streamed output
+  • Writing…
+    The first visible streaming frame arrives.▍
 
 
 
@@ -76,15 +74,16 @@ expression: wide
 
 
 
-                                 Esc cancel Turn
-                                › A retained follow-up draft
+
+
+ Esc interrupt
+› A retained follow-up draft
 
 
 ===== overlay while streaming =====
-                                Current session  ·  Garive
                                            ╭ Command palette ───────────────────────────────────────────────────────╮
                                            │  Search  type to search                                                │
-                                           │  21 commands · showing 1–14 · ↓ 7 more                                 │
+                                           │  21 commands · showing 1–15 · ↓ 6 more                                 │
                                            │  › /new                unavailable · no Agent is installed             │
                                            │    /sessions           Switch session                                  │
                                            │    /jump               unavailable · fewer than two Turns are loaded   │
@@ -99,21 +98,20 @@ expression: wide
                                            │    /theme light        Use light theme                                 │
                                            │    /theme mono         Use mono theme                                  │
                                            │    /mouse auto         Keep terminal selection and scrolling           │
+                                           │    /mouse on           Enable mouse capture now                        │
                                            │                                                                        │
                                            │    ↑/↓ select   Home/End edge   Enter run   Esc close                  │
                                            ╰────────────────────────────────────────────────────────────────────────╯
 
-                                › A retained follow-up draft
+› A retained follow-up draft
 
 
 ===== stream restored after overlay =====
-                                Current session  ·  Garive
 
-                                  › Show every verified streaming stage.
-                                    ●  Verifying streamed output
-                                  ◆ Garive · Generating response
-                                    The first visible streaming frame arrives.▍
-
+  › Show every verified streaming stage.
+    ●  Verifying streamed output
+  • Writing…
+    The first visible streaming frame arrives.▍
 
 
 
@@ -128,18 +126,18 @@ expression: wide
 
 
 
-                                 Esc cancel Turn
-                                › A retained follow-up draft
+
+
+ Esc interrupt
+› A retained follow-up draft
 
 
 ===== finalizing =====
-                                Current session  ·  Garive
 
-                                  › Show every verified streaming stage.
-                                    ●  Verifying streamed output
-                                  ◆ Garive · Finalizing response
-                                    The first visible streaming frame arrives.▍
-
+  › Show every verified streaming stage.
+    ●  Verifying streamed output
+  • Finishing…
+    The first visible streaming frame arrives.▍
 
 
 
@@ -154,18 +152,18 @@ expression: wide
 
 
 
-                                 Esc cancel Turn
-                                › A retained follow-up draft
+
+
+ Esc interrupt
+› A retained follow-up draft
 
 
 ===== ended awaiting durable =====
-                                Current session  ·  Garive
 
-                                  › Show every verified streaming stage.
-                                    ●  Verifying streamed output
-                                  ◆ Garive · Waiting for durable result
-                                    The first visible streaming frame arrives.
-
+  › Show every verified streaming stage.
+    ●  Verifying streamed output
+  • Waiting for durable result
+    The first visible streaming frame arrives.
 
 
 
@@ -180,17 +178,17 @@ expression: wide
 
 
 
-                                 Esc cancel Turn
-                                › A retained follow-up draft
+
+
+ Esc interrupt
+› A retained follow-up draft
 
 
 ===== durable takeover =====
-                                Current session  ·  Garive
 
-                                  › Show every verified streaming stage.
-                                    ●  Verifying streamed output
-                                  ◆ Garive
-                                    Saved streaming answer.
+  › Show every verified streaming stage.
+    ●  Verifying streamed output
+  • Saved streaming answer.
 
 
 
@@ -207,4 +205,6 @@ expression: wide
 
 
 
-                                › A retained follow-up draft
+
+
+› A retained follow-up draft

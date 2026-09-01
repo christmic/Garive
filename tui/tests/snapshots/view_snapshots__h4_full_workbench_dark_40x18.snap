@@ -3,11 +3,10 @@ source: tui/tests/view_snapshots.rs
 expression: compact
 ---
 ===== preparing =====
-Current session
 
   › Show every verified streaming
     stage.
-  ◆ Garive · Preparing context
+  • Preparing context
 
 
 
@@ -18,16 +17,16 @@ Current session
 
 
 
- Esc cancel Turn
+
+ Esc interrupt
 › A retained follow-up draft
 
 
 ===== first presented delta =====
-Current session
 
   › Show every verified streaming
     stage.
-  ◆ Garive · Preparing context
+  • Preparing context
     The first visible▍
 
 
@@ -38,17 +37,17 @@ Current session
 
 
 
- Esc cancel Turn
+
+ Esc interrupt
 › A retained follow-up draft
 
 
 ===== second delta with activity =====
-Current session
 
   › Show every verified streaming
     stage.
     ● Verifying streamed output
-  ◆ Garive · Generating response
+  • Writing…
     The first visible streaming frame
     arrives.▍
 
@@ -58,7 +57,8 @@ Current session
 
 
 
- Esc cancel Turn
+
+ Esc interrupt
 › A retained follow-up draft
 
 
@@ -83,12 +83,11 @@ Current session
 ╰──────────────────────────────────────╯
 
 ===== stream restored after overlay =====
-Current session
 
   › Show every verified streaming
     stage.
     ● Verifying streamed output
-  ◆ Garive · Generating response
+  • Writing…
     The first visible streaming frame
     arrives.▍
 
@@ -98,17 +97,17 @@ Current session
 
 
 
- Esc cancel Turn
+
+ Esc interrupt
 › A retained follow-up draft
 
 
 ===== finalizing =====
-Current session
 
   › Show every verified streaming
     stage.
     ● Verifying streamed output
-  ◆ Garive · Finalizing response
+  • Finishing…
     The first visible streaming frame
     arrives.▍
 
@@ -118,17 +117,17 @@ Current session
 
 
 
- Esc cancel Turn
+
+ Esc interrupt
 › A retained follow-up draft
 
 
 ===== ended awaiting durable =====
-Current session
 
   › Show every verified streaming
     stage.
     ● Verifying streamed output
-  ◆ Garive · Awaiting saved result
+  • Awaiting saved result
     The first visible streaming frame
     arrives.
 
@@ -138,18 +137,19 @@ Current session
 
 
 
- Esc cancel Turn
+
+ Esc interrupt
 › A retained follow-up draft
 
 
 ===== durable takeover =====
-Current session
 
   › Show every verified streaming
     stage.
     ● Verifying streamed output
-  ◆ Garive
-    Saved streaming answer.
+  • Saved streaming answer.
+
+
 
 
 
