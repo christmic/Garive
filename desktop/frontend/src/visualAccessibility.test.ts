@@ -165,6 +165,9 @@ describe("Desktop visual accessibility contract", () => {
     expect(CSS).toContain(".setup-grid { display: grid; grid-template-columns: 1fr 1fr;");
     expect(CSS).toContain(".setup-step { min-width: 0;");
     expect(CSS).toContain("@keyframes setup-step-enter");
+    expect(CSS).toContain(".choice-options { display: grid; grid-template-columns: repeat(auto-fit, minmax(96px, 1fr));");
+    expect(CSS).toContain('.choice-option[aria-pressed="true"]');
+    expect(CSS).not.toContain(".field select");
     expect(CSS).toContain(".approval-card { display: grid; grid-template-columns: 24px minmax(0,1fr);");
     expect(CSS).toContain("border-left-color: var(--state-attention)");
     expect(CSS).toContain(".approval-foot { display: flex; align-items: center; justify-content: space-between;");

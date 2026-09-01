@@ -39,6 +39,8 @@ describe("secure Desktop setup", () => {
     render(<SetupFlow api={api} nonce={() => "nonce-1"} />);
 
     await screen.findByRole("heading", { name: "Configure Garive" });
+    expect(screen.queryByRole("combobox")).toBeNull();
+    expect(screen.getByRole("button", { name: "balanced" }).getAttribute("aria-pressed")).toBe("true");
     fireEvent.change(screen.getByLabelText("Model target"), { target: { value: "target-a" } });
     fireEvent.change(screen.getByLabelText("Model ID"), { target: { value: "model-a" } });
     expect(screen.queryByLabelText("Deployment")).toBeNull();

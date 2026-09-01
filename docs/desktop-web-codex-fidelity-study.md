@@ -1262,6 +1262,29 @@ the selected current row at 1280×720. A 981×720 four-state queue keeps attenti
 running, failed/review and completed markers aligned without sacrificing title
 ellipsis or changing the quiet selected surface.
 
+### XLII. Setup choices belong to the product surface
+
+Installed `onboarding-page-CHw3TEaW.js` renders its direct choices as product
+buttons, exposes selection through `aria-pressed` and supplies an explicit
+`focus-visible:outline-2 ... outline-ring` contract. The source contains no
+evidence for delegating these high-salience onboarding decisions to a browser
+native select. This is a control-level source fact, separate from Garive's
+configuration vocabulary.
+
+Garive's Setup previously left two native select islands inside an otherwise
+owned Desktop surface. They now share a reusable `ChoicePicker`: options and
+initial values still come only from the Host `SetupCatalogue`, selected state is
+pressed state, and Arrow keys plus Home/End move a single roving tab stop. The
+current catalogue exposes one preset and one profile, so both decisions remain
+directly visible instead of being hidden in a speculative popup. Desktop and
+Web use the same component, DOM and visual tokens.
+
+Live Web evidence at 1280×720 shows the two choice groups aligned to the 36px
+input grid with no combobox in the semantic tree. Continue moves focus to the
+first Runtime-identity field; Back preserves the entered `token9` target and
+`gpt-5.6` model while retaining the pressed catalogue values. The 480×720 pass
+keeps the progressive flow operable without reintroducing native form chrome.
+
 ## Gate 1 — Codex fidelity
 
 This gate passes only when both Desktop and Web show:

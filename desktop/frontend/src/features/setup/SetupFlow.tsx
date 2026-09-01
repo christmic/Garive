@@ -4,6 +4,7 @@ import {
   type SetupCatalogue, type SetupInput, type SetupPlan,
 } from "../../ipc/host";
 import { createTranslator, type MessageKey, type Translator } from "../../i18n";
+import { ChoicePicker } from "../../ui/ChoicePicker";
 
 type Stage = "details" | "review" | "ready";
 type DetailsStep = "connection" | "runtime";
@@ -161,8 +162,10 @@ export function SetupFlow({
       if (detailsStep === "connection") advanceDetails(); else void review(); }}>
       {detailsStep === "connection" ? <fieldset className="setup-step">
         <legend>{t("setup.connect.connection")}</legend><div className="setup-grid">
-          <Select label={t("setup.field.preset")} value={values.preset} change={(preset) => update("preset", preset)} options={catalogue.presets.map((item) => [item.preset_id, label(item.display_name_key)])} />
-          <Select label={t("setup.field.profile")} value={values.profile} change={(profile) => update("profile", profile)} options={catalogue.profiles.map((item) => [item.profile_id, label(item.display_name_key)])} />
+          <ChoicePicker label={t("setup.field.preset")} value={values.preset}
+            onChange={(preset) => update("preset", preset)} options={catalogue.presets.map((item) => [item.preset_id, label(item.display_name_key)])} />
+          <ChoicePicker label={t("setup.field.profile")} value={values.profile}
+            onChange={(profile) => update("profile", profile)} options={catalogue.profiles.map((item) => [item.profile_id, label(item.display_name_key)])} />
           <Field label={t("setup.field.target")} value={values.target} change={(value) => update("target", value)} />
           <Field label={t("setup.field.model")} value={values.model} change={(value) => update("model", value)} />
         </div><button className="disclosure" type="button" aria-expanded={advanced} onClick={() => setAdvanced(!advanced)}>{t("setup.advanced")}</button>
@@ -197,9 +200,6 @@ export function SetupFlow({
 
 function Field({ label: name, value = "", change, inputRef }: { label: string; value?: string; change: (value: string) => void; inputRef?: Ref<HTMLInputElement> }) {
   return <label className="field">{name}<input ref={inputRef} value={value} onChange={(event) => change(event.target.value)} autoComplete="off" /></label>;
-}
-function Select({ label: name, value = "", change, options }: { label: string; value?: string; change: (value: string) => void; options: readonly (readonly [string, string])[] }) {
-  return <label className="field">{name}<select value={value} onChange={(event) => change(event.target.value)}>{options.map(([id, copy]) => <option key={id} value={id}>{copy}</option>)}</select></label>;
 }
 function Summary({ name, value }: { name: string; value: string }) { return <div><dt>{name}</dt><dd>{value}</dd></div>; }
 function utf8Bytes(value: string) { return new TextEncoder().encode(value).byteLength; }
