@@ -225,4 +225,3 @@ G2 is implemented only when tests prove:
 
 Until this evidence is green, G1/PL1 remain partial and self-evolution remains
 blocked from using them as an authority source.
-

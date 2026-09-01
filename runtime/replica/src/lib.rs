@@ -21,6 +21,7 @@ mod effect_batch_sqlite;
 mod execution_work_binding;
 mod executor_router;
 mod goal_evidence;
+mod goal_plan_coordination;
 mod goal_recovery;
 mod goal_runtime;
 mod live_host;
@@ -129,6 +130,9 @@ pub use effect_batch_runtime::{
 pub use effect_batch_sqlite::SqliteEffectBatchPublisher;
 pub use execution_work_binding::{reconstruct_execution_work_binding, ExecutionWorkBinding};
 pub use executor_router::{ExecutorRoute, RoutedExecutorPort};
+pub use goal_plan_coordination::{
+    plan_activate_goal_from_authoritative_plan, GoalPlanCoordinationError,
+};
 pub use goal_recovery::reconstruct_goal;
 pub use goal_runtime::{
     commit_goal_command, plan_create_goal, plan_goal_transition, GoalCommandContext,
