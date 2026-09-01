@@ -1,7 +1,10 @@
 use crossterm::event::{KeyCode, KeyEvent};
 
 use crate::{
-    application::{AppAction, FocusTarget, InspectorActivation, InspectorVariant, Overlay},
+    application::{
+        AppAction, FocusTarget, InspectorActivation, InspectorVariant, Overlay,
+        WIDE_INSPECTOR_MIN_WIDTH,
+    },
     input::InspectorCommand,
 };
 
@@ -76,7 +79,7 @@ pub(super) fn activate(state: &mut RuntimeState) {
         InspectorActivation::None => {}
         InspectorActivation::Turn { started_position } => {
             if state.model.jump_to_turn_position(started_position) {
-                if state.model.terminal_size.width < 120 {
+                if state.model.terminal_size.width < WIDE_INSPECTOR_MIN_WIDTH {
                     state.model.close_inspector();
                 } else {
                     state.dispatch(AppAction::FocusChanged(FocusTarget::Conversation));

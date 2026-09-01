@@ -291,13 +291,13 @@ fn responsive_column_boundaries_match_reviewed_snapshots() {
 #[test]
 fn inspector_geometry_and_themes_match_reviewed_snapshots() {
     for (theme, name) in [
-        (Theme::Dark, "inspector_wide_dark_120x18"),
-        (Theme::Light, "inspector_wide_light_120x18"),
-        (Theme::Mono, "inspector_wide_mono_120x18"),
+        (Theme::Dark, "inspector_overlay_dark_120x18"),
+        (Theme::Light, "inspector_overlay_light_120x18"),
+        (Theme::Mono, "inspector_overlay_mono_120x18"),
     ] {
         insta::assert_snapshot!(name, inspector_frame(theme, 120));
     }
-    for (width, title_column) in [(119, 30), (120, 90), (128, 98), (129, 99)] {
+    for (width, title_column) in [(119, 30), (120, 31), (128, 35), (129, 99)] {
         let rendered = inspector_frame(Theme::Mono, width);
         let actual = rendered.lines().find_map(|line| {
             line.find("Inspector")

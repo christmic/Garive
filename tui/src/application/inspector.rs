@@ -3,6 +3,10 @@
 use super::{AppModel, ConnectionState, ExecutionState, FocusTarget, Overlay, TimelineTone};
 use crate::input::supports_response_schema;
 
+/// Minimum terminal width that fits the 96-column transcript, one-column gap,
+/// and the 32-column Inspector without compressing the reading surface.
+pub(crate) const WIDE_INSPECTOR_MIN_WIDTH: u16 = 129;
+
 impl ConnectionState {
     pub(crate) const fn reconnect_attempt_limit() -> u32 {
         5
@@ -146,7 +150,7 @@ impl AppModel {
             return;
         }
         match self.terminal_size.width {
-            120.. => {
+            WIDE_INSPECTOR_MIN_WIDTH.. => {
                 if self.overlay == Some(Overlay::Inspector) {
                     self.overlay = None;
                 }
@@ -154,7 +158,7 @@ impl AppModel {
                     self.focus = FocusTarget::Inspector;
                 }
             }
-            40..=119 => {
+            40..WIDE_INSPECTOR_MIN_WIDTH => {
                 if self.overlay.is_none() || self.overlay == Some(Overlay::Inspector) {
                     self.inspector.focus_owned = true;
                     self.overlay = Some(Overlay::Inspector);
@@ -421,5 +425,31 @@ fn execution_tone(value: ExecutionState) -> InspectorTone {
         ExecutionState::Following => InspectorTone::Active,
         ExecutionState::Suspended => InspectorTone::Warning,
         ExecutionState::Failed => InspectorTone::Danger,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::application::TerminalSize;
+
+    #[test]
+    fn inspector_switches_surface_at_the_non_compressing_boundary() {
+        let mut model = AppModel {
+            terminal_size: TerminalSize {
+                width: WIDE_INSPECTOR_MIN_WIDTH - 1,
+                height: 18,
+            },
+            ..Default::default()
+        };
+
+        model.open_inspector(InspectorVariant::Activity);
+        assert_eq!(model.overlay, Some(Overlay::Inspector));
+        assert_eq!(model.focus, FocusTarget::Overlay);
+
+        model.terminal_size.width = WIDE_INSPECTOR_MIN_WIDTH;
+        model.reconcile_inspector_surface();
+        assert_eq!(model.overlay, None);
+        assert_eq!(model.focus, FocusTarget::Inspector);
     }
 }

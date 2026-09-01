@@ -25,6 +25,7 @@ pub(crate) use effect::{
 };
 pub(crate) use inspector::{
     InspectorActivation, InspectorEntry, InspectorState, InspectorTone, InspectorVariant,
+    WIDE_INSPECTOR_MIN_WIDTH,
 };
 pub(crate) use live_answer::{
     LiveAnswer, LiveAnswerAvailability, LiveAnswerExpectation, LiveAnswerPhase,

@@ -1,5 +1,5 @@
 use crate::{
-    application::{AppAction, FocusTarget, Overlay},
+    application::{AppAction, FocusTarget, Overlay, WIDE_INSPECTOR_MIN_WIDTH},
     input::{parse_command, CommandParse, COMMAND_PALETTE},
 };
 
@@ -21,7 +21,7 @@ fn next_focus(
     backwards: bool,
     inspector_open: bool,
 ) -> FocusTarget {
-    if width >= 120 && inspector_open {
+    if width >= WIDE_INSPECTOR_MIN_WIDTH && inspector_open {
         return match (backwards, current) {
             (false, FocusTarget::Composer) => FocusTarget::Conversation,
             (false, FocusTarget::Conversation) => FocusTarget::Inspector,
@@ -231,27 +231,27 @@ mod tests {
     #[test]
     fn focus_cycle_adds_wide_inspector_without_changing_existing_order() {
         assert_eq!(
-            next_focus(120, FocusTarget::Composer, false, true),
+            next_focus(129, FocusTarget::Composer, false, true),
             FocusTarget::Conversation
         );
         assert_eq!(
-            next_focus(120, FocusTarget::Conversation, false, true),
+            next_focus(129, FocusTarget::Conversation, false, true),
             FocusTarget::Inspector
         );
         assert_eq!(
-            next_focus(120, FocusTarget::Inspector, false, true),
+            next_focus(129, FocusTarget::Inspector, false, true),
             FocusTarget::Composer
         );
         assert_eq!(
-            next_focus(120, FocusTarget::Composer, true, true),
+            next_focus(129, FocusTarget::Composer, true, true),
             FocusTarget::Inspector
         );
         assert_eq!(
-            next_focus(120, FocusTarget::Inspector, true, true),
+            next_focus(129, FocusTarget::Inspector, true, true),
             FocusTarget::Conversation
         );
         assert_eq!(
-            next_focus(120, FocusTarget::Conversation, true, true),
+            next_focus(129, FocusTarget::Conversation, true, true),
             FocusTarget::Composer
         );
         assert_eq!(
@@ -259,11 +259,15 @@ mod tests {
             FocusTarget::Conversation
         );
         assert_eq!(
-            next_focus(120, FocusTarget::Conversation, false, false),
+            next_focus(129, FocusTarget::Conversation, false, false),
             FocusTarget::Composer
         );
         assert_eq!(
             next_focus(80, FocusTarget::Conversation, true, true),
+            FocusTarget::Composer
+        );
+        assert_eq!(
+            next_focus(128, FocusTarget::Conversation, false, true),
             FocusTarget::Composer
         );
     }
