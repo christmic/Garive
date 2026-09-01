@@ -4,7 +4,7 @@ use std::{
     path::{Path, PathBuf},
     process::Command,
     sync::{
-        atomic::{AtomicUsize, Ordering},
+        atomic::{AtomicBool, AtomicUsize, Ordering},
         Arc,
     },
     thread,
@@ -24,10 +24,25 @@ use garive_runtime::{
     LiveOutputLimits, SqliteLedger, TurnDispatchError, TurnDispatcher,
 };
 
-struct Clock;
+struct Clock {
+    gate_cancel: Arc<AtomicBool>,
+    cancel_admit_release: PathBuf,
+}
 
 impl HostClock for Clock {
     fn recorded_at(&self) -> String {
+        if self.gate_cancel.swap(false, Ordering::SeqCst) {
+            for _ in 0..1_000 {
+                if self.cancel_admit_release.exists() {
+                    break;
+                }
+                thread::sleep(Duration::from_millis(10));
+            }
+            assert!(
+                self.cancel_admit_release.exists(),
+                "frozen-composer probe never released Host admission"
+            );
+        }
         "2026-08-30T00:00:00Z".into()
     }
 }
@@ -346,6 +361,8 @@ async fn shipping_tui_round_trips_through_production_sqlite_runtime() {
     for _ in 0..2 {
         let temporary = tempfile::tempdir().unwrap();
         let database = temporary.path().join("runtime.sqlite3");
+        let cancel_admit_release = temporary.path().join("cancel-admit-release");
+        let gate_cancel = Arc::new(AtomicBool::new(false));
         let live_output = LiveOutputHub::new(LiveOutputLimits {
             max_active_executions: 4,
             max_preview_bytes: 1_024 * 1_024,
@@ -363,7 +380,10 @@ async fn shipping_tui_round_trips_through_production_sqlite_runtime() {
                 event_poll_interval_ms: 10,
                 activity: None,
             },
-            Arc::new(Clock),
+            Arc::new(Clock {
+                gate_cancel: gate_cancel.clone(),
+                cancel_admit_release: cancel_admit_release.clone(),
+            }),
             Arc::new(CompletingDispatcher {
                 database: database.clone(),
                 calls: AtomicUsize::new(0),
@@ -388,6 +408,7 @@ async fn shipping_tui_round_trips_through_production_sqlite_runtime() {
         let cancel_monitor = thread::spawn({
             let host = host.clone();
             let database = database.clone();
+            let gate_cancel = gate_cancel.clone();
             let state = state.clone();
             let cancel_ready = cancel_ready.clone();
             let cancel_stopped = cancel_stopped.clone();
@@ -412,6 +433,7 @@ async fn shipping_tui_round_trips_through_production_sqlite_runtime() {
                     let pending_is_empty = fs::read_dir(state.join("pending"))
                         .is_ok_and(|mut entries| entries.next().is_none());
                     if durably_running && pending_is_empty {
+                        gate_cancel.store(true, Ordering::SeqCst);
                         fs::write(&cancel_ready, b"ready").unwrap();
                         break;
                     }
@@ -447,7 +469,9 @@ async fn shipping_tui_round_trips_through_production_sqlite_runtime() {
             address,
             &state,
             &first_log,
+            &cancel_ready,
             &cancel_stopped,
+            &cancel_admit_release,
             false
         ));
         cancel_monitor.join().unwrap();
@@ -554,7 +578,9 @@ async fn shipping_tui_round_trips_through_production_sqlite_runtime() {
             address,
             &state,
             &restart_log,
+            &cancel_ready,
             &cancel_stopped,
+            &cancel_admit_release,
             true
         ));
         let restarted = fs::read_to_string(restart_log).unwrap();
@@ -578,7 +604,9 @@ fn run_expect(
     address: SocketAddr,
     state: &Path,
     log: &Path,
+    cancel_ready: &Path,
     cancel_stopped: &Path,
+    cancel_admit_release: &Path,
     restart: bool,
 ) -> bool {
     let script = if restart {
@@ -632,14 +660,22 @@ fn run_expect(
             expect "answer after continuation"
             send "cancel this turn\r"
             expect "Online · Running"
+            set attempts 0
+            while {![file exists $env(GARIVE_CANCEL_READY)]} {
+                after 25
+                incr attempts
+                if {$attempts >= 400} { exit 55 }
+            }
             send "retained draft"
             expect "retained draft"
             send "\033"
-            expect "Draft locked"
-            send "BLOCKED"
+            expect "Cancelling"
+            send -- "\033\[200~BLOCKED\033\[201~"
+            expect "This draft is frozen until the pending command reaches durable truth."
             send -- "\033\[<0;5;22M\033\[<32;8;22M\033\[<0;8;22m"
-            after 100
-            expect "cancel this turn"
+            after 1000
+            set release [open $env(GARIVE_CANCEL_ADMIT_RELEASE) w]
+            close $release
             set attempts 0
             while {![file exists $env(GARIVE_CANCEL_STOPPED)]} {
                 after 25
@@ -673,7 +709,9 @@ fn run_expect(
         .env("GARIVE_TUI_HOST", format!("http://{address}/"))
         .env("GARIVE_TUI_LOG", log)
         .env("GARIVE_TUI_STATE", state)
+        .env("GARIVE_CANCEL_READY", cancel_ready)
         .env("GARIVE_CANCEL_STOPPED", cancel_stopped)
+        .env("GARIVE_CANCEL_ADMIT_RELEASE", cancel_admit_release)
         .args(["-c", script])
         .status()
         .unwrap()
