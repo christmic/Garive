@@ -190,12 +190,15 @@ dashboard pane or expose tool arguments, raw paths, provider values, or hidden
 reasoning. State always has a semantic word or glyph in addition to color.
 
 `LiveAnswer` shares the Agent answer measure but does not masquerade as a
-durable cell. Its received source is partitioned into a monotonic stable
-Markdown block prefix and one mutable tail. The stable prefix keeps its parsed
-presentation; only the tail reparses as H4 deltas arrive. An active available
-preview ends with `LiveCaret`. Unavailable preview shows one muted line and no
-partial suffix. The H1/H2 committed answer atomically replaces the complete
-live component without a transition card or duplicate answer.
+durable cell. Its received source is partitioned before the final top-level
+Markdown block, leaving one structurally stable prefix and one mutable tail.
+Loose lists, block quotes, tables, setext headings, and fences therefore remain
+whole while they grow. A reference definition disables the split because it
+may change links in earlier source. The stable prefix keeps its parsed
+presentation; only the tail reparses otherwise. An active available preview
+ends with `LiveCaret`. Unavailable preview shows one muted line and no partial
+suffix. The H1/H2 committed answer atomically replaces the complete live
+component without a transition card or duplicate answer.
 
 ## Layout and degradation
 

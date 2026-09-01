@@ -1,4 +1,5 @@
 use garive_host_client::{LiveOutputEvent, LiveOutputEventKind};
+use pulldown_cmark::{Event as MarkdownEvent, Options, Parser};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct LiveAnswerKey {
@@ -124,19 +125,12 @@ impl LiveMarkdownBuffer {
     }
 
     fn update(&mut self, text: &str) {
-        if let Some(remainder) = text.strip_prefix(&self.stable_prefix) {
-            self.mutable_tail.clear();
-            self.mutable_tail.push_str(remainder);
-        } else {
-            self.stable_prefix.clear();
-            self.mutable_tail.clear();
-            self.mutable_tail.push_str(text);
-        }
-        let boundary = stable_markdown_boundary(&self.mutable_tail);
-        if boundary > 0 {
-            self.stable_prefix.push_str(&self.mutable_tail[..boundary]);
-            self.mutable_tail.drain(..boundary);
-        }
+        let boundary = stable_markdown_boundary(text);
+        let (stable, tail) = text.split_at(boundary);
+        self.stable_prefix.clear();
+        self.stable_prefix.push_str(stable);
+        self.mutable_tail.clear();
+        self.mutable_tail.push_str(tail);
     }
 
     fn clear(&mut self) {
@@ -367,39 +361,28 @@ impl LiveAnswerProjection {
 }
 
 fn stable_markdown_boundary(source: &str) -> usize {
-    let mut fence = None;
-    let mut boundary = 0;
-    let mut offset = 0;
-    for line in source.split_inclusive('\n') {
-        let content = line.trim_end_matches(['\r', '\n']);
-        if let Some((marker, width)) = markdown_fence(content) {
-            match fence {
-                Some((open_marker, open_width)) if marker == open_marker && width >= open_width => {
-                    fence = None;
+    let options =
+        Options::ENABLE_STRIKETHROUGH | Options::ENABLE_TABLES | Options::ENABLE_TASKLISTS;
+    let parser = Parser::new_ext(source, options);
+    if parser.reference_definitions().iter().next().is_some() {
+        return 0;
+    }
+    let mut depth = 0_usize;
+    let mut latest_top_level = 0;
+    for (event, range) in parser.into_offset_iter() {
+        match event {
+            MarkdownEvent::Start(_) => {
+                if depth == 0 {
+                    latest_top_level = range.start;
                 }
-                None => fence = Some((marker, width)),
-                _ => {}
+                depth = depth.saturating_add(1);
             }
+            MarkdownEvent::End(_) => depth = depth.saturating_sub(1),
+            MarkdownEvent::Rule if depth == 0 => latest_top_level = range.start,
+            _ => {}
         }
-        offset += line.len();
-        if fence.is_none() && content.trim().is_empty() {
-            boundary = offset;
-        }
     }
-    boundary
-}
-
-fn markdown_fence(line: &str) -> Option<(u8, usize)> {
-    let content = line.trim_start_matches(' ');
-    if line.len().saturating_sub(content.len()) > 3 {
-        return None;
-    }
-    let marker = *content.as_bytes().first()?;
-    if !matches!(marker, b'`' | b'~') {
-        return None;
-    }
-    let width = content.bytes().take_while(|value| *value == marker).count();
-    (width >= 3).then_some((marker, width))
+    latest_top_level
 }
 
 fn is_initial_event(event: &LiveOutputEvent) -> bool {

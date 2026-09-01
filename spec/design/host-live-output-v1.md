@@ -248,7 +248,8 @@ forces follow mode.
   cancellation, and independence from the H1 cursor;
 - reducer/render tests prove snapshot replace, delta append, unavailable clear,
   late-event rejection, durable final replacement, resize, scroll detachment,
-  reduced motion, and Unicode Markdown boundaries;
+  reduced motion, Unicode Markdown boundaries, top-level block holdback, and
+  late reference-definition re-rendering;
 - macOS PTY evidence records first delta, at least two intermediate frames,
   final committed frame, and restored terminal state from the shipping binary.
 
