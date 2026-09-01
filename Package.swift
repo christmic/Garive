@@ -21,5 +21,9 @@ let package = Package(
                 .plugin(name: "SwiftProtobufPlugin", package: "swift-protobuf"),
             ]
         ),
+        .testTarget(
+            name: "GariveProcessProtocolTests",
+            dependencies: ["GariveProcessProtocol"]
+        ),
     ]
 )
