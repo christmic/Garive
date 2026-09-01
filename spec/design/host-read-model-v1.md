@@ -99,6 +99,14 @@ public interaction prompt admitted by C5/C6. No model request, hidden instructio
 context, reasoning, tool arguments/results, raw failure, credential, endpoint,
 or internal fact payload is included.
 
+Runtime-owned Planner executions are internal control work, not conversation
+Turns. A verified `plan.proposal.requested` fact identifies the exact internal
+Turn and Execution. Session `turn_count`/latest-Turn fields and timeline items
+exclude those identities, including their trusted-system input, terminal text
+and H3 activities. `latest_position`, `observed_max_position` and page scan
+cursors still include the hidden durable positions; filtering never rewrites
+or compacts Ledger coordinates.
+
 `prompt_schema` is exactly `garive.public-suspension-prompt.v1`. `prompt_json`
 is canonical RFC 8785 UTF-8 JSON projected from the verified continuation
 binding; its lowercase SHA-256 is `prompt_digest`. Approval and external-input
@@ -201,6 +209,9 @@ deletion is outside H2.
 - Timeline requires exactly one first start and one input per Turn, monotonic
   lifecycle, exact owner identities, and at most one current terminal or
   suspension. Invalid facts return `corrupt_state` with no partial body.
+- Internal Planner ownership identities must be unique and well-formed. Their
+  Turn, Execution, content and activities are omitted consistently from H1,
+  H2 and H3 rather than redacted differently per client.
 - Unknown future internal fact kinds are ignored only when they cannot alter a
   public lifecycle. Unknown public lifecycle schema fails closed.
 - Response bodies have explicit total byte, item-count, text, and prompt bounds.

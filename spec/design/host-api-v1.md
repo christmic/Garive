@@ -139,6 +139,11 @@ uses `after_position`; duplicate delivery is permitted, reordering is not.
 Heartbeat comments carry no position and no semantics. Stream EOF is never a
 Turn terminal.
 
+Runtime-owned Planner Turn/Execution identities named by a verified
+`plan.proposal.requested` fact are internal facts for this rule: their start,
+terminal text and activities emit no H1/H3 event, while the scanned position
+continues through them.
+
 Every H1 event carries the exact string `api_version = "v1"`. This value is
 already frozen by the shared client fixture; package-qualified Proto names are
 not runtime version values. An emitter/consumer mismatch is a protocol failure,

@@ -196,6 +196,30 @@ a separate result-binding fact that names the request fact, terminal fact and
 canonical result digest. Only that bound result may enter the topology parser;
 live stream output and process-local return values have no proposal authority.
 
+The binding verifier requires one same-commit `execution.completed` and
+`turn.completed` pair whose Execution identity, response bytes and digest are
+equal. `plan.proposal.result_bound` freezes those terminal references together
+with the original Goal identity and definition digest. The parser accepts
+exactly one text response item containing RFC 8785 canonical JSON for the
+closed `garive.plan-proposal-topology` v1 schema. Unknown fields, duplicate
+steps, cycles, invalid bounds, extra items and model-supplied Plan/Execution
+identities fail closed. Runtime alone derives Plan identity, installed Agent,
+Tool catalogue, Safety revision and Goal bindings before `plan.proposed`.
+
+A crash after the Planner terminal but before result binding leaves no open
+Execution to redispatch. The next Goal coordination pass reconstructs the
+original committed Planner start, observes it as terminal, binds and consumes
+that exact result, and does not call the model again. Replaying an existing
+result binding or proposal is a no-op with the original identities.
+
+Internal Planner Turns are not product conversation Turns. H1 events, H2
+Session summaries/timelines and H3 activity projection derive the internal
+Turn/Execution set from verified `plan.proposal.requested` facts and exclude
+their lifecycle, prompt and completion content. Durable watermarks still
+advance over hidden facts so reconnect cursors remain monotonic; Goal and Plan
+projections continue to expose their public lifecycle rather than the hidden
+model exchange.
+
 ### Completed Turn reduction
 
 For a Plan-owned Execution, the local worker performs one bounded reduction
@@ -382,10 +406,13 @@ then reopens and rechecks the complete Session/Goal watermark before proposal
 commit. Missing proposal configuration remains `AwaitingPolicy`; a stale Goal
 or concurrent Plan lineage invalidates the result.
 
-A model-backed proposal composition is not permitted to call ModelPort as an
-unrecorded helper. Its durable ownership plus C6 start is implemented; model
-terminal result binding and topology consumption remain required before this
-composition can replace the configured topology-only proposal port.
+A model-backed proposal composition never calls ModelPort as an unrecorded
+helper. Desktop routes the Runtime-owned Planner start to a model-only worker
+with no governed tools or live-output projection, requires the frozen JSON
+Schema output mode, binds the committed terminal and submits only the parsed
+topology to Runtime proposal composition. The topology-only proposal port
+remains an explicit non-model policy/testing composition, not an authority
+bypass or a hidden fallback after model failure.
 
 Plan admission may Adopt, Reject or Defer one exact proposal. Adopt records the
 policy revision in `plan.adopted`; Reject records the same revision plus the
