@@ -232,12 +232,14 @@ pub use plan_dispatch_runtime::{
     PreparedPlanStepDispatch,
 };
 pub use plan_proposal_execution::{
-    bind_completed_plan_proposal_result, parse_bound_plan_proposal_result, BoundPlanProposalResult,
-    PlanProposalBindingError, PlanProposalResultError,
+    bind_completed_plan_proposal_result, parse_bound_plan_proposal_result,
+    plan_proposal_output_schema, BoundPlanProposalResult, PlanProposalBindingError,
+    PlanProposalOutputSchema, PlanProposalResultError,
 };
 pub use plan_proposal_runtime::{
-    propose_initial_goal_plan_once, PlanProposalContent, PlanProposalFuture, PlanProposalPort,
-    PlanProposalPortError, PlanProposalRequest, PlanProposalRuntimeError, ProposedGoalPlan,
+    propose_initial_goal_plan_once, start_initial_goal_plan_proposal_execution,
+    PlanProposalContent, PlanProposalFuture, PlanProposalPort, PlanProposalPortError,
+    PlanProposalRequest, PlanProposalRuntimeError, ProposedGoalPlan,
 };
 pub use plan_recovery::{reconstruct_plan, reconstruct_plan_graph};
 pub use plan_runtime::{

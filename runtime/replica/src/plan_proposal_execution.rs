@@ -46,6 +46,63 @@ pub enum PlanProposalResultError {
     InvalidOutput,
 }
 
+/// Canonical JSON Schema and digest frozen into every Planner request.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PlanProposalOutputSchema {
+    /// RFC 8785 schema document supplied to the model contract.
+    pub canonical_json: String,
+    /// Lowercase SHA-256 over `canonical_json`.
+    pub digest: String,
+}
+
+/// Constructs the one closed topology schema owned by Runtime.
+pub fn plan_proposal_output_schema() -> PlanProposalOutputSchema {
+    let capability = json!({
+        "type":"object", "additionalProperties":false,
+        "required":["name","exact_revision"],
+        "properties":{"name":{"type":"string","minLength":1},
+            "exact_revision":{"type":"string","minLength":1}}
+    });
+    let schema = json!({
+        "type":"object", "additionalProperties":false,
+        "required":["contract","version","steps","bounds"],
+        "properties":{
+            "contract":{"const":PROPOSAL_CONTRACT}, "version":{"const":PROPOSAL_VERSION},
+            "steps":{"type":"array","minItems":1,"items":{
+                "type":"object","additionalProperties":false,
+                "required":["step_id","objective","depends_on","completion_criteria",
+                    "required_capabilities","input_bindings","max_attempts"],
+                "properties":{
+                    "step_id":{"type":"string","minLength":1},
+                    "objective":{"type":"string","minLength":1},
+                    "depends_on":{"type":"array","items":{"type":"string","minLength":1}},
+                    "completion_criteria":{"type":"array","minItems":1,
+                        "items":{"type":"string","minLength":1}},
+                    "required_capabilities":{"type":"array","items":capability},
+                    "input_bindings":{"type":"array","items":{"type":"string","pattern":"^[0-9a-f]{64}$"}},
+                    "max_attempts":{"type":"integer","minimum":1}
+                }
+            }},
+            "bounds":{"type":"object","additionalProperties":false,
+                "required":["max_steps","max_parallel_ready","max_total_attempts",
+                    "token_budget","duration_budget_ms"],
+                "properties":{
+                    "max_steps":{"type":"integer","minimum":1},
+                    "max_parallel_ready":{"type":"integer","minimum":1},
+                    "max_total_attempts":{"type":"integer","minimum":1},
+                    "token_budget":{"type":["integer","null"],"minimum":1},
+                    "duration_budget_ms":{"type":["integer","null"],"minimum":1}
+                }
+            }
+        }
+    });
+    let canonical = CanonicalPayload::from_value(&schema).expect("static schema is canonical");
+    PlanProposalOutputSchema {
+        canonical_json: canonical.as_json().into(),
+        digest: canonical.sha256().into(),
+    }
+}
+
 /// Parses topology only from response bytes recovered by the durable binding.
 pub fn parse_bound_plan_proposal_result(
     bound: &BoundPlanProposalResult,

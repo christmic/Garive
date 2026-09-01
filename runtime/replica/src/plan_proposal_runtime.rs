@@ -3,13 +3,18 @@
 use std::{collections::BTreeSet, future::Future, path::Path, pin::Pin, sync::Arc};
 
 use garive_goal::GoalState;
-use garive_ledger::SessionId;
+use garive_ledger::{
+    AgentDefinitionId, AgentDefinitionRevision, AgentInstanceId, CanonicalPayload, DurableFact,
+    ExecutionId, SessionId, TurnId,
+};
 use garive_plan::{PlanBoundsV1, PlanCapabilityReference, PlanDefinitionV1, PlanId, PlanStepV1};
 use sha2::{Digest, Sha256};
 
 use crate::{
-    commit_plan_command, plan_propose_plan, reconstruct_goal, reconstruct_plan_graph,
-    PlanCommandContext, PlanRuntimeError, RuntimeAgentCatalogue, SqliteLedger,
+    commit_plan_command, commit_planned_turn, plan_proposal_output_schema, plan_propose_plan,
+    plan_start_plan_proposal_execution, reconstruct_goal, reconstruct_plan_graph, CommittedTurn,
+    PlanCommandContext, PlanRuntimeError, RuntimeAgentCatalogue, RuntimeCommandId, SqliteLedger,
+    StartPlanProposalExecutionCommand, StartTurnCommand,
 };
 
 /// Read-only Goal content and ceilings exposed to a configured planner.
@@ -86,6 +91,156 @@ pub enum PlanProposalRuntimeError {
     ProposalFailed,
     /// Portable Plan planning or optimistic durability failed.
     Plan(PlanRuntimeError),
+}
+
+/// Starts or reconstructs one durable model-backed initial proposal Execution.
+pub fn start_initial_goal_plan_proposal_execution(
+    database_path: &Path,
+    session_id: &SessionId,
+    goal_id: &str,
+    proposer_reference: &str,
+    recorded_at: &str,
+    catalogue: Arc<RuntimeAgentCatalogue>,
+) -> Result<CommittedTurn, PlanProposalRuntimeError> {
+    if goal_id.is_empty()
+        || proposer_reference.is_empty()
+        || chrono::DateTime::parse_from_rfc3339(recorded_at).is_err()
+    {
+        return Err(PlanProposalRuntimeError::InvalidInput);
+    }
+    let mut ledger =
+        SqliteLedger::open(database_path).map_err(|_| PlanProposalRuntimeError::CorruptState)?;
+    let goal = reconstruct_goal(&ledger, session_id, goal_id)
+        .map_err(|_| PlanProposalRuntimeError::CorruptState)?;
+    if !matches!(goal.snapshot.state(), GoalState::Draft | GoalState::Active) {
+        return Err(PlanProposalRuntimeError::CorruptState);
+    }
+    let goal_digest = goal
+        .snapshot
+        .definition()
+        .digest()
+        .map_err(|_| PlanProposalRuntimeError::CorruptState)?;
+    let facts = ledger
+        .read_facts(session_id, 0, goal.through_position, None)
+        .map_err(|_| PlanProposalRuntimeError::CorruptState)?;
+    let opened = session_opened(&facts)?;
+    let opened_value = serde_json::from_str::<serde_json::Value>(opened.payload.as_json())
+        .map_err(|_| PlanProposalRuntimeError::CorruptState)?;
+    let installation = catalogue
+        .resolve(
+            text(&opened_value, "definition_id")?,
+            text(&opened_value, "definition_revision")?,
+            text(&opened_value, "snapshot_digest")?,
+        )
+        .map_err(|_| PlanProposalRuntimeError::CorruptState)?;
+    let existing = facts
+        .iter()
+        .filter(|fact| fact.kind.as_str() == "plan.proposal.requested")
+        .filter_map(|fact| {
+            serde_json::from_str::<serde_json::Value>(fact.payload.as_json())
+                .ok()
+                .filter(|value| {
+                    value.get("goal_id").and_then(serde_json::Value::as_str) == Some(goal_id)
+                        && value
+                            .get("goal_revision")
+                            .and_then(serde_json::Value::as_u64)
+                            == Some(goal.snapshot.revision())
+                        && value
+                            .get("goal_definition_digest")
+                            .and_then(serde_json::Value::as_str)
+                            == Some(goal_digest.as_str())
+                })
+                .map(|value| (fact, value))
+        })
+        .collect::<Vec<_>>();
+    if let [(fact, value)] = existing.as_slice() {
+        if text(value, "proposer_reference")? != proposer_reference {
+            return Err(PlanProposalRuntimeError::CorruptState);
+        }
+        return existing_committed_turn(&ledger, session_id, &facts, fact, value, &opened_value);
+    }
+    if !existing.is_empty() {
+        return Err(PlanProposalRuntimeError::CorruptState);
+    }
+    if reconstruct_plan_graph(&ledger, session_id)
+        .map_err(|_| PlanProposalRuntimeError::CorruptState)?
+        .values()
+        .any(|plan| plan.snapshot.definition().goal_id() == goal_id)
+    {
+        return Err(PlanProposalRuntimeError::ExistingPlanLineage);
+    }
+    let definition = goal.snapshot.definition();
+    let schema = plan_proposal_output_schema();
+    let prompt = CanonicalPayload::from_value(&serde_json::json!({
+        "contract":"garive.plan-proposal-request", "version":1,
+        "goal":{"goal_id":goal_id,"goal_revision":goal.snapshot.revision(),
+            "goal_definition_digest":goal_digest,"objective":definition.objective(),
+            "criterion_ids":definition.criteria().iter().map(|value| value.criterion_id().as_str()).collect::<Vec<_>>(),
+            "available_capabilities":definition.capability_references().iter().map(|value| serde_json::json!({"name":value.name(),"exact_revision":value.exact_revision()})).collect::<Vec<_>>(),
+            "max_total_attempts":definition.bounds().max_attempts()},
+        "output":{"contract":"garive.plan-proposal-topology","version":1,
+            "schema_digest":schema.digest}
+    }))
+    .map_err(|_| PlanProposalRuntimeError::CorruptState)?;
+    let command_seed = format!("{}:{}:{}", goal_id, goal.snapshot.revision(), goal_digest);
+    let planned = plan_start_plan_proposal_execution(
+        &StartPlanProposalExecutionCommand {
+            start: StartTurnCommand {
+                command_id: RuntimeCommandId::new(format!(
+                    "planner-start-{}",
+                    &digest(command_seed.as_bytes())[..32]
+                ))
+                .map_err(|_| PlanProposalRuntimeError::InvalidInput)?,
+                session_id: session_id.clone(),
+                agent_instance_id: AgentInstanceId::try_from(text(
+                    &opened_value,
+                    "agent_instance_id",
+                )?)
+                .map_err(|_| PlanProposalRuntimeError::CorruptState)?,
+                definition_id: AgentDefinitionId::try_from(text(&opened_value, "definition_id")?)
+                    .map_err(|_| PlanProposalRuntimeError::CorruptState)?,
+                definition_revision: AgentDefinitionRevision::try_from(text(
+                    &opened_value,
+                    "definition_revision",
+                )?)
+                .map_err(|_| PlanProposalRuntimeError::CorruptState)?,
+                snapshot_digest: installation.snapshot().snapshot_digest().into(),
+                trusted_input: prompt.as_json().into(),
+                limits: installation.installed_agent().runtime_limits,
+                recorded_at: recorded_at.into(),
+            },
+            goal_id: goal_id.into(),
+            goal_revision: goal.snapshot.revision(),
+            goal_definition_digest: goal_digest,
+            expected_session_version: goal.session_version,
+            proposer_reference: proposer_reference.into(),
+            output_schema_digest: schema.digest,
+        },
+        goal.through_position,
+    )
+    .map_err(|_| PlanProposalRuntimeError::CorruptState)?;
+    let result = commit_planned_turn(
+        &mut ledger,
+        session_id.clone(),
+        goal.session_version,
+        &planned,
+    )
+    .map_err(|_| PlanProposalRuntimeError::CorruptState)?;
+    Ok(CommittedTurn {
+        session_id: session_id.clone(),
+        turn_id: planned.turn_id,
+        execution_id: planned
+            .execution_id
+            .ok_or(PlanProposalRuntimeError::CorruptState)?,
+        definition_id: text(&opened_value, "definition_id")?.into(),
+        definition_revision: text(&opened_value, "definition_revision")?.into(),
+        snapshot_digest: installation.snapshot().snapshot_digest().into(),
+        session_version: result.session_version,
+        committed_position: *result
+            .positions
+            .last()
+            .ok_or(PlanProposalRuntimeError::CorruptState)?,
+    })
 }
 
 /// Constructs and commits one initial Plan without exposing bindings to the planner.
@@ -281,4 +436,78 @@ fn text<'a>(value: &'a serde_json::Value, key: &str) -> Result<&'a str, PlanProp
         .and_then(serde_json::Value::as_str)
         .filter(|value| !value.is_empty())
         .ok_or(PlanProposalRuntimeError::CorruptState)
+}
+
+fn session_opened(facts: &[DurableFact]) -> Result<&DurableFact, PlanProposalRuntimeError> {
+    let mut opened = facts
+        .iter()
+        .filter(|fact| fact.kind.as_str() == "session.opened");
+    let value = opened
+        .next()
+        .ok_or(PlanProposalRuntimeError::CorruptState)?;
+    if opened.next().is_some() {
+        Err(PlanProposalRuntimeError::CorruptState)
+    } else {
+        Ok(value)
+    }
+}
+
+fn existing_committed_turn(
+    ledger: &SqliteLedger,
+    session_id: &SessionId,
+    facts: &[DurableFact],
+    request: &DurableFact,
+    request_value: &serde_json::Value,
+    opened_value: &serde_json::Value,
+) -> Result<CommittedTurn, PlanProposalRuntimeError> {
+    let turn_id = TurnId::try_from(text(request_value, "turn_id")?)
+        .map_err(|_| PlanProposalRuntimeError::CorruptState)?;
+    let execution_id = ExecutionId::try_from(text(request_value, "execution_id")?)
+        .map_err(|_| PlanProposalRuntimeError::CorruptState)?;
+    let positions = [
+        ("turn.started", request.position.checked_add(1)),
+        ("turn.input", request.position.checked_add(2)),
+        ("execution.started", request.position.checked_add(3)),
+    ];
+    for (kind, position) in positions {
+        let position = position.ok_or(PlanProposalRuntimeError::CorruptState)?;
+        let fact = facts
+            .iter()
+            .find(|fact| fact.position == position && fact.kind.as_str() == kind)
+            .ok_or(PlanProposalRuntimeError::CorruptState)?;
+        if fact.turn_id.as_ref() != Some(&turn_id)
+            || kind == "execution.started" && fact.execution_id.as_ref() != Some(&execution_id)
+        {
+            return Err(PlanProposalRuntimeError::CorruptState);
+        }
+    }
+    let session_version = ledger
+        .fact_commit_version(&request.fact_id)
+        .map_err(|_| PlanProposalRuntimeError::CorruptState)?
+        .ok_or(PlanProposalRuntimeError::CorruptState)?;
+    if request_value
+        .get("expected_session_version")
+        .and_then(serde_json::Value::as_u64)
+        .and_then(|value| value.checked_add(1))
+        != Some(session_version)
+    {
+        return Err(PlanProposalRuntimeError::CorruptState);
+    }
+    Ok(CommittedTurn {
+        session_id: session_id.clone(),
+        turn_id,
+        execution_id,
+        definition_id: text(opened_value, "definition_id")?.into(),
+        definition_revision: text(opened_value, "definition_revision")?.into(),
+        snapshot_digest: text(opened_value, "snapshot_digest")?.into(),
+        session_version,
+        committed_position: request
+            .position
+            .checked_add(3)
+            .ok_or(PlanProposalRuntimeError::CorruptState)?,
+    })
+}
+
+fn digest(bytes: &[u8]) -> String {
+    format!("{:x}", Sha256::digest(bytes))
 }
