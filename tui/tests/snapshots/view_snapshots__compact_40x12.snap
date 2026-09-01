@@ -11,5 +11,5 @@ expression: "frame(&model, Theme::Mono, 40, 12)"
 
   cargo test passes.
 
-• Working… (esc to interrupt)
+              Working…  ·  Esc interrupt
 › Ask a follow-up…

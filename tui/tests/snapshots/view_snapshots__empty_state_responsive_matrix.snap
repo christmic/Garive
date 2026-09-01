@@ -5,10 +5,10 @@ expression: matrix
 ===== loading compact · Mono · 40x18 =====
 New conversation              connecting
 
-
-
-
-
+╭────────────────────────────────────╮
+│  >_ Garive                         │
+│  Starting workspace…               │
+╰────────────────────────────────────╯
 
 
 
@@ -25,10 +25,10 @@ New conversation              connecting
 ===== loading standard · Dark · 80x18 =====
 New conversation  ·  Garive                                           connecting
 
-
-
-
-
+╭────────────────────────────────────────────╮
+│  >_ Garive                                 │
+│  Starting workspace…                       │
+╰────────────────────────────────────────────╯
 
 
 
@@ -45,10 +45,10 @@ New conversation  ·  Garive                                           connectin
 ===== loading wide · Light · 120x18 =====
 New conversation  ·  Garive                                                                                   connecting
 
-
-
-
-
+╭────────────────────────────────────────────╮
+│  >_ Garive                                 │
+│  Starting workspace…                       │
+╰────────────────────────────────────────────╯
 
 
 
@@ -64,10 +64,10 @@ New conversation  ·  Garive                                                    
 
 ===== ready · Dark · 100x18 =====
 
-
-
-
-
+╭────────────────────────────────────────────╮
+│  >_ Garive                                 │
+│  / commands  ·  ? help                     │
+╰────────────────────────────────────────────╯
 
 
 

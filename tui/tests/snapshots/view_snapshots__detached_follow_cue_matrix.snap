@@ -9,7 +9,7 @@ expression: matrix
 • ## Release plan
 
   • Verify the Runtime
-• Working… (esc to interrupt)
+              Working…  ·  Esc interrupt
 › Ask a follow-up…
 ===== standard dark 100x24 =====
                               ↓ 12 newer updates ·  End follow latest
@@ -33,7 +33,7 @@ expression: matrix
 
 
 
-• Working… (esc to interrupt)
+                                                                          Working…  ·  Esc interrupt
 › Ask a follow-up…
 
 ===== wide light 160x28 =====
@@ -62,7 +62,7 @@ expression: matrix
 
 
 
-• Working… (esc to interrupt)
+                                                                                                                                      Working…  ·  Esc interrupt
 › Ask a follow-up…
 
 ===== overlay owns input =====
@@ -87,5 +87,5 @@ expression: matrix
 
 
 
-• Working…
+                                                                                            Working…
 › Ask a follow-up…

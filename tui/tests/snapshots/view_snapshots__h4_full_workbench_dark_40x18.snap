@@ -18,7 +18,7 @@ expression: compact
 
 
 
-• Preparing… (esc to interrupt)
+            Preparing…  ·  Esc interrupt
 › A retained follow-up draft
 
 
@@ -38,7 +38,7 @@ expression: compact
 
 
 
-• Preparing… (esc to interrupt)
+            Preparing…  ·  Esc interrupt
 › A retained follow-up draft
 
 
@@ -58,27 +58,27 @@ expression: compact
 
 
 
-• Writing… (esc to interrupt)
+              Writing…  ·  Esc interrupt
 › A retained follow-up draft
 
 
 ===== overlay while streaming =====
 
-╭ Command palette ─────────────────────╮
-│  Search  type to search              │
-│  Showing 1–8 / 21 · ↓13              │
-│  › /new              unavailable ·…  │
-│    /sessions         Switch session  │
-│    /jump             unavailable ·…  │
-│    /inspect          Open Inspector  │
-│    /status           Connection de…  │
-│    /edit-prompt      Edit draft ex…  │
-│    /retry            unavailable ·…  │
-│    /reconnect        Resume event …  │
-│    ↑/↓ select   Home/End edge        │
-│    Enter run   Esc close             │
-╰──────────────────────────────────────╯
-• Writing…
+› Show every verified streaming stage.
+ Command palette ───────────────────────
+Search  type to search
+Showing 1–8 / 21 · ↓13
+› /new              unavailable · no Ag…
+  /sessions         Switch session
+  /jump             unavailable · fewer…
+  /inspect          Open Inspector
+  /status           Connection details
+  /edit-prompt      Edit draft external…
+  /retry            unavailable · no un…
+  /reconnect        Resume event stream
+  ↑/↓ select   Home/End edge
+  Enter run   Esc close
+                                Writing…
 › A retained follow-up draft
 
 
@@ -98,7 +98,7 @@ expression: compact
 
 
 
-• Writing… (esc to interrupt)
+              Writing…  ·  Esc interrupt
 › A retained follow-up draft
 
 
@@ -118,7 +118,7 @@ expression: compact
 
 
 
-• Finishing… (esc to interrupt)
+            Finishing…  ·  Esc interrupt
 › A retained follow-up draft
 
 
@@ -138,7 +138,7 @@ expression: compact
 
 
 
-• Saving… (esc to interrupt)
+               Saving…  ·  Esc interrupt
 › A retained follow-up draft
 
 

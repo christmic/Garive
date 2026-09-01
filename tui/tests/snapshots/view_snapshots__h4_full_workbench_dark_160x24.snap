@@ -24,7 +24,7 @@ expression: wide
 
 
 
-• Preparing… (esc to interrupt)
+                                                                                                                                    Preparing…  ·  Esc interrupt
 › A retained follow-up draft
 
 
@@ -50,7 +50,7 @@ expression: wide
 
 
 
-• Preparing… (esc to interrupt)
+                                                                                                                                    Preparing…  ·  Esc interrupt
 › A retained follow-up draft
 
 
@@ -76,7 +76,7 @@ expression: wide
 
 
 
-• Writing… (esc to interrupt)
+                                                                                                                                      Writing…  ·  Esc interrupt
 › A retained follow-up draft
 
 
@@ -88,21 +88,21 @@ expression: wide
 
 
 
-                                           ╭ Command palette ───────────────────────────────────────────────────────╮
-                                           │  Search  type to search                                                │
-                                           │  21 commands · showing 1–8 · ↓ 13 more                                 │
-                                           │  › /new                unavailable · no Agent is installed             │
-                                           │    /sessions           Switch session                                  │
-                                           │    /jump               unavailable · fewer than two Turns are loaded   │
-                                           │    /inspect            Open Inspector                                  │
-                                           │    /status             Connection details                              │
-                                           │    /edit-prompt        Edit draft externally                           │
-                                           │    /retry              unavailable · no unknown command                │
-                                           │    /reconnect          Resume event stream                             │
-                                           │                                                                        │
-                                           │    ↑/↓ select   Home/End edge   Enter run   Esc close                  │
-                                           ╰────────────────────────────────────────────────────────────────────────╯
-• Writing…
+
+
+ Command palette ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+Search  type to search
+21 commands · showing 1–8 · ↓ 13 more
+› /new                unavailable · no Agent is installed
+  /sessions           Switch session
+  /jump               unavailable · fewer than two Turns are loaded
+  /inspect            Open Inspector
+  /status             Connection details
+  /edit-prompt        Edit draft externally
+  /retry              unavailable · no unknown command
+  /reconnect          Resume event stream
+  ↑/↓ select   Home/End edge   Enter run   Esc close
+                                                                                                                                                        Writing…
 › A retained follow-up draft
 
 
@@ -128,7 +128,7 @@ expression: wide
 
 
 
-• Writing… (esc to interrupt)
+                                                                                                                                      Writing…  ·  Esc interrupt
 › A retained follow-up draft
 
 
@@ -154,7 +154,7 @@ expression: wide
 
 
 
-• Finishing… (esc to interrupt)
+                                                                                                                                    Finishing…  ·  Esc interrupt
 › A retained follow-up draft
 
 
@@ -180,7 +180,7 @@ expression: wide
 
 
 
-• Saving… (esc to interrupt)
+                                                                                                                                       Saving…  ·  Esc interrupt
 › A retained follow-up draft
 
 
