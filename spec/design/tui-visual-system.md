@@ -39,7 +39,7 @@ default background instead of receiving a black or white panel fill.
 | `SelectionRow` | explicit marker-only or full-area policy plus stable cursor; reverse video in mono |
 | `ComposerDock` | low-contrast input body, responsive top boundary/status row, shared cursor/hit geometry |
 | `ComposerStatus` | standalone status row; two optional breathing rows only on roomy unobscured workbenches; no border |
-| `AmbientFooter` | empty-draft command action plus optional right Session ordinal; hidden by draft, overlay, or actionable feedback |
+| `AmbientFooter` | one left action plus responsive right Session/Turn context; overlay and exceptional identity suppress it |
 | `CenteredColumn` | caps readable transcript width without changing model state |
 | `BottomPane` | one Composer-aligned top rule; content-driven height; no backdrop dimming or side/bottom border |
 | `ModalFrame` | dims retained workspace, clears popup bounds, rounded focus border, safe padding |
@@ -103,9 +103,13 @@ boxes; controllers do not duplicate layout coordinates. `ContextLine` and
 focus, and recovery state used by input routing. `ContextLine` has no frame or
 background fill. `HintLine` renders at most one highest-priority action and may
 be absent. Its reserved slot then renders `Ctrl+P commands` only for an empty
-editable draft, plus an optional right-aligned public Session ordinal at widths
-`>=52`. It never renders a generic Agent label. A non-empty draft removes the
-ambient shortcut; an overlay removes the whole background footer. When exceptional
+editable draft. The same row may right-align a public `Session N` at widths
+`52..=79` and `Session N · Turn M` at widths `>=80` when the selected Turn is
+the Session's authoritative latest Turn. Turn detail collapses before Session
+context, and all right context collapses before the left action. It never
+renders a generic Agent label or opaque identity. A non-empty draft removes the
+ambient shortcut but retains context that fits; an overlay removes the whole
+background footer. When exceptional
 state makes `ContextLine` visible, it owns that identity and the reserved footer
 slot stays blank unless an actionable `HintLine` displaces it; identity cannot
 appear at both edges of the workspace. Before a selected durable Session
@@ -114,6 +118,9 @@ footer omits Session context instead of inventing `New conversation`. At support
 of nine rows or more, the slot remains allocated so selection, notices, and Host events never
 move the Composer hit geometry; tiny layouts below nine rows remove the slot as
 part of their explicit degradation.
+`view/footer.rs` owns action/status priority; `view/footer_layout.rs` owns the
+independent left/right geometry and width-collapse algorithm. Neither may
+reconstruct the other's policy.
 The composer lives in `view/composer.rs`. It consumes the editor's admitted
 byte range, styles whole rendered graphemes, and owns its dock, viewport, and
 cursor geometry. Dark/light selection uses the semantic selection surface;

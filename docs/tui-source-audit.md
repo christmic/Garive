@@ -596,12 +596,15 @@ shortens it before removal, and drops ambient context by width. Snapshots under
 `bottom_pane/snapshots/` verify status/composer fill, shortcut modes, and active
 Agent labels.
 
-Garive adopts context-owned footer modes, separately styled key hints, and
-deterministic width collapse. It adds a persistent full-height Session rail at
-standard widths, a capped main reading column, semantic connection/execution
-chips, modal background dimming, and reverse-video monochrome selection. Those
-choices are Garive-authored against its Host contracts; they are not copied
-product decoration.
+Garive adopts context-owned footer modes, separately styled key hints, and the
+same action-first collapse principle. Its footer keeps the current action on
+the left while independently projecting bounded Host truth on the right:
+`Session N · Turn M` at wide/standard widths, `Session N` after the first
+collapse, then no right context. Turn detail appears only when the selected
+Turn matches the selected Session's authoritative latest Turn, so a denser row
+does not expose opaque IDs or invent stale navigation state. Garive has no
+permanent Session rail or centered shell; exceptional identity belongs to
+`ContextLine`, while healthy transcript and Composer retain the terminal axis.
 
 Codex user history is not a bare highlighted text row. Pinned
 `history_cell/messages.rs:123-185` applies `user_message_style()` to one blank

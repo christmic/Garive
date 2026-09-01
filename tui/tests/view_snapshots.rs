@@ -225,6 +225,40 @@ fn responsive_product_frames_match_reviewed_snapshots() {
 }
 
 #[test]
+fn footer_density_and_collapse_match_reviewed_snapshot() {
+    let mut idle = product_model();
+    idle.execution = ExecutionState::Idle;
+    idle.composer.replace("").unwrap();
+    install_latest_turn_context(&mut idle, 3);
+
+    let mut active = activity_stack_model();
+    install_latest_turn_context(&mut active, 3);
+
+    let matrix = [
+        ("idle wide", frame(&idle, Theme::Dark, 100, 18)),
+        ("action wide", frame(&active, Theme::Dark, 100, 18)),
+        ("action compact", frame(&active, Theme::Mono, 79, 18)),
+        ("action linear", frame(&active, Theme::Mono, 51, 18)),
+    ]
+    .into_iter()
+    .map(|(label, rendered)| format!("===== {label} =====\n{rendered}"))
+    .collect::<Vec<_>>()
+    .join("\n\n");
+
+    insta::assert_snapshot!("footer_density_collapse", matrix);
+}
+
+fn install_latest_turn_context(model: &mut AppModel, ordinal: usize) {
+    model.selected_turn = Some("user".into());
+    model.sessions[0].latest_turn_id = Some("user".into());
+    model.conversation_landmarks = vec![ConversationLandmark {
+        ordinal,
+        started_position: 2,
+        prompt_preview: "private prompt is never rendered in the footer".into(),
+    }];
+}
+
+#[test]
 fn detached_follow_cue_matches_responsive_and_overlay_ownership_snapshots() {
     let mut model = product_model();
     model.viewport.follow_latest = false;

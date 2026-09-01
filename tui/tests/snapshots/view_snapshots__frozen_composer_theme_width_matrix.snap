@@ -28,7 +28,7 @@ theme=Dark width=100 marker=Style::new().yellow().bg(Color::Reset).underline_col
 
 ! Draft locked · read only
 › Retained pending draft
- ● Waiting for durable command truth…
+ ● Waiting for durable command truth…                                                    Session 1
 
 theme=Light width=40 marker=Style::new().yellow().bg(Color::Reset).underline_color(Color::Reset) cursor=None
 › Summarize the release plan.
@@ -56,7 +56,7 @@ theme=Light width=100 marker=Style::new().yellow().bg(Color::Reset).underline_co
 
 ! Draft locked · read only
 › Retained pending draft
- ● Waiting for durable command truth…
+ ● Waiting for durable command truth…                                                    Session 1
 
 theme=Mono width=40 marker=Style::new().fg(Color::Reset).bg(Color::Reset).underline_color(Color::Reset) cursor=None
 › Summarize the release plan.
@@ -84,4 +84,4 @@ theme=Mono width=100 marker=Style::new().fg(Color::Reset).bg(Color::Reset).under
 
 ! Draft locked · read only
 › Retained pending draft
- ● Waiting for durable command truth…
+ ● Waiting for durable command truth…                                                    Session 1

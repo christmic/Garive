@@ -2,16 +2,14 @@ use ratatui::{
     buffer::Buffer,
     layout::Rect,
     text::{Line, Span},
-    widgets::{Paragraph, Widget},
 };
-use unicode_width::UnicodeWidthStr;
 
 use crate::{
     application::{AppModel, ConnectionState, FocusTarget},
     Theme,
 };
 
-use super::composer_run_rail;
+use super::{composer_run_rail, footer_layout::render_footer_layout};
 use super::{palette, primitives::key_hints};
 
 pub(super) fn render_footer(model: &AppModel, theme: Theme, area: Rect, buffer: &mut Buffer) {
@@ -46,50 +44,23 @@ pub(super) fn render_footer(model: &AppModel, theme: Theme, area: Rect, buffer: 
             if super::context_line::visible(model) {
                 return;
             }
-            render_ambient_footer(model, colors, area, buffer);
+            let left = model.composer.text().is_empty().then(|| {
+                Line::from(vec![
+                    Span::styled("  ", colors.muted),
+                    Span::styled("Ctrl+P", colors.normal),
+                    Span::styled(" commands", colors.muted),
+                ])
+            });
+            render_footer_layout(model, left, colors, area, buffer);
             return;
         }
     };
-    hint.render(area, buffer);
-}
-
-fn render_ambient_footer(
-    model: &AppModel,
-    colors: super::style::Palette,
-    area: Rect,
-    buffer: &mut Buffer,
-) {
-    if model.composer.text().is_empty() {
-        let left = Line::from(vec![
-            Span::styled("  ", colors.muted),
-            Span::styled("Ctrl+P", colors.normal),
-            Span::styled(" commands", colors.muted),
-        ]);
-        Paragraph::new(left).render(area, buffer);
-    }
-    if area.width >= 52 {
-        if let Some(session) = ambient_session_label(model) {
-            let copy = format!("{session}  ");
-            let width = u16::try_from(UnicodeWidthStr::width(copy.as_str()))
-                .unwrap_or(area.width)
-                .min(area.width);
-            let right = Rect::new(area.right().saturating_sub(width), area.y, width, 1);
-            Paragraph::new(Line::styled(copy, colors.muted)).render(right, buffer);
-        }
-    }
-}
-
-fn ambient_session_label(model: &AppModel) -> Option<String> {
-    let selected = model.selected_session.as_deref()?;
-    model
-        .sessions
-        .iter()
-        .position(|session| session.session_id == selected)
-        .map(|index| format!("Session {}", index + 1))
+    render_footer_layout(model, Some(hint), colors, area, buffer);
 }
 
 #[cfg(test)]
 mod tests {
+    use super::super::footer_layout::{ambient_context_label, ambient_session_label};
     use super::*;
 
     #[test]
@@ -115,6 +86,44 @@ mod tests {
             turn_count: 0,
         });
         assert_eq!(ambient_session_label(&model).as_deref(), Some("Session 1"));
+    }
+
+    #[test]
+    fn ambient_context_adds_turn_ordinal_only_when_the_wide_variant_fits() {
+        let mut model = AppModel {
+            selected_session: Some("session".into()),
+            selected_turn: Some("turn".into()),
+            ..Default::default()
+        };
+        model.sessions.push(garive_host_client::SessionSummary {
+            api_version: "v1".into(),
+            session_id: "session".into(),
+            agent_instance_id: "agent".into(),
+            definition_id: "definition".into(),
+            definition_revision: "revision".into(),
+            opened_at: "2026-09-01T00:00:00Z".into(),
+            latest_position: 0,
+            latest_turn_id: Some("turn".into()),
+            latest_turn_state: Some("running".into()),
+            turn_count: 3,
+        });
+        model
+            .conversation_landmarks
+            .push(crate::application::ConversationLandmark {
+                ordinal: 3,
+                started_position: 9,
+                prompt_preview: "private prompt".into(),
+            });
+
+        assert_eq!(
+            ambient_context_label(&model, 80).as_deref(),
+            Some("Session 1 · Turn 3")
+        );
+        assert_eq!(
+            ambient_context_label(&model, 79).as_deref(),
+            Some("Session 1")
+        );
+        assert_eq!(ambient_context_label(&model, 51), None);
     }
 
     #[test]
@@ -197,6 +206,107 @@ mod tests {
             "rendered footer: {text:?}"
         );
         assert!(!text.contains("Working"));
+    }
+
+    #[test]
+    fn actionable_footer_keeps_wide_context_without_competing_with_the_action() {
+        let mut model = AppModel {
+            selected_session: Some("session".into()),
+            selected_turn: Some("turn".into()),
+            execution: crate::application::ExecutionState::Following,
+            connection: ConnectionState::Online,
+            ..Default::default()
+        };
+        model.sessions.push(garive_host_client::SessionSummary {
+            api_version: "v1".into(),
+            session_id: "session".into(),
+            agent_instance_id: "agent".into(),
+            definition_id: "definition".into(),
+            definition_revision: "revision".into(),
+            opened_at: "2026-09-01T00:00:00Z".into(),
+            latest_position: 0,
+            latest_turn_id: Some("turn".into()),
+            latest_turn_state: Some("running".into()),
+            turn_count: 2,
+        });
+        model
+            .conversation_landmarks
+            .push(crate::application::ConversationLandmark {
+                ordinal: 2,
+                started_position: 5,
+                prompt_preview: "private prompt".into(),
+            });
+        model.push_test_timeline_item(crate::application::TimelineItem {
+            stable_key: "turn".into(),
+            position: 1,
+            role: crate::application::TimelineRole::User,
+            tone: crate::application::TimelineTone::Neutral,
+            text: "Inspect the layout".into(),
+        });
+        model.push_test_timeline_item(crate::application::TimelineItem {
+            stable_key: "activity".into(),
+            position: 2,
+            role: crate::application::TimelineRole::Status,
+            tone: crate::application::TimelineTone::Active,
+            text: "Reading files".into(),
+        });
+        let area = Rect::new(0, 0, 100, 1);
+        let mut buffer = Buffer::empty(area);
+
+        render_footer(&model, Theme::Mono, area, &mut buffer);
+
+        let text = (0..area.width)
+            .map(|column| buffer[(column, 0)].symbol())
+            .collect::<String>();
+        assert!(text.trim_start().starts_with("Esc interrupt"), "{text:?}");
+        assert!(text.ends_with("Session 1 · Turn 2  "), "{text:?}");
+    }
+
+    #[test]
+    fn footer_drops_turn_detail_before_session_context() {
+        let mut model = AppModel {
+            selected_session: Some("session".into()),
+            selected_turn: Some("turn".into()),
+            connection: ConnectionState::Online,
+            ..Default::default()
+        };
+        model.sessions.push(garive_host_client::SessionSummary {
+            api_version: "v1".into(),
+            session_id: "session".into(),
+            agent_instance_id: "agent".into(),
+            definition_id: "definition".into(),
+            definition_revision: "revision".into(),
+            opened_at: "2026-09-01T00:00:00Z".into(),
+            latest_position: 0,
+            latest_turn_id: Some("turn".into()),
+            latest_turn_state: Some("completed".into()),
+            turn_count: 3,
+        });
+        model
+            .conversation_landmarks
+            .push(crate::application::ConversationLandmark {
+                ordinal: 3,
+                started_position: 9,
+                prompt_preview: "private prompt".into(),
+            });
+        let area = Rect::new(0, 0, 80, 1);
+        let mut buffer = Buffer::empty(area);
+
+        render_footer_layout(
+            &model,
+            Some(Line::from(
+                "  A long but still actionable instruction occupies this side",
+            )),
+            palette(Theme::Mono),
+            area,
+            &mut buffer,
+        );
+
+        let text = (0..area.width)
+            .map(|column| buffer[(column, 0)].symbol())
+            .collect::<String>();
+        assert!(text.ends_with("Session 1  "), "{text:?}");
+        assert!(!text.contains("Turn 3"), "{text:?}");
     }
 }
 

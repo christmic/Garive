@@ -18,6 +18,7 @@ mod context_line;
 mod conversation;
 mod decision_sheet;
 mod footer;
+mod footer_layout;
 mod inspector;
 mod layout;
 mod linear;

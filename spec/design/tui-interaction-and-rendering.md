@@ -51,9 +51,11 @@ remote authentication remain unavailable until their owning slices exist.
 The frame has four semantic regions: an exceptional-only `ContextLine`, the
 conversation transcript, the persistent `Composer`, and one reserved footer
 row. The footer shows at most one actionable `HintLine`; otherwise an empty
-draft may show the real command shortcut on the left and a selected public
-Session ordinal on the right. A non-empty draft suppresses the ambient shortcut,
-and narrow layouts discard Session context before an action. In a healthy conversation the
+draft may show the real command shortcut on the left. Its independent right
+region shows a selected public Session ordinal from 52 columns and adds the
+authoritative latest Turn ordinal from 80 columns. Collision handling removes
+Turn detail first, then Session context; the left action is never truncated or
+displaced. A non-empty draft suppresses only the ambient shortcut. In a healthy conversation the
 ContextLine has zero height; Session identity is available through the terminal
 title, footer, and switcher instead of a permanent toolbar. Transcript, run
 state, and Composer share the terminal's left axis.

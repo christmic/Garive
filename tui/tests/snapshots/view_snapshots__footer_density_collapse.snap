@@ -1,0 +1,83 @@
+---
+source: tui/tests/view_snapshots.rs
+expression: matrix
+---
+===== idle wide =====
+
+› Summarize the release plan.
+
+• Completed
+  └ Read file
+
+## Release plan
+
+  • Verify the Runtime
+  • Ship with evidence
+
+  cargo test passes.
+
+
+
+
+› Ask Garive anything
+  Ctrl+P commands                                                               Session 1 · Turn 3
+
+===== action wide =====
+
+› Verify the release candidate.
+
+• Working
+  ├ Read file · +1 earlier
+  └ Reading file
+
+
+
+
+
+
+
+
+
+
+› Ask a follow-up…
+  Esc interrupt                                                                 Session 1 · Turn 3
+
+===== action compact =====
+› Verify the release candidate.
+• Working
+  ├ Read file · +1 earlier
+  └ Reading file
+
+
+
+
+
+
+
+
+
+
+
+
+› Ask a follow-up…
+  Esc interrupt                                                     Session 1
+
+===== action linear =====
+› Verify the release candidate.
+  ● Reading file · ✓2
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+› Ask a follow-up…
+  Esc interrupt
