@@ -13,19 +13,19 @@ describe("Composer keyboard submission", () => {
 describe("progressive Composer layout", () => {
   it("uses the source-backed 32px fit guard for a quiet one-line draft", () => {
     expect(resolveComposerLayout({ text: "Draft a launch brief", measuredTextWidth: 132,
-      availableInputWidth: 164, hasExpandedCapability: false })).toBe("single-line");
+      availableInputWidth: 164, mode: "auto-single-line" })).toBe("single-line");
     expect(resolveComposerLayout({ text: "Draft a launch brief", measuredTextWidth: 133,
-      availableInputWidth: 164, hasExpandedCapability: false })).toBe("multiline");
+      availableInputWidth: 164, mode: "auto-single-line" })).toBe("multiline");
   });
 
   it("expands for semantic multi-line content or attached capability UI", () => {
     expect(resolveComposerLayout({ text: "First\nSecond", measuredTextWidth: 60,
-      availableInputWidth: 400, hasExpandedCapability: false })).toBe("multiline");
+      availableInputWidth: 400, mode: "auto-single-line" })).toBe("multiline");
     expect(resolveComposerLayout({ text: "Short", measuredTextWidth: 40,
-      availableInputWidth: 400, hasExpandedCapability: true })).toBe("multiline");
+      availableInputWidth: 400, mode: "multiline" })).toBe("multiline");
   });
 
   it("starts compact before browser measurements are available", () => {
-    expect(resolveComposerLayout({ text: "", hasExpandedCapability: false })).toBe("single-line");
+    expect(resolveComposerLayout({ text: "", mode: "auto-single-line" })).toBe("single-line");
   });
 });

@@ -380,12 +380,14 @@ Completed-result actions sit at the assistant content edge. Their visual form
 is a 30 px icon control; their accessible name and tooltip retain the full verb.
 The terminal state remains text-visible and is not replaced by color or an icon.
 
-The resting composer begins with one text row and grows only with entered or
-restored content. Its 672 px measure, 32 px actions and compact live-status rail
-form one surface. Running work replaces Send with exactly one circular Stop
-action; it never shows a second text Stop beside a busy Send control. The
-durability note remains programmatically associated with the field but does not
-consume the ordinary visual baseline.
+New Work begins with one adaptive row and grows only when entered/restored
+content fails measured single-line admission. An existing thread always uses a
+separate input row and footer, including when its pane narrows beside an
+Artifact. Its 672 px measure, 28 px actions and compact live-status rail form
+one surface. Running work replaces Send with exactly one circular Stop action;
+it never shows a second text Stop beside a busy Send control. The durability
+note remains programmatically associated with the field but does not consume
+the ordinary visual baseline.
 
 Fenced output is a workbench block, not an anonymous tinted rectangle. It owns
 one 32px header with the admitted language or “Plain text”, one accessible Copy
@@ -443,20 +445,23 @@ input has a 12px inline inset; its footer uses an 8px inline and bottom inset
 with a 5px gap between inline controls. These values come from the installed
 Codex desktop bundle's Composer layout and action tokens.
 
-The quiet Composer uses `--height-composer-single-line` 44px and
-`--radius-composer-single-line` 22px. It admits the compact row only when all
-of the following are true:
+The New Work Composer uses `--height-composer-single-line` 44px and
+`--radius-composer-single-line` 22px. Its explicit mode is
+`auto-single-line`; it admits the compact row only when all of the following
+are true:
 
 - no running Turn rail, suspension, approval, Workspace attachment or selected
   next-Turn context requires vertical disclosure;
 - the draft contains one semantic line;
 - measured draft width plus a 32px reserve fits the measured input lane.
 
-Leading authority/context controls, the input and the trailing primary action
-then occupy one adaptive grid row. Any failed condition restores the multiline
-layout. The transition uses the relaxed/snappy token and resolves to zero under
-reduced motion. Desktop and Web must use the same pure admission function and
-DOM; platform adapters may not decide layout independently.
+An existing thread has explicit `multiline` mode regardless of empty draft or
+pane width. Leading authority/context controls, the input and the trailing
+primary action occupy one adaptive row only on New Work. Any failed auto-mode
+condition restores the multiline layout. The transition uses the
+relaxed/snappy token and resolves to zero under reduced motion. Desktop and Web
+must use the same pure admission function and DOM; platform adapters may not
+decide layout independently.
 
 The running/suspended Turn uses a source-backed attached Utility Rail. Its
 container is inset 13px from both Composer edges, tucks 4px beneath the

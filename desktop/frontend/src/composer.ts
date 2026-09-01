@@ -5,10 +5,11 @@ export interface ComposerKeyState {
 }
 
 export type ComposerLayout = "single-line" | "multiline";
+export type ComposerLayoutMode = "auto-single-line" | "multiline";
 
 export interface ComposerLayoutInput {
   readonly text: string;
-  readonly hasExpandedCapability: boolean;
+  readonly mode: ComposerLayoutMode;
   readonly measuredTextWidth?: number;
   readonly availableInputWidth?: number;
 }
@@ -17,7 +18,7 @@ export interface ComposerLayoutInput {
 export const COMPOSER_SINGLE_LINE_GUARD = 32;
 
 export function resolveComposerLayout(input: ComposerLayoutInput): ComposerLayout {
-  if (input.hasExpandedCapability || input.text.includes("\n")) return "multiline";
+  if (input.mode === "multiline" || input.text.includes("\n")) return "multiline";
   if (input.measuredTextWidth === undefined || input.availableInputWidth === undefined) {
     return "single-line";
   }

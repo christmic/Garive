@@ -29,7 +29,8 @@ import {
   type DesktopLocalePreference, type DesktopPreferences, type DesktopTheme,
 } from "./preferences";
 import { createTranslator, resolveDesktopLocale, type MessageKey } from "./i18n";
-import { resolveComposerLayout, shouldSubmitComposer, type ComposerLayout } from "./composer";
+import { resolveComposerLayout, shouldSubmitComposer, type ComposerLayout,
+  type ComposerLayoutMode } from "./composer";
 import { conversationDistanceFromTail, conversationScrollDirectionForKey,
   isNearConversationTail, preserveConversationDistanceFromTail, scrollConversationToTail,
   type ConversationScrollDirection, type ConversationScrollMetrics } from "./conversationTail";
@@ -933,9 +934,9 @@ function WorkSurface({ state, composer, submit, startSuggestion, dispatch, conte
   const previousSessionId = useRef(state.sessionId);
   const tailRevision = `${state.messages.length}:${state.messages.at(-1)?.text.length ?? 0}:${state.livePreview?.sequence ?? -1}:${state.phase}`;
   const previousTailRevision = useRef(tailRevision);
-  const hasExpandedComposerCapability = state.phase === "submitting"
+  const composerLayoutMode: ComposerLayoutMode = (state.messages.length > 0 || state.phase === "submitting"
     || state.messages.some((message) => Boolean(message.suspension))
-    || state.workspaces.length > 0 || Boolean(context);
+    || state.workspaces.length > 0 || Boolean(context)) ? "multiline" : "auto-single-line";
   const setTailFollowing = useCallback((value: boolean) => {
     followingTailRef.current = value;
     setFollowingTail(value);
@@ -971,15 +972,15 @@ function WorkSurface({ state, composer, submit, startSuggestion, dispatch, conte
         : undefined;
       const measuredTextWidth = state.draft.length > 0
         ? measure.getBoundingClientRect().width : 0;
-      setComposerLayout(resolveComposerLayout({ text: state.draft, hasExpandedCapability:
-        hasExpandedComposerCapability, measuredTextWidth, availableInputWidth }));
+      setComposerLayout(resolveComposerLayout({ text: state.draft, mode: composerLayoutMode,
+        measuredTextWidth, availableInputWidth }));
     };
     update();
     if (typeof ResizeObserver === "undefined") return;
     const observer = new ResizeObserver(update);
     observer.observe(shell);
     return () => observer.disconnect();
-  }, [hasExpandedComposerCapability, state.draft]);
+  }, [composerLayoutMode, state.draft]);
 
   useLayoutEffect(() => {
     const element = conversation.current;

@@ -960,6 +960,29 @@ the controller. Garive does not copy reverse flex or negative coordinates
 because its existing document order and accessibility semantics do not require
 them.
 
+### XXIX. Composer mode belongs to placement, not viewport width
+
+Installed source in `app-initial-B6Gk5KCN.js` defines two product modes before
+it resolves the rendered layout: `multiline` and `auto-single-line`. The Home
+composer explicitly supplies `composerLayoutMode: "auto-single-line"`; the
+thread composer defaults its mode to `multiline`. The `G_o`/`Y_o` measurement
+path admits a single-line surface only in auto mode, with no attachments,
+editor newline or voice layout, and only when measured text plus the exact
+`q_o = 32` px reserve fits the measured input lane. Corresponding CSS in
+`app-initial-NNCUNt29.css` gives multiline input a separate first row and a
+three-column footer, while single-line uses one adaptive row. Footer labels
+then progressively hide through named container queries at 440–480 px; the
+Composer itself does not collapse into one row merely because a thread pane is
+narrow.
+
+Garive now exposes the same placement mode to its shared pure layout resolver.
+New Work uses `auto-single-line` and retains the existing real-width/32 px fit
+test. Once a durable thread contains a Turn, Desktop and Web use `multiline`,
+including inside the 352 px Artifact split. Running state, suspension,
+Workspace context and selected next-Turn context also require multiline
+disclosure. This preserves a stable input row and authority/action footer
+without inventing Codex controls or labels.
+
 ## Gate 1 — Codex fidelity
 
 This gate passes only when both Desktop and Web show:

@@ -84,6 +84,8 @@ describe("Desktop product experience", () => {
 
     await waitFor(() => expect(commands, JSON.stringify(commands)).toContain("start_product_turn"));
     expect(await screen.findByText("Durable product answer")).toBeTruthy();
+    expect(view.container.querySelector(".composer")?.getAttribute("data-layout"))
+      .toBe("multiline");
     const completedMeta = view.container.querySelector(".result-meta[data-terminal='completed']");
     expect(completedMeta?.classList.contains("attention")).toBe(false);
     expect(completedMeta?.querySelector(".result-terminal")?.classList.contains("sr-only")).toBe(true);
