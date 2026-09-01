@@ -181,6 +181,14 @@ if the Step terminal already exists, replay is a no-op. A coordination error
 does not roll back the already durable Turn terminal and is surfaced as a
 stable worker failure for restart/reconciliation.
 
+After a Step terminal, the same bounded driver re-evaluates the new prefix. If
+unfinished Steps remain it stops. If every Step is Completed, it re-observes
+the complete Goal evidence set, commits `plan.completed`, reopens the newer
+prefix, independently verifies the completed Plan reduction, and commits
+`goal.succeeded`. These are separate optimistic transactions so each crash gap
+is recoverable: replay may add the missing Plan terminal, the missing Goal
+terminal, or nothing, but never reruns the model merely to publish a terminal.
+
 After `plan.completed` commits, the coordinator may propose Goal success only
 from that unique completed Plan. It reads the Plan's verified reduction set,
 re-observes the same durable references at the new current Session version and
