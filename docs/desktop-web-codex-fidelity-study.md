@@ -1,6 +1,6 @@
 # Desktop and Web Codex fidelity study
 
-> Reviewed 2026-08-31. This is evidence and design reasoning. The normative
+> Reviewed 2026-09-01. This is evidence and design reasoning. The normative
 > contract lives in `spec/design/shared-client-visual-system.md`.
 
 ## Objective
@@ -148,7 +148,7 @@ than a general “more polished” direction:
 | rail hierarchy | one selected task under compact global routes | Work and its current task selected together; Agents/Memory isolated beneath a generic Library label | one selected route, real global destinations together, durable tasks below |
 | narrow thread title | one line in the split pane | wrapped to three lines | preserve one-line orientation and elide before status/actions |
 | terminal actions | quiet glyphs at the content edge | wide `Export .md` and `Copy` labels | 30 px icon controls with persistent accessible names |
-| composer | approximately 545 px wide, one-line input start and one circular stop action | 490 px wide, two-line empty input, duplicate text stop plus spinner and a visible disclaimer | 39 rem / 546 px measure at the 14 px root, one-row start, 32 px actions and one truthful stop control |
+| composer | approximately 545 px wide, one-line input start and one circular stop action | 490 px wide, two-line empty input, duplicate text stop plus spinner and a visible disclaimer | 39 rem / 546 px measure at the 14 px root, one-row start, 28 px actions and one truthful stop control |
 | fenced output | bounded code card with a language header and copy action | undifferentiated bordered `pre` block | labeled code workbench, exact-source copy and persistent accessible feedback |
 | split workbench geometry | conversation, Composer and file divider share one bounded column; document starts 24 px after its edge | 352 px grid column whose child painted at 586 px, sending the 538 px Composer 210 px beneath the file surface; document added a second centered 40 px inset | explicit zero-min grid track, clipped conversation surface, 352 px default/320–520 px persisted separator and one 24 px document inset |
 | Environment | named floating surface | Activity/Artifacts tabs inside a small card | one Environment heading and a dismiss action; evidence rows only |
@@ -393,21 +393,30 @@ bundle is evidence only and is not redistributed in the repository.
 
 ### S. Installed Codex Composer depth audit
 
-The same installed bundle exposes the full Composer surface contract. A
-multiline default Composer uses `radius-3xl`: 20 px fallback and 25 px when the
-Electron engine supports the bundle's `superellipse(1.5)` corner scale. The
-root explicitly forces `border: 0`. Light elevation is a 4% one-pixel ring, a
+The same installed bundle exposes the full Composer surface contract. In
+`app-initial-NNCUNt29.css`, `_ComposerLayoutRoot_ut334_2` maps a multiline
+default Composer to `radius-3xl`; the Electron token override resolves that
+radius to 24 px. `corner-shape: superellipse(1.5)` changes the curve, not the
+radius. The root explicitly forces `border: 0`. Light elevation is a 4% one-pixel ring, a
 4% 2×8 px lift and a 2.4% 4×80 px ambient shadow; dark elevation is only a 20%
 white one-pixel inset.
 
 Garive previously used a 16 px round corner, a 15% dark border and a 28% black
-18×50 px dark shadow. It now uses the resource-backed 20/25 px radius,
+18×50 px dark shadow. It now uses the resource-backed 24 px Electron radius,
 superellipse where supported, zero physical border and independent Composer
-elevation tokens. Computed dark output is exactly a 25 px superellipse with a
+elevation tokens. Computed dark output is a 24 px superellipse with a
 20% white inset; computed light output matches all three source shadow layers.
-New Work remains 64 px high, Running 97 px, and the 480 px governed-approval
-Composer remains fully visible at 272.7 px. All measured states have zero
-internal and document overflow.
+After the control correction, measured New Work is 66 px high and Running is
+99 px at 1280×720. The 1280×720 Desktop/Web fixtures and the 480 px Web fixture
+have zero internal and document overflow.
+
+The same module defines `--spacing-token-button-composer` as seven 4 px spacing
+units, and the submit/stop implementation applies `size-token-button-composer`
+with `rounded-full`. Garive therefore uses 28 px circular Composer actions. Its
+multiline input and footer follow the source layout's 12 px input inset, 8 px
+footer inset/bottom space and 5 px inline-control gap. These values are bundle
+facts; Garive's textarea implementation remains a product-specific native
+control rather than a claim of matching Codex's ProseMirror internals.
 
 ### T. Installed Codex desktop document-system audit
 
@@ -848,7 +857,7 @@ This gate passes only when both Desktop and Web show:
 - a 240–520 px resizable rail with 275 px preferred width, compact rows and quiet selected surfaces;
 - a 46 px main toolbar, 36 px compact chrome and 40 px pane toolbar;
 - a source-equivalent 672 px reference reading measure and clear user/agent turn rhythm;
-- an elevated compact composer with a 14 px input and 36 px actions;
+- an elevated compact composer with a 14 px input and 28 px actions;
 - semantic navigation groups in sentence case;
 - Environment as a compact dismissible overlay and artifacts/files as a true
   resizable tabbed workbench, never one fixed generic inspector;

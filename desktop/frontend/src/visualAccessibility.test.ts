@@ -54,7 +54,8 @@ describe("Desktop visual accessibility contract", () => {
     expect(TOKENS).toContain("--height-toolbar-pane: 40px");
     expect(TOKENS).toContain("--height-window-bar: var(--height-toolbar)");
     expect(TOKENS).toContain("--height-file-toolbar: var(--height-toolbar-pane)");
-    expect(TOKENS).toContain("--radius-composer: 20px");
+    expect(TOKENS).toContain("--radius-composer: 24px");
+    expect(TOKENS).toContain("--size-composer-action: 28px");
     expect(TOKENS).toContain("--shadow-composer: 0 0 0 1px rgba(0, 0, 0, .04)");
     expect(TOKENS).toContain("--shadow-composer: inset 0 0 1px rgba(255, 255, 255, .2)");
     expect(TOKENS).toContain("--surface-composer: #2a2a2a");
@@ -70,7 +71,7 @@ describe("Desktop visual accessibility contract", () => {
     expect(TOKENS).toContain("--ease-enter: cubic-bezier(.19, 1, .22, 1)");
     expect(TOKENS).toContain("--ease-exit: cubic-bezier(.8, 0, .4, 1)");
     expect(TOKENS).toContain("--ease-enter-snappy: cubic-bezier(.23, 1, .32, 1)");
-    expect(TOKENS).toContain("@supports (corner-shape: superellipse(1.5))");
+    expect(CSS).toContain("@supports (corner-shape: superellipse(1.5))");
     expect(CSS).toContain("display: flex; background: var(--surface-canvas)");
     expect(CSS).toContain("--conversation-split: 352px");
     expect(CSS).toContain(".app-shell:has(.workspace-panel)");
@@ -164,6 +165,10 @@ describe("Desktop visual accessibility contract", () => {
     expect(CSS).not.toContain(".conversation-tail-button { bottom:");
     expect(CSS).toContain("padding-left: 10px; padding-right: 0;");
     expect(CSS).toContain("box-shadow: var(--shadow-composer)");
+    expect(CSS).toContain(".composer textarea { min-height: 30px; max-height: 168px; padding: 6px 12px 0;");
+    expect(CSS).toContain(".composer-toolbar { min-height: var(--size-composer-action); padding: 0 8px 8px;");
+    expect(CSS).toContain(".composer-tools { gap: 5px; }");
+    expect(CSS).toContain("width: var(--size-composer-action); height: var(--size-composer-action);");
     expect(CSS).toContain("-webkit-backdrop-filter: blur(var(--blur-lg)); backdrop-filter: blur(var(--blur-lg))");
     expect(CSS).toContain("scrollbar-color: var(--scrollbar-thumb) transparent");
     expect(CSS).toContain("::-webkit-scrollbar-thumb");

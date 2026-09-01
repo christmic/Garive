@@ -26,6 +26,34 @@ Shared UI changes pass two gates in order:
 Gate 2 cannot waive Gate 1. Functional additions do not excuse a visually
 unfinished shell.
 
+## Source-to-capability workflow
+
+Codex source is a design reference; Garive capability is the product model.
+Every shared client change records three distinct layers:
+
+1. **Source fact:** exact installed bundle, module, selector/token and value.
+   Screenshots may validate composition but never replace source evidence.
+2. **Capability mapping:** the Garive Session, Turn, Workspace, authority,
+   memory or artifact behavior that needs the pattern. Unsupported Codex
+   capabilities are not rendered as decorative or inert imitations.
+3. **Garive decision:** any necessary adaptation, with its reason and truthful
+   state semantics. It must use the same shared visual grammar.
+
+Small adjustments are product work. A 4px control-size error, a mismatched
+radius or a duplicate status label is fixed when it changes rhythm, focus or
+comprehension. Each reusable correction must also lower the cost of the next
+iteration:
+
+- add or change a semantic token instead of scattering a raw value;
+- keep Desktop and Web on the canonical React component and stylesheet;
+- freeze source-backed geometry in the visual contract test;
+- verify computed geometry at desktop and narrow widths with zero overflow;
+- record source facts and Garive adaptations in the fidelity study.
+
+Exceptions require a named platform constraint and a bounded selector or
+adapter. Product names, model names, capacity, authority and execution state
+always come from Garive facts, never from the reference UI.
+
 ## Principles
 
 1. Outcome before mechanism: lead with the user's deliverable and next action.
@@ -70,7 +98,7 @@ essential label is clipped or replaced by an icon.
 | Family | Tokens |
 |---|---|
 | space | `--space-1` 4, `--space-2` 8, `--space-3` 12, `--space-4` 16, `--space-5` 24, `--space-6` 32 px |
-| radius | `--radius-control` 8, `--radius-card` 12, `--radius-panel` 14, `--radius-composer` 20/25, `--radius-pill` 999 px |
+| radius | `--radius-control` 8, `--radius-card` 12, `--radius-panel` 14, `--radius-composer` 24, `--radius-pill` 999 px |
 | depth | `--shadow-raised` = 8/16/-4, `--shadow-overlay` = 16/32/-8; no other shadow families |
 | motion | `--motion-basic` 150 ms, `--motion-relaxed` 300 ms; exact basic, enter, exit and snappy curves |
 | material | `--blur-lg` 16 px; floating transparency only |
@@ -399,11 +427,16 @@ and exact document width without becoming a separate mobile visual language.
 
 Localization and 200% text zoom may grow rows and must never clip content.
 
-The multiline Composer uses a 20px fallback radius and a 25px
-`superellipse(1.5)` radius where supported. It has no physical border. Light
+The desktop multiline Composer uses a 24px radius and the
+`superellipse(1.5)` corner shape where supported. It has no physical border. Light
 depth is `0 0 0 1px / 4%`, `0 2px 8px / 4%` and `0 4px 80px 8px / 2.4%`;
 dark depth is one 20% white inset pixel. Composer depth is a dedicated token and
 must not inherit the stronger card or overlay shadow family.
+
+Composer submit, stop and circular context actions are 28px. The multiline
+input has a 12px inline inset; its footer uses an 8px inline and bottom inset
+with a 5px gap between inline controls. These values come from the installed
+Codex desktop bundle's Composer layout and action tokens.
 
 The unified Desktop/Web main toolbar is 46px; compact chrome uses 36px. The file
 tab shares the main row, its location toolbar is 40px including its

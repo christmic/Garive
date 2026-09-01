@@ -34,7 +34,8 @@
   --radius-control: 8px;
   --radius-card: 12px;
   --radius-panel: 14px;
-  --radius-composer: 20px;
+  --radius-composer: 24px;
+  --size-composer-action: 28px;
   --radius-pill: 999px;
   --height-toolbar: 46px;
   --height-toolbar-sm: 36px;
@@ -145,10 +146,6 @@
   --amber: var(--state-attention);
   --red: var(--state-danger);
   --shadow: var(--shadow-raised);
-}
-
-@supports (corner-shape: superellipse(1.5)) {
-  :root { --radius-composer: 25px; }
 }
 
 @media (prefers-reduced-motion: reduce) {

@@ -762,15 +762,15 @@ kbd { font-size: var(--text-2xs); }
 .composer { width: min(var(--thread-content-max-width), 100%); border: 0; border-radius: var(--radius-composer); background: var(--surface-composer); box-shadow: var(--shadow-composer); }
 .composer.busy { opacity: 1; }
 .composer:focus-within { box-shadow: var(--shadow-composer); }
-.composer textarea { min-height: 30px; max-height: 168px; padding: 6px 14px 0; font-size: var(--text-md); line-height: 1.5; }
-.composer-toolbar { min-height: 32px; padding: 0 5px 2px 6px; }
-.composer-tools { gap: 4px; }
-.composer-tools button { height: 32px; padding: 0 8px; color: var(--text-secondary); font-size: var(--text-xs); }
+.composer textarea { min-height: 30px; max-height: 168px; padding: 6px 12px 0; font-size: var(--text-md); line-height: 1.5; }
+.composer-toolbar { min-height: var(--size-composer-action); padding: 0 8px 8px; }
+.composer-tools { gap: 5px; }
+.composer-tools button { height: var(--size-composer-action); padding: 0 8px; color: var(--text-secondary); font-size: var(--text-xs); }
 .composer-tools button:hover { background: var(--surface-hover); }
-.composer-tools .composer-context-button { display: grid; place-items: center; width: 32px; padding: 0; border-radius: 50%; }
+.composer-tools .composer-context-button { display: grid; place-items: center; width: var(--size-composer-action); padding: 0; border-radius: 50%; }
 .composer-tools .composer-context-button svg { width: 14px; }
 .access-pill { min-height: 22px; color: var(--text-tertiary); font-size: var(--text-2xs); }
-.send-button, .composer-stop-button { display: grid; place-items: center; flex: none; width: 32px; height: 32px; padding: 0; border: 0; border-radius: 50%; }
+.send-button, .composer-stop-button { display: grid; place-items: center; flex: none; width: var(--size-composer-action); height: var(--size-composer-action); padding: 0; border: 0; border-radius: 50%; }
 .send-button { color: var(--surface-canvas); background: var(--text-primary); }
 .send-button:hover:not(:disabled) { background: var(--text-secondary); }
 .send-button:disabled { color: var(--text-tertiary); background: var(--surface-hover); }
