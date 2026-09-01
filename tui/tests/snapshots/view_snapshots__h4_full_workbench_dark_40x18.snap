@@ -1,0 +1,162 @@
+---
+source: tui/tests/view_snapshots.rs
+expression: compact
+---
+===== preparing =====
+Current session
+
+  › Show every verified streaming
+    stage.
+  ◆ Garive · Preparing context
+
+
+
+
+
+
+
+
+
+
+
+› A retained follow-up draft
+  Esc cancel run
+
+===== first presented delta =====
+Current session
+
+  › Show every verified streaming
+    stage.
+  ◆ Garive · Preparing context
+    The first visible▍
+
+
+
+
+
+
+
+
+
+
+› A retained follow-up draft
+  Esc cancel run
+
+===== second delta with activity =====
+Current session
+
+  › Show every verified streaming
+    stage.
+    ● Verifying streamed output
+  ◆ Garive · Generating response
+    The first visible streaming frame
+    arrives.▍
+
+
+
+
+
+
+
+
+› A retained follow-up draft
+  Esc cancel run
+
+===== overlay while streaming =====
+╭ Command palette ─────────────────────╮
+│  Search  type to search              │
+│  Showing 1–12 / 21 · ↓9              │
+│  › /new              unavailable ·…  │
+│    /sessions         Switch session  │
+│    /jump             unavailable ·…  │
+│    /inspect          Open Inspector  │
+│    /status           Connection de…  │
+│    /edit-prompt      Edit draft ex…  │
+│    /retry            unavailable ·…  │
+│    /reconnect        Resume event …  │
+│    /cancel           Cancel runnin…  │
+│    /theme system     Follow termin…  │
+│    /theme dark       Use dark theme  │
+│    /theme light      Use light the…  │
+│    ↑/↓ select   Home/End edge        │
+│    Enter run   Esc close             │
+╰──────────────────────────────────────╯
+
+===== stream restored after overlay =====
+Current session
+
+  › Show every verified streaming
+    stage.
+    ● Verifying streamed output
+  ◆ Garive · Generating response
+    The first visible streaming frame
+    arrives.▍
+
+
+
+
+
+
+
+
+› A retained follow-up draft
+  Esc cancel run
+
+===== finalizing =====
+Current session
+
+  › Show every verified streaming
+    stage.
+    ● Verifying streamed output
+  ◆ Garive · Finalizing response
+    The first visible streaming frame
+    arrives.▍
+
+
+
+
+
+
+
+
+› A retained follow-up draft
+  Esc cancel run
+
+===== ended awaiting durable =====
+Current session
+
+  › Show every verified streaming
+    stage.
+    ● Verifying streamed output
+  ◆ Garive · Awaiting saved result
+    The first visible streaming frame
+    arrives.
+
+
+
+
+
+
+
+
+› A retained follow-up draft
+  Esc cancel run
+
+===== durable takeover =====
+Current session
+
+  › Show every verified streaming
+    stage.
+    ● Verifying streamed output
+  ◆ Garive
+    Saved streaming answer.
+
+
+
+
+
+
+
+
+
+› A retained follow-up draft

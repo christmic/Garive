@@ -259,12 +259,26 @@ fn live_answer_states_match_reviewed_theme_snapshots() {
 
 #[test]
 fn h4_full_workbench_timeline_matches_reviewed_snapshot() {
-    let filmstrip = live_workbench_filmstrip();
+    let filmstrip = live_workbench_filmstrip(100, 24);
     assert!(filmstrip.contains("The first visible"));
     assert!(filmstrip.contains("streaming frame arrives."));
     assert!(!filmstrip.contains("Agent running"));
     assert_eq!(filmstrip.matches("Saved streaming answer.").count(), 1);
     insta::assert_snapshot!("h4_full_workbench_dark_100x24", filmstrip);
+}
+
+#[test]
+fn h4_responsive_workbench_timelines_match_reviewed_snapshots() {
+    let compact = live_workbench_filmstrip(40, 18);
+    let wide = live_workbench_filmstrip(160, 24);
+    for filmstrip in [&compact, &wide] {
+        assert!(filmstrip.contains("The first visible"));
+        assert!(filmstrip.contains("streaming"));
+        assert!(filmstrip.contains("frame"));
+        assert_eq!(filmstrip.matches("Saved streaming answer.").count(), 1);
+    }
+    insta::assert_snapshot!("h4_full_workbench_dark_40x18", compact);
+    insta::assert_snapshot!("h4_full_workbench_dark_160x24", wide);
 }
 
 #[test]
@@ -880,7 +894,7 @@ fn live_answer_states_preview(theme: Theme) -> String {
     )
 }
 
-fn live_workbench_filmstrip() -> String {
+fn live_workbench_filmstrip(width: u16, height: u16) -> String {
     let mut model = AppModel {
         boot: BootState::Ready,
         definition_count: 1,
@@ -909,7 +923,7 @@ fn live_workbench_filmstrip() -> String {
     let mut capture = |label: &str, model: &AppModel| {
         frames.push(format!(
             "===== {label} =====\n{}",
-            cached_frame(model, &mut cache, Theme::Dark, 100, 24)
+            cached_frame(model, &mut cache, Theme::Dark, width, height)
         ));
     };
 
