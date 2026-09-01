@@ -1,0 +1,69 @@
+---
+source: tui/tests/view_snapshots.rs
+expression: "format!(\"===== requesting · compact mono 40x8 =====\\n{requesting}\\n\\n===== accepted · standard dark 100x24 =====\\n{awaiting}\\n\\n===== unknown · wide light 160x28 =====\\n{unknown}\")"
+---
+===== requesting · compact mono 40x8 =====
+
+    • Verify the Runtime
+    • Ship with evidence
+
+    cargo test passes.
+
+ … Requesting cancellation
+› settles
+
+===== accepted · standard dark 100x24 =====
+  Session 1  ·  Agent
+
+    › Summarize the release plan.
+      ✓  Agent action · completed
+    ◆ Garive
+      ## Release plan
+
+      • Verify the Runtime
+      • Ship with evidence
+
+      cargo test passes.
+
+
+
+
+
+
+
+
+
+
+   … Cancellation accepted · waiting for Turn to stop
+  › Retained draft while cancellation settles
+   ● Waiting for durable command truth…
+
+===== unknown · wide light 160x28 =====
+                                Session 1  ·  Agent
+
+                                  › Summarize the release plan.
+                                    ✓  Agent action · completed
+                                  ◆ Garive
+                                    ## Release plan
+
+                                    • Verify the Runtime
+                                    • Ship with evidence
+
+                                    cargo test passes.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+                                 ! Cancellation outcome unknown · recovery required
+                                › Retained draft while cancellation settles
+                                 ● Waiting for durable command truth…

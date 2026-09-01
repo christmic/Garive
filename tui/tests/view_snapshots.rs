@@ -257,6 +257,43 @@ fn detached_follow_cue_matches_responsive_and_overlay_ownership_snapshots() {
 }
 
 #[test]
+fn cancellation_control_responsive_matrix_matches_reviewed_snapshot() {
+    let mut model = product_model();
+    model.selected_turn = Some("turn-cancel".into());
+    model.composer_is_frozen = true;
+    model
+        .composer
+        .replace("Retained draft while cancellation settles")
+        .unwrap();
+    model.cancel_requests.begin(
+        "cancel-command".into(),
+        "session-alpha-123456".into(),
+        "turn-cancel".into(),
+    );
+
+    let requesting = frame(&model, Theme::Mono, 40, 8);
+    assert!(requesting.contains("Requesting cancellation"));
+    assert!(!requesting.contains("Esc cancel Turn"));
+
+    model.cancel_requests.mark_accepted("cancel-command");
+    let awaiting = frame(&model, Theme::Dark, 100, 24);
+    assert!(awaiting.contains("Cancellation accepted · waiting for Turn to stop"));
+    assert!(!awaiting.contains("Esc cancel Turn"));
+
+    model.cancel_requests.mark_unknown("cancel-command");
+    let unknown = frame(&model, Theme::Light, 160, 28);
+    assert!(unknown.contains("Cancellation outcome unknown · recovery required"));
+    assert!(!unknown.contains("Esc cancel Turn"));
+
+    insta::assert_snapshot!(
+        "cancellation_control_responsive_matrix",
+        format!(
+            "===== requesting · compact mono 40x8 =====\n{requesting}\n\n===== accepted · standard dark 100x24 =====\n{awaiting}\n\n===== unknown · wide light 160x28 =====\n{unknown}"
+        )
+    );
+}
+
+#[test]
 fn frozen_composer_theme_and_width_matrix_matches_reviewed_snapshot() {
     insta::assert_snapshot!(
         "frozen_composer_theme_width_matrix",
