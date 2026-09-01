@@ -1239,6 +1239,29 @@ an explicit tooltip description and the Runtime status point remains aligned to
 the far side of its rail row after the wrapper change. This closes the last known
 native-tooltip exception in the shared client source.
 
+### XLI. Every visible task row keeps its state anchor
+
+The supplied Codex references show a trailing circular state anchor on every
+visible Pinned row, including the selected task. Installed source registers
+separate `sidebar-thread-active` and `sidebar-thread-selected` row facts, while
+its stylesheet resolves selected material through the thread-selected data
+attribute. The row state and the row selection are therefore independent
+signals; selecting a task must not consume its execution status.
+
+Garive already rendered semantic attention, active, failed and completed rings
+for Host-returned Recents. During the interval before that list was available,
+however, its selected current-Session fallback rendered only hidden status copy.
+The same running task consequently lost its trailing ring in the exact primary
+thread fixture even though its Composer and progress rail remained active.
+
+The fallback now derives the same five-state category from admitted Work state
+and renders the shared `task-state-dot`. It does not infer a new Runtime fact:
+submitting/running, suspension, failure and terminal completion are values the
+client already owns. Live Web evidence shows the active ring at the far edge of
+the selected current row at 1280×720. A 981×720 four-state queue keeps attention,
+running, failed/review and completed markers aligned without sacrificing title
+ellipsis or changing the quiet selected surface.
+
 ## Gate 1 — Codex fidelity
 
 This gate passes only when both Desktop and Web show:

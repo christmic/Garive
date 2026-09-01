@@ -43,7 +43,7 @@ import type { ProductEffectPort } from "./app/ProductRuntime";
 import type { AppIntent, DefinitionItem, SessionItem } from "./state/controller";
 import {
   classifyTask, filterAndOrderTasks, groupSidebarTasks,
-  type RecentTask, type TaskFilter,
+  type RecentTask, type TaskCategory, type TaskFilter,
 } from "./taskPresentation";
 
 type Screen = "work" | "search" | "agents" | "settings";
@@ -786,7 +786,8 @@ export function App({ client = "desktop", webCapabilities, createProductPort,
               && <span className="beta-tag">{t("shell.live")}</span>}</div>
             {state.messages.length > 0 ? <button className="recent-item selected" type="button"
               onClick={() => setScreen("work")}><span>{title}</span><small>{state.phase === "submitting"
-                ? t("status.working") : terminalCopy(state.messages.at(-1)?.terminal, t)}</small></button>
+                ? t("status.working") : terminalCopy(state.messages.at(-1)?.terminal, t)}
+                <CurrentTaskStateDot state={state} /></small></button>
               : <p className="sidebar-empty">{t("shell.recentsEmpty")}</p>}
           </section>}
         </div>
@@ -2014,6 +2015,15 @@ function NavItem({ icon, label, selected, disabled, hint, onClick, soon = "Soon"
 function terminalCopy(terminal?: "running" | "completed" | "suspended" | "stopped" | "failed", t?: (key: MessageKey) => string) { const key = terminal === "completed" ? "status.completed" : terminal === "suspended" ? "status.needsInput" : terminal === "stopped" ? "status.stopped" : terminal === "failed" ? "status.failed" : "status.working"; return t ? t(key) : key === "status.completed" ? "Completed" : key === "status.needsInput" ? "Needs input" : key === "status.stopped" ? "Stopped" : key === "status.failed" ? "Failed" : "Working"; }
 function TaskStateDot({ task }: { task: RecentTask }) {
   return <span className={`task-state-dot ${classifyTask(task)}`} aria-hidden="true" />;
+}
+function CurrentTaskStateDot({ state }: { state: WorkState }) {
+  const terminal = state.messages.at(-1)?.terminal;
+  const suspended = state.messages.some((message) => Boolean(message.suspension));
+  const category: TaskCategory = state.phase === "submitting" ? "active"
+    : suspended || terminal === "suspended" ? "attention"
+      : terminal === "failed" ? "failed"
+        : terminal === "completed" || terminal === "stopped" ? "completed" : "idle";
+  return <span className={`task-state-dot ${category}`} aria-hidden="true" />;
 }
 function taskStateCopy(task: RecentTask, t: (key: MessageKey) => string) {
   const category = classifyTask(task);

@@ -245,6 +245,7 @@ describe("Desktop product experience", () => {
     expect(commands).not.toContain("start_product_turn");
     fireEvent.keyDown(composer, { key: "Enter" });
     await waitFor(() => expect(commands).toContain("start_product_turn"));
+    expect(view.container.querySelector(".recent-item.selected .task-state-dot")).not.toBeNull();
   });
 
   it("opens a keyboard-first command center and routes actions without losing work", async () => {
@@ -331,7 +332,8 @@ describe("Desktop product experience", () => {
     expect(screen.queryByRole("button", { name: "Toggle inspector" })).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: /Synthesize/ }));
     await waitFor(() => expect(view.container.querySelector(".suggestion-grid")).toBeNull());
-    await waitFor(() => expect(composer).toBe(document.activeElement));
+    await waitFor(() => expect(document.activeElement?.getAttribute("aria-label"))
+      .toBe("Describe the outcome you want"));
   });
 
   it("collapses and restores the native navigation without discarding work", async () => {
