@@ -1049,6 +1049,7 @@ fn open_session(ledger: &mut SqliteLedger, session: &SessionId) {
                         "goal_id":"goal-1",
                         "revision":2,
                         "attempt_number":1,
+                        "actor_reference":"agent:fixture",
                     }),
                 ),
             ],
