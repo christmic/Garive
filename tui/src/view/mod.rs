@@ -175,6 +175,12 @@ pub(crate) fn conversation_page_cells(model: &AppModel) -> usize {
     )
 }
 
+pub(crate) fn conversation_follow_cue_hit_test(model: &AppModel, column: u16, row: u16) -> bool {
+    let area = Rect::new(0, 0, model.terminal_size.width, model.terminal_size.height);
+    let frame = FrameLayout::resolve(model, area);
+    conversation::follow_cue_hit_test(model, frame.transcript, column, row)
+}
+
 pub(crate) fn scroll_conversation(
     model: &mut AppModel,
     theme: Theme,

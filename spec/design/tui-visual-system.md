@@ -211,6 +211,13 @@ Expanding details opens Inspector or an overlay; it does not insert a
 dashboard pane or expose tool arguments, raw paths, provider values, or hidden
 reasoning. State always has a semantic word or glyph in addition to color.
 
+Detached conversation state uses one borderless `FollowCue` above the viewport.
+Its arrow and unseen count use the semantic badge accent, `End` uses the shared
+keycap primitive, and `follow latest` stays muted. Monochrome therefore retains
+arrow/text identity plus a reverse-video keycap. An active overlay suppresses
+the action while preserving passive unseen status, so background chrome never
+advertises an input it cannot receive.
+
 `LiveAnswer` shares the Agent answer measure but does not masquerade as a
 durable cell. Its received source is partitioned before the final top-level
 Markdown block, leaving one structurally stable prefix and one mutable tail.

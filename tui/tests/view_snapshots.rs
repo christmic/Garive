@@ -224,6 +224,39 @@ fn responsive_product_frames_match_reviewed_snapshots() {
 }
 
 #[test]
+fn detached_follow_cue_matches_responsive_and_overlay_ownership_snapshots() {
+    let mut model = product_model();
+    model.viewport.follow_latest = false;
+    model.viewport.newer_updates = 12;
+    let mut frames = [
+        ("compact mono 40x8", Theme::Mono, 40, 8),
+        ("standard dark 100x24", Theme::Dark, 100, 24),
+        ("wide light 160x28", Theme::Light, 160, 28),
+    ]
+    .map(|(label, theme, width, height)| {
+        format!(
+            "===== {label} =====\n{}",
+            frame(&model, theme, width, height)
+        )
+    })
+    .to_vec();
+    model.overlay = Some(Overlay::Help);
+    frames.push(format!(
+        "===== overlay owns input =====\n{}",
+        frame(&model, Theme::Dark, 100, 24)
+    ));
+    let matrix = frames.join("\n");
+    assert!(matrix.contains("↓ 12 newer updates ·  End follow latest"));
+    let overlay = matrix
+        .split("===== overlay owns input =====")
+        .nth(1)
+        .expect("overlay frame");
+    assert!(overlay.contains("↓ 12 newer updates"));
+    assert!(!overlay.contains("End follow latest"));
+    insta::assert_snapshot!("detached_follow_cue_matrix", matrix);
+}
+
+#[test]
 fn frozen_composer_theme_and_width_matrix_matches_reviewed_snapshot() {
     insta::assert_snapshot!(
         "frozen_composer_theme_width_matrix",

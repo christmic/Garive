@@ -4,9 +4,9 @@ use crate::{
     application::{ActionOverlayIntent, AppAction, AppModel, FocusTarget},
     input::ComposerClick,
     view::{
-        command_suggestion_hit_test, composer_hit_test, decision_action_hit_test,
-        decision_choice_hit_test, inspector_contains, inspector_hit_test, overlay_contains,
-        overlay_hit_test,
+        command_suggestion_hit_test, composer_hit_test, conversation_follow_cue_hit_test,
+        decision_action_hit_test, decision_choice_hit_test, inspector_contains, inspector_hit_test,
+        overlay_contains, overlay_hit_test,
     },
 };
 
@@ -17,6 +17,7 @@ mod overlay;
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum MouseAction {
     ConversationScroll { backwards: bool },
+    FollowLatest,
     OverlayMove { backwards: bool },
     OverlayActivate(usize),
     DecisionAction(ActionOverlayIntent),
@@ -69,6 +70,7 @@ pub(super) fn handle(mouse: MouseEvent, state: &mut RuntimeState) {
             state.dispatch(AppAction::FocusChanged(FocusTarget::Conversation));
             scroll_conversation(state, 3);
         }
+        MouseAction::FollowLatest => state.model.follow_latest(),
         MouseAction::OverlayMove { backwards } => overlay::move_selection(state, backwards),
         MouseAction::OverlayActivate(index) => overlay::activate_selection(state, index),
         MouseAction::DecisionAction(intent) => {
@@ -174,7 +176,12 @@ fn route(model: &AppModel, mouse: MouseEvent) -> Option<MouseAction> {
         MouseEventKind::ScrollUp => Some(MouseAction::ConversationScroll { backwards: true }),
         MouseEventKind::ScrollDown => Some(MouseAction::ConversationScroll { backwards: false }),
         MouseEventKind::Down(MouseButton::Left) => {
-            composer_hit_test(model, mouse.column, mouse.row, false).map(MouseAction::ComposerPlace)
+            if conversation_follow_cue_hit_test(model, mouse.column, mouse.row) {
+                Some(MouseAction::FollowLatest)
+            } else {
+                composer_hit_test(model, mouse.column, mouse.row, false)
+                    .map(MouseAction::ComposerPlace)
+            }
         }
         _ => None,
     }
@@ -229,6 +236,53 @@ mod tests {
             route(&model, mouse(MouseEventKind::Down(MouseButton::Left), 5, 5)),
             None
         );
+    }
+
+    #[test]
+    fn follow_cue_click_restores_latest_without_mutating_the_composer() {
+        let mut state = RuntimeState::test_ephemeral(Vec::new());
+        state.model.terminal_size = TerminalSize {
+            width: 100,
+            height: 24,
+        };
+        state.model.focus = FocusTarget::Composer;
+        state.model.viewport.follow_latest = false;
+        state.model.viewport.newer_updates = 3;
+        state.model.composer.replace("retained draft").unwrap();
+        state.model.composer.move_document_start(false);
+        state.model.composer.move_right(true);
+        let cursor = state.model.composer.cursor_grapheme();
+        let selection = state.model.composer.selected_byte_range();
+        let (column, row) = (0..24)
+            .find_map(|row| {
+                (0..100)
+                    .find(|column| conversation_follow_cue_hit_test(&state.model, *column, row))
+                    .map(|column| (column, row))
+            })
+            .expect("detached FollowCue has a hit target");
+
+        handle(
+            mouse(MouseEventKind::Down(MouseButton::Left), column, row),
+            &mut state,
+        );
+
+        assert!(state.model.viewport.follow_latest);
+        assert_eq!(state.model.viewport.newer_updates, 0);
+        assert_eq!(state.model.focus, FocusTarget::Composer);
+        assert_eq!(state.model.composer.text(), "retained draft");
+        assert_eq!(state.model.composer.cursor_grapheme(), cursor);
+        assert_eq!(state.model.composer.selected_byte_range(), selection);
+
+        state.model.viewport.follow_latest = false;
+        state.model.viewport.newer_updates = 4;
+        state.model.overlay = Some(Overlay::Help);
+        assert!(!conversation_follow_cue_hit_test(&state.model, column, row));
+        handle(
+            mouse(MouseEventKind::Down(MouseButton::Left), column, row),
+            &mut state,
+        );
+        assert!(!state.model.viewport.follow_latest);
+        assert_eq!(state.model.viewport.newer_updates, 4);
     }
 
     #[test]

@@ -15,6 +15,29 @@ use garive_host_client::SuspensionView;
 use ratatui::{buffer::Buffer, layout::Rect, style::Modifier};
 
 #[test]
+fn detached_follow_cue_uses_a_mono_keycap_without_color_dependency() {
+    let mut model = AppModel {
+        terminal_size: TerminalSize {
+            width: 100,
+            height: 24,
+        },
+        ..Default::default()
+    };
+    model.viewport.follow_latest = false;
+    model.viewport.newer_updates = 12;
+    let buffer = render(&model, Theme::Mono, 100, 24);
+    let end = (0..buffer.area.height)
+        .flat_map(|row| (0..buffer.area.width).map(move |column| (column, row)))
+        .find(|position| {
+            buffer[*position].symbol() == "E"
+                && buffer[*position].modifier.contains(Modifier::REVERSED)
+        })
+        .expect("End keycap remains visible in mono");
+    assert_eq!(buffer[(end.0 + 1, end.1)].symbol(), "n");
+    assert_eq!(buffer[(end.0 + 2, end.1)].symbol(), "d");
+}
+
+#[test]
 fn decision_choice_uses_the_complete_mono_selection_row() {
     let model = suspension_model(r#"{"type":"boolean"}"#);
     let buffer = render(&model, Theme::Mono, 100, 24);

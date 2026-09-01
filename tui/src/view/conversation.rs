@@ -16,6 +16,7 @@ use super::{markdown::render_markdown, palette, safe_text, MotionFrame};
 
 mod block;
 mod empty_state;
+mod follow_cue;
 pub(super) mod live_cache;
 mod request_surface;
 mod scroll;
@@ -31,12 +32,10 @@ pub(super) fn render_conversation(
     cache: &mut RenderCache,
 ) {
     let colors = palette(theme);
-    let context = context_copy(model);
+    let context_visible = follow_cue_visible(model);
     let inner = viewport_rect(model, area);
-    if let Some(context) = context {
-        Line::styled(context, colors.muted)
-            .alignment(ratatui::layout::Alignment::Center)
-            .render(Rect::new(area.x, area.y, area.width, 1), buffer);
+    if context_visible {
+        follow_cue::render(model, colors, area, buffer);
     }
     let window = (!model.turn_blocks.is_empty() || model.live_answer.current().is_some())
         .then(|| conversation_window(model, theme, motion, inner.width, inner.height, cache));
@@ -54,21 +53,12 @@ pub(super) fn render_conversation(
         .render(inner, buffer);
 }
 
-fn context_copy(model: &AppModel) -> Option<String> {
-    if model.viewport.newer_updates > 0 {
-        Some(format!(
-            "↓ {} newer updates · End to follow",
-            model.viewport.newer_updates
-        ))
-    } else if !model.viewport.follow_latest {
-        Some("↑ Browsing history · End to follow".into())
-    } else {
-        None
-    }
+fn follow_cue_visible(model: &AppModel) -> bool {
+    model.viewport.newer_updates > 0 || !model.viewport.follow_latest
 }
 
 pub(crate) fn viewport_rect(model: &AppModel, area: Rect) -> Rect {
-    let context_height = u16::from(context_copy(model).is_some());
+    let context_height = u16::from(follow_cue_visible(model));
     let insets = ViewportInsets::resolve(area.height.saturating_sub(context_height));
     Rect::new(
         area.x.saturating_add(insets.horizontal),
@@ -81,6 +71,10 @@ pub(crate) fn viewport_rect(model: &AppModel, area: Rect) -> Rect {
             .saturating_sub(insets.top)
             .saturating_sub(context_height),
     )
+}
+
+pub(crate) fn follow_cue_hit_test(model: &AppModel, area: Rect, column: u16, row: u16) -> bool {
+    follow_cue::hit_test(model, area, column, row)
 }
 
 #[derive(Clone, Copy)]

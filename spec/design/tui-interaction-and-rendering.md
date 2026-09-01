@@ -604,7 +604,11 @@ exact H4 identity, gap, convergence, or two-frame requirements above.
 
 The viewport anchors to the newest content while `follow_latest` is true.
 Manual upward scroll disables follow and shows `N newer updates`; new events do
-not jump the viewport. `End` or activating that badge returns to latest.
+not jump the viewport. `End` or activating that badge returns to latest. The
+badge is one component that owns its projection, semantic spans, centered cell
+geometry, and pointer hit target. When an overlay owns input, the component
+retains only passive detached/update status and removes both the `End` action
+and its hit target; closing the overlay restores them without moving the anchor.
 
 While detached, both durable events and visible live-frame advances increment
 the unseen update count without forcing follow mode. The current live answer
