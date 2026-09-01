@@ -3,21 +3,21 @@ source: tui/tests/view_snapshots.rs
 expression: "live_answer_states_preview(Theme::Light)"
 ---
 -- preparing --
-line <fg=None bg=None +NONE -NONE> :: "• " <fg=Some(Black) bg=None +BOLD -NONE> | "A " <fg=Some(Black) bg=None +NONE -NONE> | "progressive" <fg=Some(Black) bg=None +BOLD -NONE> | " answer." <fg=Some(Black) bg=None +NONE -NONE> | "▍" <fg=Some(Blue) bg=None +BOLD -NONE>
+line <fg=None bg=None +NONE -NONE> :: "• " <fg=Some(Reset) bg=None +BOLD -NONE> | "A " <fg=Some(Reset) bg=None +NONE -NONE> | "progressive" <fg=Some(Reset) bg=None +BOLD -NONE> | " answer." <fg=Some(Reset) bg=None +NONE -NONE> | "▍" <fg=Some(Rgb(0, 95, 135)) bg=None +BOLD -NONE>
 line <fg=None bg=None +NONE -NONE> :: 
 -- generating --
-line <fg=None bg=None +NONE -NONE> :: "• " <fg=Some(Black) bg=None +BOLD -NONE> | "A " <fg=Some(Black) bg=None +NONE -NONE> | "progressive" <fg=Some(Black) bg=None +BOLD -NONE> | " answer." <fg=Some(Black) bg=None +NONE -NONE> | "▍" <fg=Some(Blue) bg=None +BOLD -NONE>
+line <fg=None bg=None +NONE -NONE> :: "• " <fg=Some(Reset) bg=None +BOLD -NONE> | "A " <fg=Some(Reset) bg=None +NONE -NONE> | "progressive" <fg=Some(Reset) bg=None +BOLD -NONE> | " answer." <fg=Some(Reset) bg=None +NONE -NONE> | "▍" <fg=Some(Rgb(0, 95, 135)) bg=None +BOLD -NONE>
 line <fg=None bg=None +NONE -NONE> :: 
 -- reduced motion --
-line <fg=None bg=None +NONE -NONE> :: "• " <fg=Some(Black) bg=None +BOLD -NONE> | "A " <fg=Some(Black) bg=None +NONE -NONE> | "progressive" <fg=Some(Black) bg=None +BOLD -NONE> | " answer." <fg=Some(Black) bg=None +NONE -NONE>
+line <fg=None bg=None +NONE -NONE> :: "• " <fg=Some(Reset) bg=None +BOLD -NONE> | "A " <fg=Some(Reset) bg=None +NONE -NONE> | "progressive" <fg=Some(Reset) bg=None +BOLD -NONE> | " answer." <fg=Some(Reset) bg=None +NONE -NONE>
 line <fg=None bg=None +NONE -NONE> :: 
 -- finalizing --
-line <fg=None bg=None +NONE -NONE> :: "• " <fg=Some(Black) bg=None +BOLD -NONE> | "A " <fg=Some(Black) bg=None +NONE -NONE> | "progressive" <fg=Some(Black) bg=None +BOLD -NONE> | " answer." <fg=Some(Black) bg=None +NONE -NONE> | "▍" <fg=Some(Blue) bg=None +BOLD -NONE>
+line <fg=None bg=None +NONE -NONE> :: "• " <fg=Some(Reset) bg=None +BOLD -NONE> | "A " <fg=Some(Reset) bg=None +NONE -NONE> | "progressive" <fg=Some(Reset) bg=None +BOLD -NONE> | " answer." <fg=Some(Reset) bg=None +NONE -NONE> | "▍" <fg=Some(Rgb(0, 95, 135)) bg=None +BOLD -NONE>
 line <fg=None bg=None +NONE -NONE> :: 
 -- unavailable --
 line <fg=None bg=None +NONE -NONE> :: 
 -- ended preview --
-line <fg=None bg=None +NONE -NONE> :: "• " <fg=Some(Black) bg=None +BOLD -NONE> | "Saved answer pending durable projection." <fg=Some(Black) bg=None +NONE -NONE>
+line <fg=None bg=None +NONE -NONE> :: "• " <fg=Some(Reset) bg=None +BOLD -NONE> | "Saved answer pending durable projection." <fg=Some(Reset) bg=None +NONE -NONE>
 line <fg=None bg=None +NONE -NONE> :: 
 -- durable takeover --
 live preview present: false

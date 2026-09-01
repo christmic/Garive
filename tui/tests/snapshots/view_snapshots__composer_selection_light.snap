@@ -2,5 +2,5 @@
 source: tui/tests/view_snapshots.rs
 expression: "composer_selection_style_preview(Theme::Light)"
 ---
-"Selected" <fg=Black bg=Magenta +NONE>
-" tail" <fg=Black bg=Reset +NONE>
+"Selected" <fg=Reset bg=Magenta +NONE>
+" tail" <fg=Reset bg=Reset +NONE>

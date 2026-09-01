@@ -63,33 +63,25 @@ pub(super) fn palette(theme: Theme) -> Palette {
 pub(super) fn palette_for(theme: Theme, profile: TerminalProfile) -> Palette {
     let color_level = profile.effective_color(theme);
     let mono = color_level == ColorLevel::Mono;
-    let (accent, violet, surface, text, muted) = if theme == Theme::Light {
+    let (accent, surface) = if mono {
+        (Color::Reset, Color::Reset)
+    } else if theme == Theme::Light {
         (
-            Color::Blue,
-            Color::Magenta,
-            adaptive((235, 238, 244), Color::White, color_level),
-            Color::Black,
-            Color::DarkGray,
-        )
-    } else if mono {
-        (
-            Color::Reset,
-            Color::Reset,
-            Color::Reset,
-            Color::Reset,
-            Color::Reset,
+            adaptive((0, 95, 135), Color::Blue, color_level),
+            adaptive((245, 245, 245), Color::Reset, color_level),
         )
     } else {
         (
-            adaptive((72, 202, 228), Color::Cyan, color_level),
-            adaptive((189, 147, 249), Color::Magenta, color_level),
-            adaptive((24, 28, 38), Color::Black, color_level),
-            adaptive((232, 235, 242), Color::White, color_level),
-            adaptive((126, 134, 151), Color::DarkGray, color_level),
+            Color::Cyan,
+            adaptive((31, 31, 31), Color::Reset, color_level),
         )
     };
+    let text = Color::Reset;
+    let violet = if mono { Color::Reset } else { Color::Magenta };
+    let normal = Style::default().fg(text);
+    let muted = normal.add_modifier(Modifier::DIM);
     let bold = Style::default().fg(accent).add_modifier(Modifier::BOLD);
-    let strong = Style::default().fg(text).add_modifier(Modifier::BOLD);
+    let strong = normal.add_modifier(Modifier::BOLD);
     let keycap = if mono {
         Style::default().add_modifier(Modifier::BOLD | Modifier::REVERSED)
     } else {
@@ -117,12 +109,12 @@ pub(super) fn palette_for(theme: Theme, profile: TerminalProfile) -> Palette {
     };
     Palette {
         unicode_borders: profile.unicode_borders(),
-        normal: Style::default().fg(text),
-        muted: Style::default().fg(muted),
+        normal,
+        muted,
         accent: bold,
         title: strong,
         badge: Style::default().fg(violet),
-        border: Style::default().fg(muted),
+        border: muted,
         overlay_border: Style::default().fg(violet),
         modal_backdrop: Style::default().add_modifier(Modifier::DIM),
         selected: Style::default().fg(accent).add_modifier(Modifier::BOLD),
@@ -141,8 +133,8 @@ pub(super) fn palette_for(theme: Theme, profile: TerminalProfile) -> Palette {
                 .add_modifier(Modifier::BOLD)
         },
         agent: strong,
-        activity: Style::default().fg(if mono { text } else { Color::Yellow }),
-        placeholder: Style::default().fg(muted).add_modifier(Modifier::ITALIC),
+        activity: muted,
+        placeholder: muted.add_modifier(Modifier::ITALIC),
         empty_title: Style::default().fg(text).add_modifier(Modifier::BOLD),
         keycap,
         notice: Style::default().fg(violet).add_modifier(Modifier::BOLD),
@@ -234,15 +226,17 @@ mod tests {
     }
 
     #[test]
-    fn rgb_tokens_downgrade_to_the_admitted_color_vocabulary() {
+    fn semantic_tokens_keep_native_text_and_adaptive_surfaces() {
         let truecolor = palette_for(
             Theme::Dark,
             profile("xterm-256color", Some("truecolor"), "en_US.UTF-8"),
         );
-        assert_eq!(truecolor.accent.fg, Some(Color::Rgb(72, 202, 228)));
+        assert_eq!(truecolor.accent.fg, Some(Color::Cyan));
+        assert_eq!(truecolor.normal.fg, Some(Color::Reset));
+        assert!(truecolor.muted.add_modifier.contains(Modifier::DIM));
 
         let ansi256 = palette_for(Theme::Dark, profile("xterm-256color", None, "en_US.UTF-8"));
-        assert!(matches!(ansi256.accent.fg, Some(Color::Indexed(_))));
+        assert_eq!(ansi256.accent.fg, Some(Color::Cyan));
         assert!(matches!(
             ansi256.request_surface.bg,
             Some(Color::Indexed(_))
@@ -250,7 +244,7 @@ mod tests {
 
         let basic = palette_for(Theme::Dark, profile("xterm", None, "C"));
         assert_eq!(basic.accent.fg, Some(Color::Cyan));
-        assert_eq!(basic.request_surface.bg, Some(Color::Black));
+        assert_eq!(basic.request_surface.bg, Some(Color::Reset));
 
         let mono = palette_for(Theme::Mono, TerminalProfile::default());
         assert_eq!(mono.request_surface.bg, None);

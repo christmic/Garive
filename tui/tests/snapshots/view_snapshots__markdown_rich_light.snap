@@ -2,19 +2,19 @@
 source: tui/tests/view_snapshots.rs
 expression: "markdown_style_preview(Theme::Light)"
 ---
-"# Delivery" <fg=Some(Black) bg=None +BOLD | UNDERLINED -NONE>
+"# Delivery" <fg=Some(Reset) bg=None +BOLD | UNDERLINED -NONE>
 
-"outer " <fg=Some(Black) bg=None +BOLD -NONE> | "inner" <fg=Some(Black) bg=None +BOLD | ITALIC -NONE> | " tail" <fg=Some(Black) bg=None +BOLD -NONE>
+"outer " <fg=Some(Reset) bg=None +BOLD -NONE> | "inner" <fg=Some(Reset) bg=None +BOLD | ITALIC -NONE> | " tail" <fg=Some(Reset) bg=None +BOLD -NONE>
 
-"3. " <fg=Some(Black) bg=None +BOLD -NONE> | "inspect" <fg=Some(Black) bg=None +NONE -NONE>
-"4. " <fg=Some(Black) bg=None +BOLD -NONE> | "ship" <fg=Some(Black) bg=None +NONE -NONE>
+"3. " <fg=Some(Reset) bg=None +BOLD -NONE> | "inspect" <fg=Some(Reset) bg=None +NONE -NONE>
+"4. " <fg=Some(Reset) bg=None +BOLD -NONE> | "ship" <fg=Some(Reset) bg=None +NONE -NONE>
 
-"Guide" <fg=Some(Black) bg=None +BOLD | UNDERLINED -NONE> | " (" <fg=Some(DarkGray) bg=None +NONE -NONE> | "https://garive.local/guide" <fg=Some(Black) bg=None +BOLD | UNDERLINED -NONE> | ")" <fg=Some(DarkGray) bg=None +NONE -NONE>
+"Guide" <fg=Some(Reset) bg=None +BOLD | UNDERLINED -NONE> | " (" <fg=Some(Reset) bg=None +DIM -NONE> | "https://garive.local/guide" <fg=Some(Reset) bg=None +BOLD | UNDERLINED -NONE> | ")" <fg=Some(Reset) bg=None +DIM -NONE>
 
-"" <fg=Some(Black) bg=None +BOLD -NONE> | "Surface" <fg=Some(Black) bg=None +BOLD -NONE> | "" <fg=Some(Black) bg=None +BOLD -NONE> | " │ " <fg=Some(DarkGray) bg=None +NONE -NONE> | "" <fg=Some(Black) bg=None +BOLD -NONE> | "State" <fg=Some(Black) bg=None +BOLD -NONE> | "" <fg=Some(Black) bg=None +BOLD -NONE>
-"────────┼──────" <fg=Some(Black) bg=None +BOLD -NONE>
-"" <fg=Some(Black) bg=None +NONE -NONE> | "macOS" <fg=Some(Black) bg=None +NONE -NONE> | "  " <fg=Some(Black) bg=None +NONE -NONE> | " │ " <fg=Some(DarkGray) bg=None +NONE -NONE> | "" <fg=Some(Black) bg=None +NONE -NONE> | "ready" <fg=Some(Black) bg=None +BOLD -NONE> | "" <fg=Some(Black) bg=None +NONE -NONE>
-"" <fg=Some(Black) bg=None +NONE -NONE> | "Other" <fg=Some(Black) bg=None +NONE -NONE> | "  " <fg=Some(Black) bg=None +NONE -NONE> | " │ " <fg=Some(DarkGray) bg=None +NONE -NONE> | "" <fg=Some(Black) bg=None +NONE -NONE> | "later" <fg=Some(Black) bg=None +NONE -NONE> | "" <fg=Some(Black) bg=None +NONE -NONE>
+"" <fg=Some(Reset) bg=None +BOLD -NONE> | "Surface" <fg=Some(Reset) bg=None +BOLD -NONE> | "" <fg=Some(Reset) bg=None +BOLD -NONE> | " │ " <fg=Some(Reset) bg=None +DIM -NONE> | "" <fg=Some(Reset) bg=None +BOLD -NONE> | "State" <fg=Some(Reset) bg=None +BOLD -NONE> | "" <fg=Some(Reset) bg=None +BOLD -NONE>
+"────────┼──────" <fg=Some(Reset) bg=None +BOLD -NONE>
+"" <fg=Some(Reset) bg=None +NONE -NONE> | "macOS" <fg=Some(Reset) bg=None +NONE -NONE> | "  " <fg=Some(Reset) bg=None +NONE -NONE> | " │ " <fg=Some(Reset) bg=None +DIM -NONE> | "" <fg=Some(Reset) bg=None +NONE -NONE> | "ready" <fg=Some(Reset) bg=None +BOLD -NONE> | "" <fg=Some(Reset) bg=None +NONE -NONE>
+"" <fg=Some(Reset) bg=None +NONE -NONE> | "Other" <fg=Some(Reset) bg=None +NONE -NONE> | "  " <fg=Some(Reset) bg=None +NONE -NONE> | " │ " <fg=Some(Reset) bg=None +DIM -NONE> | "" <fg=Some(Reset) bg=None +NONE -NONE> | "later" <fg=Some(Reset) bg=None +NONE -NONE> | "" <fg=Some(Reset) bg=None +NONE -NONE>
 
-"  " <fg=Some(DarkGray) bg=None +NONE -NONE> | "rust" <fg=Some(DarkGray) bg=None +BOLD -NONE>
-"│ " <fg=Some(DarkGray) bg=None +NONE -NONE> | "fn" <fg=Some(Magenta) bg=None +BOLD -NONE> | " " <fg=Some(Black) bg=None +NONE -NONE> | "main" <fg=Some(Magenta) bg=None +BOLD -NONE> | "()" <fg=Some(DarkGray) bg=None +NONE -NONE> | " " <fg=Some(Black) bg=None +NONE -NONE> | "{}" <fg=Some(DarkGray) bg=None +NONE -NONE>
+"  " <fg=Some(Reset) bg=None +DIM -NONE> | "rust" <fg=Some(Reset) bg=None +BOLD | DIM -NONE>
+"│ " <fg=Some(Reset) bg=None +DIM -NONE> | "fn" <fg=Some(Magenta) bg=None +BOLD -NONE> | " " <fg=Some(Reset) bg=None +NONE -NONE> | "main" <fg=Some(Magenta) bg=None +BOLD -NONE> | "()" <fg=Some(Reset) bg=None +DIM -NONE> | " " <fg=Some(Reset) bg=None +NONE -NONE> | "{}" <fg=Some(Reset) bg=None +DIM -NONE>

@@ -53,12 +53,12 @@ fn system_theme_uses_paired_terminal_colors_in_a_real_pty() {
         "fullscreen startup must not query the cursor position"
     );
     assert!(
-        text.contains("\x1b[38;5;4;49m"),
-        "light palette blue accent rendered on the open Composer"
+        text.contains("\x1b[38;5;24;49m"),
+        "light palette renders the darker cyan accent on the open Composer"
     );
     assert!(
-        text.contains("\x1b[38;5;0;48;5;255m"),
-        "xterm-256color palette retained indexed dark text on bounded surfaces"
+        text.contains("\x1b[39;48;5;255m"),
+        "bounded surfaces retain the terminal foreground on a neutral light fill"
     );
     assert!(text.contains("\x1b[?1049l"), "terminal restored");
 }

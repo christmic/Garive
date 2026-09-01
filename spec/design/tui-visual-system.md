@@ -17,9 +17,18 @@ tokens: `normal`, `muted`, `accent`, `title`, `border`, `focus`, `selection`,
 `surface`, `success`, `warning`, `danger`, `notice`, and `keycap`. Dark, light,
 system, and mono map these tokens; renderers must not select raw colors.
 
+`normal` uses the terminal's default foreground. `title` adds weight without a
+new hue, while `muted`, passive borders, placeholders, and neutral Activity use
+the terminal-native dim attribute. Cyan is reserved for current focus or live
+work; magenta is reserved for secondary emphasis or notice; green, yellow, and
+red are reserved for success, warning, and danger. A passive component cannot
+borrow one of those state colors to look important.
+
 Meaning requires text or glyph plus style. Mono selection and keycaps use
-terminal reverse video. RGB backgrounds are enhancement only. Contrast must
-not depend on the terminal default being light or dark.
+terminal reverse video. RGB/256-color values are enhancement-only low-contrast
+surfaces or text-selection fills; ordinary prose, titles, passive detail, and
+state meaning never require them. Basic-color terminals fall back to their
+default background instead of receiving a black or white panel fill.
 
 ## Primitive components
 

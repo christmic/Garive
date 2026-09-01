@@ -383,15 +383,15 @@ mod tests {
             ["› Ship a polished     ", "  terminal experience "]
         );
         assert!(lines.iter().all(|line| line.width() == 22));
-        assert!(lines.iter().all(|line| line
-            .spans
+        let dark_surface = palette(Theme::Dark).request_surface.bg;
+        assert!(lines
             .iter()
-            .all(|span| { span.style.bg == Some(ratatui::style::Color::Rgb(24, 28, 38)) })));
+            .all(|line| line.spans.iter().all(|span| span.style.bg == dark_surface)));
         let light = render_timeline_item(&item, Theme::Light, 22);
-        assert!(light.iter().all(|line| line
-            .spans
+        let light_surface = palette(Theme::Light).request_surface.bg;
+        assert!(light
             .iter()
-            .all(|span| { span.style.bg == Some(ratatui::style::Color::Rgb(235, 238, 244)) })));
+            .all(|line| line.spans.iter().all(|span| span.style.bg == light_surface)));
         let mono = render_timeline_item(&item, Theme::Mono, 22);
         assert!(mono
             .iter()

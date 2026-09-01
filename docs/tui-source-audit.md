@@ -752,14 +752,35 @@ later `/theme system` command resolves from the same immutable result; it does
 not re-query on focus, resize, reconnect, or external-editor resume.
 Screen-reader mode sends no OSC query. Missing or incomplete replies become
 dark after one 100 ms deadline. The user's `System` choice remains persisted;
-only the process-local render theme is resolved. No Codex palette values or UI
-styling are copied.
+only the process-local render theme is resolved.
 
 Garive implementation `b3102335` and shipping macOS PTY coverage in
 `tui/tests/live_h1.rs` prove reverse-order light replies, real light palette
 bytes, fallback startup, and restoration. Follow-up `97fe6683` proves explicit
 themes override Crossterm's independent `NO_COLOR` suppression as the public
 CLI contract requires.
+
+## Terminal-native semantic palette
+
+Pinned Codex `tui/styles.md` defines default foreground for primary text,
+`bold` for headers, `dim` for secondary text, cyan for active input/status,
+green for success, red for failure, and magenta for Codex identity. It warns
+against custom foreground colors because terminal themes own contrast. The
+executable mapping in `tui/src/style.rs:16-60` keeps ordinary user text on the
+default foreground, uses a terminal-background-derived low-contrast fill only
+when that fact is available, and selects a darker cyan accent for light
+backgrounds. `history_cell/messages.rs:123-193` applies the surface to the full
+user-message rows while retaining a dim non-color `›` marker.
+
+Garive adopts the hierarchy, not Codex product identity. Primary prose and
+titles now use the terminal foreground; title weight, dim secondary copy, and
+the existing role/state glyphs survive without color. Cyan belongs to focus or
+live work, magenta to notice/secondary emphasis, and green/yellow/red to
+success/warning/danger. Neutral Activity is dim instead of yellow. Truecolor
+and 256-color retain only neutral low-contrast surfaces and text selection;
+basic color falls back to the terminal background. The executable contract is
+`tui/tests/terminal_native_palette.rs` plus the existing dark/light/mono
+component snapshots and accent hierarchy tests.
 
 ## Typed terminal-key catalog
 

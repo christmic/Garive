@@ -2,10 +2,10 @@
 source: tui/tests/view_snapshots.rs
 expression: "markdown_table_narrow_preview(Theme::Mono)"
 ---
-"Surfa…" <fg=Some(Reset) bg=None +BOLD -NONE> | ": " <fg=Some(Reset) bg=None +NONE -NONE> | "macOS" <fg=Some(Reset) bg=None +NONE -NONE>
-"State" <fg=Some(Reset) bg=None +BOLD -NONE> | ": " <fg=Some(Reset) bg=None +NONE -NONE> | "ready" <fg=Some(Reset) bg=None +BOLD -NONE>
-"Owner" <fg=Some(Reset) bg=None +BOLD -NONE> | ": " <fg=Some(Reset) bg=None +NONE -NONE> | "TUI" <fg=Some(Reset) bg=None +NONE -NONE>
-"···" <fg=Some(Reset) bg=None +NONE -NONE>
-"Surfa…" <fg=Some(Reset) bg=None +BOLD -NONE> | ": " <fg=Some(Reset) bg=None +NONE -NONE> | "Other" <fg=Some(Reset) bg=None +NONE -NONE>
-"State" <fg=Some(Reset) bg=None +BOLD -NONE> | ": " <fg=Some(Reset) bg=None +NONE -NONE> | "later" <fg=Some(Reset) bg=None +NONE -NONE>
-"Owner" <fg=Some(Reset) bg=None +BOLD -NONE> | ": " <fg=Some(Reset) bg=None +NONE -NONE> | "roadmap" <fg=Some(Reset) bg=None +NONE -NONE>
+"Surfa…" <fg=Some(Reset) bg=None +BOLD -NONE> | ": " <fg=Some(Reset) bg=None +DIM -NONE> | "macOS" <fg=Some(Reset) bg=None +NONE -NONE>
+"State" <fg=Some(Reset) bg=None +BOLD -NONE> | ": " <fg=Some(Reset) bg=None +DIM -NONE> | "ready" <fg=Some(Reset) bg=None +BOLD -NONE>
+"Owner" <fg=Some(Reset) bg=None +BOLD -NONE> | ": " <fg=Some(Reset) bg=None +DIM -NONE> | "TUI" <fg=Some(Reset) bg=None +NONE -NONE>
+"···" <fg=Some(Reset) bg=None +DIM -NONE>
+"Surfa…" <fg=Some(Reset) bg=None +BOLD -NONE> | ": " <fg=Some(Reset) bg=None +DIM -NONE> | "Other" <fg=Some(Reset) bg=None +NONE -NONE>
+"State" <fg=Some(Reset) bg=None +BOLD -NONE> | ": " <fg=Some(Reset) bg=None +DIM -NONE> | "later" <fg=Some(Reset) bg=None +NONE -NONE>
+"Owner" <fg=Some(Reset) bg=None +BOLD -NONE> | ": " <fg=Some(Reset) bg=None +DIM -NONE> | "roadmap" <fg=Some(Reset) bg=None +NONE -NONE>
