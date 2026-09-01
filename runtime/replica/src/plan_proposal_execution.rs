@@ -63,7 +63,12 @@ pub fn is_plan_proposal_execution(
         .map_err(|_| PlanProposalBindingError::DurabilityFailure)?;
     let matching = facts
         .iter()
-        .filter(|fact| fact.kind.as_str() == "plan.proposal.requested")
+        .filter(|fact| {
+            matches!(
+                fact.kind.as_str(),
+                "plan.proposal.requested" | "plan.replan.proposal.requested"
+            )
+        })
         .filter(|fact| {
             payload(fact).ok().is_some_and(|value| {
                 value.get("turn_id").and_then(Value::as_str) == Some(turn_id.as_str())

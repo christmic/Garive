@@ -12,11 +12,12 @@ use garive_llm::{
     ModelCapability, ModelInputContent, ModelInputItem, ModelOutputSettings, ModelRole, TextMode,
 };
 use garive_runtime::{
-    commit_planned_turn, plan_start_plan_proposal_execution, plan_start_turn,
-    reconstruct_local_start, CommittedTurn, EffectiveRuntimeLimits, HostClock,
-    HostWorkspaceContextEntry, InstalledAgent, LiveHost, LiveHostLimits, LocalExecutionAttempt,
-    LocalExecutionPolicy, LocalReconstructionError, RuntimeCommandId, SqliteLedger,
-    StartPlanProposalExecutionCommand, StartTurnCommand, TurnDispatchError, TurnDispatcher,
+    commit_planned_turn, plan_start_plan_proposal_execution,
+    plan_start_plan_replan_proposal_execution, plan_start_turn, reconstruct_local_start,
+    CommittedTurn, EffectiveRuntimeLimits, HostClock, HostWorkspaceContextEntry, InstalledAgent,
+    LiveHost, LiveHostLimits, LocalExecutionAttempt, LocalExecutionPolicy,
+    LocalReconstructionError, RuntimeCommandId, SqliteLedger, StartPlanProposalExecutionCommand,
+    StartPlanReplanProposalExecutionCommand, StartTurnCommand, TurnDispatchError, TurnDispatcher,
 };
 use serde_json::json;
 use tempfile::tempdir;
@@ -259,6 +260,61 @@ fn planner_start_requires_atomic_plan_ownership_and_projects_an_instruction() {
             )],
         }]
     );
+    drop(reconstructed);
+
+    let replacement = StartPlanReplanProposalExecutionCommand {
+        proposal: StartPlanProposalExecutionCommand {
+            start: internal_start(
+                &session.session_id,
+                &session.agent_instance_id,
+                "replanner-start",
+                "Replace failed Plan topology.",
+            ),
+            goal_id: "goal-1".into(),
+            goal_revision: 2,
+            goal_definition_digest: "c".repeat(64),
+            expected_session_version: committed_result.session_version,
+            proposer_reference: "planner-v1".into(),
+            output_schema_digest: "b".repeat(64),
+        },
+        admission_fact_id: "fact-replan-admitted".into(),
+        source_plan_id: "plan-1".into(),
+        source_plan_revision: 1,
+        source_plan_definition_digest: "d".repeat(64),
+    };
+    let planned = plan_start_plan_replan_proposal_execution(
+        &replacement,
+        *committed_result.positions.last().unwrap(),
+    )
+    .unwrap();
+    assert_eq!(
+        planned.facts[0].kind.as_str(),
+        "plan.replan.proposal.requested"
+    );
+    let committed_result = commit_planned_turn(
+        &mut ledger,
+        SessionId::try_from(session.session_id.as_str()).unwrap(),
+        committed_result.session_version,
+        &planned,
+    )
+    .unwrap();
+    let committed = CommittedTurn {
+        session_id: replacement.proposal.start.session_id,
+        turn_id: planned.turn_id,
+        execution_id: planned.execution_id.unwrap(),
+        definition_id: "definition-main".into(),
+        definition_revision: "revision-1".into(),
+        snapshot_digest: "a".repeat(64),
+        session_version: committed_result.session_version,
+        committed_position: *committed_result.positions.last().unwrap(),
+    };
+    let mut reconstructed =
+        reconstruct_local_start(&ledger, &committed, &policy(), &attempt()).unwrap();
+    let candidates = reconstructed
+        .context
+        .read_candidates(&reconstructed.request.context_request, 0)
+        .unwrap();
+    assert_eq!(candidates[0].kind, CandidateKind::Instruction);
 }
 
 #[test]

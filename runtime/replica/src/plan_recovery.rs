@@ -121,7 +121,11 @@ pub fn reconstruct_plan_graph(
         fact.kind.as_str().starts_with("plan.")
             && !matches!(
                 fact.kind.as_str(),
-                "plan.proposal.requested" | "plan.proposal.result_bound" | "plan.replan.admitted"
+                "plan.proposal.requested"
+                    | "plan.proposal.result_bound"
+                    | "plan.replan.admitted"
+                    | "plan.replan.proposal.requested"
+                    | "plan.replan.proposal.result_bound"
             )
             && plan_coordinates(fact)
                 .ok()

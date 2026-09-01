@@ -14,10 +14,12 @@ pub(super) struct InternalPlannerTurns {
 impl InternalPlannerTurns {
     pub(super) fn from_facts(facts: &[DurableFact]) -> Result<Self, LiveHostError> {
         let mut turns = Self::default();
-        for fact in facts
-            .iter()
-            .filter(|fact| fact.kind.as_str() == "plan.proposal.requested")
-        {
+        for fact in facts.iter().filter(|fact| {
+            matches!(
+                fact.kind.as_str(),
+                "plan.proposal.requested" | "plan.replan.proposal.requested"
+            )
+        }) {
             fact.verify().map_err(|_| LiveHostError::CorruptState)?;
             if fact.schema_version != 1
                 || fact.turn_id.is_some()

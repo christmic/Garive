@@ -1595,9 +1595,11 @@ impl LiveHost {
             .saturating_add(self.state.limits.event_batch_size)
             .min(watermark.max_position);
         let activity_enabled = self.state.limits.activity.is_some();
-        let planner_kinds =
-            BTreeSet::from([FactKind::new("plan.proposal.requested")
-                .map_err(|_| LiveHostError::CorruptState)?]);
+        let planner_kinds = BTreeSet::from([
+            FactKind::new("plan.proposal.requested").map_err(|_| LiveHostError::CorruptState)?,
+            FactKind::new("plan.replan.proposal.requested")
+                .map_err(|_| LiveHostError::CorruptState)?,
+        ]);
         let planner_facts = ledger
             .read_facts(&session_id, 0, through, Some(&planner_kinds))
             .map_err(map_sqlite)?;

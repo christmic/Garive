@@ -43,7 +43,7 @@ fn with_payload(mut fact: FactDraft, payload: Value) -> FactDraft {
 fn every_c6_payload_fixture_is_applied_at_its_declared_version() {
     let fixture = fixture();
     let cases = fixture["valid_cases"].as_array().unwrap();
-    assert_eq!(cases.len(), 105);
+    assert_eq!(cases.len(), 107);
     for case in cases {
         let schema = case["schema_version"].as_u64().unwrap_or(1) as u32;
         let expected = match case["expected_disposition"].as_str() {
@@ -130,7 +130,7 @@ fn malformed_digests_and_inline_content_mismatches_are_rejected() {
             );
         }
     }
-    assert_eq!(digest_cases, 79);
+    assert_eq!(digest_cases, 81);
 }
 
 #[test]

@@ -95,6 +95,21 @@ pub struct StartPlanProposalExecutionCommand {
     pub output_schema_digest: String,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+/// Runtime-owned command starting one durable replacement-Plan proposal execution.
+pub struct StartPlanReplanProposalExecutionCommand {
+    /// Shared Goal and C6 proposal start bindings.
+    pub proposal: StartPlanProposalExecutionCommand,
+    /// Exact failure-policy admission authorizing this proposal.
+    pub admission_fact_id: String,
+    /// Source Plan identity retained by revision N+1.
+    pub source_plan_id: String,
+    /// Exact immutable source Plan revision.
+    pub source_plan_revision: u64,
+    /// Canonical source Plan definition digest.
+    pub source_plan_definition_digest: String,
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 /// Stable cancellation reason admitted by C6 payload v1.
 pub enum CancelReason {

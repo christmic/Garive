@@ -396,8 +396,10 @@ fn valid_plan_proposal_ownership(
     execution_payload: &Value,
 ) -> Result<bool, LocalReconstructionError> {
     let owner = exactly_one(facts, |fact| {
-        fact.kind.as_str() == "plan.proposal.requested"
-            && fact.position.checked_add(1) == Some(started.position)
+        matches!(
+            fact.kind.as_str(),
+            "plan.proposal.requested" | "plan.replan.proposal.requested"
+        ) && fact.position.checked_add(1) == Some(started.position)
     })?;
     let value = payload(owner)?;
     Ok(started.position.checked_add(1) == Some(input.position)

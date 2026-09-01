@@ -14,6 +14,8 @@ pub(super) fn validate(kind: &str, value: &Map<String, Value>) -> Result<(), Led
         "plan.proposal.requested" => proposal_requested(value),
         "plan.proposal.result_bound" => proposal_result_bound(value),
         "plan.replan.admitted" => replan_admitted(value),
+        "plan.replan.proposal.requested" => replan_proposal_requested(value),
+        "plan.replan.proposal.result_bound" => replan_proposal_result_bound(value),
         "plan.proposed" => proposed(value),
         "plan.adopted" => adopted(value),
         "plan.rejected" => rejected(value),
@@ -117,6 +119,31 @@ fn proposal_result_bound(value: &Map<String, Value>) -> Result<(), LedgerError> 
     Ok(())
 }
 
+fn replan_proposal_result_bound(value: &Map<String, Value>) -> Result<(), LedgerError> {
+    fields(
+        value,
+        &[
+            "command_id",
+            "goal_id",
+            "goal_revision",
+            "goal_definition_digest",
+            "admission_fact_id",
+            "source_plan_id",
+            "source_plan_revision",
+            "source_plan_definition_digest",
+            "request_fact_id",
+            "planner_turn_id",
+            "planner_execution_id",
+            "terminal_fact_id",
+            "terminal_payload_digest",
+            "result_digest",
+        ],
+        &[],
+    )?;
+    proposal_result_bound_values(value)?;
+    replan_source_values(value)
+}
+
 fn proposal_requested(value: &Map<String, Value>) -> Result<(), LedgerError> {
     fields(
         value,
@@ -135,6 +162,84 @@ fn proposal_requested(value: &Map<String, Value>) -> Result<(), LedgerError> {
         ],
         &[],
     )?;
+    for key in [
+        "command_id",
+        "goal_id",
+        "proposer_reference",
+        "turn_id",
+        "execution_id",
+    ] {
+        non_empty(value, key)?;
+    }
+    unsigned(value, "goal_revision", true)?;
+    unsigned(value, "expected_session_version", true)?;
+    unsigned(value, "through_position", false)?;
+    for key in [
+        "goal_definition_digest",
+        "request_digest",
+        "output_schema_digest",
+    ] {
+        digest(value, key)?;
+    }
+    Ok(())
+}
+
+fn replan_proposal_requested(value: &Map<String, Value>) -> Result<(), LedgerError> {
+    fields(
+        value,
+        &[
+            "command_id",
+            "goal_id",
+            "goal_revision",
+            "goal_definition_digest",
+            "admission_fact_id",
+            "source_plan_id",
+            "source_plan_revision",
+            "source_plan_definition_digest",
+            "expected_session_version",
+            "through_position",
+            "proposer_reference",
+            "request_digest",
+            "output_schema_digest",
+            "turn_id",
+            "execution_id",
+        ],
+        &[],
+    )?;
+    proposal_requested_values(value)?;
+    replan_source_values(value)
+}
+
+fn replan_source_values(value: &Map<String, Value>) -> Result<(), LedgerError> {
+    non_empty(value, "admission_fact_id")?;
+    non_empty(value, "source_plan_id")?;
+    unsigned(value, "source_plan_revision", true)?;
+    digest(value, "source_plan_definition_digest")
+}
+
+fn proposal_result_bound_values(value: &Map<String, Value>) -> Result<(), LedgerError> {
+    for key in [
+        "command_id",
+        "goal_id",
+        "request_fact_id",
+        "planner_turn_id",
+        "planner_execution_id",
+        "terminal_fact_id",
+    ] {
+        non_empty(value, key)?;
+    }
+    unsigned(value, "goal_revision", true)?;
+    for key in [
+        "goal_definition_digest",
+        "terminal_payload_digest",
+        "result_digest",
+    ] {
+        digest(value, key)?;
+    }
+    Ok(())
+}
+
+fn proposal_requested_values(value: &Map<String, Value>) -> Result<(), LedgerError> {
     for key in [
         "command_id",
         "goal_id",

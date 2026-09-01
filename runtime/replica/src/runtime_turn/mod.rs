@@ -11,7 +11,7 @@ mod types;
 pub use commit::commit_planned_turn;
 pub use planning::{
     plan_cancel_turn, plan_continue_turn, plan_reconcile_invocation, plan_recovery_restart,
-    plan_start_plan_proposal_execution, plan_start_turn,
+    plan_start_plan_proposal_execution, plan_start_plan_replan_proposal_execution, plan_start_turn,
 };
 pub use query::get_turn;
 pub use reconstruction::reconstruct_suspended_turn;
@@ -28,5 +28,6 @@ pub use types::{
     InteractionExpiry, InteractionInputRepresentation, PlannedTurn, ReconcileInvocationCommand,
     ReconciliationDecision, ReconciliationTarget, RecoveryRestartCommand, RuntimeCommandError,
     RuntimeCommandId, RuntimeSuspensionKind, RuntimeSuspensionView, RuntimeTurnStatus,
-    RuntimeTurnView, StartPlanProposalExecutionCommand, StartTurnCommand, SuspendedTurnState,
+    RuntimeTurnView, StartPlanProposalExecutionCommand, StartPlanReplanProposalExecutionCommand,
+    StartTurnCommand, SuspendedTurnState,
 };

@@ -260,14 +260,15 @@ pub use process_executor::{
 pub use runtime_turn::{
     commit_planned_turn, derive_runtime_recovery, get_turn, plan_cancel_turn, plan_continue_turn,
     plan_reconcile_invocation, plan_recovery_action_facts, plan_recovery_restart,
-    plan_start_plan_proposal_execution, plan_start_turn, reconstruct_suspended_turn,
-    select_runtime_recovery, CancelReason, CancelTurnCommand, ContinuationInput,
-    ContinueTurnCommand, DelegationContinuation, EffectRecoveryPosition, EffectiveRuntimeLimits,
-    ExecutionRecoveryPosition, GetTurnQuery, InteractionContinuation, InteractionExpiry,
-    InteractionInputRepresentation, ModelRecoveryPosition, PlannedTurn, ReconcileInvocationCommand,
-    ReconciliationDecision, ReconciliationTarget, RecoveryRestartCommand, RuntimeCommandError,
-    RuntimeCommandId, RuntimeRecoveryAction, RuntimeRecoverySnapshot, RuntimeSuspensionKind,
-    RuntimeSuspensionView, RuntimeTurnStatus, RuntimeTurnView, StartPlanProposalExecutionCommand,
+    plan_start_plan_proposal_execution, plan_start_plan_replan_proposal_execution, plan_start_turn,
+    reconstruct_suspended_turn, select_runtime_recovery, CancelReason, CancelTurnCommand,
+    ContinuationInput, ContinueTurnCommand, DelegationContinuation, EffectRecoveryPosition,
+    EffectiveRuntimeLimits, ExecutionRecoveryPosition, GetTurnQuery, InteractionContinuation,
+    InteractionExpiry, InteractionInputRepresentation, ModelRecoveryPosition, PlannedTurn,
+    ReconcileInvocationCommand, ReconciliationDecision, ReconciliationTarget,
+    RecoveryRestartCommand, RuntimeCommandError, RuntimeCommandId, RuntimeRecoveryAction,
+    RuntimeRecoverySnapshot, RuntimeSuspensionKind, RuntimeSuspensionView, RuntimeTurnStatus,
+    RuntimeTurnView, StartPlanProposalExecutionCommand, StartPlanReplanProposalExecutionCommand,
     StartTurnCommand, SuspendedTurnState,
 };
 pub use sandbox_facts::{

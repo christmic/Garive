@@ -11,7 +11,7 @@ use super::types::{
     CancelTurnCommand, ContinuationInput, ContinueTurnCommand, PlannedTurn,
     ReconcileInvocationCommand, ReconciliationDecision, RecoveryRestartCommand,
     RuntimeCommandError, RuntimeSuspensionKind, StartPlanProposalExecutionCommand,
-    StartTurnCommand, SuspendedTurnState,
+    StartPlanReplanProposalExecutionCommand, StartTurnCommand, SuspendedTurnState,
 };
 
 /// Creates the exact three-fact StartTurn transaction with Runtime-owned identities.
@@ -26,6 +26,49 @@ pub fn plan_start_turn(
 pub fn plan_start_plan_proposal_execution(
     command: &StartPlanProposalExecutionCommand,
     through_position: u64,
+) -> Result<PlannedTurn, RuntimeCommandError> {
+    plan_start_owned_plan_proposal_execution(
+        command,
+        through_position,
+        "plan.proposal.requested",
+        Map::new(),
+    )
+}
+
+/// Creates one atomic ownership and C6 start batch for an admitted replan.
+pub fn plan_start_plan_replan_proposal_execution(
+    command: &StartPlanReplanProposalExecutionCommand,
+    through_position: u64,
+) -> Result<PlannedTurn, RuntimeCommandError> {
+    if command.admission_fact_id.is_empty()
+        || command.source_plan_id.is_empty()
+        || command.source_plan_revision == 0
+    {
+        return Err(RuntimeCommandError::InvalidCommand);
+    }
+    validate_digest(&command.source_plan_definition_digest)?;
+    let extra = json!({
+        "admission_fact_id":command.admission_fact_id,
+        "source_plan_id":command.source_plan_id,
+        "source_plan_revision":command.source_plan_revision,
+        "source_plan_definition_digest":command.source_plan_definition_digest,
+    })
+    .as_object()
+    .cloned()
+    .ok_or(RuntimeCommandError::InvariantViolation)?;
+    plan_start_owned_plan_proposal_execution(
+        &command.proposal,
+        through_position,
+        "plan.replan.proposal.requested",
+        extra,
+    )
+}
+
+fn plan_start_owned_plan_proposal_execution(
+    command: &StartPlanProposalExecutionCommand,
+    through_position: u64,
+    ownership_kind: &str,
+    extra: Map<String, Value>,
 ) -> Result<PlannedTurn, RuntimeCommandError> {
     if command.goal_id.is_empty()
         || command.goal_revision == 0
@@ -42,24 +85,29 @@ pub fn plan_start_plan_proposal_execution(
         .execution_id
         .as_ref()
         .ok_or(RuntimeCommandError::InvariantViolation)?;
+    let mut ownership_payload = json!({
+        "command_id": command.start.command_id.as_str(),
+        "goal_id": command.goal_id,
+        "goal_revision": command.goal_revision,
+        "goal_definition_digest": command.goal_definition_digest,
+        "expected_session_version": command.expected_session_version,
+        "through_position": through_position,
+        "proposer_reference": command.proposer_reference,
+        "request_digest": digest(command.start.trusted_input.as_bytes()),
+        "output_schema_digest": command.output_schema_digest,
+        "turn_id": planned.turn_id.as_str(),
+        "execution_id": execution_id.as_str(),
+    });
+    ownership_payload
+        .as_object_mut()
+        .ok_or(RuntimeCommandError::InvariantViolation)?
+        .extend(extra);
     let ownership = fact(
         command.start.command_id.as_str(),
-        "plan.proposal.requested",
+        ownership_kind,
         None,
         None,
-        json!({
-            "command_id": command.start.command_id.as_str(),
-            "goal_id": command.goal_id,
-            "goal_revision": command.goal_revision,
-            "goal_definition_digest": command.goal_definition_digest,
-            "expected_session_version": command.expected_session_version,
-            "through_position": through_position,
-            "proposer_reference": command.proposer_reference,
-            "request_digest": digest(command.start.trusted_input.as_bytes()),
-            "output_schema_digest": command.output_schema_digest,
-            "turn_id": planned.turn_id.as_str(),
-            "execution_id": execution_id.as_str(),
-        }),
+        ownership_payload,
         &command.start.recorded_at,
     )?;
     planned.facts.insert(0, ownership);
