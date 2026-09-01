@@ -181,7 +181,11 @@ by carry-forward. A started uncertain effect is reconciled under its original
 Plan/step/invocation even if a new Plan is adopted.
 
 Runtime derives, rather than accepts, the canonical carry-forward document at
-one fixed Session watermark. Records are in target step declaration order:
+one fixed Session watermark. Before derivation it revalidates the target
+Plan's exact non-terminal Goal ID/revision/digest at that watermark. The
+replacement commit uses that same expected Session version, so a later Goal
+change makes the replacement conflict instead of adopting stale work. Records
+are in target step declaration order:
 
 ```text
 CarryForwardRecordV1 {

@@ -85,12 +85,18 @@ pub fn verify_plan_carry_forward(
 ) -> Result<VerifiedPlanCarryForward, PlanRuntimeError> {
     let old = source.snapshot.definition();
     let new = target.snapshot.definition();
+    let watermark = ledger
+        .session_watermark(session_id)
+        .map_err(map_ledger)?
+        .ok_or(PlanRuntimeError::BindingStale)?;
     if !matches!(
         source.snapshot.state(),
         PlanState::Adopted | PlanState::Running | PlanState::Suspended
     ) || target.snapshot.state() != PlanState::Proposed
         || source.session_version != target.session_version
         || source.through_position != target.through_position
+        || source.session_version != watermark.session_version
+        || source.through_position != watermark.max_position
         || old.plan_id() != new.plan_id()
         || old.plan_revision().checked_add(1) != Some(new.plan_revision())
         || old.goal_id() != new.goal_id()
@@ -102,6 +108,26 @@ pub fn verify_plan_carry_forward(
     let facts = ledger
         .read_facts(session_id, 0, source.through_position, None)
         .map_err(map_ledger)?;
+    let goals = crate::goal_recovery::reconstruct_goal_graph_from_facts(
+        &facts,
+        watermark.session_version,
+        watermark.max_position,
+    )
+    .map_err(|_| PlanRuntimeError::BindingStale)?;
+    let goal = goals
+        .get(new.goal_id())
+        .ok_or(PlanRuntimeError::BindingStale)?;
+    if goal.snapshot.state().is_terminal()
+        || goal.snapshot.revision() != new.goal_revision()
+        || goal
+            .snapshot
+            .definition()
+            .digest()
+            .map_err(|_| PlanRuntimeError::RecoveryCorrupt)?
+            != new.goal_definition_digest()
+    {
+        return Err(PlanRuntimeError::BindingStale);
+    }
     let completed = completion_facts(&facts, old.plan_id().as_str(), old.plan_revision())?;
     let mut carried = BTreeSet::new();
     let mut records = Vec::new();
