@@ -47,6 +47,7 @@
   --surface-raised: #f7f7f7;
   --surface-overlay: var(--surface-raised);
   --surface-composer: var(--surface-raised);
+  --surface-user-message: color-mix(in oklab, var(--text-primary) 5%, transparent);
   --surface-sidebar: #f7f7f7;
   --surface-subtle: #f1f1f1;
   --surface-hover: #ececec;

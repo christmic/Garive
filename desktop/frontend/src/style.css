@@ -699,7 +699,7 @@ kbd { font-size: var(--text-2xs); }
 .timeline { width: min(39rem, calc(100% - 48px)); padding: 40px 0 174px; }
 .message { margin: 0; }
 .message:not(:first-child) { margin-top: var(--conversation-item-gap); }
-.user-message > div { max-width: 70%; padding: 10px 14px; border: 0; border-radius: 22px; corner-shape: round; background: var(--surface-subtle); font-size: var(--text-md); line-height: 1.55; }
+.user-message > div { max-width: 70%; padding: 10px 14px; border: 0; border-radius: 22px; corner-shape: round; background: var(--surface-user-message); font-size: var(--text-md); line-height: 1.55; }
 .assistant-message { display: block; }
 .result-markdown { font-size: var(--document-font-size); line-height: var(--document-leading); }
 .result-markdown h1, .result-markdown h2, .result-markdown h3,
@@ -732,7 +732,7 @@ kbd { font-size: var(--text-2xs); }
 .live-answer > p { display: flex; align-items: center; gap: 8px; margin: 0; color: var(--text-tertiary); font-size: var(--text-sm); }
 .live-answer .result-markdown::after { display: inline-block; width: 5px; height: 15px; margin-left: 2px; border-radius: 2px; background: var(--text-tertiary); vertical-align: -2px; animation: live-caret 1s steps(1) infinite; content: ""; }
 @keyframes live-caret { 50% { opacity: 0; } }
-.turn-progress { margin: 0; overflow: hidden; border: 0; border-bottom: 1px solid var(--border-subtle); border-radius: var(--radius-composer) var(--radius-composer) 0 0; background: var(--surface-subtle); }
+.turn-progress { margin: 0; overflow: hidden; border: 0; border-bottom: 1px solid var(--border-subtle); border-radius: var(--radius-composer) var(--radius-composer) 0 0; background: transparent; }
 .turn-progress-head { display: grid; grid-template-columns: 18px minmax(0, 1fr) auto auto; align-items: center; gap: 7px; min-height: 32px; padding: 0 7px 0 10px; }
 .turn-progress-head strong { font-size: var(--text-xs); font-weight: 590; }
 .progress-summary { display: flex; align-items: baseline; min-width: 0; gap: 6px; }
@@ -1011,7 +1011,6 @@ kbd { font-size: var(--text-2xs); }
 .theme-dark .new-work, .theme-dark .suggestion-grid button, .theme-dark .agent-card, .theme-dark .settings-card { background: transparent; }
 .theme-dark .nav-item:hover:not(:disabled), .theme-dark .recent-item:hover { background: var(--surface-hover); }
 .theme-dark .nav-item.selected, .theme-dark .recent-item.selected { color: var(--text-primary); background: var(--surface-selected); }
-.theme-dark .user-message > div { background: var(--surface-subtle); }
 .theme-dark .inspector { background: var(--surface-sidebar); }
 .theme-dark .environment-panel, .theme-dark .environment-panel header,
 .theme-dark .command-center { background: var(--surface-overlay); }

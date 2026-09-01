@@ -99,7 +99,7 @@ macOS WebViews. Opaque docked surfaces never blur.
 ### Color and surface aliases
 
 Required tokens are `--surface-canvas`, `--surface-raised`, `--surface-overlay`,
-`--surface-sidebar`, `--surface-subtle`, `--border-subtle`, `--border-strong`, `--text-primary`,
+`--surface-sidebar`, `--surface-subtle`, `--surface-user-message`, `--border-subtle`, `--border-strong`, `--text-primary`,
 `--text-secondary`, `--text-tertiary`, `--action-primary`,
 `--action-primary-hover`, `--state-info`, `--state-success`,
 `--state-attention`, `--state-danger`, and matching state surfaces.
@@ -112,6 +112,12 @@ source-layer alpha: canvas `#181818`, native sidebar `#2b2527`, selected sidebar
 row `#3c3638`, Composer `#2a2a2a` and Environment/command overlay `#2d2d2d`.
 A translucent source token is insufficient evidence when its actual composite
 differs from these pixels.
+
+User work is its own semantic surface: the installed desktop definition mixes
+the current text color at 5% over a transparent background. It is not an alias
+for the activity/progress surface. The goal rail is part of the Composer and
+therefore inherits the Composer material; one subtle separator communicates
+the boundary without creating a dark card stacked on another card.
 
 ## Layout contract
 

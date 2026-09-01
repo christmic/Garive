@@ -29,6 +29,7 @@ describe("Desktop visual accessibility contract", () => {
     expect(contrast("707070", "ffffff")).toBeGreaterThanOrEqual(4.5);
     expect(contrast("bababa", "181818")).toBeGreaterThanOrEqual(4.5);
     expect(contrast("8c8c8c", "181818")).toBeGreaterThanOrEqual(4.5);
+    expect(contrast("dfdfdf", "292a27")).toBeGreaterThanOrEqual(4.5);
   });
 
   it("freezes the shared Codex-fidelity scale and wide shell geometry", () => {
@@ -48,6 +49,7 @@ describe("Desktop visual accessibility contract", () => {
     expect(TOKENS).toContain("--shadow-composer: 0 0 0 1px rgba(0, 0, 0, .04)");
     expect(TOKENS).toContain("--shadow-composer: inset 0 0 1px rgba(255, 255, 255, .2)");
     expect(TOKENS).toContain("--surface-composer: #2a2a2a");
+    expect(TOKENS).toContain("--surface-user-message: color-mix(in oklab, var(--text-primary) 5%, transparent)");
     expect(TOKENS).toContain("--surface-overlay: #2d2d2d");
     expect(TOKENS).toContain("--surface-selected: #3c3638");
     expect(TOKENS).toContain("--scrollbar-thumb-hover: var(--border-strong)");
@@ -135,6 +137,8 @@ describe("Desktop visual accessibility contract", () => {
     expect(CSS).toContain(".product-menu-status { display: grid; grid-template-columns: 18px minmax(0, 1fr) 8px;");
     expect(CSS).toContain("grid-template-columns: 18px minmax(0, 1fr) auto");
     expect(CSS).toContain(".user-message > div { max-width: 70%; padding: 10px 14px; border: 0; border-radius: 22px; corner-shape: round;");
+    expect(CSS).toContain("background: var(--surface-user-message)");
+    expect(CSS).toContain(".turn-progress { margin: 0; overflow: hidden; border: 0; border-bottom: 1px solid var(--border-subtle); border-radius: var(--radius-composer) var(--radius-composer) 0 0; background: transparent; }");
     expect(CSS).toContain(".composer { width: min(39rem, 100%); border: 0; border-radius: var(--radius-composer);");
     expect(CSS).toContain("background: var(--surface-composer)");
     expect(CSS).toContain(".theme-dark .environment-panel, .theme-dark .environment-panel header");

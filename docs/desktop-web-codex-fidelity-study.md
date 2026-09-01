@@ -714,6 +714,24 @@ fully opaque, horizontal overflow stays zero, and forced colors removes both
 masks. Production grouping remains bounded to three Priority and three Recent
 Sessions; the constrained fixture changes only the available rail height.
 
+### XXIII. Conversation and Composer surface hierarchy
+
+The installed theme defines user-message background as a 5% oklab mix of the
+current text color over transparency. Its attached goal rail contributes
+border/tuck behavior but no independent filled surface. Garive previously
+mapped both user messages and the goal rail to the same opaque `#242424`, while
+the Composer beneath used `#2a2a2a`; the result looked like three unrelated
+dark cards.
+
+The shared clients now give user messages the source-backed semantic mix and
+let the goal rail inherit Composer material. Its existing 8% separator remains
+the only internal boundary. User work, assistant document and execution state
+therefore keep distinct roles without increasing the neutral palette.
+At 1280×720 the effective user surface is `rgb(41,42,39)`, Composer remains
+`rgb(42,42,42)`, and the rail itself is transparent. The ordinary and split
+Composer widths remain 546/342px, the file boundary stays x=556.8 and both
+scenes retain zero horizontal overflow.
+
 ## Gate 1 — Codex fidelity
 
 This gate passes only when both Desktop and Web show:
