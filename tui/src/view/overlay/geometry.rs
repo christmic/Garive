@@ -120,11 +120,7 @@ fn desired_height(model: &AppModel, overlay: Overlay, popup_width: u16) -> u16 {
             .unwrap_or(u16::MAX)
             .saturating_add(7)
             .clamp(8, 18),
-        Overlay::Inspector => u16::try_from(model.inspector_projection().entries.len())
-            .unwrap_or(u16::MAX)
-            .saturating_mul(2)
-            .saturating_add(3)
-            .clamp(8, 18),
+        Overlay::Inspector => super::super::inspector::desired_height(model),
         Overlay::Suspension => decision_height(model, overlay, popup_width),
         Overlay::UnknownCommand
         | Overlay::AbandonConfirmation

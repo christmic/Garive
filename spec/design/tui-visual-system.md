@@ -143,6 +143,9 @@ top-level overlay; below 40 its open state is retained behind the safe minimum
 view. The variant title, stable selected marker, empty state, entry labels, and
 safe details remain visible without color. Fullscreen, pointer, and linear
 screen-reader variants share one ordered entry projection and activation.
+Inspector density follows content, not a fixed card rhythm: entries without an
+independent detail use one row; entries with safe explanatory detail use two.
+The footer remains reserved and is never a selectable entry row.
 
 `ContextLine` is exactly one unbordered row. Public Session identity leads,
 followed by the Agent label. Healthy connection is absent; reconnecting,

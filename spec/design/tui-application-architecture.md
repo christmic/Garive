@@ -98,6 +98,8 @@ tui/src/
     command_suggestions.rs pure anchored-menu rendering and pointer geometry
     conversation.rs      TurnBlock rendering and visual-cell scroll geometry
     inspector.rs         shared Inspector rendering and pointer geometry
+    inspector/
+      row_layout.rs      content-driven Inspector rows, window, and hit geometry
     session.rs           shared Session row presentation
     footer.rs            focus-derived contextual actions
     linear.rs            screen-reader presentation components
@@ -141,7 +143,11 @@ validated application model; views cannot rediscover recovery policy or Turn
 ownership from strings. The model persists only whether Inspector is open.
 Current variant and selected entry key are transient. Wide column, narrow
 overlay, pointer, and linear screen-reader paths consume the same entry order
-and activation value.
+and activation value. `InspectorRowLayout` is the single geometry authority for
+variable-height visual entries: a label with no independent detail consumes
+one row, while an entry with independent safe detail consumes two. Rendering,
+selection visibility, pointer hit testing, and overlay height cannot separately
+infer that height.
 
 A landmark contains only its one-based ordinal, public `started_position`,
 and sanitized public prompt preview. The navigator never reconstructs
