@@ -52,6 +52,12 @@ pub struct PlanStepDispatchInput<'a> {
     pub step_id: &'a PlanStepId,
     /// Bounded Step objective used as trusted execution input.
     pub objective: &'a str,
+    /// Exact Agent snapshot digest frozen by the Plan.
+    pub agent_snapshot_digest: &'a str,
+    /// Exact Tool catalogue digest frozen by the Plan.
+    pub tool_catalogue_digest: &'a str,
+    /// Exact Safety policy revision frozen by the Plan.
+    pub safety_policy_revision: &'a str,
     /// Fixed prefix preceding C6 start.
     pub through_position: u64,
     /// Runtime-owned start command identity.
@@ -70,6 +76,10 @@ pub struct PreparedPlanStepDispatch {
     pub definition_revision: AgentDefinitionRevision,
     /// Frozen effective C6 limits admitted for this Agent snapshot.
     pub limits: EffectiveRuntimeLimits,
+    /// Tool catalogue digest resolved from the installed execution posture.
+    pub installed_tool_catalogue_digest: String,
+    /// Safety policy revision resolved from the installed execution posture.
+    pub installed_safety_policy_revision: String,
     /// Prepared-v3 Sandbox profile digest frozen for this Execution posture.
     pub sandbox_profile_digest: String,
     /// Runtime Safety decision identity frozen for this Execution posture.
@@ -188,16 +198,14 @@ pub fn dispatch_plan_step_once(
         plan_revision: plan.snapshot.definition().plan_revision(),
         step_id: &step_id,
         objective: step.objective(),
+        agent_snapshot_digest: plan.snapshot.definition().agent_snapshot_digest(),
+        tool_catalogue_digest: plan.snapshot.definition().tool_catalogue_digest(),
+        safety_policy_revision: plan.snapshot.definition().safety_policy_revision(),
         through_position: plan.through_position,
         start_command_id: &tick.start_command_id,
         recorded_at: &tick.recorded_at,
     })?;
-    validate_installed_binding(
-        ledger,
-        session_id,
-        plan.snapshot.definition().agent_snapshot_digest(),
-        &prepared,
-    )?;
+    validate_installed_binding(ledger, session_id, plan.snapshot.definition(), &prepared)?;
     let turn = plan_start_turn(
         &StartTurnCommand {
             command_id: RuntimeCommandId::new(tick.start_command_id.as_str())
@@ -299,7 +307,7 @@ fn authoritative_plan(
 fn validate_installed_binding(
     ledger: &SqliteLedger,
     session_id: &SessionId,
-    expected_snapshot_digest: &str,
+    definition: &garive_plan::PlanDefinitionV1,
     prepared: &PreparedPlanStepDispatch,
 ) -> Result<(), PlanDispatchError> {
     let facts = ledger
@@ -326,7 +334,9 @@ fn validate_installed_binding(
         || value
             .get("snapshot_digest")
             .and_then(serde_json::Value::as_str)
-            != Some(expected_snapshot_digest)
+            != Some(definition.agent_snapshot_digest())
+        || prepared.installed_tool_catalogue_digest != definition.tool_catalogue_digest()
+        || prepared.installed_safety_policy_revision != definition.safety_policy_revision()
     {
         return Err(PlanDispatchError::PreparationFailed);
     }

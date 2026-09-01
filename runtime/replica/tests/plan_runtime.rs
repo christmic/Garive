@@ -545,7 +545,10 @@ fn bounded_dispatch_resumes_claim_and_starts_exactly_one_execution() {
     .unwrap();
     let tick = dispatch_tick();
     let dispatcher = RecordingTurnDispatcher::default();
-    let mut unavailable = DispatchFactory { unavailable: true };
+    let mut unavailable = DispatchFactory {
+        unavailable: true,
+        policy_mismatch: false,
+    };
     assert_eq!(
         dispatch_plan_step_once(
             &mut ledger,
@@ -564,7 +567,27 @@ fn bounded_dispatch_resumes_claim_and_starts_exactly_one_execution() {
     );
     assert!(dispatcher.committed.lock().unwrap().is_empty());
 
-    let mut prepared = DispatchFactory { unavailable: false };
+    let mut mismatched = DispatchFactory {
+        unavailable: false,
+        policy_mismatch: true,
+    };
+    assert_eq!(
+        dispatch_plan_step_once(
+            &mut ledger,
+            &session,
+            "goal-1",
+            &tick,
+            &mut mismatched,
+            &dispatcher,
+        ),
+        Err(PlanDispatchError::PreparationFailed)
+    );
+    assert!(dispatcher.committed.lock().unwrap().is_empty());
+
+    let mut prepared = DispatchFactory {
+        unavailable: false,
+        policy_mismatch: false,
+    };
     let PlanDispatchOutcome::Started {
         committed,
         dispatch_accepted,
@@ -679,7 +702,10 @@ fn coordinator_selects_one_action_from_one_ledger_prefix() {
     assert_eq!(dispatch.session_version, 3);
 
     let dispatcher = RecordingTurnDispatcher::default();
-    let mut factory = DispatchFactory { unavailable: false };
+    let mut factory = DispatchFactory {
+        unavailable: false,
+        policy_mismatch: false,
+    };
     let outcome = advance_goal_plan_once(
         &mut ledger,
         &session,
@@ -2106,6 +2132,7 @@ fn dispatch_tick() -> PlanDispatchTick {
 
 struct DispatchFactory {
     unavailable: bool,
+    policy_mismatch: bool,
 }
 impl PlanStepDispatchFactory for DispatchFactory {
     fn prepare(
@@ -2120,6 +2147,9 @@ impl PlanStepDispatchFactory for DispatchFactory {
         assert_eq!(input.plan_revision, 1);
         assert_eq!(input.step_id.as_str(), "prepare");
         assert_eq!(input.objective, "Prepare");
+        assert_eq!(input.agent_snapshot_digest, digest('b'));
+        assert_eq!(input.tool_catalogue_digest, digest('c'));
+        assert_eq!(input.safety_policy_revision, "safety-v1");
         Ok(PreparedPlanStepDispatch {
             agent_instance_id: AgentInstanceId::try_from("agent-instance-1").unwrap(),
             definition_id: AgentDefinitionId::try_from("agent-definition-1").unwrap(),
@@ -2130,6 +2160,12 @@ impl PlanStepDispatchFactory for DispatchFactory {
                 max_output_tokens: Some(2_048),
                 deadline_budget_ms: Some(30_000),
             },
+            installed_tool_catalogue_digest: if self.policy_mismatch {
+                digest('e')
+            } else {
+                digest('c')
+            },
+            installed_safety_policy_revision: "safety-v1".into(),
             sandbox_profile_digest: digest('f'),
             safety_decision_id: "safety-dispatch".into(),
         })

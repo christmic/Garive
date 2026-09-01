@@ -197,7 +197,8 @@ at most one claim and one start decision:
 4. pass the exact claimed Step, Plan/Goal bindings and current prefix to a
    constructed start-preparation port;
 5. validate the returned installed Agent binding, C6 start batch, frozen
-   execution snapshot, Sandbox profile digest and Safety decision identity;
+   execution snapshot, exact Tool catalogue digest, exact Safety policy
+   revision, Sandbox profile digest and Safety decision identity;
 6. atomically commit C6 `turn.started + turn.input + execution.started` with
    `plan.step.started`;
 7. only after a new commit, offer the derived `CommittedTurn` to the bounded
@@ -207,6 +208,11 @@ The preparation port cannot choose another Goal, Plan, Step, claim, lease,
 attempt, command or Session. It may only resolve the installed Agent/C6 and
 execution-posture values that are not owned by the portable Plan. Configuration
 is constructor input; no environment discovery occurs.
+
+Runtime compares the installed Tool catalogue digest and Safety policy revision
+returned by preparation with the immutable values frozen in the Plan. Matching
+the Session's Agent snapshot digest alone is insufficient; any one of these
+three bindings differing fails before C6 or `plan.step.started` can commit.
 
 A queue-admission failure cannot roll back the start transaction. Startup
 recovery re-discovers the durable open Execution. A crash after claim but
