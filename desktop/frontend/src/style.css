@@ -553,6 +553,7 @@ kbd { color: var(--subtle); font: 11px -apple-system, sans-serif; }
 
 /* Codex-fidelity shell. Keep Desktop and Web on this single shared layer. */
 .desktop-root { font-size: var(--text-md); }
+html[data-client="web"] .desktop-root { width: calc(100vw / var(--garive-window-zoom, 1)); height: calc(100vh / var(--garive-window-zoom, 1)); zoom: var(--garive-window-zoom, 1); }
 html[data-client="desktop"], html[data-client="desktop"] body, html[data-client="desktop"] #root { background: transparent; }
 html[data-client="desktop"] .desktop-root, html[data-client="desktop"] .app-shell { background: transparent; }
 html[data-client="desktop"] .sidebar { background: var(--surface-native-sidebar); }
@@ -573,6 +574,17 @@ html[data-client="desktop"] .sidebar-window-row { padding-left: 58px; }
 .history-button:disabled { opacity: .38; }
 .history-button svg { width: 13px; }
 .history-back svg { transform: rotate(180deg); }
+.window-zoom-banner { position: fixed; z-index: 56; top: 8px; right: 16px; display: inline-flex; align-items: center; height: 44px; padding: 0 8px; overflow: hidden; border: .5px solid var(--border-strong); border-radius: 20px; background: var(--surface-overlay); box-shadow: 0 8px 16px -4px rgba(0, 0, 0, .12); animation: window-zoom-enter var(--motion-basic) var(--ease-enter-snappy); }
+.window-zoom-percent { width: 48px; color: var(--text-primary); font-size: var(--text-sm); font-weight: 600; text-align: center; font-variant-numeric: tabular-nums; }
+.window-zoom-steps { display: flex; align-items: center; margin-left: 4px; }
+.window-zoom-banner button { height: 28px; padding: 0 8px; border: 0; border-radius: var(--radius-control); color: var(--text-secondary); background: transparent; font-size: var(--text-xs); }
+.window-zoom-banner button:hover:not(:disabled) { color: var(--text-primary); background: var(--surface-hover); }
+.window-zoom-banner button:disabled { opacity: .4; }
+.window-zoom-steps button { display: grid; place-items: center; width: 28px; padding: 0; }
+.window-zoom-steps svg { width: 12px; height: 12px; }
+.window-zoom-divider { width: 1px; height: 16px; margin: 0 4px; background: var(--border-strong); }
+.window-zoom-reset { min-width: 44px; }
+@keyframes window-zoom-enter { from { opacity: 0; transform: translateY(-4px); } }
 .sidebar-product-row { display: flex; align-items: center; min-height: 24px; margin: 1px 0 2px; }
 .product-switcher { display: flex; align-items: center; gap: 3px; min-width: 0; height: 24px; padding: 0 6px; border: 0; border-radius: var(--radius-control); color: var(--text-primary); background: transparent; font-size: var(--text-sm); font-weight: 610; }
 .product-switcher:disabled { opacity: 1; }

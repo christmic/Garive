@@ -1388,6 +1388,33 @@ native Settings intent, command palette routes, `⌘[` / `⌘]`, and mouse histo
 buttons all enter the same path. Unit tests lock branch, deduplication and bound
 semantics; the App test proves enabled states and Work ↔ Agents round trips.
 
+### XLVII. Window Zoom preserves density without breaking composition
+
+Installed Codex `26.825.51511` does not achieve its compact desktop density by
+silently shrinking the base type scale. `app-initial-B6Gk5KCN.js` declares a
+14px default UI font, 12px code font, and an independent bounded window Zoom
+state. Its `window-zoom-banner` appears for two seconds after a Zoom command,
+pauses dismissal on hover, displays a tabular percentage, exposes minus/plus
+and Reset, and uses a 44px high, 20px-radius elevated surface at the top-right.
+The root `zoom-adjusted-viewport` compensates width and height by the inverse
+Zoom value so scaling does not create clipped viewport geometry.
+
+Garive now maps that exact interaction onto its existing native Zoom commands.
+Desktop commits HUD state only after the Tauri WebView accepts the requested
+bounded step. Web handles `CmdOrCtrl` plus `+`, `-`, or `0` and applies the same
+inverse-size viewport composition, while sharing the same banner component,
+tokens, labels, hover pause and deterministic 80/100/120/150/175/200 percent
+steps. This is presentation state only: it neither enters Runtime nor changes
+Session, draft, Workspace, Goal, Artifact, or navigation state.
+
+Live Web evidence at 80% measures a 1280px rendered root inside a 1280px
+viewport with zero horizontal overflow. The source-shaped compact Workbench
+measures a 220px sidebar and leaves 778px for the Artifact surface. At 480x720,
+the rendered root remains exactly 480x720, the HUD and Composer remain inside
+the viewport, and horizontal overflow stays zero. This provides the compact
+effect visible in the supplied Codex references without corrupting the
+source-backed 14px default scale or inventing a second density system.
+
 ## Gate 1 — Codex fidelity
 
 This gate passes only when both Desktop and Web show:

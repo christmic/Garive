@@ -22,6 +22,7 @@ import type { DesktopUpdateState } from "./state/desktop-update";
 import { Icon, type IconName } from "./ui/Icon";
 import { Tooltip } from "./ui/Tooltip";
 import { UsageBudgetCard, UsageBudgetTrigger, type UsageBudgetSnapshot } from "./ui/UsageBudget";
+import { WindowZoomBanner } from "./ui/WindowZoomBanner";
 import { SetupFlow } from "./features/setup/SetupFlow";
 import { WorkspacePicker } from "./workspace/WorkspacePicker";
 import { decodeDesktopMenuIntent, DESKTOP_MENU_EVENT } from "./desktopMenu";
@@ -230,6 +231,8 @@ export function App({ client = "desktop", webCapabilities, createProductPort,
   const composer = useRef<HTMLTextAreaElement>(null);
   const approvalAction = useRef<HTMLButtonElement>(null);
   const desktopZoom = useRef(1);
+  const [windowZoom, setWindowZoom] = useState(1);
+  const [zoomRevision, setZoomRevision] = useState(0);
   const pendingDraft = useRef("");
   const [queuedSubmission, setQueuedSubmission] = useState<string>();
   const [desktopUpdate, setDesktopUpdate] = useState<DesktopUpdateState>({
@@ -393,6 +396,17 @@ export function App({ client = "desktop", webCapabilities, createProductPort,
   const beginNewWork = useCallback(() => {
     recordDestination({ kind: "new-work" }); resetNewWork();
   }, [recordDestination, resetNewWork]);
+  const applyWindowZoom = useCallback((intent: "desktop.zoom-in" | "desktop.zoom-out" |
+    "desktop.actual-size") => {
+    const next = nextDesktopZoom(desktopZoom.current, intent);
+    const commit = () => {
+      desktopZoom.current = next; setWindowZoom(next);
+      setZoomRevision((revision) => revision + 1);
+      document.documentElement.dataset.zoom = String(next);
+    };
+    if (!desktop) { commit(); return; }
+    void getCurrentWebview().setZoom(next).then(commit).catch(() => undefined);
+  }, [desktop]);
   const openAgents = useCallback(() => {
     recordDestination({ kind: "agents" }); setScreen("agents"); setNavigationOpen(false);
   }, [recordDestination]);
@@ -557,18 +571,14 @@ export function App({ client = "desktop", webCapabilities, createProductPort,
         dispatch({ type: "inspector_toggled" }); showCurrentWork();
       } else if (intent === "desktop.zoom-in" || intent === "desktop.zoom-out"
         || intent === "desktop.actual-size") {
-        const next = nextDesktopZoom(desktopZoom.current, intent);
-        void getCurrentWebview().setZoom(next).then(() => {
-          desktopZoom.current = next;
-          document.documentElement.dataset.zoom = String(next);
-        }).catch(() => undefined);
+        applyWindowZoom(intent);
       }
     }).then((unlisten) => {
       if (active) stop = unlisten;
       else unlisten();
     }).catch(() => undefined);
     return () => { active = false; stop?.(); };
-  }, [beginNewWork, desktop, openCommandCenter, openSettings, showCurrentWork]);
+  }, [applyWindowZoom, beginNewWork, desktop, openCommandCenter, openSettings, showCurrentWork]);
 
   useEffect(() => {
     const shortcuts = (event: KeyboardEvent) => {
@@ -582,6 +592,15 @@ export function App({ client = "desktop", webCapabilities, createProductPort,
       if (event.key === ",") { event.preventDefault(); openSettings(); }
       if (event.key === "[") { event.preventDefault(); navigateHistory(-1); }
       if (event.key === "]") { event.preventDefault(); navigateHistory(1); }
+      if (!desktop && (event.key === "=" || event.key === "+")) {
+        event.preventDefault(); applyWindowZoom("desktop.zoom-in");
+      }
+      if (!desktop && event.key === "-") {
+        event.preventDefault(); applyWindowZoom("desktop.zoom-out");
+      }
+      if (!desktop && event.key === "0") {
+        event.preventDefault(); applyWindowZoom("desktop.actual-size");
+      }
       if (event.key.toLowerCase() === "k") { event.preventDefault(); openCommandCenter("commands"); }
       if (event.key.toLowerCase() === "f") { event.preventDefault(); openCommandCenter("search"); }
       if (event.shiftKey && event.key.toLowerCase() === "a") {
@@ -590,7 +609,8 @@ export function App({ client = "desktop", webCapabilities, createProductPort,
     };
     window.addEventListener("keydown", shortcuts);
     return () => window.removeEventListener("keydown", shortcuts);
-  }, [beginNewWork, navigateHistory, navigationOpen, openCommandCenter, openSettings]);
+  }, [applyWindowZoom, beginNewWork, desktop, navigateHistory, navigationOpen,
+    openCommandCenter, openSettings]);
 
   useEffect(() => {
     const mouseHistory = (event: MouseEvent) => {
@@ -768,7 +788,8 @@ export function App({ client = "desktop", webCapabilities, createProductPort,
     if (shell) setPreferences((current) => ({ ...current,
       sidebarWidthPx: clampSidebarWidth(clientX - shell.left) }));
   };
-  return <div className={`desktop-root theme-${effectiveTheme} density-${preferences.density}`}>
+  return <div className={`desktop-root theme-${effectiveTheme} density-${preferences.density}`}
+    style={{ "--garive-window-zoom": windowZoom } as CSSProperties}>
     <div className={`${navigationCollapsed ? "app-shell navigation-collapsed" : "app-shell"} panel-animated${layoutDragging ? " panel-dragging" : ""}`}
       style={{ "--conversation-split": `${preferences.workspaceSplitPx}px`,
         "--sidebar-preferred-width": `${preferences.sidebarWidthPx}px` } as CSSProperties}
@@ -973,6 +994,9 @@ export function App({ client = "desktop", webCapabilities, createProductPort,
       onToggleInspector={() => { setCommandOpen(false); showCurrentWork();
         dispatch({ type: "inspector_toggled" }); }}
       onOpen={(sessionId) => { setCommandOpen(false); void openRecent(sessionId); }} t={t} />}
+    <WindowZoomBanner zoom={windowZoom} revision={zoomRevision}
+      onStep={(direction) => applyWindowZoom(direction < 0 ? "desktop.zoom-out" : "desktop.zoom-in")}
+      onReset={() => applyWindowZoom("desktop.actual-size")} t={t} />
   </div>;
 }
 

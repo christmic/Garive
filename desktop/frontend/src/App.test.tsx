@@ -9,8 +9,13 @@ let configured = true;
 let artifactItems: unknown[] = [];
 let completedText = "Durable product answer";
 let clipboardWrite = vi.fn(async (_text: string) => undefined);
+let desktopEventHandler: ((event: { payload: unknown }) => void) | undefined;
+const setZoom = vi.fn(async (_zoom: number) => undefined);
 
-vi.mock("@tauri-apps/api/event", () => ({ listen: vi.fn(async () => () => undefined) }));
+vi.mock("@tauri-apps/api/event", () => ({ listen: vi.fn(async (_name: string,
+  handler: (event: { payload: unknown }) => void) => { desktopEventHandler = handler;
+  return () => undefined; }) }));
+vi.mock("@tauri-apps/api/webview", () => ({ getCurrentWebview: () => ({ setZoom }) }));
 vi.mock("@tauri-apps/api/app", () => ({ getVersion: vi.fn(async () => "0.1.0") }));
 vi.mock("@tauri-apps/plugin-updater", () => ({ check: vi.fn(async () => null) }));
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn(async (command: string, args: Record<string, unknown>) => {
@@ -75,6 +80,7 @@ describe("Desktop product experience", () => {
   beforeEach(() => {
     commands.length = 0; storedPending = null; configured = true; artifactItems = [];
     completedText = "Durable product answer";
+    desktopEventHandler = undefined; setZoom.mockClear();
     clipboardWrite = vi.fn(async (_text: string) => undefined);
     Object.defineProperty(navigator, "clipboard", { configurable: true,
       value: { writeText: clipboardWrite } });
@@ -164,6 +170,15 @@ describe("Desktop product experience", () => {
     }).id);
     fireEvent.click(runtime);
     expect(screen.getByRole("heading", { name: "Local Runtime" })).toBeTruthy();
+  });
+
+  it("confirms native Zoom before exposing the source-shaped feedback banner", async () => {
+    render(<App />);
+    await waitFor(() => expect(desktopEventHandler).toBeTruthy());
+    desktopEventHandler!({ payload: "desktop.zoom-out" });
+    await waitFor(() => expect(setZoom).toHaveBeenCalledWith(0.8));
+    expect(await screen.findByText("80%")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Reset" })).toBeTruthy();
   });
 
   it("explains unavailable navigation through the shared keyboard tooltip", async () => {
