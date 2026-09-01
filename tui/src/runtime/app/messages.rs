@@ -169,6 +169,9 @@ pub(super) fn handle_host(message: HostMessage, state: &mut RuntimeState) {
                     | HostClientErrorCode::EventOrderViolation
                     | HostClientErrorCode::EventLimitExceeded
             ) {
+                let _ = state.store.record_diagnostic(DiagnosticEvent::HostFailure {
+                    safe_code: code.wire_name(),
+                });
                 state.model.connection = ConnectionState::Unavailable {
                     safe_code: code.wire_name(),
                 };

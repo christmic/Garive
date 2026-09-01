@@ -402,6 +402,14 @@ A ready stream cannot indefinitely suppress input or cancellation. Redraw is
 dirty-state driven and capped at 60 frames per second; idle state performs no
 continuous drawing. Resize bursts coalesce for one 16 ms window.
 
+Terminal, action, motion, Host, and completed-resize work mark one pending
+frame; they never invoke Ratatui directly. The shared 16 ms frame boundary
+advances an admitted live frame when needed, consumes all accumulated dirty
+state in one draw, and updates the terminal title with that same projection.
+The clock is selected only while a frame or live advance is pending, so this
+coalescing does not introduce an idle redraw loop. The first acquired frame is
+the sole immediate draw, and external-editor return requests one fresh frame.
+
 Async effects run in supervised tasks. Task panic or unexpected channel close
 becomes a typed internal failure result and initiates controlled shutdown only
 when the failed task owns terminal or event-loop integrity.

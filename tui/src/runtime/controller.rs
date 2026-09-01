@@ -70,7 +70,17 @@ fn handle_key(key: KeyEvent, state: &mut RuntimeState) {
 
 fn handle_key_inner(key: KeyEvent, state: &mut RuntimeState) {
     let shortcut = resolve_shortcut(key);
+    if shortcut == Some(ShortcutIntent::Redraw) {
+        state.force_redraw = true;
+        return;
+    }
     if overlay::handle(key, state) {
+        return;
+    }
+    if shortcut == Some(ShortcutIntent::ClearOrCancel)
+        && state.model.execution == ExecutionState::Following
+    {
+        handle_ctrl_c(state);
         return;
     }
     if shortcut == Some(ShortcutIntent::Quit) {

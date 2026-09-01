@@ -28,6 +28,38 @@ fn overlay_escape_never_falls_through_to_running_turn_cancel() {
 }
 
 #[test]
+fn help_overlay_owns_cancel_input_during_a_running_turn() {
+    let mut state = RuntimeState::test_ephemeral(Vec::new());
+    state.model.execution = ExecutionState::Following;
+    state.model.selected_session = Some("session".into());
+    state.model.selected_turn = Some("turn".into());
+    state.model.observed_position = 1;
+    state.model.overlay = Some(Overlay::Help);
+
+    handle_terminal(
+        Event::Key(KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL)),
+        &mut state,
+    );
+
+    assert_eq!(state.model.overlay, Some(Overlay::Help));
+    assert!(state.deferred_ephemeral.is_none());
+}
+
+#[test]
+fn redraw_preempts_overlay_input_without_closing_it() {
+    let mut state = RuntimeState::test_ephemeral(Vec::new());
+    state.model.overlay = Some(Overlay::Help);
+
+    handle_terminal(
+        Event::Key(KeyEvent::new(KeyCode::Char('l'), KeyModifiers::CONTROL)),
+        &mut state,
+    );
+
+    assert!(state.force_redraw);
+    assert_eq!(state.model.overlay, Some(Overlay::Help));
+}
+
+#[test]
 fn non_suspension_overlays_consume_paste_without_mutating_the_composer() {
     for overlay in [
         Overlay::CommandPalette,

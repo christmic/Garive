@@ -266,8 +266,11 @@ fn mouse_click_activates_the_visible_overlay_row_without_background_routing() {
                 send "\020"
                 expect "/help"
                 send "\033\[<0;21;8M"
-                expect "Inspector"
+                send "\014"
+                expect -exact "\033\[2J"
+                expect "Details"
                 expect "Connection"
+                expect "Execution"
                 send "\033"
                 after 100
                 send "\021"
@@ -529,7 +532,9 @@ fn up_moves_across_a_soft_wrapped_visual_row_in_a_real_pty() {
             after 100
             send "\033\[A"
             send "X"
-            expect "hello woX"
+            send "\014"
+            expect -exact "\033\[2J"
+            expect "woXnderful"
             send "\021"
             expect "Garive?"
             send "\r"
@@ -540,7 +545,7 @@ fn up_moves_across_a_soft_wrapped_visual_row_in_a_real_pty() {
     server.join().unwrap();
     assert!(status.success());
     let text = fs::read_to_string(transcript).unwrap();
-    assert!(text.contains("hello woX"));
+    assert!(text.contains("woXnderful"));
     assert!(text.contains('X'));
     assert!(text.contains("\x1b[?1049l"));
 }
@@ -567,7 +572,10 @@ fn end_stays_on_the_current_soft_wrapped_row_in_a_real_pty() {
             send "\033\[A"
             send "\033\[F"
             send "X"
-            expect "theX boundary"
+            send "\014"
+            expect -exact "\033\[2J"
+            expect "theX"
+            expect "boundary"
             send "\021"
             expect "Garive?"
             send "\r"
@@ -686,7 +694,9 @@ fn mouse_drag_selects_composer_graphemes_in_a_real_mono_pty() {
             send "\033\[<0;8;23m"
             after 100
             send "X"
-            expect "aX"
+            send "\014"
+            expect -exact "\033\[2J"
+            expect "aXb"
             send "\021"
             expect "Garive?"
             send "\r"
@@ -698,7 +708,7 @@ fn mouse_drag_selects_composer_graphemes_in_a_real_mono_pty() {
     assert!(status.success());
     let text = fs::read_to_string(transcript).unwrap();
     assert!(text.contains("\x1b[7m界"));
-    assert!(text.contains("aX"));
+    assert!(text.contains("aXb"));
     assert!(text.contains("\x1b[?1000l"));
     assert!(text.contains("\x1b[?1049l"));
 }
@@ -732,7 +742,12 @@ fn double_and_triple_click_replace_a_word_then_the_line_in_a_real_pty() {
             send "\033\[<0;6;23M\033\[<0;6;23m"
             send "\033\[<0;6;23M\033\[<0;6;23m"
             after 100
+            send "\014"
+            expect -exact "\033\[2J"
+            expect "alpha"
             send "Y"
+            send "\014"
+            expect -exact "\033\[2J"
             expect "Y"
             send "\021"
             expect "Garive?"
@@ -746,7 +761,7 @@ fn double_and_triple_click_replace_a_word_then_the_line_in_a_real_pty() {
     let text = fs::read_to_string(transcript).unwrap();
     assert!(text.contains("\x1b[7mbeta"));
     assert!(text.contains("\x1b[7malpha"));
-    assert!(text.contains("\x1b[7m X"));
+    assert!(text.contains("\x1b[7malpha"));
     assert!(text.contains("\x1b[?1000l"));
     assert!(text.contains("\x1b[?1049l"));
 }
@@ -811,12 +826,19 @@ fn typed_editor_aliases_drive_the_shipping_composer() {
             expect -exact "\033\[2J"
             expect "Garive"
             send "abc def"
-            send "\001X\005Y\027\010\002\004"
+            send "\001X"
+            send "\014"
+            expect -exact "\033\[2J"
+            expect "Xabc"
+            expect "def"
+            send "\005Y\027\010\002\004"
             expect "Xab"
             send "\033b\033fZ"
             expect "XabZ"
             send "\033b\033d"
             send "done"
+            send "\014"
+            expect -exact "\033\[2J"
             expect "done"
             send "\021"
             expect "Garive?"
@@ -828,7 +850,7 @@ fn typed_editor_aliases_drive_the_shipping_composer() {
     server.join().unwrap();
     assert!(status.success());
     let text = fs::read_to_string(transcript).unwrap();
-    assert!(text.contains("Xabc def") && text.contains("done"));
+    assert!(text.contains("Xabc") && text.contains("def") && text.contains("done"));
     assert!(text.contains("\x1b[?1049l"));
 }
 

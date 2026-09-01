@@ -9,7 +9,7 @@ use serde_json::json;
 use tokio::sync::mpsc;
 
 use crate::{
-    application::{reduce, AppAction, TerminalSize},
+    application::AppAction,
     persistence::{DiagnosticEvent, StateError, StateStore},
     view, LaunchConfig, TuiError,
 };
@@ -25,12 +25,14 @@ use super::{
     TerminalOptions,
 };
 
+mod frame;
 mod messages;
 mod projection;
 mod scheduling;
 mod screen_reader;
 mod state;
 
+use frame::{clear_fullscreen, draw};
 use messages::handle_host;
 #[cfg(test)]
 use projection::install_timeline;
@@ -141,6 +143,11 @@ pub async fn run(config: LaunchConfig) -> Result<(), TuiError> {
     live_frame_clock.tick().await;
     let mut scheduler = FairScheduler::default();
     let mut resize = ResizeCoalescer::default();
+    guard
+        .set_title(&view::terminal_title(&state.model))
+        .map_err(map_terminal_error)?;
+    draw(&mut terminal, &mut state, motion_tick)?;
+    let mut redraw_pending = false;
     loop {
         state.advance_graceful_quit();
         if let Some(request) = state.external_editor_request.take() {
@@ -171,6 +178,7 @@ pub async fn run(config: LaunchConfig) -> Result<(), TuiError> {
                     // The paused clear already invalidated Ratatui's back buffer.
                     // Do not issue a second cursor query after input resumes.
                     state.force_redraw = false;
+                    redraw_pending = true;
                     events.resume().map_err(|_| TuiError::TerminalIo)?;
                     if let Some(signal) = signal {
                         interrupted = Some(signal);
@@ -181,12 +189,6 @@ pub async fn run(config: LaunchConfig) -> Result<(), TuiError> {
         }
         if let Some(request) = state.take_terminal_reconfiguration() {
             guard.reconfigure(request).map_err(map_terminal_error)?;
-        }
-        guard
-            .set_title(&view::terminal_title(&state.model))
-            .map_err(map_terminal_error)?;
-        if !resize.is_pending() {
-            draw(&mut terminal, &mut state, motion_tick)?;
         }
         if state.model.quit_requested {
             break;
@@ -201,10 +203,11 @@ pub async fn run(config: LaunchConfig) -> Result<(), TuiError> {
             receiver.recv(),
             resize.wait(),
             view::status_motion_enabled(&state.model, state.config.reduced_motion),
-            state.model.live_frame_pending(),
+            redraw_pending || state.model.live_frame_pending(),
             resize.is_pending(),
         )
         .await;
+        let mut render_now = false;
         match scheduled {
             Scheduled::Shutdown(signal) => {
                 interrupted = Some(signal);
@@ -213,29 +216,51 @@ pub async fn run(config: LaunchConfig) -> Result<(), TuiError> {
             Scheduled::Terminal(event) => match event {
                 Some(Ok(crossterm::event::Event::Resize(width, height))) => {
                     resize.push(width, height, tokio::time::Instant::now());
+                    redraw_pending = true;
                 }
-                Some(Ok(event)) => handle_terminal(event, &mut state),
+                Some(Ok(event)) => {
+                    handle_terminal(event, &mut state);
+                    redraw_pending = true;
+                }
                 Some(Err(_)) | None => return Err(TuiError::TerminalIo),
             },
             Scheduled::Action(action) => match action {
-                Some(action) => state.dispatch(action),
+                Some(action) => {
+                    state.dispatch(action);
+                    redraw_pending = true;
+                }
                 None => break,
             },
             Scheduled::Motion => {
                 motion_tick = motion_tick.wrapping_add(1);
+                redraw_pending = true;
             }
             Scheduled::LiveFrame => {
-                state.model.advance_live_frame();
+                if state.model.live_frame_pending() {
+                    state.model.advance_live_frame();
+                }
+                render_now = true;
             }
             Scheduled::Host(message) => match message {
-                Some(message) => handle_host(message, &mut state),
+                Some(message) => {
+                    handle_host(message, &mut state);
+                    redraw_pending = true;
+                }
                 None => break,
             },
             Scheduled::ResizeDeadline => {
                 if let Some(event) = resize.take() {
                     handle_terminal(event, &mut state);
+                    redraw_pending = true;
                 }
             }
+        }
+        if render_now && !resize.is_pending() {
+            guard
+                .set_title(&view::terminal_title(&state.model))
+                .map_err(map_terminal_error)?;
+            draw(&mut terminal, &mut state, motion_tick)?;
+            redraw_pending = false;
         }
     }
     state.stop_tasks();
@@ -291,62 +316,6 @@ async fn terminal_setup_failure(
         (_, Some(signal)) => TuiError::Interrupted(signal),
         (Err(_), None) | (Ok(()), None) => TuiError::TerminalIo,
     }
-}
-
-fn draw(
-    terminal: &mut Terminal<CrosstermBackend<io::Stderr>>,
-    state: &mut RuntimeState,
-    motion_tick: u64,
-) -> Result<(), TuiError> {
-    if std::mem::take(&mut state.bell_requested) {
-        terminal
-            .backend_mut()
-            .write_all(b"\x07")
-            .and_then(|_| terminal.backend_mut().flush())
-            .map_err(|_| TuiError::TerminalIo)?;
-    }
-    if std::mem::take(&mut state.force_redraw) {
-        clear_fullscreen(terminal)?;
-    }
-    terminal
-        .draw(|frame| {
-            let area = frame.area();
-            let size = TerminalSize {
-                width: area.width,
-                height: area.height,
-            };
-            if state.model.terminal_size != size {
-                reduce(&mut state.model, AppAction::TerminalResized(size));
-            }
-            let cursor = if state.config.reduced_motion {
-                view::render_cached(
-                    &state.model,
-                    state.theme(),
-                    area,
-                    frame.buffer_mut(),
-                    &mut state.render_cache,
-                )
-            } else {
-                view::render_cached_with_motion(
-                    &state.model,
-                    state.theme(),
-                    view::MotionFrame::animated(motion_tick),
-                    area,
-                    frame.buffer_mut(),
-                    &mut state.render_cache,
-                )
-            };
-            if let Some(cursor) = cursor {
-                frame.set_cursor_position(cursor);
-            }
-        })
-        .map(|_| ())
-        .map_err(|_| TuiError::TerminalIo)
-}
-
-fn clear_fullscreen(terminal: &mut Terminal<CrosstermBackend<io::Stderr>>) -> Result<(), TuiError> {
-    let area = terminal.size().map_err(|_| TuiError::TerminalIo)?.into();
-    terminal.resize(area).map_err(|_| TuiError::TerminalIo)
 }
 
 fn map_terminal_error(error: TerminalError) -> TuiError {
