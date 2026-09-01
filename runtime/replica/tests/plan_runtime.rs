@@ -15,8 +15,8 @@ use garive_ledger::{
 };
 use garive_llm::{
     InvokeOutcome, ModelCancellation, ModelCapability, ModelFuture, ModelItem, ModelObserver,
-    ModelOutputSettings, ModelPort, ModelRequest, ModelStopReason, ModelUsage, TextMode,
-    TokenCount, UsageSource,
+    ModelOutputSettings, ModelPort, ModelPortFailure, ModelRequest, ModelStopReason, ModelUsage,
+    TextMode, TokenCount, UsageSource,
 };
 use garive_plan::{
     PlanBoundsV1, PlanCapabilityReference, PlanDefinitionV1, PlanId, PlanState, PlanStepId,
@@ -26,19 +26,18 @@ use garive_runtime::{
     commit_goal_command, commit_plan_command, commit_plan_replacement, commit_planned_turn,
     get_turn, plan_activate_goal_from_authoritative_plan, plan_adopt_plan,
     plan_complete_owned_step_from_turn, plan_complete_plan, plan_continue_owned_plan_turn,
-    plan_continue_turn, plan_core_terminal, plan_fail_owned_step_from_turn, plan_fail_plan,
-    plan_goal_transition, plan_next_turn_cancellation_for_goal, plan_plan_replacement,
-    plan_plan_transition, plan_propose_plan, plan_resume_goal_from_continued_turn,
-    plan_start_step_execution, plan_start_turn, plan_succeed_goal_from_completed_plan,
-    plan_suspend_goal_from_owned_turn, plan_suspend_owned_plan_from_turn,
-    reconstruct_execution_work_binding, reconstruct_goal, reconstruct_plan, reconstruct_plan_graph,
-    reconstruct_suspended_turn, verify_plan_carry_forward, ContinuationInput, ContinueTurnCommand,
-    CoreTerminalContext, EffectiveRuntimeLimits, GetTurnQuery, GoalCommandContext,
-    GoalPlanCoordinationError, GoalRuntimeError, GoalRuntimeTransition,
-    InteractionInputRepresentation, LocalExecutionAttempt, LocalExecutionPolicy,
-    LocalExecutionWorker, LocalWorkerDisposition, PlanCommandContext, PlanRuntimeError,
-    PlanRuntimeState, PlanRuntimeTransition, PlanStepExecutionStart, RuntimeCommandId,
-    SqliteLedger, StartTurnCommand,
+    plan_continue_turn, plan_core_terminal, plan_fail_owned_step_from_turn, plan_goal_transition,
+    plan_next_turn_cancellation_for_goal, plan_plan_replacement, plan_plan_transition,
+    plan_propose_plan, plan_resume_goal_from_continued_turn, plan_start_step_execution,
+    plan_start_turn, plan_succeed_goal_from_completed_plan, plan_suspend_goal_from_owned_turn,
+    plan_suspend_owned_plan_from_turn, reconstruct_execution_work_binding, reconstruct_goal,
+    reconstruct_plan, reconstruct_plan_graph, reconstruct_suspended_turn,
+    verify_plan_carry_forward, ContinuationInput, ContinueTurnCommand, CoreTerminalContext,
+    EffectiveRuntimeLimits, GetTurnQuery, GoalCommandContext, GoalPlanCoordinationError,
+    GoalRuntimeError, GoalRuntimeTransition, InteractionInputRepresentation, LocalExecutionAttempt,
+    LocalExecutionPolicy, LocalExecutionWorker, LocalWorkerDisposition, PlanCommandContext,
+    PlanRuntimeError, PlanRuntimeState, PlanRuntimeTransition, PlanStepExecutionStart,
+    RuntimeCommandId, SqliteLedger, StartTurnCommand,
 };
 use serde_json::json;
 use sha2::{Digest, Sha256};
@@ -653,8 +652,8 @@ async fn completed_owned_turn_reduces_to_step_with_observed_evidence_after_resta
     );
 }
 
-#[test]
-fn retry_posture_reopens_within_bounds_and_refuses_exhaustion_after_restart() {
+#[tokio::test]
+async fn retry_posture_reopens_within_bounds_and_refuses_exhaustion_after_restart() {
     let directory = tempdir().unwrap();
     let path = directory.path().join("retry.sqlite3");
     let session = SessionId::try_from("session-1").unwrap();
@@ -782,32 +781,18 @@ fn retry_posture_reopens_within_bounds_and_refuses_exhaustion_after_restart() {
     .unwrap();
     state = recover(&ledger, &session);
     let second_execution = active_execution(&state, "prepare");
-    let second_turn = commit_failed_execution(
-        &mut ledger,
-        &session,
-        &state,
-        &second_execution,
-        AgentFailureReason::PortFailure,
-    );
-    state = recover(&ledger, &session);
-    let exhausted = plan_fail_owned_step_from_turn(
-        &ledger,
-        &session,
-        "goal-1",
-        &second_turn,
-        state.session_version,
-        2,
-        &context("retry-exhausted-step"),
-    )
-    .unwrap();
-    commit_plan_command(
-        &mut ledger,
-        session.clone(),
-        state.session_version,
-        &exhausted,
-    )
-    .unwrap();
-    state = recover(&ledger, &session);
+    let execution_id = garive_ledger::ExecutionId::try_from(second_execution.as_str()).unwrap();
+    let turn_id = ledger
+        .read_facts(&session, 0, state.through_position, None)
+        .unwrap()
+        .into_iter()
+        .find(|fact| {
+            fact.kind.as_str() == "execution.started"
+                && fact.execution_id.as_ref() == Some(&execution_id)
+        })
+        .unwrap()
+        .turn_id
+        .unwrap();
     assert_eq!(
         plan_plan_transition(
             &state,
@@ -820,22 +805,40 @@ fn retry_posture_reopens_within_bounds_and_refuses_exhaustion_after_restart() {
         ),
         Err(PlanRuntimeError::TransitionInvalid)
     );
-    let failed = plan_fail_plan(
-        &ledger,
-        &session,
-        &state,
-        state.state_version,
-        &context("fail-exhausted-plan"),
-        "attempts_exhausted".into(),
-        None,
-    )
-    .unwrap();
-    commit_plan_command(&mut ledger, session.clone(), state.session_version, &failed).unwrap();
+    let committed = garive_runtime::CommittedTurn {
+        session_id: session.clone(),
+        turn_id,
+        execution_id,
+        definition_id: "agent-definition-1".into(),
+        definition_revision: "revision-1".into(),
+        snapshot_digest: digest('b'),
+        session_version: state.session_version,
+        committed_position: state.through_position,
+    };
     drop(ledger);
+    let worker =
+        LocalExecutionWorker::new(&path, worker_policy(), Arc::new(PlanFailingModel)).unwrap();
+    let LocalWorkerDisposition::TerminalCommitted { positions } =
+        worker.execute(&committed, &worker_attempt()).await.unwrap()
+    else {
+        panic!("failed final attempt must close Step, Plan and Goal")
+    };
+    assert_eq!(positions.len(), 5);
+    assert_eq!(
+        worker.execute(&committed, &worker_attempt()).await.unwrap(),
+        LocalWorkerDisposition::AlreadyTerminal
+    );
     let ledger = SqliteLedger::open(&path).unwrap();
     assert_eq!(
         recover(&ledger, &session).snapshot.state(),
         PlanState::Failed
+    );
+    assert_eq!(
+        reconstruct_goal(&ledger, &session, "goal-1")
+            .unwrap()
+            .snapshot
+            .state(),
+        GoalState::Failed
     );
 }
 
@@ -1898,6 +1901,18 @@ impl ModelPort for PlanCompletingModel {
                 stop_reason: ModelStopReason::EndTurn,
             })
         })
+    }
+}
+
+struct PlanFailingModel;
+impl ModelPort for PlanFailingModel {
+    fn invoke<'a>(
+        &'a self,
+        _: &'a ModelRequest,
+        _: &'a mut dyn ModelObserver,
+        _: &'a dyn ModelCancellation,
+    ) -> ModelFuture<'a> {
+        Box::pin(async { Err(ModelPortFailure::RequiredPortFailure) })
     }
 }
 

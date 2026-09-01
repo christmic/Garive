@@ -1272,6 +1272,87 @@ pub fn plan_succeed_goal_from_completed_plan(
     .map_err(GoalPlanCoordinationError::Goal)
 }
 
+/// Plans Goal failure from the unique failed authoritative Plan.
+///
+/// The stable code is derived from `plan.failed`; callers cannot provide a
+/// different failure classification or bypass the Plan terminal.
+pub fn plan_fail_goal_from_failed_plan(
+    ledger: &SqliteLedger,
+    session_id: &SessionId,
+    goal_id: &str,
+    expected_session_version: u64,
+    expected_goal_revision: u64,
+    context: &GoalCommandContext,
+) -> Result<PlannedGoalCommand, GoalPlanCoordinationError> {
+    let goal =
+        reconstruct_goal(ledger, session_id, goal_id).map_err(GoalPlanCoordinationError::Goal)?;
+    if goal.snapshot.state() != GoalState::Active
+        || goal.session_version != expected_session_version
+        || goal.snapshot.revision() != expected_goal_revision
+    {
+        return Err(GoalPlanCoordinationError::ConcurrentModification);
+    }
+    let plans = reconstruct_plan_graph(ledger, session_id)
+        .map_err(|_| GoalPlanCoordinationError::CorruptState)?;
+    if plans.values().any(|plan| {
+        plan.session_version != goal.session_version
+            || plan.through_position != goal.through_position
+    }) {
+        return Err(GoalPlanCoordinationError::ConcurrentModification);
+    }
+    let goal_digest = goal
+        .snapshot
+        .definition()
+        .digest()
+        .map_err(|_| GoalPlanCoordinationError::CorruptState)?;
+    let mut failed = plans.values().filter(|plan| {
+        let definition = plan.snapshot.definition();
+        definition.goal_id() == goal_id
+            && definition.goal_revision() <= expected_goal_revision
+            && definition.goal_definition_digest() == goal_digest
+            && plan.snapshot.state() == PlanState::Failed
+    });
+    let plan = failed
+        .next()
+        .ok_or(GoalPlanCoordinationError::AuthoritativePlanUnavailable)?;
+    if failed.next().is_some() {
+        return Err(GoalPlanCoordinationError::CorruptState);
+    }
+    let facts = ledger
+        .read_facts(session_id, 0, goal.through_position, None)
+        .map_err(|_| GoalPlanCoordinationError::CorruptState)?;
+    let definition = plan.snapshot.definition();
+    let terminals = facts
+        .iter()
+        .filter(|fact| fact.kind.as_str() == "plan.failed")
+        .filter_map(|fact| {
+            let value = serde_json::from_str::<Value>(fact.payload.as_json()).ok()?;
+            (value.get("plan_id")?.as_str()? == definition.plan_id().as_str()
+                && value.get("plan_revision")?.as_u64()? == definition.plan_revision())
+            .then_some(value)
+        })
+        .collect::<Vec<_>>();
+    let [terminal] = terminals.as_slice() else {
+        return Err(GoalPlanCoordinationError::CorruptState);
+    };
+    let reason = terminal
+        .get("reason")
+        .and_then(Value::as_str)
+        .ok_or(GoalPlanCoordinationError::CorruptState)?;
+    plan_goal_transition(
+        ledger,
+        session_id,
+        goal_id,
+        expected_goal_revision,
+        context,
+        GoalRuntimeTransition::Fail {
+            code: format!("plan_{reason}"),
+            evidence: None,
+        },
+    )
+    .map_err(GoalPlanCoordinationError::Goal)
+}
+
 /// Plans Goal activation from the unique authoritative Plan at one durable prefix.
 ///
 /// The Plan reference is derived from verified Runtime state and is never accepted
