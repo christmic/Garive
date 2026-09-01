@@ -274,6 +274,10 @@ describe("Desktop product experience", () => {
   it("collapses and restores the native navigation without discarding work", async () => {
     const view = render(<App />);
     await screen.findByText("What should we accomplish?");
+    const separator = screen.getByRole("separator", { name: "Resize navigation" });
+    expect(separator.getAttribute("aria-valuenow")).toBe("275");
+    fireEvent.keyDown(separator, { key: "End" });
+    expect(separator.getAttribute("aria-valuenow")).toBe("520");
     fireEvent.click(screen.getByRole("button", { name: "Hide navigation" }));
     expect(view.container.querySelector(".app-shell")?.classList.contains("navigation-collapsed")).toBe(true);
     expect(view.container.querySelector("#primary-navigation")?.getAttribute("aria-hidden")).toBe("true");
@@ -345,6 +349,10 @@ describe("Desktop product experience", () => {
     expect(separator.getAttribute("aria-valuenow")).toBe("368");
     expect(view.container.querySelector<HTMLElement>(".app-shell")?.style
       .getPropertyValue("--conversation-split")).toBe("368px");
+    fireEvent.mouseDown(separator);
+    expect(view.container.querySelector(".app-shell")?.classList.contains("panel-dragging")).toBe(true);
+    fireEvent.mouseUp(window);
+    expect(view.container.querySelector(".app-shell")?.classList.contains("panel-dragging")).toBe(false);
     fireEvent.keyDown(separator, { key: "Home" });
     expect(separator.getAttribute("aria-valuenow")).toBe("320");
     fireEvent.doubleClick(separator);

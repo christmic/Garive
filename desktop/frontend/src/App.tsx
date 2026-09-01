@@ -181,6 +181,7 @@ export function App({ client = "desktop", webCapabilities, createProductPort,
   const [settingsSection, setSettingsSection] = useState<SettingsSection>("general");
   const [navigationOpen, setNavigationOpen] = useState(false);
   const [navigationCollapsed, setNavigationCollapsed] = useState(false);
+  const [layoutDragging, setLayoutDragging] = useState(false);
   const [recents, setRecents] = useState<readonly RecentTask[]>([]);
   const [recentTitles, setRecentTitles] = useState<Readonly<Record<string, string>>>({});
   const [commandOpen, setCommandOpen] = useState(false);
@@ -676,12 +677,12 @@ export function App({ client = "desktop", webCapabilities, createProductPort,
       sidebarWidthPx: clampSidebarWidth(clientX - shell.left) }));
   };
   return <div className={`desktop-root theme-${effectiveTheme} density-${preferences.density}`}>
-    <div className={navigationCollapsed ? "app-shell navigation-collapsed" : "app-shell"}
+    <div className={`${navigationCollapsed ? "app-shell navigation-collapsed" : "app-shell"} panel-animated${layoutDragging ? " panel-dragging" : ""}`}
       style={{ "--conversation-split": `${preferences.workspaceSplitPx}px`,
         "--sidebar-preferred-width": `${preferences.sidebarWidthPx}px` } as CSSProperties}
       inert={Boolean(pickerGrant) || commandOpen}
       aria-hidden={Boolean(pickerGrant) || commandOpen}>
-      <aside id="primary-navigation" className={navigationOpen ? "sidebar navigation-open" : "sidebar"}
+      <aside id="primary-navigation" data-panel className={navigationOpen ? "sidebar navigation-open" : "sidebar"}
         aria-label={t("shell.primaryNavigation")}
         inert={(smallWindow && !navigationOpen) || navigationCollapsed}
         aria-hidden={(smallWindow && !navigationOpen) || navigationCollapsed} onClickCapture={(event) => {
@@ -777,10 +778,11 @@ export function App({ client = "desktop", webCapabilities, createProductPort,
       {!navigationCollapsed && <div className="sidebar-resizer" role="separator"
         aria-label={t("shell.resizeNavigation")} aria-orientation="vertical"
         aria-valuemin={240} aria-valuemax={520} aria-valuenow={preferences.sidebarWidthPx} tabIndex={0}
-        onPointerDown={(event) => { event.currentTarget.setPointerCapture(event.pointerId);
+        onPointerDown={(event) => { setLayoutDragging(true); event.currentTarget.setPointerCapture(event.pointerId);
           resizeSidebarFromPointer(event.clientX); }}
         onPointerMove={(event) => { if (event.currentTarget.hasPointerCapture(event.pointerId))
           resizeSidebarFromPointer(event.clientX); }}
+        onPointerUp={() => setLayoutDragging(false)} onLostPointerCapture={() => setLayoutDragging(false)}
         onDoubleClick={() => setPreferences((current) => ({ ...current, sidebarWidthPx: 275 }))}
         onKeyDown={(event) => {
           const next = event.key === "ArrowLeft" ? preferences.sidebarWidthPx - 16
@@ -792,7 +794,7 @@ export function App({ client = "desktop", webCapabilities, createProductPort,
       {navigationOpen && <button className="navigation-backdrop" type="button"
         aria-label={t("shell.closeNavigation")} onClick={() => setNavigationOpen(false)} />}
 
-      <main className="main-surface" inert={smallWindow && navigationOpen}
+      <main className="main-surface" data-panel inert={smallWindow && navigationOpen}
         aria-hidden={smallWindow && navigationOpen}>
         <header className="topbar" data-tauri-drag-region="deep">
           <div className="topbar-title"><button className={navigationCollapsed
@@ -859,7 +861,8 @@ export function App({ client = "desktop", webCapabilities, createProductPort,
           && state.phase !== "submitting" && !state.messages.some((message) => message.suspension)}
         workspaceSplitPx={preferences.workspaceSplitPx} onWorkspaceSplitChange={(workspaceSplitPx) =>
           setPreferences((current) => ({ ...current,
-            workspaceSplitPx: clampWorkspaceSplit(workspaceSplitPx) }))} t={t} />}
+            workspaceSplitPx: clampWorkspaceSplit(workspaceSplitPx) }))}
+        onLayoutDragChange={setLayoutDragging} t={t} />}
     </div>
     {pickerGrant && <WorkspacePicker grant={pickerGrant} preview={visualTest} t={t}
       onCancel={() => { setPickerGrant(undefined);
@@ -1151,13 +1154,14 @@ export function TurnProgress({ goal, status, activities, onOpen, t }: { goal?: s
 }
 
 function Inspector({ state, dispatch, onAddContext, canAddContext, workspaceSplitPx,
-  onWorkspaceSplitChange, t }: {
+  onWorkspaceSplitChange, onLayoutDragChange, t }: {
   state: WorkState;
   dispatch: WorkDispatch;
   onAddContext: () => Promise<void>;
   canAddContext: boolean;
   workspaceSplitPx: number;
   onWorkspaceSplitChange: (value: number) => void;
+  onLayoutDragChange: (dragging: boolean) => void;
   t: (key: MessageKey) => string;
 }) {
   const mode = state.inspectorTab === "activity" ? "environment-panel" : "workspace-panel";
@@ -1168,19 +1172,21 @@ function Inspector({ state, dispatch, onAddContext, canAddContext, workspaceSpli
     const sidebar = document.querySelector<HTMLElement>(".sidebar")?.getBoundingClientRect();
     if (shell) onWorkspaceSplitChange(clientX - shell.left - (sidebar?.width ?? 0));
   };
-  return <aside id="work-inspector" className={`inspector ${mode}`} aria-label={t("inspector.aria")}>
+  return <aside id="work-inspector" data-panel className={`inspector ${mode}`} aria-label={t("inspector.aria")}>
     {mode === "workspace-panel" && <div className="workspace-resizer" role="separator"
       aria-label={t("inspector.resizeWorkspace")} aria-orientation="vertical"
       aria-valuemin={320} aria-valuemax={520} aria-valuenow={workspaceSplitPx} tabIndex={0}
-      onPointerDown={(event) => { event.currentTarget.setPointerCapture(event.pointerId);
+      onPointerDown={(event) => { onLayoutDragChange(true); event.currentTarget.setPointerCapture(event.pointerId);
         resizeFromPointer(event.clientX); }}
       onPointerMove={(event) => { if (event.currentTarget.hasPointerCapture(event.pointerId))
         resizeFromPointer(event.clientX); }}
+      onPointerUp={() => onLayoutDragChange(false)}
+      onLostPointerCapture={() => onLayoutDragChange(false)}
       onMouseDown={(event) => {
-        event.preventDefault();
+        event.preventDefault(); onLayoutDragChange(true);
         const move = (moveEvent: MouseEvent) => resizeFromPointer(moveEvent.clientX);
         const stop = () => { window.removeEventListener("mousemove", move);
-          window.removeEventListener("mouseup", stop); };
+          window.removeEventListener("mouseup", stop); onLayoutDragChange(false); };
         window.addEventListener("mousemove", move); window.addEventListener("mouseup", stop);
       }}
       onDoubleClick={() => onWorkspaceSplitChange(352)}

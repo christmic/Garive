@@ -89,6 +89,15 @@ is `cubic-bezier(.8, 0, .4, 1)`, and compact floating surfaces use the snappy
 `cubic-bezier(.23, 1, .32, 1)`. Reduced motion sets both duration sources to
 zero, so compatibility aliases cannot accidentally retain animation.
 
+Docked workbench disclosure follows the installed panel contract, not an
+opacity-only imitation. Existing panels transition `flex-grow` and `max-width`
+for 300 ms with the basic curve, so the thread releases space while the output
+pane acquires it. Panel content may add the shared 4px reveal, but cannot replace
+the structural transition. Pointer resizing sets one `panel-dragging` state
+that removes both transitions until capture ends; keyboard resizing remains
+bounded and progressive. Reduced motion resolves the structural duration to
+zero through the same token.
+
 Floating depth follows the installed desktop scale rather than a generic web
 modal shadow. Raised controls use the 8/16/-4 profile; Environment, menus and
 selectors use the 16/32/-8 profile. Both resolve to 12–19% black instead of

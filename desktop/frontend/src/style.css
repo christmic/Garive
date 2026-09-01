@@ -585,14 +585,11 @@ kbd { color: var(--subtle); font: 11px -apple-system, sans-serif; }
 
 /* Codex-fidelity shell. Keep Desktop and Web on this single shared layer. */
 .desktop-root { font-size: var(--text-md); }
-.app-shell { --sidebar-width: clamp(240px, var(--sidebar-preferred-width), min(520px, calc(100vw - 320px))); --conversation-split: 352px; position: relative; grid-template-columns: var(--sidebar-width) minmax(0, 1fr); background: var(--surface-canvas); }
-.app-shell:has(.environment-panel) { grid-template-columns: var(--sidebar-width) minmax(0, 1fr); }
-.app-shell:has(.workspace-panel) { grid-template-columns: var(--sidebar-width) var(--conversation-split) minmax(500px, 1fr); }
-.app-shell.navigation-collapsed { grid-template-columns: minmax(0, 1fr); }
-.app-shell.navigation-collapsed:has(.environment-panel) { grid-template-columns: minmax(0, 1fr); }
-.app-shell.navigation-collapsed:has(.workspace-panel) { grid-template-columns: var(--conversation-split) minmax(500px, 1fr); }
+.app-shell { --sidebar-width: clamp(240px, var(--sidebar-preferred-width), min(520px, calc(100vw - 320px))); --conversation-split: 352px; position: relative; display: flex; background: var(--surface-canvas); }
+.panel-animated > [data-panel] { transition: flex-grow var(--motion-relaxed) var(--ease-basic), max-width var(--motion-relaxed) var(--ease-basic); }
+.panel-animated.panel-dragging > [data-panel] { transition: none; }
 .navigation-collapsed > .sidebar { display: none; }
-.sidebar { padding: 0 8px 10px; border-right-color: var(--border-subtle); background: var(--surface-sidebar); }
+.sidebar { flex: 0 0 var(--sidebar-width); max-width: var(--sidebar-width); padding: 0 8px 10px; border-right-color: var(--border-subtle); background: var(--surface-sidebar); }
 .sidebar-window-row { z-index: 1; display: flex; align-items: center; height: var(--height-toolbar-sm); gap: 1px; }
 html[data-client="desktop"] .sidebar-window-row { padding-left: 58px; }
 .sidebar-window-row .icon-button { width: 28px; height: 28px; }
@@ -646,7 +643,9 @@ kbd { font-size: var(--text-2xs); }
 .sidebar-resizer::after { position: absolute; top: 0; bottom: 0; left: 4px; width: 1px; background: transparent; transition: background var(--motion-basic); content: ""; }
 .sidebar-resizer:hover::after, .sidebar-resizer:focus-visible::after { background: var(--border-strong); }
 
-.main-surface { grid-template-columns: minmax(0, 1fr); grid-template-rows: var(--height-window-bar) minmax(0, 1fr); background: var(--surface-canvas); }
+.main-surface { flex: 1 1 auto; width: 100%; max-width: calc(100% - var(--sidebar-width)); grid-template-columns: minmax(0, 1fr); grid-template-rows: var(--height-window-bar) minmax(0, 1fr); background: var(--surface-canvas); }
+.navigation-collapsed .main-surface { max-width: 100%; }
+.app-shell:has(.workspace-panel) .main-surface { flex-grow: 0; max-width: var(--conversation-split); }
 .work-surface { min-width: 0; overflow: hidden; }
 .topbar { padding: 0 14px 0 10px; border-bottom-color: var(--border-subtle); background: color-mix(in srgb, var(--surface-canvas) 91%, transparent); }
 .topbar-title { flex: 1; gap: 8px; min-width: 0; font-size: var(--text-sm); font-weight: 590; }
@@ -808,7 +807,8 @@ kbd { font-size: var(--text-2xs); }
 .environment-panel .activity-status { width: 18px; height: 18px; border-radius: 5px; }
 .environment-panel .activity-status svg { width: 11px; }
 .environment-empty { margin: 2px 0 5px; color: var(--text-tertiary); font-size: var(--text-2xs); line-height: 1.4; }
-.workspace-panel { position: relative; min-width: 0; background: var(--surface-canvas); }
+.workspace-panel { position: relative; flex: 1 1 auto; min-width: 0; max-width: calc(100% - var(--sidebar-width) - var(--conversation-split)); background: var(--surface-canvas); }
+.navigation-collapsed .workspace-panel { max-width: calc(100% - var(--conversation-split)); }
 .workspace-resizer { position: absolute; z-index: 4; top: var(--height-window-bar); bottom: 0; left: -5px; width: 10px; cursor: col-resize; touch-action: none; }
 .workspace-resizer::after { position: absolute; top: 0; bottom: 0; left: 4px; width: 1px; background: var(--border-subtle); transition: width var(--motion-fast), background var(--motion-fast); content: ""; }
 .workspace-resizer:hover::after, .workspace-resizer:focus-visible::after { width: 2px; background: var(--action-primary); }
@@ -1098,6 +1098,7 @@ html[data-client="desktop"] .navigation-collapsed .topbar { padding-left: 70px; 
   .app-shell:has(.workspace-panel) { grid-template-columns: var(--sidebar-width) minmax(0, 1fr); }
   .app-shell.navigation-collapsed:has(.workspace-panel) { grid-template-columns: minmax(0, 1fr); }
   .workspace-panel { position: absolute; z-index: 8; top: var(--height-toolbar); right: 0; bottom: 0; width: min(680px, calc(100% - 72px)); box-shadow: var(--shadow-overlay); }
+  .app-shell:has(.workspace-panel) .main-surface { flex-grow: 1; max-width: calc(100% - var(--sidebar-width)); }
   .sidebar-resizer { display: none; }
   .workspace-resizer { display: none; }
   .app-shell:has(.environment-panel) .work-surface { margin-right: 0; }
@@ -1106,6 +1107,8 @@ html[data-client="desktop"] .navigation-collapsed .topbar { padding-left: 70px; 
 @media (max-width: 980px) {
   .app-shell, .app-shell:has(.environment-panel), .app-shell:has(.workspace-panel) { grid-template-columns: 72px minmax(0, 1fr); }
   .sidebar { padding-inline: 9px; }
+  .sidebar { flex-basis: 72px; max-width: 72px; }
+  .main-surface, .app-shell:has(.workspace-panel) .main-surface { max-width: calc(100% - 72px); }
   html[data-client="desktop"] .sidebar-window-row { padding-left: 0; }
   html[data-client="desktop"] .sidebar-window-row > button { visibility: hidden; pointer-events: none; }
   .sidebar-product-row { justify-content: center; }
@@ -1122,6 +1125,7 @@ html[data-client="desktop"] .navigation-collapsed .topbar { padding-left: 70px; 
   .app-shell, .app-shell:has(.environment-panel), .app-shell:has(.workspace-panel) { grid-template-columns: minmax(0, 1fr); }
   .navigation-trigger { display: grid; flex: 0 0 auto; }
   .sidebar { position: fixed; z-index: 20; inset: 0 auto 0 0; display: flex; width: min(300px, calc(100% - 48px)); padding: 18px 10px 12px; border-right: 1px solid var(--border-subtle); box-shadow: var(--shadow-overlay); transform: translateX(-105%); transition: transform var(--motion-relaxed) var(--ease-enter); }
+  .main-surface, .app-shell:has(.workspace-panel) .main-surface { max-width: 100%; }
   html[data-client="desktop"] .sidebar-window-row { padding-left: 0; }
   html[data-client="desktop"] .sidebar { padding-top: 34px; }
   html[data-client="desktop"] .sidebar-window-row { display: none; }

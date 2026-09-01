@@ -71,10 +71,12 @@ describe("Desktop visual accessibility contract", () => {
     expect(TOKENS).toContain("--ease-exit: cubic-bezier(.8, 0, .4, 1)");
     expect(TOKENS).toContain("--ease-enter-snappy: cubic-bezier(.23, 1, .32, 1)");
     expect(TOKENS).toContain("@supports (corner-shape: superellipse(1.5))");
-    expect(CSS).toContain("grid-template-columns: var(--sidebar-width) minmax(0, 1fr)");
+    expect(CSS).toContain("display: flex; background: var(--surface-canvas)");
     expect(CSS).toContain("--conversation-split: 352px");
     expect(CSS).toContain(".app-shell:has(.workspace-panel)");
-    expect(CSS).toContain("var(--conversation-split) minmax(500px, 1fr)");
+    expect(CSS).toContain(".app-shell:has(.workspace-panel) .main-surface { flex-grow: 0; max-width: var(--conversation-split); }");
+    expect(CSS).toContain(".panel-animated > [data-panel] { transition: flex-grow var(--motion-relaxed) var(--ease-basic), max-width var(--motion-relaxed) var(--ease-basic); }");
+    expect(CSS).toContain(".panel-animated.panel-dragging > [data-panel] { transition: none; }");
     expect(CSS).toContain(".work-surface { min-width: 0; overflow: hidden; }");
     expect(CSS).toContain(".workspace-resizer { position: absolute");
     expect(CSS).toContain(".artifact-preview-content { width: min(46rem, 100%)");

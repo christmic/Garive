@@ -764,6 +764,25 @@ overflow. At the 275px default, artifact mode retains its independent 352px
 thread pane, 332px content rail, 342px Composer, 40px file toolbar and zero
 overflow. Desktop and Web consume the same DOM, preference and CSS contract.
 
+### XXVI. Structural panel disclosure
+
+The installed Codex stylesheet applies 300ms basic-curve transitions to
+`flex-grow` and `max-width` on every panel, removes them under `panel-dragging`,
+and disables them for reduced motion. Garive previously changed its Grid track
+count synchronously and animated only the new pane's opacity/4px translation.
+That made the most important spatial change feel like a web route replacement.
+
+An initial three-track attempt was rejected by live measurement: `1fr → 352px`
+is a discrete Grid change, so the conversation snapped while only the final
+15px of the third track visibly animated. The admitted implementation mirrors
+the source Flex contract instead. The existing thread owns animated grow and
+maximum-width values, the new workbench begins at zero available width, and
+both meet at 352/653px without overflow. Browser measurement observes the
+closed thread at 1005px, an intermediate opening frame at 367.81px and the
+352px terminal width; computed transitions remain 300ms. Component evidence
+proves pointer drag adds/removes `panel-dragging`, making the same transition
+duration zero only during direct manipulation.
+
 ## Gate 1 — Codex fidelity
 
 This gate passes only when both Desktop and Web show:
