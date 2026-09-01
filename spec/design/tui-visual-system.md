@@ -46,6 +46,10 @@ so CJK and combining sequences cannot split or shift later components.
 
 Implementations live in `tui/src/view/primitives.rs` and `style.rs`.
 Higher-level renderers must reuse these primitives for equivalent behavior.
+`ModalFrame` alone computes modal inner padding and paints the retained-workspace
+backdrop, two-cell horizontal halo, cleared popup, title, and rounded border.
+CommandPalette, generic overlays, and the overlay Inspector cannot reproduce
+any part of that chrome locally.
 The shared Session identity/state presentation lives in `view/session.rs`;
 SessionSwitcher and Inspector may change density, but cannot invent separate
 labels, glyphs, or state wording. Their visible windows also define pointer hit

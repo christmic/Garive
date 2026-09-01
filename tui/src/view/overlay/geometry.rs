@@ -1,8 +1,5 @@
 use crate::application::ActionOverlayIntent;
-use ratatui::{
-    layout::Rect,
-    widgets::{Block, Borders, Padding},
-};
+use ratatui::{layout::Rect, widgets::Padding};
 use unicode_width::UnicodeWidthStr;
 
 use crate::application::{AppModel, Overlay};
@@ -10,7 +7,7 @@ use crate::application::{AppModel, Overlay};
 use super::super::{
     decision_sheet,
     layout::FrameLayout,
-    primitives::{centered_popup, selection_window},
+    primitives::{centered_popup, selection_window, ModalFrame},
 };
 
 use super::filtered_list::FilteredListGeometry;
@@ -36,10 +33,7 @@ pub(super) fn overlay_geometry(model: &AppModel, overlay: Overlay, area: Rect) -
         popup_width,
         desired_height.min(modal_area.height),
     );
-    let inner = Block::default()
-        .borders(Borders::ALL)
-        .padding(overlay_padding(overlay))
-        .inner(popup);
+    let inner = ModalFrame::resolve(popup, overlay_padding(overlay)).inner();
     let window = list_count_and_selection(model, overlay).map(|(count, selected)| {
         if matches!(overlay, Overlay::SessionPicker | Overlay::PromptHistory) {
             FilteredListGeometry::resolve(inner, count, selected).window
@@ -83,6 +77,7 @@ fn modal_area(model: &AppModel, overlay: Overlay, area: Rect) -> Rect {
 pub(super) fn overlay_padding(overlay: Overlay) -> Padding {
     match overlay {
         Overlay::CommandPalette => unreachable!("CommandPalette owns its padding"),
+        Overlay::Inspector => Padding::new(1, 1, 0, 0),
         _ => Padding::new(2, 2, 1, 1),
     }
 }

@@ -40,23 +40,16 @@ pub(super) fn wide_area(area: Rect) -> Option<Rect> {
     ))
 }
 
-pub(super) fn render(
-    model: &AppModel,
-    theme: Theme,
-    area: Rect,
-    buffer: &mut Buffer,
-    overlay: bool,
-) {
+pub(super) fn render(model: &AppModel, theme: Theme, area: Rect, buffer: &mut Buffer) {
     if area.is_empty() {
         return;
     }
     let colors = palette(theme);
-    let title = format!(" Inspector · {} ", model.inspector.variant.label());
     let block = Block::default()
-        .title(Line::styled(title, colors.title))
+        .title(Line::styled(title(model), colors.title))
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
-        .border_style(if overlay || model.focus == FocusTarget::Inspector {
+        .border_style(if model.focus == FocusTarget::Inspector {
             colors.overlay_border
         } else {
             colors.border
@@ -64,6 +57,16 @@ pub(super) fn render(
         .padding(Padding::new(1, 1, 0, 0));
     let geometry = geometry(model, area);
     block.render(area, buffer);
+    render_inner(model, theme, geometry.inner, buffer);
+}
+
+pub(super) fn title(model: &AppModel) -> String {
+    format!(" Inspector · {} ", model.inspector.variant.label())
+}
+
+pub(super) fn render_inner(model: &AppModel, theme: Theme, inner: Rect, buffer: &mut Buffer) {
+    let colors = palette(theme);
+    let geometry = inner_geometry(model, inner);
     let projection = model.inspector_projection();
     if projection.entries.is_empty() {
         Line::styled(empty_copy(model), colors.muted).render(geometry.inner, buffer);
@@ -132,6 +135,10 @@ fn geometry(model: &AppModel, area: Rect) -> Geometry {
         .borders(Borders::ALL)
         .padding(Padding::new(1, 1, 0, 0))
         .inner(area);
+    inner_geometry(model, inner)
+}
+
+fn inner_geometry(model: &AppModel, inner: Rect) -> Geometry {
     let projection = model.inspector_projection();
     let rows = InspectorRowLayout::resolve(inner, &projection.entries, model.inspector_selection());
     Geometry { inner, rows }

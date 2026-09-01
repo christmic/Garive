@@ -2,7 +2,7 @@ use ratatui::{
     buffer::Buffer,
     layout::Rect,
     text::{Line, Span, Text},
-    widgets::{Block, BorderType, Borders, Clear, Paragraph, Widget, Wrap},
+    widgets::{Paragraph, Widget, Wrap},
 };
 use unicode_width::UnicodeWidthStr;
 
@@ -15,7 +15,7 @@ use crate::{
 use super::{
     decision_sheet, inspector, palette,
     presentation::HELP_NOTES,
-    primitives::{key_hints, truncate_display},
+    primitives::{key_hints, truncate_display, ModalFrame},
     safe_text,
     session::picker_line,
     style::Palette,
@@ -46,13 +46,14 @@ pub(super) fn render_overlay(
     }
     let geometry = overlay_geometry(model, overlay, area);
     let popup = geometry.popup;
-    buffer.set_style(area, colors.modal_backdrop);
-    let halo = modal_halo(popup, area);
-    Clear.render(halo, buffer);
-    buffer.set_style(halo, colors.modal_backdrop);
-    Clear.render(popup, buffer);
     if overlay == Overlay::Inspector {
-        inspector::render(model, theme, popup, buffer, true);
+        ModalFrame::resolve(popup, overlay_padding(overlay)).render(
+            area,
+            Line::styled(inspector::title(model), colors.title),
+            colors,
+            buffer,
+        );
+        inspector::render_inner(model, theme, geometry.inner, buffer);
         return;
     }
     let spec = overlay_spec(
@@ -63,20 +64,18 @@ pub(super) fn render_overlay(
         geometry.inner.width,
         geometry.inner.height,
     );
-    let block = Block::default()
-        .title(Line::styled(spec.title, colors.title))
-        .borders(Borders::ALL)
-        .border_type(BorderType::Rounded)
-        .border_style(colors.overlay_border)
-        .padding(overlay_padding(overlay));
     let inner = geometry.inner;
-    let paragraph = Paragraph::new(spec.content)
-        .block(block)
-        .style(colors.normal);
+    ModalFrame::resolve(popup, overlay_padding(overlay)).render(
+        area,
+        Line::styled(spec.title, colors.title),
+        colors,
+        buffer,
+    );
+    let paragraph = Paragraph::new(spec.content).style(colors.normal);
     if matches!(overlay, Overlay::SessionPicker | Overlay::PromptHistory) {
-        paragraph.render(popup, buffer);
+        paragraph.render(inner, buffer);
     } else {
-        paragraph.wrap(Wrap { trim: false }).render(popup, buffer);
+        paragraph.wrap(Wrap { trim: false }).render(inner, buffer);
     }
     if let Some(row) = selection_row(model, overlay, geometry.window) {
         if row < inner.height {
@@ -86,17 +85,6 @@ pub(super) fn render_overlay(
             );
         }
     }
-}
-
-fn modal_halo(popup: Rect, area: Rect) -> Rect {
-    let x = popup.x.saturating_sub(2).max(area.x);
-    let right = popup.right().saturating_add(2).min(area.right());
-    Rect::new(
-        x,
-        popup.y.max(area.y),
-        right.saturating_sub(x),
-        popup.bottom().min(area.bottom()).saturating_sub(popup.y),
-    )
 }
 
 fn overlay_spec(

@@ -1,7 +1,8 @@
 use ratatui::{
+    buffer::Buffer,
     layout::Rect,
     text::{Line, Span},
-    widgets::{Block, BorderType, Borders, Padding},
+    widgets::{Block, BorderType, Borders, Clear, Padding, Widget},
 };
 use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::UnicodeWidthStr;
@@ -12,6 +13,61 @@ use super::style::Palette;
 pub(super) enum FocusFrameTone {
     Neutral,
     Warning,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) struct ModalFrame {
+    popup: Rect,
+    inner: Rect,
+}
+
+impl ModalFrame {
+    pub(super) fn resolve(popup: Rect, padding: Padding) -> Self {
+        let inner = Block::default()
+            .borders(Borders::ALL)
+            .padding(padding)
+            .inner(popup);
+        Self { popup, inner }
+    }
+
+    pub(super) const fn inner(self) -> Rect {
+        self.inner
+    }
+
+    pub(super) fn render(
+        self,
+        viewport: Rect,
+        title: Line<'static>,
+        colors: Palette,
+        buffer: &mut Buffer,
+    ) {
+        buffer.set_style(viewport, colors.modal_backdrop);
+        let halo = modal_halo(self.popup, viewport);
+        Clear.render(halo, buffer);
+        buffer.set_style(halo, colors.modal_backdrop);
+        Clear.render(self.popup, buffer);
+        Block::default()
+            .title(title)
+            .borders(Borders::ALL)
+            .border_type(BorderType::Rounded)
+            .border_style(colors.overlay_border)
+            .padding(Padding::ZERO)
+            .render(self.popup, buffer);
+    }
+}
+
+fn modal_halo(popup: Rect, viewport: Rect) -> Rect {
+    let x = popup.x.saturating_sub(2).max(viewport.x);
+    let right = popup.right().saturating_add(2).min(viewport.right());
+    Rect::new(
+        x,
+        popup.y.max(viewport.y),
+        right.saturating_sub(x),
+        popup
+            .bottom()
+            .min(viewport.bottom())
+            .saturating_sub(popup.y),
+    )
 }
 
 pub(super) fn focus_frame(
@@ -107,4 +163,19 @@ pub(super) fn truncate_display(value: &str, width: usize) -> String {
     }
     result.push('…');
     result
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn modal_frame_owns_padding_and_bounded_halo_geometry() {
+        let frame = ModalFrame::resolve(Rect::new(4, 2, 12, 6), Padding::new(2, 2, 1, 1));
+        assert_eq!(frame.inner(), Rect::new(7, 4, 6, 2));
+        assert_eq!(
+            modal_halo(Rect::new(4, 2, 12, 6), Rect::new(3, 1, 14, 8)),
+            Rect::new(3, 2, 14, 6)
+        );
+    }
 }

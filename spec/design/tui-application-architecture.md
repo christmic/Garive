@@ -103,6 +103,7 @@ tui/src/
     session.rs           shared Session row presentation
     footer.rs            focus-derived contextual actions
     linear.rs            screen-reader presentation components
+    primitives.rs        shared focus/modal frames, markers, hints, and geometry
     composer.rs          shared Unicode row layout, selection, viewport, frame, and cursor rendering
     navigation.rs        Session/Agent navigation
     overlay.rs           help, command, Session, error, suspension overlays
