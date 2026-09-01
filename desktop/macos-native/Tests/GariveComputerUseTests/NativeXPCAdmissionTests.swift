@@ -2,7 +2,7 @@ import Darwin
 import Foundation
 import Security
 import Testing
-@testable import GariveComputerUse
+@testable import GariveNativeXPC
 
 private let exactRequirement = #"identifier "com.garive.desktop" and anchor apple generic"#
 

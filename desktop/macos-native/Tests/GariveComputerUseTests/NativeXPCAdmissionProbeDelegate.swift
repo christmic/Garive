@@ -1,5 +1,5 @@
 import Foundation
-@testable import GariveComputerUse
+@testable import GariveNativeXPC
 
 final class NativeXPCAdmissionProbeDelegate: NSObject, NSXPCListenerDelegate {
     private let policy: NativeXPCPeerAdmissionPolicy

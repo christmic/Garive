@@ -6,6 +6,7 @@ let package = Package(
     name: "GariveMacOSNative",
     platforms: [.macOS(.v14)],
     products: [
+        .library(name: "GariveNativeXPC", targets: ["GariveNativeXPC"]),
         .library(name: "GariveComputerUse", targets: ["GariveComputerUse"]),
         .library(name: "GariveProcessIsolation", targets: ["GariveProcessIsolation"]),
     ],
@@ -13,6 +14,7 @@ let package = Package(
         .package(name: "GariveProtocolSchema", path: "../.."),
     ],
     targets: [
+        .target(name: "GariveNativeXPC"),
         .target(name: "GariveComputerUse"),
         .target(
             name: "GariveProcessIsolation",
@@ -20,7 +22,10 @@ let package = Package(
                 .product(name: "GariveProcessProtocol", package: "GariveProtocolSchema"),
             ]
         ),
-        .testTarget(name: "GariveComputerUseTests", dependencies: ["GariveComputerUse"]),
+        .testTarget(
+            name: "GariveComputerUseTests",
+            dependencies: ["GariveComputerUse", "GariveNativeXPC"]
+        ),
         .testTarget(
             name: "GariveProcessIsolationTests",
             dependencies: ["GariveProcessIsolation"]
