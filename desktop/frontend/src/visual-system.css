@@ -18,6 +18,7 @@
   --document-space: calc(var(--document-font-size) / 4);
   --conversation-item-gap: 16px;
   --conversation-grouped-item-gap: 4px;
+  --sidebar-scroll-fade-distance: 40px;
 
   --space-1: 4px;
   --space-2: 8px;

@@ -699,6 +699,21 @@ zero. The translucent 34px title row and return-to-tail control use the same
 16px blur with a WebKit-prefixed declaration for the native macOS WebView.
 Docked rail, conversation and file surfaces remain opaque and shadowless.
 
+### XXII. Progressive navigation edges
+
+The installed Codex stylesheet gives the navigation scroll owner a 40px edge
+fade instead of clipping long task lists against fixed chrome. Garive's task
+region already owned scrolling, but its first and last rows met the fixed
+navigation and Host footer with a hard WebView edge.
+
+The shared rail now derives top and bottom disclosure independently from real
+scroll geometry. At the 160px short-window fixture, the 208px task stack
+resolves to bottom-only fade at scrollTop 0, both fades at 45 and top-only fade
+at its exact 48px tail. The fixed Garive controls and Local identity remain
+fully opaque, horizontal overflow stays zero, and forced colors removes both
+masks. Production grouping remains bounded to three Priority and three Recent
+Sessions; the constrained fixture changes only the available rail height.
+
 ## Gate 1 — Codex fidelity
 
 This gate passes only when both Desktop and Web show:

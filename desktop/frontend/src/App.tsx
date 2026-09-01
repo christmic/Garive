@@ -31,6 +31,7 @@ import {
 import { createTranslator, resolveDesktopLocale, type MessageKey } from "./i18n";
 import { shouldSubmitComposer } from "./composer";
 import { isNearConversationTail, scrollConversationToTail } from "./conversationTail";
+import { visibleScrollEdges } from "./scrollEdges";
 import { nextDesktopZoom } from "./zoom";
 import { formatThreadMarkdown } from "./threadExport";
 import { useDesktopProduct } from "./app/useDesktopProduct";
@@ -196,6 +197,8 @@ export function App({ client = "desktop", webCapabilities, createProductPort,
   const orderedRecents = useMemo(() => filterAndOrderTasks(recents, "all", "", recentTitles),
     [recentTitles, recents]);
   const sidebarTaskGroups = useMemo(() => groupSidebarTasks(orderedRecents), [orderedRecents]);
+  const sidebarTasks = useRef<HTMLDivElement>(null);
+  const [sidebarScrollEdges, setSidebarScrollEdges] = useState({ top: false, bottom: false });
   const visibleUsage = usageBudget ?? (visualTestMode === "usage" ? visualUsageBudget : undefined);
   const composer = useRef<HTMLTextAreaElement>(null);
   const approvalAction = useRef<HTMLButtonElement>(null);
@@ -209,6 +212,23 @@ export function App({ client = "desktop", webCapabilities, createProductPort,
   const product = useDesktopProduct(state.capabilities
     ? state.capabilities.configured ? "configured" : "not_configured" : undefined, !visualTest,
     createProductPort);
+
+  const syncSidebarScrollEdges = useCallback(() => {
+    const element = sidebarTasks.current;
+    if (!element) return;
+    const next = visibleScrollEdges(element);
+    setSidebarScrollEdges((current) => current.top === next.top && current.bottom === next.bottom
+      ? current : next);
+  }, []);
+
+  useEffect(() => {
+    syncSidebarScrollEdges();
+    const element = sidebarTasks.current;
+    if (!element || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(syncSidebarScrollEdges);
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [sidebarTaskGroups, syncSidebarScrollEdges]);
 
   useEffect(() => {
     const query = window.matchMedia("(prefers-color-scheme: dark)");
@@ -364,6 +384,18 @@ export function App({ client = "desktop", webCapabilities, createProductPort,
           "sidebar-running": "Audit the Runtime architecture",
           "sidebar-failed": "Review the interrupted deployment",
           "sidebar-recent": "Document the source installation" });
+      }
+      if (visualTestMode === "sidebar-overflow") {
+        const previewRecents = Array.from({ length: 18 }, (_, index) => ({
+          session_id: `sidebar-overflow-${index}`, definition_id: "garive-work",
+          opened_at: `2026-08-31T00:${String(59 - index).padStart(2, "0")}:00Z`,
+          latest_turn_state: index === 0 ? "suspended" as const : index === 1
+            ? "running" as const : index === 2 ? "failed" as const : "completed" as const,
+          turn_count: index + 1,
+        }));
+        setRecents(previewRecents);
+        setRecentTitles(Object.fromEntries(previewRecents.map((task, index) => [task.session_id,
+          `${index < 3 ? "Priority" : "Recent"} desktop work item ${index + 1}`])));
       }
       if (visualTestMode === "usage") { setSettingsSection("usage"); setScreen("settings"); }
       if (visualTestMode === "approval") dispatch({ type: "session_loaded", timeline: {
@@ -692,7 +724,10 @@ export function App({ client = "desktop", webCapabilities, createProductPort,
           <NavItem icon="memory" label={t("shell.memory")} disabled
             hint={t("shell.requiresMemory")} soon={t("shell.soon")} />
         </nav>
-        <div className="sidebar-section task-groups">
+        <div className="sidebar-section task-groups" ref={sidebarTasks}
+          data-fade-top={sidebarScrollEdges.top} data-fade-bottom={sidebarScrollEdges.bottom}
+          onScroll={syncSidebarScrollEdges}
+          style={visualTestMode === "sidebar-overflow" ? { maxHeight: 160 } : undefined}>
           {sidebarTaskGroups.length > 0 ? sidebarTaskGroups.map((group) => <section
             className={`task-group task-group-${group.kind}`} key={group.kind}
             aria-labelledby={`sidebar-${group.kind}-label`}>

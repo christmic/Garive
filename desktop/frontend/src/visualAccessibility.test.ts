@@ -41,6 +41,7 @@ describe("Desktop visual accessibility contract", () => {
     expect(TOKENS).toContain("--document-leading: 1.625");
     expect(TOKENS).toContain("--conversation-item-gap: 16px");
     expect(TOKENS).toContain("--conversation-grouped-item-gap: 4px");
+    expect(TOKENS).toContain("--sidebar-scroll-fade-distance: 40px");
     expect(TOKENS).toContain("--height-window-bar: 34px");
     expect(TOKENS).toContain("--height-file-toolbar: 30px");
     expect(TOKENS).toContain("--radius-composer: 20px");
@@ -88,6 +89,9 @@ describe("Desktop visual accessibility contract", () => {
     expect(CSS).toContain("grid-template-columns: minmax(0, 1fr); grid-template-rows: var(--height-window-bar) minmax(0, 1fr)");
     expect(CSS).toContain(".navigation-collapsed > .sidebar { display: none; }");
     expect(CSS).toContain(".task-groups { display: grid; align-content: start; gap: 8px;");
+    expect(CSS).toContain('.task-groups[data-fade-top="true"][data-fade-bottom="true"]');
+    expect(CSS).toContain("calc(100% - var(--sidebar-scroll-fade-distance))");
+    expect(CSS).toContain(".task-groups { -webkit-mask-image: none !important; mask-image: none !important; }");
     expect(CSS).toContain(".sidebar-footer { grid-template-columns: minmax(0, 1fr) 30px; align-items: center; gap: 2px; }");
     expect(CSS).toContain(".host-identity { grid-template-columns: 18px minmax(0, 1fr) 8px;");
     expect(CSS).toContain(".sidebar-settings-button { display: grid; place-items: center; width: 30px; height: 30px;");

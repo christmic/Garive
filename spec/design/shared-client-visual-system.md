@@ -76,6 +76,7 @@ essential label is clipped or replaced by an icon.
 | material | `--blur-lg` 16 px; floating transparency only |
 | desktop chrome | `--height-window-bar` 34, `--height-file-toolbar` 30 px |
 | conversation rhythm | `--conversation-item-gap` 16, `--conversation-grouped-item-gap` 4 px |
+| navigation fade | `--sidebar-scroll-fade-distance` 40 px |
 
 Desktop controls are at least 32 px high; primary actions and touch-capable
 surfaces provide 44×44 px targets. Reduced-motion makes nonessential animation
@@ -155,6 +156,10 @@ workbench made from four persistent spatial layers:
    needs-input has a center point, running an open rotating ring, failure a
    minus, and completion a check. Accessible state copy remains authoritative;
    reduced motion freezes the running ring without hiding its open shape.
+   When durable tasks overflow, only the task region scrolls beneath 40px edge
+   fades. The top fade appears only after leaving the first task and the bottom
+   fade disappears at the actual tail; product controls and Host identity never
+   enter the mask. Forced colors removes the mask so task text stays exact.
 3. **Work layer.** Conversation and Composer form one bounded work column on a
    continuous canvas. Assistant output is document content, not a card stack.
    Environment may float above this layer; it does not permanently shrink an

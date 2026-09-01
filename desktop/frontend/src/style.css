@@ -621,6 +621,9 @@ kbd { font-size: var(--text-2xs); }
 .nav-item small { font-size: var(--text-2xs); }
 .sidebar-section { margin-top: 0; min-height: 50px; }
 .task-groups { display: grid; align-content: start; gap: 8px; min-height: 0; overflow: auto; }
+.task-groups[data-fade-top="true"] { -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 var(--sidebar-scroll-fade-distance), #000 100%); mask-image: linear-gradient(to bottom, transparent 0, #000 var(--sidebar-scroll-fade-distance), #000 100%); }
+.task-groups[data-fade-bottom="true"] { -webkit-mask-image: linear-gradient(to bottom, #000 0, #000 calc(100% - var(--sidebar-scroll-fade-distance)), transparent 100%); mask-image: linear-gradient(to bottom, #000 0, #000 calc(100% - var(--sidebar-scroll-fade-distance)), transparent 100%); }
+.task-groups[data-fade-top="true"][data-fade-bottom="true"] { -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 var(--sidebar-scroll-fade-distance), #000 calc(100% - var(--sidebar-scroll-fade-distance)), transparent 100%); mask-image: linear-gradient(to bottom, transparent 0, #000 var(--sidebar-scroll-fade-distance), #000 calc(100% - var(--sidebar-scroll-fade-distance)), transparent 100%); }
 .task-group { min-width: 0; }
 .section-label { height: 22px; padding: 0 7px; color: var(--text-tertiary); font-size: var(--text-2xs); font-weight: 570; letter-spacing: 0; text-transform: none; }
 .recent-item { grid-template-columns: minmax(0, 1fr) auto; align-items: center; min-height: 26px; padding: 3px 7px; border-radius: var(--radius-control); }
@@ -990,6 +993,10 @@ kbd { font-size: var(--text-2xs); }
   .settings-panel > .settings-card, .settings-section-stack { border-radius: 10px; }
   .settings-panel .setting-row { align-items: flex-start; gap: 10px; padding: 8px 0; }
   .settings-panel .preference-options { max-width: 70%; flex-wrap: wrap; justify-content: flex-end; }
+}
+
+@media (forced-colors: active) {
+  .task-groups { -webkit-mask-image: none !important; mask-image: none !important; }
 }
 
 .command-backdrop { background: rgba(0, 0, 0, .34); backdrop-filter: blur(6px); }
