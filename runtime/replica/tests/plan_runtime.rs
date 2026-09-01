@@ -11,15 +11,16 @@ use garive_ledger::{
     AgentDefinitionId, AgentDefinitionRevision, AgentInstanceId, CanonicalPayload, FactDraft,
     FactId, FactKind, SessionId, ToolInvocationId,
 };
-use garive_llm::TokenCount;
+use garive_llm::{ModelItem, TokenCount};
 use garive_plan::{
     PlanBoundsV1, PlanCapabilityReference, PlanDefinitionV1, PlanId, PlanState, PlanStepId,
     PlanStepV1, StepState,
 };
 use garive_runtime::{
     commit_goal_command, commit_plan_command, commit_plan_replacement, commit_planned_turn,
-    get_turn, plan_activate_goal_from_authoritative_plan, plan_adopt_plan, plan_complete_plan,
-    plan_continue_owned_plan_turn, plan_continue_turn, plan_core_terminal, plan_goal_transition,
+    get_turn, plan_activate_goal_from_authoritative_plan, plan_adopt_plan,
+    plan_complete_owned_step_from_turn, plan_complete_plan, plan_continue_owned_plan_turn,
+    plan_continue_turn, plan_core_terminal, plan_goal_transition,
     plan_next_turn_cancellation_for_goal, plan_plan_replacement, plan_plan_transition,
     plan_propose_plan, plan_resume_goal_from_continued_turn, plan_start_step_execution,
     plan_start_turn, plan_succeed_goal_from_completed_plan, plan_suspend_goal_from_owned_turn,
@@ -489,6 +490,161 @@ fn proposal_and_adoption_require_the_current_durable_goal_binding() {
         .unwrap()
         .iter()
         .all(|fact| fact.fact_id.as_str() != "claim-terminal-goal"));
+}
+
+#[test]
+fn completed_owned_turn_reduces_to_step_with_observed_evidence_after_restart() {
+    let directory = tempdir().unwrap();
+    let path = directory.path().join("turn-step-reduction.sqlite3");
+    let session = SessionId::try_from("session-1").unwrap();
+    let mut ledger = SqliteLedger::open(&path).unwrap();
+    open_session(&mut ledger, &session);
+    let proposed =
+        plan_propose_plan(&ledger, &session, &context("reduce-propose"), definition()).unwrap();
+    commit_plan_command(&mut ledger, session.clone(), 1, &proposed).unwrap();
+    let draft = recover(&ledger, &session);
+    let adopted = plan_adopt_plan(
+        &ledger,
+        &session,
+        &draft,
+        draft.state_version,
+        &context("reduce-adopt"),
+        PlanRuntimeTransition::Adopt {
+            expected_goal_revision: 2,
+            expected_prior_plan_revision: None,
+            policy_reference: "plan-policy-v1".into(),
+            carry_forward_evidence: evidence(),
+        },
+    )
+    .unwrap();
+    commit_plan_command(
+        &mut ledger,
+        session.clone(),
+        draft.session_version,
+        &adopted,
+    )
+    .unwrap();
+    let adopted = recover(&ledger, &session);
+    let claimed = claim(&adopted, "reduce-claim", 1, 10, 20, "reduce-claim-command");
+    commit_plan_command(
+        &mut ledger,
+        session.clone(),
+        adopted.session_version,
+        &claimed,
+    )
+    .unwrap();
+    let claimed = recover(&ledger, &session);
+    let turn = plan_start_turn(
+        &start_turn(&session, "reduce-start"),
+        claimed.through_position,
+    )
+    .unwrap();
+    let turn_id = turn.turn_id.clone();
+    let execution_id = turn.execution_id.clone().unwrap();
+    let started = plan_start_step_execution(
+        &claimed,
+        claimed.state_version,
+        &context("reduce-start"),
+        PlanStepExecutionStart {
+            step_id: step_id("prepare"),
+            claim_id: "reduce-claim".into(),
+            lease_epoch: 1,
+            clock_revision: "monotonic-v1".into(),
+            observed_at_tick: 15,
+            attempt_id: "reduce-attempt".into(),
+            sandbox_profile_digest: digest('f'),
+            safety_decision_id: "safety-reduce".into(),
+        },
+        &turn,
+    )
+    .unwrap();
+    commit_plan_command(
+        &mut ledger,
+        session.clone(),
+        claimed.session_version,
+        &started,
+    )
+    .unwrap();
+    let running = recover(&ledger, &session);
+    assert_eq!(
+        plan_complete_owned_step_from_turn(
+            &ledger,
+            &session,
+            "goal-1",
+            &turn_id,
+            running.session_version,
+            2,
+            &context("reduce-before-terminal"),
+        ),
+        Err(GoalPlanCoordinationError::CompletedTurnUnavailable)
+    );
+    let usage = UsageSummary {
+        input_tokens: TokenCount::Known(3),
+        output_tokens: TokenCount::Known(1),
+        estimated: false,
+    };
+    let terminal = plan_core_terminal(
+        &CoreTerminalContext {
+            turn_id: turn_id.clone(),
+            execution_id,
+            recorded_at: timestamp().into(),
+        },
+        &ExecutionReport {
+            outcome: AgentOutcome::Completed {
+                response_items: vec![ModelItem::Text {
+                    text: "prepared".into(),
+                }],
+                usage,
+            },
+            completed_iterations: 1,
+            usage,
+        },
+    )
+    .unwrap();
+    ledger
+        .commit(session.clone(), running.session_version, terminal)
+        .unwrap();
+    let goal = reconstruct_goal(&ledger, &session, "goal-1").unwrap();
+    let completed = plan_complete_owned_step_from_turn(
+        &ledger,
+        &session,
+        "goal-1",
+        &turn_id,
+        goal.session_version,
+        2,
+        &context("reduce-completed-turn"),
+    )
+    .unwrap();
+    let payload: serde_json::Value =
+        serde_json::from_str(completed.facts[0].payload.as_json()).unwrap();
+    let criterion_evidence: serde_json::Value = serde_json::from_str(
+        payload["criterion_evidence"]["inline_utf8"]
+            .as_str()
+            .unwrap(),
+    )
+    .unwrap();
+    assert_eq!(payload["step_id"], "prepare");
+    assert_eq!(payload["attempt_id"], "reduce-attempt");
+    assert_eq!(criterion_evidence[0]["criterion_id"], "accepted");
+    commit_plan_command(
+        &mut ledger,
+        session.clone(),
+        goal.session_version,
+        &completed,
+    )
+    .unwrap();
+    drop(ledger);
+    let ledger = SqliteLedger::open(&path).unwrap();
+    let recovered = recover(&ledger, &session);
+    assert_eq!(
+        recovered
+            .snapshot
+            .step(&step_id("prepare"))
+            .unwrap()
+            .state(),
+        StepState::Completed
+    );
+    assert_eq!(recovered.snapshot.ready_steps(), vec![&step_id("deliver")]);
 }
 
 #[test]
