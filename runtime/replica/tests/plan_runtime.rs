@@ -1,8 +1,9 @@
 use std::{collections::BTreeSet, sync::Arc};
 
 use garive_core::{
-    AgentOutcome, ExecutionReport, GovernedSuspensionBinding, MissingUsagePolicy,
-    ModelRecoveryPolicy, OutputLimitAction, SuspensionReason, TerminalRecoveryAction, UsageSummary,
+    AgentFailureReason, AgentOutcome, ExecutionReport, GovernedSuspensionBinding,
+    MissingUsagePolicy, ModelRecoveryPolicy, OutputLimitAction, SuspensionReason,
+    TerminalRecoveryAction, UsageSummary,
 };
 use garive_goal::{
     GoalBoundsV1, GoalCapabilityReference, GoalCriterion, GoalCriterionId, GoalDefinitionV1,
@@ -25,18 +26,19 @@ use garive_runtime::{
     commit_goal_command, commit_plan_command, commit_plan_replacement, commit_planned_turn,
     get_turn, plan_activate_goal_from_authoritative_plan, plan_adopt_plan,
     plan_complete_owned_step_from_turn, plan_complete_plan, plan_continue_owned_plan_turn,
-    plan_continue_turn, plan_core_terminal, plan_fail_plan, plan_goal_transition,
-    plan_next_turn_cancellation_for_goal, plan_plan_replacement, plan_plan_transition,
-    plan_propose_plan, plan_resume_goal_from_continued_turn, plan_start_step_execution,
-    plan_start_turn, plan_succeed_goal_from_completed_plan, plan_suspend_goal_from_owned_turn,
-    plan_suspend_owned_plan_from_turn, reconstruct_execution_work_binding, reconstruct_goal,
-    reconstruct_plan, reconstruct_plan_graph, reconstruct_suspended_turn,
-    verify_plan_carry_forward, ContinuationInput, ContinueTurnCommand, CoreTerminalContext,
-    EffectiveRuntimeLimits, GetTurnQuery, GoalCommandContext, GoalPlanCoordinationError,
-    GoalRuntimeError, GoalRuntimeTransition, InteractionInputRepresentation, LocalExecutionAttempt,
-    LocalExecutionPolicy, LocalExecutionWorker, LocalWorkerDisposition, PlanCommandContext,
-    PlanRetryPosture, PlanRuntimeError, PlanRuntimeState, PlanRuntimeTransition,
-    PlanStepExecutionStart, RuntimeCommandId, SqliteLedger, StartTurnCommand,
+    plan_continue_turn, plan_core_terminal, plan_fail_owned_step_from_turn, plan_fail_plan,
+    plan_goal_transition, plan_next_turn_cancellation_for_goal, plan_plan_replacement,
+    plan_plan_transition, plan_propose_plan, plan_resume_goal_from_continued_turn,
+    plan_start_step_execution, plan_start_turn, plan_succeed_goal_from_completed_plan,
+    plan_suspend_goal_from_owned_turn, plan_suspend_owned_plan_from_turn,
+    reconstruct_execution_work_binding, reconstruct_goal, reconstruct_plan, reconstruct_plan_graph,
+    reconstruct_suspended_turn, verify_plan_carry_forward, ContinuationInput, ContinueTurnCommand,
+    CoreTerminalContext, EffectiveRuntimeLimits, GetTurnQuery, GoalCommandContext,
+    GoalPlanCoordinationError, GoalRuntimeError, GoalRuntimeTransition,
+    InteractionInputRepresentation, LocalExecutionAttempt, LocalExecutionPolicy,
+    LocalExecutionWorker, LocalWorkerDisposition, PlanCommandContext, PlanRuntimeError,
+    PlanRuntimeState, PlanRuntimeTransition, PlanStepExecutionStart, RuntimeCommandId,
+    SqliteLedger, StartTurnCommand,
 };
 use serde_json::json;
 use sha2::{Digest, Sha256};
@@ -716,11 +718,22 @@ fn retry_posture_reopens_within_bounds_and_refuses_exhaustion_after_restart() {
     .unwrap();
     state = recover(&ledger, &session);
     let first_execution = active_execution(&state, "prepare");
-    let first_failure = fail_step(
+    let first_turn = commit_failed_execution(
+        &mut ledger,
+        &session,
         &state,
-        "retry-attempt-1",
         &first_execution,
-        "retry-fail-first",
+        AgentFailureReason::PortFailure,
+    );
+    state = recover(&ledger, &session);
+    let first_failure = plan_fail_owned_step_from_turn(
+        &ledger,
+        &session,
+        "goal-1",
+        &first_turn,
+        state.session_version,
+        2,
+        &context("retry-fail-first"),
     )
     .unwrap();
     commit_plan_command(
@@ -769,27 +782,22 @@ fn retry_posture_reopens_within_bounds_and_refuses_exhaustion_after_restart() {
     .unwrap();
     state = recover(&ledger, &session);
     let second_execution = active_execution(&state, "prepare");
-    assert_eq!(
-        fail_step(
-            &state,
-            "retry-attempt-2",
-            &second_execution,
-            "retry-fail-second",
-        ),
-        Err(PlanRuntimeError::BoundExceeded)
-    );
-    let exhausted = plan_plan_transition(
+    let second_turn = commit_failed_execution(
+        &mut ledger,
+        &session,
         &state,
-        state.state_version,
+        &second_execution,
+        AgentFailureReason::PortFailure,
+    );
+    state = recover(&ledger, &session);
+    let exhausted = plan_fail_owned_step_from_turn(
+        &ledger,
+        &session,
+        "goal-1",
+        &second_turn,
+        state.session_version,
+        2,
         &context("retry-exhausted-step"),
-        PlanRuntimeTransition::FailStep {
-            step_id: step_id("prepare"),
-            attempt_id: "retry-attempt-2".into(),
-            execution_id: second_execution,
-            reason: "attempts_exhausted".into(),
-            evidence: None,
-            retry_posture: PlanRetryPosture::Fail,
-        },
     )
     .unwrap();
     commit_plan_command(
@@ -1567,25 +1575,47 @@ fn complete_step(
     .unwrap()
 }
 
-fn fail_step(
+fn commit_failed_execution(
+    ledger: &mut SqliteLedger,
+    session: &SessionId,
     state: &PlanRuntimeState,
-    attempt: &str,
     execution: &str,
-    command: &str,
-) -> Result<garive_runtime::PlannedPlanCommand, PlanRuntimeError> {
-    plan_plan_transition(
-        state,
-        state.state_version,
-        &context(command),
-        PlanRuntimeTransition::FailStep {
-            step_id: step_id("prepare"),
-            attempt_id: attempt.into(),
-            execution_id: execution.into(),
-            reason: "verification_failed".into(),
-            evidence: Some(evidence()),
-            retry_posture: PlanRetryPosture::Retry,
+    reason: AgentFailureReason,
+) -> garive_ledger::TurnId {
+    let execution_id = garive_ledger::ExecutionId::try_from(execution).unwrap();
+    let turn_id = ledger
+        .read_facts(session, 0, state.through_position, None)
+        .unwrap()
+        .into_iter()
+        .find(|fact| {
+            fact.kind.as_str() == "execution.started"
+                && fact.execution_id.as_ref() == Some(&execution_id)
+        })
+        .unwrap()
+        .turn_id
+        .unwrap();
+    let usage = UsageSummary {
+        input_tokens: TokenCount::Known(1),
+        output_tokens: TokenCount::Known(0),
+        estimated: false,
+    };
+    let terminal = plan_core_terminal(
+        &CoreTerminalContext {
+            turn_id: turn_id.clone(),
+            execution_id,
+            recorded_at: timestamp().into(),
+        },
+        &ExecutionReport {
+            outcome: AgentOutcome::Failed { reason },
+            completed_iterations: 1,
+            usage,
         },
     )
+    .unwrap();
+    ledger
+        .commit(session.clone(), state.session_version, terminal)
+        .unwrap();
+    turn_id
 }
 
 fn definition() -> PlanDefinitionV1 {

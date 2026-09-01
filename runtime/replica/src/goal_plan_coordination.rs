@@ -10,9 +10,9 @@ use crate::{
     get_turn, plan_cancel_turn, plan_complete_plan, plan_goal_transition, plan_plan_transition,
     reconstruct_goal, reconstruct_plan_graph, reconstruct_suspended_turn, CancelReason,
     CancelTurnCommand, GetTurnQuery, GoalCommandContext, GoalRuntimeError, GoalRuntimeTransition,
-    PlanCommandContext, PlanRuntimeError, PlanRuntimeTransition, PlanStepContinuation,
-    PlanStepSuspension, PlannedGoalCommand, PlannedPlanCommand, PlannedTurn, RuntimeCommandError,
-    RuntimeCommandId, RuntimeSuspensionKind, RuntimeTurnStatus, SqliteLedger,
+    PlanCommandContext, PlanRetryPosture, PlanRuntimeError, PlanRuntimeTransition,
+    PlanStepContinuation, PlanStepSuspension, PlannedGoalCommand, PlannedPlanCommand, PlannedTurn,
+    RuntimeCommandError, RuntimeCommandId, RuntimeSuspensionKind, RuntimeTurnStatus, SqliteLedger,
 };
 
 /// Stable failure classes for cross-aggregate Goal/Plan coordination.
@@ -254,6 +254,176 @@ pub fn plan_complete_owned_step_from_turn(
             step_evidence,
             criterion_evidence,
         },
+    )
+    .map_err(GoalPlanCoordinationError::Plan)
+}
+
+/// Plans one owned Step failure from the exact committed Turn terminal.
+///
+/// Runtime derives both the stable reason and bounded retry posture. Cancelled
+/// Turns are not failures and are rejected from this path.
+pub fn plan_fail_owned_step_from_turn(
+    ledger: &SqliteLedger,
+    session_id: &SessionId,
+    goal_id: &str,
+    turn_id: &TurnId,
+    expected_session_version: u64,
+    expected_goal_revision: u64,
+    context: &PlanCommandContext,
+) -> Result<PlannedPlanCommand, GoalPlanCoordinationError> {
+    let goal =
+        reconstruct_goal(ledger, session_id, goal_id).map_err(GoalPlanCoordinationError::Goal)?;
+    if goal.snapshot.state() != GoalState::Active
+        || goal.session_version != expected_session_version
+        || goal.snapshot.revision() != expected_goal_revision
+    {
+        return Err(GoalPlanCoordinationError::ConcurrentModification);
+    }
+    let plans = reconstruct_plan_graph(ledger, session_id)
+        .map_err(|_| GoalPlanCoordinationError::CorruptState)?;
+    if plans.values().any(|plan| {
+        plan.session_version != goal.session_version
+            || plan.through_position != goal.through_position
+    }) {
+        return Err(GoalPlanCoordinationError::ConcurrentModification);
+    }
+    let goal_digest = goal
+        .snapshot
+        .definition()
+        .digest()
+        .map_err(|_| GoalPlanCoordinationError::CorruptState)?;
+    let mut candidates = plans.values().filter(|plan| {
+        let definition = plan.snapshot.definition();
+        definition.goal_id() == goal_id
+            && definition.goal_revision() <= expected_goal_revision
+            && definition.goal_definition_digest() == goal_digest
+            && plan.snapshot.state() == PlanState::Running
+    });
+    let plan = candidates
+        .next()
+        .ok_or(GoalPlanCoordinationError::AuthoritativePlanUnavailable)?;
+    if candidates.next().is_some() {
+        return Err(GoalPlanCoordinationError::CorruptState);
+    }
+    let facts = ledger
+        .read_facts(session_id, 0, goal.through_position, None)
+        .map_err(|_| GoalPlanCoordinationError::CorruptState)?;
+    if !owned_turns(&facts, plan.snapshot.definition())?.contains(turn_id) {
+        return Err(GoalPlanCoordinationError::CorruptState);
+    }
+    let view = get_turn(
+        ledger,
+        &GetTurnQuery {
+            session_id: session_id.clone(),
+            turn_id: turn_id.clone(),
+            through_position: None,
+        },
+    )
+    .map_err(GoalPlanCoordinationError::Runtime)?;
+    let (execution_kind, turn_kind, class) = match view.status {
+        RuntimeTurnStatus::Failed => ("execution.failed", "turn.failed", "failed"),
+        RuntimeTurnStatus::Stopped => ("execution.stopped", "turn.stopped", "stopped"),
+        _ => return Err(GoalPlanCoordinationError::CompletedTurnUnavailable),
+    };
+    if view.observed_session_version != expected_session_version {
+        return Err(GoalPlanCoordinationError::ConcurrentModification);
+    }
+    let execution_id = view
+        .execution_id
+        .ok_or(GoalPlanCoordinationError::CorruptState)?;
+    let claims = plan
+        .active_claims
+        .iter()
+        .filter(|(_, claim)| claim.execution_id.as_deref() == Some(execution_id.as_str()))
+        .collect::<Vec<_>>();
+    let [(step_id, claim)] = claims.as_slice() else {
+        return Err(GoalPlanCoordinationError::CorruptState);
+    };
+    let terminals = facts
+        .iter()
+        .filter(|fact| fact.kind.as_str() == turn_kind && fact.turn_id.as_ref() == Some(turn_id))
+        .collect::<Vec<_>>();
+    let executions = facts
+        .iter()
+        .filter(|fact| {
+            fact.kind.as_str() == execution_kind
+                && fact.turn_id.as_ref() == Some(turn_id)
+                && fact.execution_id.as_ref() == Some(&execution_id)
+        })
+        .collect::<Vec<_>>();
+    let ([terminal], [execution]) = (terminals.as_slice(), executions.as_slice()) else {
+        return Err(GoalPlanCoordinationError::CorruptState);
+    };
+    let terminal_payload = serde_json::from_str::<Value>(terminal.payload.as_json())
+        .map_err(|_| GoalPlanCoordinationError::CorruptState)?;
+    let execution_payload = serde_json::from_str::<Value>(execution.payload.as_json())
+        .map_err(|_| GoalPlanCoordinationError::CorruptState)?;
+    let reason = terminal_payload
+        .get("reason")
+        .and_then(Value::as_str)
+        .ok_or(GoalPlanCoordinationError::CorruptState)?;
+    if terminal_payload.get("execution_id").and_then(Value::as_str) != Some(execution_id.as_str())
+        || execution_payload.get("reason").and_then(Value::as_str) != Some(reason)
+        || reason == "cancelled"
+    {
+        return Err(GoalPlanCoordinationError::CorruptState);
+    }
+    let terminal_version = ledger
+        .fact_commit_version(&terminal.fact_id)
+        .map_err(|_| GoalPlanCoordinationError::CorruptState)?
+        .ok_or(GoalPlanCoordinationError::CorruptState)?;
+    if ledger
+        .fact_commit_version(&execution.fact_id)
+        .map_err(|_| GoalPlanCoordinationError::CorruptState)?
+        != Some(terminal_version)
+    {
+        return Err(GoalPlanCoordinationError::CorruptState);
+    }
+    let evidence = CanonicalPayload::from_value(&json!({
+        "contract":"garive.plan-step-failure-evidence",
+        "version":1,
+        "execution_fact_id":execution.fact_id.as_str(),
+        "execution_payload_digest":execution.payload.sha256(),
+        "terminal_commit_version":terminal_version,
+        "turn_fact_id":terminal.fact_id.as_str(),
+        "turn_payload_digest":terminal.payload.sha256(),
+        "turn_id":turn_id.as_str(),
+    }))
+    .map_err(|_| GoalPlanCoordinationError::CorruptState)?;
+    let stable_reason = format!("{class}_{reason}");
+    let retryable = matches!(
+        reason,
+        "invalid_model_output" | "port_failure" | "resource_unavailable"
+    );
+    let attempt_id = claim
+        .attempt_id
+        .clone()
+        .ok_or(GoalPlanCoordinationError::CorruptState)?;
+    let transition = |retry_posture| PlanRuntimeTransition::FailStep {
+        step_id: (*step_id).clone(),
+        attempt_id: attempt_id.clone(),
+        execution_id: execution_id.as_str().into(),
+        reason: stable_reason.clone(),
+        evidence: Some(evidence.clone()),
+        retry_posture,
+    };
+    if retryable {
+        match plan_plan_transition(
+            plan,
+            plan.state_version,
+            context,
+            transition(PlanRetryPosture::Retry),
+        ) {
+            Ok(planned) => return Ok(planned),
+            Err(PlanRuntimeError::BoundExceeded) => {}
+            Err(error) => return Err(GoalPlanCoordinationError::Plan(error)),
+        }
+    }
+    plan_plan_transition(
+        plan,
+        plan.state_version,
+        context,
+        transition(PlanRetryPosture::Fail),
     )
     .map_err(GoalPlanCoordinationError::Plan)
 }
