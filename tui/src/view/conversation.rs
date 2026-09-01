@@ -114,13 +114,7 @@ fn conversation_window(
     let mut measured_height: usize = 0;
     if model.viewport.follow_latest {
         if let Some(answer) = model.live_answer.current() {
-            let cell = super::live_answer::render(
-                answer,
-                theme,
-                width,
-                motion.is_reduced(),
-                &mut cache.live,
-            );
+            let cell = super::live_answer::render(answer, theme, width, motion, &mut cache.live);
             measured_height = measured_height.saturating_add(wrapped_height(&cell, width));
             cells.push_front(cell);
         }

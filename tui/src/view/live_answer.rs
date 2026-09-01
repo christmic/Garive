@@ -6,13 +6,14 @@ use super::{
     conversation::live_cache::LiveRenderCache,
     palette,
     primitives::{LiveCaret, RoleMarker},
+    MotionFrame,
 };
 
 pub(super) fn render(
     answer: &LiveAnswer,
     theme: Theme,
     width: u16,
-    reduced_motion: bool,
+    motion: MotionFrame,
     cache: &mut LiveRenderCache,
 ) -> Vec<Line<'static>> {
     let colors = palette(theme);
@@ -31,7 +32,7 @@ pub(super) fn render(
             RoleMarker::Agent.prepend_to(first, colors);
         }
         if let Some(last) = rendered.last_mut() {
-            LiveCaret::for_output(true, answer.ended, reduced_motion).append_to(last, colors);
+            LiveCaret::for_output(true, answer.ended, motion).append_to(last, colors);
         }
         rendered
     };
@@ -74,7 +75,7 @@ mod tests {
             projection.current().unwrap(),
             Theme::Dark,
             40,
-            false,
+            MotionFrame::animated(0),
             &mut cache,
         );
         let awaiting_text = line_text(&awaiting);
@@ -91,7 +92,7 @@ mod tests {
             projection.current().unwrap(),
             Theme::Dark,
             40,
-            false,
+            MotionFrame::animated(0),
             &mut cache,
         );
         assert_eq!(line_text(&visible).join("\n").matches('▍').count(), 1);
@@ -125,7 +126,7 @@ mod tests {
             projection.current().unwrap(),
             Theme::Mono,
             36,
-            true,
+            MotionFrame::reduced(),
             &mut cache,
         );
         assert_eq!(line_text(&lines)[0], "• Saved preview");

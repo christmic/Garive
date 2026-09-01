@@ -60,7 +60,7 @@ fn responsive_product_frames_match_reviewed_snapshots() {
         frame(&activities, Theme::Mono, 40, 18)
     );
     let active = frame(&activities, Theme::Mono, 40, 18);
-    assert_eq!(active.matches("Working…").count(), 1);
+    assert_eq!(active.matches("Working…").count(), 0);
     assert!(active.contains("Reading file"));
     assert!(active.contains("esc to interrupt"));
     let completed = frame(&completed_activity_stack_model(), Theme::Mono, 40, 18);

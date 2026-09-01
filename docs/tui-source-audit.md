@@ -440,6 +440,19 @@ clock and four-tick phases. It deliberately keeps phase words such as
 that the current Host projection does not expose. Reduced motion remains a
 static bullet, and an unknown cancellation outcome never pulses.
 
+The pinned
+`chatwidget_exec_and_status_layout_vt100_snapshot.snap` shows why Codex can
+retain two simultaneous rows without duplicating meaning: `Explored` names a
+completed operation while `Investigating rendering code` is a distinct
+high-level task status. Garive's admitted client projection currently has H3
+public Activity and H4 phase/live text, but no separate Host-authored task
+summary. Garive therefore does not copy Codex's second semantic layer. Once a
+selected active Activity or available non-terminal live answer is visible, the
+generic run-rail phase disappears, the rail retains only the interrupt action,
+and the shared pulse moves to the live caret. Ended and unavailable previews
+keep their truthful `Saving…` or unavailability phase. This removes three
+simultaneous work markers without inventing status prose.
+
 Codex also keeps shortcut reference content action-only. The pinned
 `bottom_pane/footer.rs:733-749,880-949` projects `FooterMode::ShortcutOverlay`
 into a two-column list plus one customization action; the reviewed

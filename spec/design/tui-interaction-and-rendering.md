@@ -134,12 +134,15 @@ the overlay restores the background cue without changing execution state.
 While a Turn runs, this Composer-adjacent rail is the single lifecycle voice:
 `Preparing…`, `Writing…`, `Finishing…`, `Saving…`, or an honest unavailability
 state. It starts on the shared transcript/Composer axis, uses one width-stable
-motion cue rather than an answer/list marker, and keeps one stable phrase such as
-`Writing…  ·  Esc interrupt`. Before the first presented text delta,
-`LiveAnswer` contributes no transcript row. Once text exists, the Agent `•`
-shares its first Markdown line;
-phase copy is never repeated above that answer and the interrupt binding never
-floats as a separate row.
+motion cue rather than an answer/list marker, and keeps one stable phrase such
+as `Writing…  ·  Esc interrupt`. Before the first presented text delta,
+`LiveAnswer` contributes no transcript row. Once available non-terminal text
+exists, the Agent `•` shares its first Markdown line and the pulsing LiveCaret
+owns the work signal; the rail drops phase copy and retains only the muted
+`Esc interrupt` action. A selected active Activity has the same precedence.
+When an overlay owns input, that background action is absent. Ended preview
+and unavailable preview restore `Saving…` or `Live feedback unavailable`
+because neither state may masquerade as active output.
 After cancellation is admitted, the same Turn-control component is the only
 status voice adjacent to the retained draft. It replaces generic
 frozen/running copy with `Cancelling…`; exact Host acceptance changes it to
@@ -322,11 +325,12 @@ While the selected Turn is running, the Composer remains an explicit retained-
 draft editor, not a submit or queue affordance. Its placeholder names that
 state. `Enter` keeps the exact draft and emits a visible `Current Turn is
 running · draft retained` notice; it never fails silently and does not claim a
-durable queue. With no overlay, the Composer status row owns one left-aligned
-`• phase · esc to interrupt` line. An Activity may still name the concrete
-operation in the transcript; it does not relocate this global lifecycle state.
-With an overlay, the rail follows the input-
-ownership rule above. Cancellation therefore cannot monopolize `HintLine`;
+durable queue. With no overlay and no visible work owner, the Composer status
+row owns one left-aligned `• phase · esc to interrupt` line. A non-terminal
+live answer or selected active Activity replaces the generic phase with its
+own visible work cue while the rail retains only `esc to interrupt`. With an
+overlay, the rail follows the input-ownership rule above. Cancellation
+therefore cannot monopolize `HintLine`;
 byte-limit, selection, suggestion, recovery, and notice feedback remain
 available by their normal priority.
 

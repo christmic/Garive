@@ -115,6 +115,9 @@ fn line(model: &AppModel, colors: Palette, motion: MotionFrame) -> Option<Line<'
     let TurnControlState::Running { cancel_available } = state else {
         unreachable!("cancellation states handled above")
     };
+    if transcript_owns_work(model) {
+        return cancel_available.then(|| Line::styled("  esc to interrupt", colors.muted));
+    }
     let label = running_label(model);
     if cancel_available {
         Some(Line::from(vec![
@@ -128,6 +131,27 @@ fn line(model: &AppModel, colors: Palette, motion: MotionFrame) -> Option<Line<'
             Span::styled(label, colors.accent),
         ]))
     }
+}
+
+fn transcript_owns_work(model: &AppModel) -> bool {
+    if let Some(answer) = model.live_answer.current() {
+        if answer.ended || answer.availability == LiveAnswerAvailability::Unavailable {
+            return false;
+        }
+        if !answer.presented_text.is_empty() {
+            return true;
+        }
+    }
+    model.turn_blocks.iter().rev().any(|block| {
+        model
+            .selected_turn
+            .as_deref()
+            .is_none_or(|turn| block.key.turn_id == turn)
+            && block
+                .activities
+                .iter()
+                .any(|item| item.tone == crate::application::TimelineTone::Active)
+    })
 }
 
 fn running_label(model: &AppModel) -> String {
@@ -186,16 +210,11 @@ mod tests {
             line(&model, colors, MotionFrame::reduced())
                 .unwrap()
                 .to_string(),
-            "• Working…  ·  esc to interrupt"
+            "  esc to interrupt"
         );
 
         model.overlay = Some(Overlay::Help);
-        assert_eq!(
-            line(&model, colors, MotionFrame::reduced())
-                .unwrap()
-                .to_string(),
-            "• Working…"
-        );
+        assert!(line(&model, colors, MotionFrame::reduced()).is_none());
         model.turn_blocks.clear();
         assert_eq!(
             line(&model, colors, MotionFrame::reduced())

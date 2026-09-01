@@ -8,7 +8,7 @@ use ratatui::{
 use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::UnicodeWidthStr;
 
-use super::style::Palette;
+use super::{style::Palette, MotionFrame};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) enum RoleMarker {
@@ -39,9 +39,9 @@ pub(super) struct LiveCaret {
 }
 
 impl LiveCaret {
-    pub(super) const fn for_output(available: bool, ended: bool, reduced_motion: bool) -> Self {
+    pub(super) const fn for_output(available: bool, ended: bool, motion: MotionFrame) -> Self {
         Self {
-            visible: available && !ended && !reduced_motion,
+            visible: available && !ended && motion.live_caret_visible(),
         }
     }
 
@@ -334,10 +334,13 @@ mod tests {
         assert_eq!(prose.to_string(), "• Release is ready.");
 
         let mut active = Line::raw("answer");
-        LiveCaret::for_output(true, false, false).append_to(&mut active, colors);
+        LiveCaret::for_output(true, false, MotionFrame::animated(0)).append_to(&mut active, colors);
         assert_eq!(active.to_string(), "answer▍");
+        let mut quiet = Line::raw("answer");
+        LiveCaret::for_output(true, false, MotionFrame::animated(4)).append_to(&mut quiet, colors);
+        assert_eq!(quiet.to_string(), "answer");
         let mut reduced = Line::raw("answer");
-        LiveCaret::for_output(true, false, true).append_to(&mut reduced, colors);
+        LiveCaret::for_output(true, false, MotionFrame::reduced()).append_to(&mut reduced, colors);
         assert_eq!(reduced.to_string(), "answer");
     }
 }

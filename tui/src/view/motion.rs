@@ -22,10 +22,6 @@ impl MotionFrame {
         }
     }
 
-    pub(crate) const fn is_reduced(self) -> bool {
-        self.reduced
-    }
-
     /// Returns the shared one-cell activity pulse used by transient work rows.
     pub(crate) const fn activity_indicator(self) -> &'static str {
         if self.reduced || (self.tick / 4).is_multiple_of(2) {
@@ -33,6 +29,11 @@ impl MotionFrame {
         } else {
             "◦"
         }
+    }
+
+    /// Keeps the live-output caret on the same calm phase as the activity cue.
+    pub(crate) const fn live_caret_visible(self) -> bool {
+        !self.reduced && (self.tick / 4).is_multiple_of(2)
     }
 }
 
@@ -74,5 +75,8 @@ mod tests {
             unicode_width::UnicodeWidthStr::width(MotionFrame::animated(4).activity_indicator()),
             1
         );
+        assert!(MotionFrame::animated(0).live_caret_visible());
+        assert!(!MotionFrame::animated(4).live_caret_visible());
+        assert!(!MotionFrame::reduced().live_caret_visible());
     }
 }

@@ -42,9 +42,12 @@ identity: dark/light use the low-contrast `request_surface`, mono uses the
 terminal background, and focus changes only the non-color `›` lead and terminal
 caret. Its reserved row is blank during ordinary editing and carries `Draft
 locked`, `Action response`, or the running Turn rail only when that state is
-true. The running rail combines the nearby work state and cancel control and
-starts on the shared left axis as `• phase · esc to interrupt`; it never
-strands the primary state at the terminal's right edge. No Composer variant
+true. Before transcript work is visible, the running rail combines the nearby
+work state and cancel control and starts on the shared left axis as
+`• phase · esc to interrupt`. Once a non-terminal live answer or selected active
+Activity owns that signal, the rail reduces to the muted `esc to interrupt`
+control; an overlay suppresses even that background action. It never strands
+the primary state at the terminal's right edge. No Composer variant
 adds a persistent surrounding border. `RequestSurface` renders User input as an unbordered,
 low-contrast terminal-width row with the same non-color `›` identity and a
 two-cell hanging indent. Its wrapper measures sanitized grapheme display width,
@@ -133,10 +136,10 @@ All time-varying presentation lives in `view/motion.rs`. Active execution uses
 one width-stable `•`/`◦` pulse on the Composer run rail; each phase lasts four
 160 ms motion ticks, so the cue reads as calm state rather than a fast spinner.
 An unknown outcome stays static because no work progress is known. Active H4
-output may use a `LiveCaret`. Reduced motion keeps the same text and semantic
-style with a stable `•` or no caret; it does not suppress newly received
-content. Screens cannot invent local frame sequences or schedule their own
-redraw loops.
+output uses a `LiveCaret` on the same four-tick pulse after it replaces the
+generic rail cue. Reduced motion keeps the same text and semantic style with a
+stable `•` and no caret; it does not suppress newly received content. Screens
+cannot invent local frame sequences or schedule their own redraw loops.
 
 ## Composite components
 

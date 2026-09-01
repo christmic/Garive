@@ -315,7 +315,11 @@ pub(crate) fn live_answer_preview(
         answer,
         theme,
         80,
-        reduced_motion,
+        if reduced_motion {
+            MotionFrame::reduced()
+        } else {
+            MotionFrame::animated(0)
+        },
         &mut conversation::live_cache::LiveRenderCache::default(),
     )
 }
