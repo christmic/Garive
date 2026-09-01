@@ -166,6 +166,12 @@ A failed step does not automatically fail the Plan. Frozen policy chooses a
 bounded retry, suspension, replan request or explicit Plan failure. An
 attempt-limit breach cannot return the step to Ready.
 
+The generic Runtime transition entry rejects `FailPlan`. The dedicated Plan
+failure command rechecks the same active Goal binding and ledger watermark,
+requires at least one Failed Step and no active claims, and then emits
+`plan.failed`. This prevents a client, model or generic in-process caller from
+terminalizing recoverable or still-owned work.
+
 ## Claims and attempts
 
 Runtime claims one Ready step using expected Plan revision, state version,
@@ -287,6 +293,13 @@ ticks are non-negative integers from one named monotonic clock revision and
 `expires_at_tick` must be greater than `claimed_at_tick`. `retry_posture` is
 `retry | suspend | replan | fail`. Continuation kind is `interaction |
 reconciliation`; it never embeds user text or credentials.
+
+Worker-derived failure evidence uses contract
+`garive.plan-step-failure-evidence` V1 and contains the exact execution/Turn
+terminal fact IDs and payload digests, their shared commit version, and Turn
+ID. Runtime derives the stable reason as `<failed|stopped>_<core_reason>` and
+derives retry posture from the frozen V1 classification plus current attempt
+bounds; neither value is accepted from the worker caller.
 
 Command receipt and corresponding state facts commit atomically. Claims use
 monotonic lease readings; durable facts retain portable recorded-at values

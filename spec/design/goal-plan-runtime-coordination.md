@@ -228,6 +228,23 @@ stable safe code and the coordinator proves no recovery/replan path remains.
 Optional evidence is verified as canonical durable references; diagnostic text
 is not terminal evidence.
 
+For the V1 local worker, Runtime derives Step failure only from an atomic,
+same-reason `execution.failed + turn.failed` or `execution.stopped +
+turn.stopped` pair owned by the active Plan attempt. The canonical failure
+evidence binds both fact IDs, payload digests, Turn and commit version.
+`invalid_model_output`, `port_failure` and `resource_unavailable` request Retry;
+PL1 admits it only while both Step and Plan attempt bounds remain. Invalid
+input, missing capability, invariant failure, iteration/token/deadline stop, or
+an exhausted retry records `retry_posture=fail`. Cancellation is excluded from
+this path.
+
+Retry is atomic with `plan.step.failed` and returns the Step to readiness; it
+does not silently dispatch. A non-retryable Step first commits Failed, then a
+dedicated fixed-prefix Runtime command commits `plan.failed` only when no
+active claim remains. The coordinator derives `goal.failed` from that unique
+failed Plan and its stable reason. Separate transactions make crash gaps
+replayable without another model invocation.
+
 Cancellation is product intent. Once `goal.cancelled` commits, the coordinator
 must durably request cancellation of related live Turn/Execution work and stop
 new claims. Already-started effects follow C5 uncertainty/reconciliation; a
