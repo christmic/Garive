@@ -232,6 +232,11 @@ fn provider_reconstructs_workspace_agent_only_from_exact_t1_capabilities() {
     assert_eq!(configured.default_agent_definition_id, "agent-general");
     assert_eq!(configured.agent_catalogue.len(), 2);
     assert!(configured.agent_catalogue.get("agent-workspace").is_some());
+    let first = configured.operations.execution_attempt().unwrap();
+    let second = configured.operations.execution_attempt().unwrap();
+    assert!(first.clock_revision.starts_with("os-monotonic-boot-v1:"));
+    assert_eq!(first.clock_revision, second.clock_revision);
+    assert!(second.now_ms >= first.now_ms);
 }
 
 #[cfg(unix)]

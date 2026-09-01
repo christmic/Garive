@@ -169,6 +169,7 @@ async fn loopback_host_to_protocol_flow_commits_terminal() {
                 worker_owner_id: "worker-live".into(),
                 lease_token: "unpredictable-live-token".into(),
                 now_ms: 1_000,
+                clock_revision: "test-monotonic-v1".into(),
                 lease_duration_ms: 10_000,
                 recorded_at: "2026-08-29T00:00:01Z".into(),
             },

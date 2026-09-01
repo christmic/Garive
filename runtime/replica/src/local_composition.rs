@@ -56,6 +56,8 @@ pub struct LocalExecutionAttempt {
     pub lease_token: String,
     /// Explicit monotonic clock value.
     pub now_ms: u64,
+    /// Boot-scoped revision naming the monotonic clock domain.
+    pub clock_revision: String,
     /// Non-zero lease duration.
     pub lease_duration_ms: u64,
     /// Canonical UTC observation time.
@@ -466,6 +468,7 @@ fn validate_explicit(
         || policy.max_model_attempts == 0
         || attempt.worker_owner_id.is_empty()
         || attempt.lease_token.is_empty()
+        || attempt.clock_revision.is_empty()
         || attempt.lease_duration_ms == 0
         || !canonical_utc(&attempt.recorded_at)
     {

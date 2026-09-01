@@ -45,7 +45,6 @@ mod workspace_t1_execution;
 const STARTUP_MAX_RECOVERIES_PER_TURN: u64 = 3;
 const STARTUP_MAX_RECOVERABLE_TURNS: usize = 64;
 const STARTUP_MAX_ARGUMENT_BYTES: usize = 1024 * 1024;
-const DESKTOP_PLAN_CLOCK_REVISION: &str = "unix-epoch-ms-v1";
 const MAX_GOAL_PUMP_ADVANCES: usize = 64;
 
 pub use artifact_export::{
@@ -760,7 +759,7 @@ impl DesktopHost {
                 worker_reference: attempt.worker_owner_id.clone(),
                 claim_id: self.operations.command_id("plan-claim")?,
                 lease_epoch: attempt.now_ms.max(1),
-                clock_revision: DESKTOP_PLAN_CLOCK_REVISION.into(),
+                clock_revision: attempt.clock_revision.clone(),
                 claimed_at_tick: attempt.now_ms,
                 expires_at_tick,
                 observed_at_tick: attempt.now_ms,

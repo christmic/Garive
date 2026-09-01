@@ -58,6 +58,7 @@ fn attempt() -> LocalExecutionAttempt {
         worker_owner_id: "worker-1".into(),
         lease_token: "unpredictable-test-token".into(),
         now_ms: 1_000,
+        clock_revision: "test-monotonic-v1".into(),
         lease_duration_ms: 5_000,
         recorded_at: "2026-08-29T00:00:01Z".into(),
     }

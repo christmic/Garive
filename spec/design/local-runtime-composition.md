@@ -33,7 +33,8 @@ LocalReplicaConfig {
 
 Every text value is non-empty, every count/duration is non-zero and the address
 is loopback. The model port, Host clock and monotonic lease clock are injected
-constructed values. Provider endpoint, credential, headers and protocol
+constructed values. Each lease reading carries a non-empty boot-scoped clock
+revision; audit RFC 3339 time is never reused as a lease tick. Provider endpoint, credential, headers and protocol
 configuration enter only through the constructed model port. R1 reads no
 process environment and performs no implicit config-file or credential-store
 lookup. Debug/error output contains stable codes and non-secret identities only.

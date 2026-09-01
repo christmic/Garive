@@ -3,7 +3,7 @@ use std::{
     fs,
     path::{Path, PathBuf},
     sync::Arc,
-    time::{SystemTime, UNIX_EPOCH},
+    time::SystemTime,
 };
 
 use chrono::{DateTime, SecondsFormat, Utc};
@@ -280,6 +280,10 @@ impl<R: DesktopSecretResolver, P: DesktopProfileRegistry> DesktopConfigurationPr
             capability_preparation = capability_preparation.with_knowledge(knowledge);
         }
         let execution_policy = execution_policy(&config);
+        let boot_time = sysinfo::System::boot_time();
+        if boot_time == 0 {
+            return Err(DesktopConfigurationError::ConstructionFailure);
+        }
         Ok(Some(DesktopHostConfig {
             database_path: config.database_path,
             agent_catalogue: agent_catalogue.clone(),
@@ -306,6 +310,7 @@ impl<R: DesktopSecretResolver, P: DesktopProfileRegistry> DesktopConfigurationPr
             operations: Arc::new(SystemDesktopOperations {
                 worker_owner_id: format!("desktop-worker-{}", Uuid::new_v4()),
                 lease_duration_ms,
+                clock_revision: format!("os-monotonic-boot-v1:{boot_time}"),
             }),
         }))
     }
@@ -484,6 +489,7 @@ impl HostClock for SystemHostClock {
 struct SystemDesktopOperations {
     worker_owner_id: String,
     lease_duration_ms: u64,
+    clock_revision: String,
 }
 impl DesktopOperations for SystemDesktopOperations {
     fn command_id(&self, purpose: &'static str) -> Result<String, crate::DesktopHostError> {
@@ -492,20 +498,36 @@ impl DesktopOperations for SystemDesktopOperations {
 
     fn execution_attempt(&self) -> Result<LocalExecutionAttempt, crate::DesktopHostError> {
         let now = SystemTime::now();
-        let now_ms = now
-            .duration_since(UNIX_EPOCH)
-            .map_err(|_| crate::DesktopHostError::InvalidConfiguration)?
-            .as_millis()
-            .try_into()
-            .map_err(|_| crate::DesktopHostError::InvalidConfiguration)?;
+        let now_ms = system_monotonic_ms()?;
         Ok(LocalExecutionAttempt {
             worker_owner_id: self.worker_owner_id.clone(),
             lease_token: Uuid::new_v4().to_string(),
             now_ms,
+            clock_revision: self.clock_revision.clone(),
             lease_duration_ms: self.lease_duration_ms,
             recorded_at: timestamp(now),
         })
     }
+}
+
+#[cfg(unix)]
+fn system_monotonic_ms() -> Result<u64, crate::DesktopHostError> {
+    let reading = rustix::time::clock_gettime(rustix::time::ClockId::Monotonic);
+    let seconds =
+        u64::try_from(reading.tv_sec).map_err(|_| crate::DesktopHostError::InvalidConfiguration)?;
+    let nanos = u64::try_from(reading.tv_nsec)
+        .map_err(|_| crate::DesktopHostError::InvalidConfiguration)?;
+    seconds
+        .checked_mul(1_000)
+        .and_then(|value| value.checked_add(nanos / 1_000_000))
+        .ok_or(crate::DesktopHostError::InvalidConfiguration)
+}
+
+#[cfg(not(unix))]
+fn system_monotonic_ms() -> Result<u64, crate::DesktopHostError> {
+    sysinfo::System::uptime()
+        .checked_mul(1_000)
+        .ok_or(crate::DesktopHostError::InvalidConfiguration)
 }
 
 fn timestamp(value: SystemTime) -> String {

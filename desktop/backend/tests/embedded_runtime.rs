@@ -68,6 +68,7 @@ impl DesktopOperations for Operations {
             worker_owner_id: "desktop-worker".into(),
             lease_token: format!("unpredictable-test-token-{ordinal}"),
             now_ms: 1_000 + ordinal,
+            clock_revision: "test-monotonic-v1".into(),
             lease_duration_ms: 5_000,
             recorded_at: "2026-08-29T00:00:01Z".into(),
         })

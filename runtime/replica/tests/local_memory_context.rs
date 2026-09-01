@@ -1143,6 +1143,7 @@ fn attempt() -> LocalExecutionAttempt {
         worker_owner_id: "worker".into(),
         lease_token: "lease-token".into(),
         now_ms: 1_000,
+        clock_revision: "test-monotonic-v1".into(),
         lease_duration_ms: 5_000,
         recorded_at: "2026-09-01T00:00:01Z".into(),
     }

@@ -2443,6 +2443,7 @@ fn worker_attempt() -> LocalExecutionAttempt {
         worker_owner_id: "worker-plan".into(),
         lease_token: "unpredictable-plan-token".into(),
         now_ms: 1_000,
+        clock_revision: "test-monotonic-v1".into(),
         lease_duration_ms: 5_000,
         recorded_at: timestamp().into(),
     }
