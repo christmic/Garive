@@ -732,6 +732,20 @@ At 1280×720 the effective user surface is `rgb(41,42,39)`, Composer remains
 Composer widths remain 546/342px, the file boundary stays x=556.8 and both
 scenes retain zero horizontal overflow.
 
+### XXIV. User-message geometry
+
+The installed conversation module defines `--user-chat-width: 70%`, a 16 px
+thread-content margin and a 22 px radius; its utility composition adds 10 px
+vertical padding. This corrects an earlier visual estimate: the reference does
+not use a 24 px inline inset. Garive already matched width, vertical padding
+and radius, but its 14 px inline padding made wrapped prompts visibly denser.
+
+Desktop and Web now resolve the source values through shared semantic tokens.
+Before the change the measured ordinary/split content lanes were 546/332px,
+with 357.56/232.40px bubbles and no horizontal overflow. The tokenized geometry
+preserves those outer widths while increasing only the readable inset to the
+exact 16 px reference value.
+
 ## Gate 1 — Codex fidelity
 
 This gate passes only when both Desktop and Web show:

@@ -434,6 +434,10 @@ Committed user requests are bounded work prompts, not messenger bubbles. On
 the 39rem thread they occupy at most 70%, use four continuous 22px corners and
 never add a speech-tail corner. Their text remains the shared 14px base size;
 long requests wrap within the bound instead of widening the reading measure.
+The installed module resolves the inline content margin to 16px and block
+padding to 10px. Desktop and Web consume `--user-chat-width`,
+`--thread-content-margin` and `--radius-user-message` from the same stylesheet;
+narrow split panes keep the ratio rather than inventing a mobile bubble.
 
 Durable Search is a desktop work finder, not a second landing page. It keeps the
 39rem work axis, a 22px orientation heading, one compact field/filter surface

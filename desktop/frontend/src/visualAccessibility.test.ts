@@ -42,6 +42,9 @@ describe("Desktop visual accessibility contract", () => {
     expect(TOKENS).toContain("--document-leading: 1.625");
     expect(TOKENS).toContain("--conversation-item-gap: 16px");
     expect(TOKENS).toContain("--conversation-grouped-item-gap: 4px");
+    expect(TOKENS).toContain("--user-chat-width: 70%");
+    expect(TOKENS).toContain("--thread-content-margin: 16px");
+    expect(TOKENS).toContain("--radius-user-message: 22px");
     expect(TOKENS).toContain("--sidebar-scroll-fade-distance: 40px");
     expect(TOKENS).toContain("--height-window-bar: 34px");
     expect(TOKENS).toContain("--height-file-toolbar: 30px");
@@ -136,7 +139,7 @@ describe("Desktop visual accessibility contract", () => {
     expect(CSS).toContain(".work-menu .desktop-action-menu { left: -4px; width: 204px; }");
     expect(CSS).toContain(".product-menu-status { display: grid; grid-template-columns: 18px minmax(0, 1fr) 8px;");
     expect(CSS).toContain("grid-template-columns: 18px minmax(0, 1fr) auto");
-    expect(CSS).toContain(".user-message > div { max-width: 70%; padding: 10px 14px; border: 0; border-radius: 22px; corner-shape: round;");
+    expect(CSS).toContain(".user-message > div { max-width: var(--user-chat-width); padding: 10px var(--thread-content-margin); border: 0; border-radius: var(--radius-user-message); corner-shape: round;");
     expect(CSS).toContain("background: var(--surface-user-message)");
     expect(CSS).toContain(".turn-progress { margin: 0; overflow: hidden; border: 0; border-bottom: 1px solid var(--border-subtle); border-radius: var(--radius-composer) var(--radius-composer) 0 0; background: transparent; }");
     expect(CSS).toContain(".composer { width: min(39rem, 100%); border: 0; border-radius: var(--radius-composer);");

@@ -699,7 +699,7 @@ kbd { font-size: var(--text-2xs); }
 .timeline { width: min(39rem, calc(100% - 48px)); padding: 40px 0 174px; }
 .message { margin: 0; }
 .message:not(:first-child) { margin-top: var(--conversation-item-gap); }
-.user-message > div { max-width: 70%; padding: 10px 14px; border: 0; border-radius: 22px; corner-shape: round; background: var(--surface-user-message); font-size: var(--text-md); line-height: 1.55; }
+.user-message > div { max-width: var(--user-chat-width); padding: 10px var(--thread-content-margin); border: 0; border-radius: var(--radius-user-message); corner-shape: round; background: var(--surface-user-message); font-size: var(--text-md); line-height: 1.55; }
 .assistant-message { display: block; }
 .result-markdown { font-size: var(--document-font-size); line-height: var(--document-leading); }
 .result-markdown h1, .result-markdown h2, .result-markdown h3,
