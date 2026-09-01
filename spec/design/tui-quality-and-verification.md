@@ -615,6 +615,27 @@ all-feature Clippy, 116 library tests, 68 reviewed visual snapshots, 62 visual
 consistency tests, architecture tests, and both focused shipping PTYs pass.
 Physical Apple Terminal and iTerm2-class screenshot admission remains open.
 
+## ComposerDock visual evidence
+
+Implementation `80199507`, with normative/source evidence in `be57dde2`,
+replaces the permanent Composer frame with the componentized open
+`ComposerDock`. The ordinary dock reserves one inert semantic-status row, owns
+one prompt lead, grows from 2 through 6 rows, and leaves borders to modal and
+Inspector surfaces. Frozen and action-response states reuse the reserved row
+without moving the editor. Mono now emits no chromatic foreground or
+background token. The adaptation is grounded in pinned Codex composer height,
+render, and reviewed snapshot evidence recorded as source-audit row `CX-V2`.
+
+On native macOS arm64, the candidate passes 131 library, 79 reviewed snapshot,
+72 visual-consistency, 3 architecture, and all 24 shipping PTY tests. The H4
+disconnect/recovery PTY proves stale live output is cleared, all intermediate
+deltas return after reconnect, and durable truth takes over without residue.
+The production SQLite/HTTP/runtime PTY passes in 137.25 seconds and visibly
+observes `first-live-fragment` before `final-fragment`. Strict all-target,
+all-feature Clippy, formatting, and diff checks pass after rebasing onto the
+current mainline; that rebase changed only Desktop/spec inputs outside TUI.
+Physical Apple Terminal and iTerm2-class screenshot admission remains open.
+
 ## Completion rule
 
 The TUI is complete only when:
