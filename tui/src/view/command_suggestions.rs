@@ -10,7 +10,7 @@ use crate::{
     application::AppModel,
     input::COMMAND_PALETTE,
     view::{
-        primitives::{selection_window, truncate_display},
+        primitives::{selection_window, truncate_display, SelectionRow},
         style::Palette,
     },
 };
@@ -40,6 +40,7 @@ pub(super) fn render(model: &AppModel, composer: Rect, colors: Palette, buffer: 
     for (row, match_index) in matches[start..end].iter().enumerate() {
         let command = COMMAND_PALETTE[*match_index];
         let selected = start + row == model.command_suggestion_selection;
+        let selection = SelectionRow::full_area(selected);
         let marker = if selected { "› " } else { "  " };
         let reason = command.unavailable_reason(model.command_context());
         let detail = reason
@@ -53,14 +54,7 @@ pub(super) fn render(model: &AppModel, composer: Rect, colors: Palette, buffer: 
             usize::from(inner.width).saturating_sub(fixed_width),
         );
         let line = Line::from(vec![
-            Span::styled(
-                marker,
-                if selected {
-                    colors.selected
-                } else {
-                    colors.muted
-                },
-            ),
+            selection.marker(colors),
             Span::styled(
                 command.input,
                 if selected {
@@ -80,11 +74,7 @@ pub(super) fn render(model: &AppModel, composer: Rect, colors: Palette, buffer: 
             ),
         ]);
         Paragraph::new(line)
-            .style(if selected {
-                colors.selection_row
-            } else {
-                colors.normal
-            })
+            .style(selection.style(colors, colors.normal))
             .render(
                 Rect::new(inner.x, inner.y + row as u16, inner.width, 1),
                 buffer,

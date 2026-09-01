@@ -15,7 +15,7 @@ use crate::{
 use super::{
     decision_sheet, inspector, palette,
     presentation::HELP_NOTES,
-    primitives::{key_hints, truncate_display, ModalFrame},
+    primitives::{key_hints, truncate_display, ModalFrame, SelectionRow},
     safe_text,
     session::picker_line,
     style::Palette,
@@ -79,9 +79,10 @@ pub(super) fn render_overlay(
     }
     if let Some(row) = selection_row(model, overlay, geometry.window) {
         if row < inner.height {
-            buffer.set_style(
+            SelectionRow::full_area(true).paint(
                 Rect::new(inner.x, inner.y + row, inner.width, 1),
-                colors.selection_row,
+                colors,
+                buffer,
             );
         }
     }
@@ -180,16 +181,12 @@ fn turn_navigator_text(
             .enumerate()
             .map(|(offset, index)| {
                 let landmark = &model.conversation_landmarks[*index];
-                let marker = if start + offset == model.turn_selection {
-                    "›"
-                } else {
-                    " "
-                };
+                let selected = start + offset == model.turn_selection;
                 Line::from(vec![
-                    Span::styled(format!("{marker} "), colors.selected),
+                    SelectionRow::full_area(selected).marker(colors),
                     Span::styled(
                         format!("{:>ordinal_width$}  ", landmark.ordinal),
-                        if start + offset == model.turn_selection {
+                        if selected {
                             colors.selected
                         } else {
                             colors.muted
@@ -400,11 +397,7 @@ fn decision_sheet_spec(
                     }
                     Line::styled(
                         content,
-                        if selected {
-                            colors.selection_row
-                        } else {
-                            colors.normal
-                        },
+                        SelectionRow::full_area(selected).style(colors, colors.normal),
                     )
                 }
                 decision_sheet::DecisionRow::Blank => Line::default(),

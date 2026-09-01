@@ -1,6 +1,7 @@
 use ratatui::{
     buffer::Buffer,
     layout::Rect,
+    style::Style,
     text::{Line, Span},
     widgets::{Block, BorderType, Borders, Clear, Padding, Widget},
 };
@@ -13,6 +14,59 @@ use super::style::Palette;
 pub(super) enum FocusFrameTone {
     Neutral,
     Warning,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) enum SelectionExtent {
+    MarkerOnly,
+    FullArea,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) struct SelectionRow {
+    selected: bool,
+    extent: SelectionExtent,
+}
+
+impl SelectionRow {
+    pub(super) const fn marker_only(selected: bool) -> Self {
+        Self {
+            selected,
+            extent: SelectionExtent::MarkerOnly,
+        }
+    }
+
+    pub(super) const fn full_area(selected: bool) -> Self {
+        Self {
+            selected,
+            extent: SelectionExtent::FullArea,
+        }
+    }
+
+    pub(super) fn marker(self, colors: Palette) -> Span<'static> {
+        Span::styled(
+            if self.selected { "› " } else { "  " },
+            if self.selected {
+                colors.selection_row.patch(colors.selected)
+            } else {
+                colors.muted
+            },
+        )
+    }
+
+    pub(super) fn paint(self, area: Rect, colors: Palette, buffer: &mut Buffer) {
+        if self.selected && self.extent == SelectionExtent::FullArea {
+            buffer.set_style(area, colors.selection_row);
+        }
+    }
+
+    pub(super) fn style(self, colors: Palette, fallback: Style) -> Style {
+        if self.selected && self.extent == SelectionExtent::FullArea {
+            colors.selection_row
+        } else {
+            fallback
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -101,17 +155,6 @@ pub(super) fn key_hints(items: &[(&str, &str)], colors: Palette) -> Line<'static
     Line::from(spans)
 }
 
-pub(super) fn selection_marker(selected: bool, colors: Palette) -> Span<'static> {
-    Span::styled(
-        if selected { "› " } else { "  " },
-        if selected {
-            colors.selection_row.patch(colors.selected)
-        } else {
-            colors.muted
-        },
-    )
-}
-
 pub(super) fn centered_popup(area: Rect, width: u16, height: u16) -> Rect {
     Rect::new(
         area.x + area.width.saturating_sub(width) / 2,
@@ -177,5 +220,22 @@ mod tests {
             modal_halo(Rect::new(4, 2, 12, 6), Rect::new(3, 1, 14, 8)),
             Rect::new(3, 2, 14, 6)
         );
+    }
+
+    #[test]
+    fn selection_extent_distinguishes_marker_from_area_emphasis() {
+        let colors = super::super::palette(crate::Theme::Mono);
+        let area = Rect::new(1, 1, 4, 2);
+        let mut marker_buffer = Buffer::empty(Rect::new(0, 0, 8, 4));
+        SelectionRow::marker_only(true).paint(area, colors, &mut marker_buffer);
+        assert!(!marker_buffer[(2, 1)]
+            .modifier
+            .contains(ratatui::style::Modifier::REVERSED));
+
+        let mut area_buffer = Buffer::empty(Rect::new(0, 0, 8, 4));
+        SelectionRow::full_area(true).paint(area, colors, &mut area_buffer);
+        assert!(area_buffer[(2, 2)]
+            .modifier
+            .contains(ratatui::style::Modifier::REVERSED));
     }
 }
