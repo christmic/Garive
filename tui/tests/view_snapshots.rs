@@ -262,6 +262,7 @@ fn h4_full_workbench_timeline_matches_reviewed_snapshot() {
     let filmstrip = live_workbench_filmstrip();
     assert!(filmstrip.contains("The first visible"));
     assert!(filmstrip.contains("streaming frame arrives."));
+    assert!(!filmstrip.contains("Agent running"));
     assert_eq!(filmstrip.matches("Saved streaming answer.").count(), 1);
     insta::assert_snapshot!("h4_full_workbench_dark_100x24", filmstrip);
 }

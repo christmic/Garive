@@ -59,7 +59,7 @@ pub(super) fn select_command(state: &mut RuntimeState) {
         state.model.notice = Some(format!("Command unavailable: {reason}."));
         return;
     }
-    state.model.overlay = None;
+    state.dispatch(AppAction::OverlayClosed);
     if let CommandParse::Valid(command) = parse_command(command.input) {
         execute_command(command, state);
     }
@@ -68,7 +68,7 @@ pub(super) fn select_command(state: &mut RuntimeState) {
 pub(super) fn select_history(state: &mut RuntimeState) {
     if state.composer_is_frozen() {
         state.explain_frozen_composer();
-        state.model.overlay = None;
+        state.dispatch(AppAction::OverlayClosed);
         return;
     }
     if let Some(text) = matching_history(state)
@@ -78,7 +78,7 @@ pub(super) fn select_history(state: &mut RuntimeState) {
         let _ = state.model.composer.replace(&text);
         state.model.prompt_history_browser.reset();
     }
-    state.model.overlay = None;
+    state.dispatch(AppAction::OverlayClosed);
 }
 
 pub(super) fn open_command_palette(state: &mut RuntimeState) {
@@ -151,7 +151,7 @@ pub(super) fn select_session(state: &mut RuntimeState) {
     let selected = matching_sessions(state)
         .get(state.model.session_selection)
         .cloned();
-    state.model.overlay = None;
+    state.dispatch(AppAction::OverlayClosed);
     if let Some(id) = selected {
         state.load(id);
     }
@@ -201,6 +201,32 @@ pub(super) fn matching_sessions(state: &RuntimeState) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn selecting_help_restores_then_transfers_overlay_focus() {
+        let mut state = RuntimeState::test_ephemeral(Vec::new());
+        state.model.focus = FocusTarget::Conversation;
+        open_command_palette(&mut state);
+        state.model.command_filter = "help".into();
+
+        select_command(&mut state);
+
+        assert_eq!(state.model.overlay, Some(Overlay::Help));
+        assert_eq!(state.model.focus, FocusTarget::Overlay);
+        assert_eq!(state.model.prior_focus, FocusTarget::Conversation);
+    }
+
+    #[test]
+    fn selecting_an_empty_session_result_restores_prior_focus() {
+        let mut state = RuntimeState::test_ephemeral(Vec::new());
+        state.model.focus = FocusTarget::Conversation;
+        open_session_picker(&mut state);
+
+        select_session(&mut state);
+
+        assert_eq!(state.model.overlay, None);
+        assert_eq!(state.model.focus, FocusTarget::Conversation);
+    }
 
     #[test]
     fn focus_cycle_adds_wide_inspector_without_changing_existing_order() {

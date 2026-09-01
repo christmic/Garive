@@ -3,7 +3,7 @@ source: tui/tests/view_snapshots.rs
 expression: filmstrip
 ---
 ===== preparing =====
-  Current session  ·  Garive                                                       · Agent running
+  Current session  ·  Garive
 
     › Show every verified streaming stage.
     ◆ Garive · Preparing context
@@ -29,7 +29,7 @@ expression: filmstrip
     Esc cancel run
 
 ===== first presented delta =====
-  Current session  ·  Garive                                                       · Agent running
+  Current session  ·  Garive
 
     › Show every verified streaming stage.
     ◆ Garive · Preparing context
@@ -55,7 +55,7 @@ expression: filmstrip
     Esc cancel run
 
 ===== second delta with activity =====
-  Current session  ·  Garive                                                       · Agent running
+  Current session  ·  Garive
 
     › Show every verified streaming stage.
       ●  Verifying streamed output
@@ -81,7 +81,7 @@ expression: filmstrip
     Esc cancel run
 
 ===== overlay while streaming =====
-  Current session  ·  Garive                                                       · Agent running
+  Current session  ·  Garive
              ╭ Command palette ───────────────────────────────────────────────────────╮
     › Show   │  Search  type to search                                                │
       ●  Ve  │  21 commands · showing 1–13 · ↓ 8 more                                 │
@@ -107,7 +107,7 @@ expression: filmstrip
     Esc cancel run
 
 ===== stream restored after overlay =====
-  Current session  ·  Garive                                                       · Agent running
+  Current session  ·  Garive
 
     › Show every verified streaming stage.
       ●  Verifying streamed output
@@ -133,7 +133,7 @@ expression: filmstrip
     Esc cancel run
 
 ===== finalizing =====
-  Current session  ·  Garive                                                       · Agent running
+  Current session  ·  Garive
 
     › Show every verified streaming stage.
       ●  Verifying streamed output
@@ -159,7 +159,7 @@ expression: filmstrip
     Esc cancel run
 
 ===== ended awaiting durable =====
-  Current session  ·  Garive                                                       · Agent running
+  Current session  ·  Garive
 
     › Show every verified streaming stage.
       ●  Verifying streamed output

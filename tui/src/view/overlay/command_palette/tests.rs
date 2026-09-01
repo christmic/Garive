@@ -26,9 +26,32 @@ fn every_command_can_own_a_visible_window() {
     for selected in 0..COMMAND_PALETTE.len() {
         let model = model(160, 28, selected);
         let layout = layout(&model, Rect::new(0, 0, 160, 28));
+        assert!(layout.full_catalog);
+        assert_eq!(layout.window, (0, COMMAND_PALETTE.len()));
         assert!(layout.window.0 <= selected);
         assert!(selected < layout.window.1);
     }
+}
+
+#[test]
+fn full_catalog_uses_the_safe_area_without_covering_the_composer() {
+    let model = model(160, 28, COMMAND_PALETTE.len() - 1);
+    let area = Rect::new(0, 0, 160, 28);
+    let frame = FrameLayout::resolve(&model, area);
+    let layout = layout(&model, area);
+
+    assert!(layout.full_catalog);
+    assert_eq!(layout.item_capacity(), COMMAND_PALETTE.len());
+    assert_eq!(layout.popup.y, frame.transcript.y);
+    assert_eq!(layout.popup.bottom(), frame.composer.y);
+    assert!(layout.popup.x >= frame.transcript.x);
+    assert!(layout.popup.right() <= frame.transcript.right());
+    assert_eq!(
+        layout
+            .first_item_row
+            .saturating_add(COMMAND_PALETTE.len() as u16),
+        layout.inner.bottom()
+    );
 }
 
 #[test]
@@ -55,6 +78,31 @@ fn hit_testing_only_maps_rendered_item_rows() {
 }
 
 #[test]
+fn full_catalog_hit_testing_maps_first_and_last_commands() {
+    let model = model(160, 28, COMMAND_PALETTE.len() - 1);
+    let area = Rect::new(0, 0, 160, 28);
+    let layout = layout(&model, area);
+
+    assert_eq!(
+        selection_at(&model, area, layout.inner.x, layout.first_item_row),
+        Some(0)
+    );
+    assert_eq!(
+        selection_at(
+            &model,
+            area,
+            layout.inner.x,
+            layout.inner.bottom().saturating_sub(1),
+        ),
+        Some(COMMAND_PALETTE.len() - 1)
+    );
+    assert_eq!(
+        selection_at(&model, area, layout.inner.x, layout.inner.bottom()),
+        None
+    );
+}
+
+#[test]
 fn linear_projection_announces_window_and_selected_absolute_index() {
     let model = model(40, 8, COMMAND_PALETTE.len() - 1);
     let spoken = linear_text(&model);
@@ -72,6 +120,7 @@ fn selected_marker_and_unicode_matches_have_independent_emphasis() {
         first_item_row: 2,
         action_row: 4,
         compact: true,
+        full_catalog: false,
     };
     let item = PaletteItem {
         input: "/状态😀",

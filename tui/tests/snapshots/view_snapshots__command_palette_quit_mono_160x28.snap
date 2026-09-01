@@ -3,14 +3,17 @@ source: tui/tests/view_snapshots.rs
 expression: "frame(&palette, Theme::Mono, 160, 28)"
 ---
                                 Session 1  ·  Agent                                                                Agent running
-
-                                  › Summa  ╭ Command palette ───────────────────────────────────────────────────────╮
-                                    ✓  Ag  │  Search  type to search                                                │
-                                  ◆ Gariv  │  21 commands · showing 7–21 · ↑ 6 earlier                              │
-                                    ## Re  │    /retry              unavailable · no unknown command                │
-                                    • Ver  │    /reconnect          Resume event stream                             │
-                                    • Shi  │    /cancel             Cancel running turn                             │
-                                    cargo  │    /theme system       Follow terminal theme                           │
+                                           ╭ Command palette · 21 commands · type to filter · ↑/↓ · Enter · Esc ────╮
+                                  › Summa  │    /new                Create session                                  │
+                                    ✓  Ag  │    /sessions           Switch session                                  │
+                                  ◆ Gariv  │    /jump               unavailable · fewer than two Turns are loaded   │
+                                    ## Re  │    /inspect            Open Inspector                                  │
+                                    • Ver  │    /status             Connection details                              │
+                                    • Shi  │    /edit-prompt        Edit draft externally                           │
+                                    cargo  │    /retry              unavailable · no unknown command                │
+                                           │    /reconnect          Resume event stream                             │
+                                           │    /cancel             Cancel running turn                             │
+                                           │    /theme system       Follow terminal theme                           │
                                            │    /theme dark         Use dark theme                                  │
                                            │    /theme light        Use light theme                                 │
                                            │    /theme mono         Use mono theme                                  │
@@ -22,10 +25,7 @@ expression: "frame(&palette, Theme::Mono, 160, 28)"
                                            │    /copy session-id    Copy Session ID                                 │
                                            │    /help               Keyboard guide                                  │
                                            │  › /quit               Exit safely                                     │
-                                           │                                                                        │
-                                           │    ↑/↓ select   Home/End edge   Enter run   Esc close                  │
                                            ╰────────────────────────────────────────────────────────────────────────╯
-
                                 ╭ › ───────────────────────────────────────────────────────────────────────────────────────────╮
                                 │ Ask a follow-up…                                                                             │
                                 ╰──────────────────────────────────────────────────────────────────────────────────────────────╯
