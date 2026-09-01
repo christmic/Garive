@@ -24,6 +24,7 @@ import { ComposerRail } from "./ui/ComposerRail";
 import { Tooltip } from "./ui/Tooltip";
 import { TurnActionControls } from "./ui/TurnActionControls";
 import { ThreadUserNavigationRail } from "./ui/ThreadUserNavigationRail";
+import { ThreadFindBar } from "./ui/ThreadFindBar";
 import { UsageBudgetCard, UsageBudgetTrigger, type UsageBudgetSnapshot } from "./ui/UsageBudget";
 import { WindowZoomBanner } from "./ui/WindowZoomBanner";
 import { SetupFlow } from "./features/setup/SetupFlow";
@@ -214,6 +215,7 @@ export function App({ client = "desktop", webCapabilities, createProductPort,
   const [recentTitles, setRecentTitles] = useState<Readonly<Record<string, string>>>({});
   const [commandOpen, setCommandOpen] = useState(false);
   const [commandMode, setCommandMode] = useState<CommandMode>("commands");
+  const [threadFind, setThreadFind] = useState({ open: false, revision: 0 });
   const commandReturnFocus = useRef<HTMLElement | null>(null);
   const [selectedContext, setSelectedContext] = useState<SelectedContext>();
   const [pickerGrant, setPickerGrant] = useState<WorkspaceGrant>();
@@ -235,8 +237,14 @@ export function App({ client = "desktop", webCapabilities, createProductPort,
     commandReturnFocus.current = document.activeElement instanceof HTMLElement
       && document.activeElement !== document.body ? document.activeElement : null;
     setCommandMode(mode);
+    setThreadFind((current) => ({ ...current, open: false }));
     setCommandOpen(true);
   }, []);
+  const openThreadFind = useCallback(() => {
+    if (screen !== "work" || state.messages.length === 0) { openCommandCenter("search"); return; }
+    setCommandOpen(false);
+    setThreadFind((current) => ({ open: true, revision: current.revision + 1 }));
+  }, [openCommandCenter, screen, state.messages.length]);
   const closeCommandCenter = useCallback(() => {
     setCommandOpen(false);
     requestAnimationFrame(() => {
@@ -594,7 +602,7 @@ export function App({ client = "desktop", webCapabilities, createProductPort,
       const intent = decodeDesktopMenuIntent(event.payload);
       if (intent === "desktop.new-work") {
         beginNewWork();
-      } else if (intent === "desktop.search") openCommandCenter("search");
+      } else if (intent === "desktop.search") openThreadFind();
       else if (intent === "desktop.settings") openSettings();
       else if (intent === "desktop.toggle-inspector") {
         dispatch({ type: "inspector_toggled" }); showCurrentWork();
@@ -607,7 +615,7 @@ export function App({ client = "desktop", webCapabilities, createProductPort,
       else unlisten();
     }).catch(() => undefined);
     return () => { active = false; stop?.(); };
-  }, [applyWindowZoom, beginNewWork, desktop, openCommandCenter, openSettings, showCurrentWork]);
+  }, [applyWindowZoom, beginNewWork, desktop, openSettings, openThreadFind, showCurrentWork]);
 
   useEffect(() => {
     const shortcuts = (event: KeyboardEvent) => {
@@ -631,7 +639,7 @@ export function App({ client = "desktop", webCapabilities, createProductPort,
         event.preventDefault(); applyWindowZoom("desktop.actual-size");
       }
       if (event.key.toLowerCase() === "k") { event.preventDefault(); openCommandCenter("commands"); }
-      if (event.key.toLowerCase() === "f") { event.preventDefault(); openCommandCenter("search"); }
+      if (event.key.toLowerCase() === "f") { event.preventDefault(); openThreadFind(); }
       if (event.shiftKey && event.key.toLowerCase() === "a") {
         event.preventDefault(); dispatch({ type: "inspector_toggled" });
       }
@@ -639,7 +647,12 @@ export function App({ client = "desktop", webCapabilities, createProductPort,
     window.addEventListener("keydown", shortcuts);
     return () => window.removeEventListener("keydown", shortcuts);
   }, [applyWindowZoom, beginNewWork, desktop, navigateHistory, navigationOpen,
-    openCommandCenter, openSettings]);
+    openCommandCenter, openSettings, openThreadFind]);
+
+  useEffect(() => {
+    if (screen === "work" && state.messages.length > 0) return;
+    setThreadFind((current) => current.open ? { ...current, open: false } : current);
+  }, [screen, state.messages.length]);
 
   useEffect(() => {
     const mouseHistory = (event: MouseEvent) => {
@@ -966,8 +979,8 @@ export function App({ client = "desktop", webCapabilities, createProductPort,
               {(close) => <><button type="button" role="menuitem" onClick={() => { close(); beginNewWork(); }}>
                   <Icon name="plus" /><span>{t("nav.newWork")}</span><kbd>⌘N</kbd></button>
                 {state.capabilities?.durable_navigation && <button type="button" role="menuitem"
-                  onClick={() => { close(); openCommandCenter("search"); }}>
-                  <Icon name="search" /><span>{t("nav.search")}</span><kbd>⌘F</kbd></button>}
+                  onClick={() => { close(); openThreadFind(); }}>
+                  <Icon name="search" /><span>{t("thread.find")}</span><kbd>⌘F</kbd></button>}
                 <button type="button" role="menuitem" onClick={() => { close();
                   dispatch({ type: "inspector_toggled" }); }}><Icon name="panel" />
                   <span>{t(state.inspectorOpen ? "work.menu.closeEnvironment" : "work.menu.openEnvironment")}</span><kbd>⌘⇧A</kbd></button>
@@ -999,6 +1012,8 @@ export function App({ client = "desktop", webCapabilities, createProductPort,
           openContext={openContext} authorizeOutputs={authorizeOutputs}
           resolveApproval={resolveApproval} removeContext={() => setSelectedContext(undefined)}
           detachWorkspace={detachWorkspace} detachingWorkspaceId={detachingWorkspaceId}
+          findOpen={threadFind.open} findRevision={threadFind.revision}
+          closeFind={() => setThreadFind((current) => ({ ...current, open: false }))}
           approvalAction={approvalAction} obscured={smallWindow && state.inspectorOpen
             && state.inspectorTab !== "activity"} t={t} />
           : screen === "agents" ? <AgentsScreen definitions={visualTest
@@ -1043,7 +1058,7 @@ export function App({ client = "desktop", webCapabilities, createProductPort,
 
 function WorkSurface({ state, composer, submit, startSuggestion, dispatch, context, openContext,
   authorizeOutputs, resolveApproval, removeContext, detachWorkspace, detachingWorkspaceId,
-  approvalAction, cancelTurn, retryPending, reconnect, obscured, t }: {
+  approvalAction, cancelTurn, retryPending, reconnect, findOpen, findRevision, closeFind, obscured, t }: {
   state: WorkState;
   composer: React.RefObject<HTMLTextAreaElement | null>;
   submit: () => Promise<void>;
@@ -1060,6 +1075,9 @@ function WorkSurface({ state, composer, submit, startSuggestion, dispatch, conte
   detachWorkspace: (attachment: WorkspaceAttachment) => Promise<void>;
   detachingWorkspaceId?: string;
   approvalAction: React.RefObject<HTMLButtonElement | null>;
+  findOpen: boolean;
+  findRevision: number;
+  closeFind: () => void;
   obscured: boolean;
   t: (key: MessageKey) => string;
 }) {
@@ -1339,6 +1357,8 @@ function WorkSurface({ state, composer, submit, startSuggestion, dispatch, conte
     </div>
     <ThreadUserNavigationRail items={userNavigationItems} scrollElement={conversation}
       onNavigate={navigateToUserMessage} t={t} />
+    <ThreadFindBar open={findOpen} openRevision={findRevision} container={conversation}
+      onClose={closeFind} t={t} />
     <div className="conversation-top-fade" data-visible={scrolledFromTop} aria-hidden="true" />
     {(state.error || disconnected || reconnecting) && <div className={disconnected || reconnecting
       ? "error-banner connection-banner" : "error-banner"} role={state.error ? "alert" : "status"}>
@@ -1472,7 +1492,7 @@ function Timeline({ state, dispatch, t }: { state: WorkState; dispatch: WorkDisp
       ? <p className="sr-only" role="status" key={message.id}>{terminalCopy(message.terminal, t)}</p>
     : <article className="message assistant-message" key={message.id}><div>
       {message.activities?.length ? <TurnActivityDisclosure activities={message.activities} t={t} /> : null}
-      <div className="result-markdown"><Markdown skipHtml remarkPlugins={[remarkGfm]}
+      <div className="result-markdown" data-thread-find-unit=""><Markdown skipHtml remarkPlugins={[remarkGfm]}
       components={{ a: ({ children }) => <span className="safe-link">{children}</span>,
         pre: ({ children }) => <MarkdownCodeBlock t={t}>{children}</MarkdownCodeBlock> }}>{message.text || terminalCopy(message.terminal, t)}</Markdown></div>
       <TurnActionControls terminal={message.terminal} terminalLabel={terminalCopy(message.terminal, t)}>
@@ -1486,7 +1506,7 @@ function Timeline({ state, dispatch, t }: { state: WorkState; dispatch: WorkDisp
       </TurnActionControls></div></article>)}
     {state.livePreview && <article className="message assistant-message live-answer" aria-label={t("timeline.liveAnswer")}>
       {state.livePreview.available && state.livePreview.text
-        ? <div className="result-markdown"><Markdown skipHtml remarkPlugins={[remarkGfm]}
+        ? <div className="result-markdown" data-thread-find-unit=""><Markdown skipHtml remarkPlugins={[remarkGfm]}
           components={{ pre: ({ children }) => <MarkdownCodeBlock t={t}>{children}</MarkdownCodeBlock> }}>{state.livePreview.text}</Markdown></div>
         : <p><span className="live-pulse"><span /></span>{livePhaseCopy(state.livePreview.labelKey, t)}</p>}
     </article>}
@@ -1522,6 +1542,7 @@ export function UserMessage({ id, text, copied, onCopy, t }: {
   return <article className="message user-message" data-user-message-id={id}><div className="user-turn">
     <div className="user-message-bubble" data-user-message-bubble="">
       <div ref={content} className={collapsed ? "user-message-content collapsed" : "user-message-content"}
+        data-thread-find-unit=""
         data-collapsed-lines={collapsed ? 19 : undefined}>{text}</div>
       {collapsed && <span className="user-message-ellipsis" aria-hidden="true">…</span>}
       {collapsible && <button className={expanded ? "user-message-toggle expanded" : "user-message-toggle"}

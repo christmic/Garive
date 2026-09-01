@@ -96,6 +96,8 @@
   --state-success-surface: #e9f5ee;
   --state-attention: #99600c;
   --state-attention-surface: #fff3dc;
+  --surface-search-match: #ffc300;
+  --surface-search-match-active: #e25507;
   --state-danger: #b23b32;
   --state-danger-surface: #fff0ed;
   --shadow-raised: 0 8px 16px -4px rgba(0, 0, 0, .12);
@@ -148,6 +150,8 @@
   --state-success-surface: #18382b;
   --state-attention: #e6b86f;
   --state-attention-surface: #47351d;
+  --surface-search-match: #ffd240;
+  --surface-search-match-active: #fb6a22;
   --state-danger: #ef9a88;
   --state-danger-surface: #422721;
   --shadow-raised: 0 8px 16px -4px rgba(0, 0, 0, .12);

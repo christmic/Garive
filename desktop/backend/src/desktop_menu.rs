@@ -144,7 +144,7 @@ fn menu_labels(locale: DesktopMenuLocale) -> MenuLabels {
     match locale {
         DesktopMenuLocale::English => MenuLabels {
             new_work: "New Work",
-            search: "Search Work…",
+            search: "Find in Chat…",
             settings: "Settings…",
             inspector: "Toggle Inspector",
             zoom_in: "Zoom In",
@@ -174,7 +174,7 @@ fn menu_labels(locale: DesktopMenuLocale) -> MenuLabels {
         },
         DesktopMenuLocale::SimplifiedChinese => MenuLabels {
             new_work: "新建工作",
-            search: "搜索工作…",
+            search: "在对话中查找…",
             settings: "设置…",
             inspector: "切换检查器",
             zoom_in: "放大",
@@ -204,7 +204,7 @@ fn menu_labels(locale: DesktopMenuLocale) -> MenuLabels {
         },
         DesktopMenuLocale::Pseudolocale => MenuLabels {
             new_work: "[Nëw Wôrk··]",
-            search: "[Sëárch Wôrk…··]",
+            search: "[Fïnd ïn Chát…··]",
             settings: "[Sëttïngs…··]",
             inspector: "[Tôgglë Ïnspëctôr··]",
             zoom_in: "[Zôôm Ïn··]",
@@ -331,6 +331,7 @@ mod tests {
             (chinese.about, chinese.quit, chinese.close_window),
             ("关于 Garive", "退出 Garive", "关闭窗口")
         );
+        assert_eq!(chinese.search, "在对话中查找…");
         let pseudo = menu_labels(DesktopMenuLocale::Pseudolocale);
         assert!(pseudo.search.starts_with('[') && pseudo.search.ends_with("··]"));
     }

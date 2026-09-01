@@ -245,6 +245,14 @@ describe("Desktop visual accessibility contract", () => {
     expect(CSS).toContain("--marker-progress: .4");
     expect(CSS).toContain("--marker-progress: .2");
     expect(CSS).toContain('button[aria-current="true"] .thread-user-navigation-marker { color: var(--text-primary); opacity: .6; }');
+    expect(CSS).toContain(".thread-find-layer { pointer-events: none; position: fixed; z-index: 55; top: 8px; right: 16px;");
+    expect(CSS).toContain("width: 340px; max-width: 70vw;");
+    expect(CSS).toContain("grid-template-columns: minmax(0, 1fr) auto auto;");
+    expect(CSS).toContain("height: 44px; padding-inline-start: 16px;");
+    expect(CSS).toContain("border-radius: 20px;");
+    expect(CSS).toContain("mark[data-search-match][data-active]");
+    expect(TOKENS).toContain("--surface-search-match: #ffc300");
+    expect(TOKENS).toContain("--surface-search-match-active: #fb6a22");
     expect(CSS).toContain("margin-inline: var(--composer-rail-inline-inset)");
     expect(CSS).toContain("border-radius: var(--radius-composer-rail) var(--radius-composer-rail) 0 0");
     expect(CSS).toContain("background: var(--surface-composer-action-bar)");

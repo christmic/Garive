@@ -1295,10 +1295,10 @@ the source-backed palette geometry in Section XXXIV, this is direct evidence
 that high-frequency history search belongs inside the command overlay rather
 than replacing the active work surface with a Web-style destination page.
 
-Garive's sidebar Search, `⌘F`, native Search intent and Work action formerly
-routed to a full page with a large heading, explanatory copy and bordered form
-card. They now open the existing shared Command menu in search mode while the
-current thread remains mounted and inert beneath it. The unified mode retains
+Garive's sidebar Search formerly routed to a full page with a large heading,
+explanatory copy and bordered form card. It now opens the existing shared
+Command menu in search mode while the current thread remains mounted and inert
+beneath it. The unified mode retains
 the real durable-Session query and attention/active/completed filters; ordinary
 Command-menu mode still combines actions and work switching. Both modes share
 the same focus trap, Arrow/Home/End navigation, Escape dismissal and exact
@@ -1335,7 +1335,7 @@ and gives Desktop and Web one future layout seam.
 
 The supplied Codex references also show one search icon beside the product
 switcher, not a second full Search row in primary navigation. Garive therefore
-keeps that icon, `⌘F`, native intent and the shared search overlay while removing
+keeps that global-work Search icon and the shared command overlay while removing
 the duplicate row. At 1280×800 the live Web surface exposes one Search button,
 one semantic heading, the quiet composer and three adjacent starters. At
 480×720 selecting a starter focuses the composer, removes the starter surface
@@ -1591,6 +1591,31 @@ Timeline messages. Live 1280×720 evidence measures the exact 16 px inset,
 Hover produces the expected 1/0.7/0.4/0.2 neighborhood. Activating the first
 anchor lands its real message at container offset zero, exits tail following,
 reveals the return-to-latest action and preserves zero document overflow.
+
+### LVI. Command-F searches the mounted thread
+
+Installed Codex `26.825.51511` source separates `find-in-thread` from
+`chat-search-command-menu`; Garive's earlier mapping of `⌘F` to durable work
+search conflated two distinct commands. The source find surface is fixed at
+top 8 px and right 16 px, uses a 340 px width capped at 70vw, a 44 px first
+row, a 20 px radius, a half-pixel border and the 8/16/-4 shadow. Query work is
+debounced by 150 ms. Enter and Shift+Enter cycle forward and backward, Escape
+closes, and opening from selected single-line text pre-fills the query.
+
+Source search walks eligible Text nodes, excludes scripts, styles, textareas,
+editable and explicit skip regions, composes one searchable string per content
+unit and applies ranges from last to first so a match can cross inline Markdown
+nodes without invalidating later offsets. Matches use chart yellow, the active
+match uses chart orange, and the result line discloses no-results, current /
+total and capped states. Mutation observation reruns search for live content.
+
+Garive now owns that engine and surface once for Desktop and Web. `⌘F`, the
+Work action and native intent search the current durable Timeline when it has
+content; the sidebar Search and Command menu retain global durable-work search.
+Live 1280×720 evidence measures 340×45 px closed-row geometry and 340×81 px
+with results, exact 8/16 positioning, six cross-Markdown matches, orange/yellow
+current/rest colors, forward/backward wrap, Escape cleanup and focus return to
+the Composer with zero horizontal overflow.
 
 ## Gate 1 — Codex fidelity
 

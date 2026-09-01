@@ -80,6 +80,27 @@ kbd { color: var(--subtle); font: 11px -apple-system, sans-serif; }
 .conversation { overflow-anchor: none; }
 .conversation-top-fade { pointer-events: none; position: absolute; z-index: 2; top: 0; right: 0; left: 0; height: 16px; background: linear-gradient(to bottom, var(--surface-canvas), transparent); opacity: 0; transition: opacity var(--motion-basic) var(--ease-basic); }
 .conversation-top-fade[data-visible="true"] { opacity: 1; }
+.thread-find-layer { pointer-events: none; position: fixed; z-index: 55; top: 8px; right: 16px; display: flex; justify-content: flex-end; }
+.thread-find-surface { pointer-events: auto; display: grid; grid-template-columns: minmax(0, 1fr) auto auto; width: 340px; max-width: 70vw; overflow: hidden; border: .5px solid var(--border-subtle); border-radius: 20px; background: var(--surface-raised); box-shadow: 0 8px 16px -4px rgba(0, 0, 0, .12); }
+.thread-find-input-row { grid-row: 1; grid-column: 1; display: flex; align-items: center; gap: 8px; min-width: 0; height: 44px; padding-inline-start: 16px; }
+.thread-find-input-row > svg { width: 16px; height: 16px; flex: 0 0 auto; color: var(--text-primary); }
+.thread-find-input-row > svg.searching { animation: thread-find-spin 900ms linear infinite; }
+.thread-find-input-row input { min-width: 0; height: 24px; flex: 1; padding: 0; border: 0; color: var(--text-primary); background: transparent; outline: 0; font-size: var(--text-md); line-height: 24px; }
+.thread-find-input-row input::placeholder { color: var(--text-tertiary); }
+.thread-find-navigation, .thread-find-result { grid-row: 2; grid-column: 1 / 4; min-width: 0; max-height: 0; padding-block: 0; border-top: 0 solid var(--border-subtle); opacity: 0; transform: translateY(-8px); transition: border-width var(--motion-basic) var(--ease-exit), max-height var(--motion-basic) var(--ease-exit), opacity var(--motion-basic) var(--ease-exit), padding var(--motion-basic) var(--ease-exit), transform var(--motion-basic) var(--ease-exit); }
+.thread-find-navigation.visible, .thread-find-result.visible { max-height: 36px; padding-block: 8px; border-top-width: 1px; opacity: 1; transform: translateY(0); }
+.thread-find-navigation { z-index: 1; display: flex; align-items: center; gap: 12px; padding-inline: 16px; }
+.thread-find-navigation button, .thread-find-close button { display: grid; place-items: center; width: 24px; height: 24px; padding: 4px; border: 0; border-radius: var(--radius-control); color: var(--text-secondary); background: transparent; }
+.thread-find-navigation button:hover:not(:disabled), .thread-find-close button:hover { color: var(--text-primary); background: var(--surface-hover); }
+.thread-find-navigation button:disabled { opacity: .4; }
+.thread-find-navigation button:first-child svg { transform: rotate(180deg); }
+.thread-find-navigation svg, .thread-find-close svg { width: 16px; height: 16px; }
+.thread-find-result { pointer-events: none; color: var(--text-secondary); padding-inline: 16px; text-align: end; font-size: var(--text-md); line-height: 24px; }
+.thread-find-close { grid-row: 1; grid-column: 3; display: flex; align-items: center; height: 44px; padding-inline-end: 8px; }
+.thread-find-close > span { width: 1px; height: 16px; margin-inline: 8px; background: var(--border-subtle); }
+mark[data-search-match] { border-radius: var(--radius-2xs); color: var(--text-primary); background: var(--surface-search-match); }
+mark[data-search-match][data-active] { background: var(--surface-search-match-active); }
+@keyframes thread-find-spin { to { transform: rotate(360deg); } }
 .thread-user-navigation { position: absolute; z-index: 20; top: 50%; left: 16px; opacity: 1; transform: translateY(-50%); }
 .thread-user-navigation-list { display: flex; max-height: min(70vh, 640px); overflow: auto; flex-direction: column; overscroll-behavior: contain; scrollbar-width: none; }
 .thread-user-navigation-list::-webkit-scrollbar { display: none; }

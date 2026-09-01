@@ -236,6 +236,26 @@ describe("Desktop product experience", () => {
     await waitFor(() => expect(document.activeElement).toBe(search));
   });
 
+  it("routes Command-F to source-backed find after durable work exists", async () => {
+    completedText = "Durable Runtime product answer";
+    const view = render(<App />);
+    await waitFor(() => expect(view.container.querySelector(".suggestion-grid button")).not.toBeNull());
+    fireEvent.click(view.container.querySelector<HTMLButtonElement>(".suggestion-grid button")!);
+    await waitFor(() => expect(screen.getByRole<HTMLButtonElement>("button", { name: "Send work" }).disabled).toBe(false));
+    fireEvent.click(screen.getByRole("button", { name: "Send work" }));
+    expect(await screen.findByText("Durable Runtime product answer")).toBeTruthy();
+
+    fireEvent.keyDown(window, { key: "f", metaKey: true });
+    const find = await screen.findByRole("textbox", { name: "Find in chat" });
+    expect(view.container.querySelector(".thread-find-surface")).not.toBeNull();
+    fireEvent.change(find, { target: { value: "runtime" } });
+    await waitFor(() => expect(view.container.querySelectorAll("mark[data-search-match]")).toHaveLength(1));
+    expect(screen.getByText("1 / 1 results")).toBeTruthy();
+    fireEvent.keyDown(find, { key: "Escape" });
+    expect(screen.queryByRole("textbox", { name: "Find in chat" })).toBeNull();
+    expect(view.container.querySelector("mark[data-search-match]")).toBeNull();
+  });
+
   it("projects the real installed Agent catalogue into a progressive desktop workbench", async () => {
     const view = render(<App />);
     fireEvent.click(await screen.findByRole("button", { name: "Agents" }));

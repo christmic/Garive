@@ -657,8 +657,9 @@ product admits those actions.
 
 ## Interaction rules
 
-- `Command-K` opens the global command center; `Command-F` opens durable work
-  search; `Command-,` opens Settings.
+- `Command-K` opens the global command center; sidebar Search opens durable
+  work search; `Command-F` searches the mounted thread when content exists and
+  otherwise falls back to durable work search; `Command-,` opens Settings.
 - The global command center is a 520px desktop palette, not a generic modal.
   Its list is capped by `min(440px, max(120px, 90vh - 64px))`, leaving one
   64px chrome budget. The root owns a 4px inset, compact 32px action rows and
@@ -760,3 +761,9 @@ an exact task price from prompt length, selected model, or prior averages.
 - Long-thread evidence covers the hidden-under-four threshold, exact rail
   geometry and opacity, pointer proximity, focus preview, anchor landing,
   drag scrubbing, reduced motion and return-to-latest recovery.
+- Thread find uses one shared Desktop/Web engine over real Timeline content
+  units. It debounces 150 ms, matches across inline nodes without crossing Turn
+  boundaries, skips governed controls, observes live-content mutations and
+  caps results. The 340 px / 70vw surface is fixed at top 8 px and right 16 px;
+  Enter/Shift+Enter wrap, Escape removes every mark and restores focus, and
+  yellow/rest versus orange/active color is never the only result-state signal.
