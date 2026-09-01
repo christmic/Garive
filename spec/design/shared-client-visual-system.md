@@ -219,6 +219,12 @@ workbench made from four persistent spatial layers:
    it remains attached to the Composer while work is running or suspended for
    approval, partial output, or external input. Suspension changes the admitted
    state to Needs input; it does not erase the goal or invent a new stage.
+   In the ordinary active state it is one quiet summary line: neutral indicator,
+   goal label, ellipsized objective, then edge controls. Activity state remains
+   available to assistive technology and the Environment drill-in rather than
+   repeating `Running` beside an already active indicator. Only an admitted
+   attention state may add semantic color and visible state text. Elapsed time,
+   token usage, or budget appears only when the Host owns that exact fact.
    An empty suspended assistant record remains an accessible status notification
    but is not painted as a duplicate pseudo-message above the same goal rail.
 4. **Output layer.** Files, diffs, terminals and governed artifacts open as a

@@ -351,13 +351,24 @@ by the latest tool label. That made implementation activity more prominent than
 the user's outcome and repeated the same tool fact available in Environment.
 
 The 32 px rail now leads with `Pursuing goal`, projects the latest admitted user
-request as a single ellipsized line, and keeps only the current public Activity
-state plus the details action at the edge. Exact tool labels remain available
-to assistive technology and in the Environment drill-in; no timer is invented
-because the current Host projection does not expose a trusted elapsed-time
-fact. With Environment open at the reference viewport, the rail remains x=353,
+request as a single ellipsized line, and keeps the details action at the edge.
+Exact tool labels and the current Activity state remain available to assistive
+technology and in the Environment drill-in. With Environment open at the
+reference viewport, the rail remains x=353,
 544 px wide and free of internal overflow. At 720 and 480 px the Composer is
 546 and 432 px wide respectively, with zero rail or document overflow.
+
+The installed `26.825.51511` source makes the hierarchy explicit. Its active
+summary string is `composer.threadGoal.summary.active` (`Pursuing goal`); the
+row icon is `icon-2xs text-text-tertiary/70`; the status title is `text-default`;
+the objective is a single `truncate-text text-codex-description` continuation;
+and trusted time or token usage follows as tabular `text-codex-description`.
+The row is mounted through the generic Composer rail and uses
+`--color-background-composer-action-bar`, defined as 3% black in light mode and
+8% white in dark mode. Garive therefore keeps its active indicator neutral and
+does not repeat `Running` as a competing visual label. It does not invent the
+Codex timer or token budget because Garive's Host projection currently exposes
+neither fact. `Needs input` remains a visible attention exception.
 
 ### Q. Quiet titlebar disclosure audit
 

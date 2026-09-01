@@ -434,7 +434,8 @@ describe("Desktop product experience", () => {
     expect(rail?.getAttribute("data-composer-rail-variant")).toBe("controls");
     expect(screen.getByText("Read scoped file")).toBeTruthy();
     expect(screen.getByText("Write scoped file")).toBeTruthy();
-    expect(view.container.querySelector(".progress-state")?.textContent).toBe("Running");
+    expect(view.container.querySelector(".progress-state")).toBeNull();
+    expect(view.container.querySelector(".sr-only")?.textContent).toContain("Running");
     fireEvent.click(screen.getByRole("button", { name: "Open activity" }));
     expect(open).toHaveBeenCalledOnce();
   });

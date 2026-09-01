@@ -106,6 +106,9 @@ describe("Desktop visual accessibility contract", () => {
     expect(CSS).toContain(".task-state-dot { position: relative; display: grid; place-items: center; width: 10px; height: 10px;");
     expect(CSS).toContain(".task-state-dot.active::after { position: absolute; inset: -1.25px;");
     expect(CSS).toContain(".turn-progress.attention .live-pulse > span { background: var(--state-attention); animation: none; }");
+    expect(TOKENS).toContain("--composer-rail-indicator: color-mix(in srgb, var(--text-tertiary) 70%, transparent)");
+    expect(CSS).toContain(".turn-progress-head { display: grid; grid-template-columns: 14px minmax(0, 1fr) auto auto;");
+    expect(CSS).toContain(".live-pulse > span { width: 5px; height: 5px; border-radius: 50%; background: currentColor;");
     expect(CSS).toContain(".workspace-tab { display: grid; grid-template-columns: minmax(0, 1fr) 22px; width: min(120px, 100%);");
     expect(CSS).toContain("min-height: var(--height-file-toolbar);");
     expect(CSS).toContain(".app-shell:has(.workspace-panel) .timeline { width: calc(100% - 20px); }");
@@ -156,7 +159,7 @@ describe("Desktop visual accessibility contract", () => {
     expect(CSS).toContain(".theme-dark .search-results { background: transparent; }");
     expect(CSS).toContain(".agents-heading { display: flex; align-items: end; justify-content: space-between; gap: 24px; padding: 40px 0 18px;");
     expect(CSS).toContain(".settings-heading { padding: 40px 0 18px; }");
-    expect(CSS).toContain("grid-template-columns: 18px minmax(0, 1fr) auto auto");
+    expect(CSS).toContain("grid-template-columns: 14px minmax(0, 1fr) auto auto");
     expect(CSS).toContain(".progress-state { color: var(--text-tertiary); font-size: var(--text-2xs); white-space: nowrap; }");
     expect(CSS).toContain(".topbar-actions .icon-button[aria-expanded=\"true\"] { color: var(--text-primary); background: transparent; }");
     expect(CSS).toContain(".topbar-text-action { display: flex; align-items: center; gap: 5px; height: 30px;");

@@ -1379,9 +1379,9 @@ export function TurnProgress({ goal, status, activities, onOpen, t }: { goal?: s
     data-composer-rail-item="present" data-composer-rail-placement="above"
     data-composer-rail-variant="controls"
     aria-label={t("timeline.progressTitle")}>
-    <div className="turn-progress-head"><span className="live-pulse"><span /></span><div className="progress-summary">
+    <div className="turn-progress-head"><span className="live-pulse" aria-hidden="true"><span /></span><div className="progress-summary">
       <strong>{t("timeline.progressTitle")}</strong><p>{goal || t("timeline.progressBody")}</p></div>
-      {(status || current) && <span className="progress-state">{status ?? activityState(current!.state, t)}</span>}
+      {status && <span className="progress-state">{status}</span>}
       <button type="button" onClick={onOpen} aria-label={t("timeline.openActivity")}
         title={t("timeline.openActivity")}><Icon name="activity" /></button></div>
     {recent.length > 0 && <div className="sr-only">{recent.map((activity) =>

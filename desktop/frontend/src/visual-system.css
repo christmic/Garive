@@ -44,6 +44,7 @@
   --composer-single-line-gap: 5px;
   --composer-rail-inline-inset: 13px;
   --composer-rail-tuck: 4px;
+  --composer-rail-indicator: color-mix(in srgb, var(--text-tertiary) 70%, transparent);
   --radius-pill: 999px;
   --height-toolbar: 46px;
   --height-toolbar-sm: 36px;
