@@ -27,7 +27,7 @@ fn responsive_product_frames_match_reviewed_snapshots() {
     let model = product_model();
     let compact = frame(&model, Theme::Mono, 40, 12);
     assert_eq!(compact.matches("• Working…").count(), 1);
-    assert!(compact.contains("Esc interrupt"));
+    assert!(compact.contains("esc to interrupt"));
     insta::assert_snapshot!("compact_40x12", frame(&model, Theme::Mono, 40, 12));
     let mut wrapped = product_model();
     wrapped
@@ -40,7 +40,7 @@ fn responsive_product_frames_match_reviewed_snapshots() {
     );
     let standard = frame(&model, Theme::Dark, 100, 24);
     assert_eq!(standard.matches("• Working…").count(), 1);
-    assert!(standard.contains("Esc interrupt"));
+    assert!(standard.contains("esc to interrupt"));
     insta::assert_snapshot!("standard_100x24", frame(&model, Theme::Dark, 100, 24));
     let activities = activity_stack_model();
     insta::assert_snapshot!(
@@ -60,9 +60,9 @@ fn responsive_product_frames_match_reviewed_snapshots() {
         frame(&activities, Theme::Mono, 40, 18)
     );
     let active = frame(&activities, Theme::Mono, 40, 18);
-    assert!(!active.contains("Working…"));
+    assert_eq!(active.matches("• Working…").count(), 1);
     assert!(active.contains("Reading file"));
-    assert!(active.contains("Esc interrupt"));
+    assert!(active.contains("esc to interrupt"));
     let completed = frame(&completed_activity_stack_model(), Theme::Mono, 40, 18);
     assert!(completed.contains("✓ Read file · +2"));
     insta::assert_snapshot!("activity_stack_completed_compact_mono_40x18", completed);
@@ -273,17 +273,17 @@ fn cancellation_control_responsive_matrix_matches_reviewed_snapshot() {
 
     let requesting = frame(&model, Theme::Mono, 40, 8);
     assert!(requesting.contains("Cancelling…"));
-    assert!(!requesting.contains("Esc interrupt"));
+    assert!(!requesting.contains("esc to interrupt"));
 
     model.cancel_requests.mark_accepted("cancel-command");
     let awaiting = frame(&model, Theme::Dark, 100, 24);
     assert!(awaiting.contains("Stopping…"));
-    assert!(!awaiting.contains("Esc interrupt"));
+    assert!(!awaiting.contains("esc to interrupt"));
 
     model.cancel_requests.mark_unknown("cancel-command");
     let unknown = frame(&model, Theme::Light, 160, 28);
     assert!(unknown.contains("Cancel status unknown"));
-    assert!(!unknown.contains("Esc interrupt"));
+    assert!(!unknown.contains("esc to interrupt"));
 
     insta::assert_snapshot!(
         "cancellation_control_responsive_matrix",

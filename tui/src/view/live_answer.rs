@@ -1,9 +1,6 @@
-use ratatui::text::{Line, Span};
+use ratatui::text::Line;
 
-use crate::{
-    application::{LiveAnswer, LiveAnswerAvailability, LiveAnswerPhase},
-    Theme,
-};
+use crate::{application::LiveAnswer, Theme};
 
 use super::{
     conversation::live_cache::LiveRenderCache,
@@ -19,46 +16,27 @@ pub(super) fn render(
     cache: &mut LiveRenderCache,
 ) -> Vec<Line<'static>> {
     let colors = palette(theme);
-    let mut lines = vec![Line::from(vec![
-        RoleMarker::Agent.span(colors),
-        Span::styled(phase_copy(answer, width), colors.muted),
-    ])];
-    match answer.availability {
-        LiveAnswerAvailability::Unavailable => lines.push(Line::styled(
-            "  Live feedback unavailable · waiting for saved result",
-            colors.muted,
-        )),
-        LiveAnswerAvailability::Available => {
-            if !answer.presented_text.is_empty() {
-                lines.extend(cache.render_markdown(answer, theme, width));
-                if let Some(line) = lines.last_mut() {
-                    LiveCaret::for_output(
-                        answer.availability == LiveAnswerAvailability::Available,
-                        answer.ended,
-                        reduced_motion,
-                    )
-                    .append_to(line, colors);
-                }
+    let mut lines = if answer.presented_text.is_empty() {
+        Vec::new()
+    } else {
+        let mut rendered = cache.render_markdown(answer, theme, width);
+        if let Some(first) = rendered.first_mut() {
+            if first
+                .spans
+                .first()
+                .is_some_and(|span| span.content.as_ref() == "  ")
+            {
+                first.spans.remove(0);
             }
+            first.spans.insert(0, RoleMarker::Agent.span(colors));
         }
-    }
+        if let Some(last) = rendered.last_mut() {
+            LiveCaret::for_output(true, answer.ended, reduced_motion).append_to(last, colors);
+        }
+        rendered
+    };
     lines.push(Line::default());
     lines
-}
-
-fn phase_copy(answer: &LiveAnswer, width: u16) -> &'static str {
-    if answer.ended {
-        if width < 52 {
-            return "Awaiting saved result";
-        }
-        return "Waiting for durable result";
-    }
-    match answer.phase {
-        Some(LiveAnswerPhase::Preparing) => "Preparing context",
-        Some(LiveAnswerPhase::Generating) => "Writing…",
-        Some(LiveAnswerPhase::Finalizing) => "Finishing…",
-        None => "Working…",
-    }
 }
 
 #[cfg(test)]
@@ -100,8 +78,8 @@ mod tests {
             &mut cache,
         );
         let awaiting_text = line_text(&awaiting);
-        assert_eq!(awaiting_text.len(), 2, "status plus turn gap");
-        assert!(awaiting_text[0].contains("Preparing context"));
+        assert_eq!(awaiting_text.len(), 1, "only the turn gap remains");
+        assert!(!awaiting_text[0].contains("Preparing context"));
         assert!(!awaiting_text.join("\n").contains('▍'));
 
         projection.apply(
@@ -150,7 +128,7 @@ mod tests {
             true,
             &mut cache,
         );
-        assert_eq!(line_text(&lines)[0], "• Awaiting saved result");
+        assert_eq!(line_text(&lines)[0], "• Saved preview");
         assert!(unicode_width::UnicodeWidthStr::width(line_text(&lines)[0].as_str()) <= 36);
     }
 

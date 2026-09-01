@@ -2,16 +2,15 @@
 
 use ratatui::{buffer::Buffer, layout::Rect, text::Line, widgets::Widget};
 
-use crate::application::{AppModel, CancelRequestPhase, ExecutionState, TimelineTone};
+use crate::application::{
+    AppModel, CancelRequestPhase, ExecutionState, LiveAnswerAvailability, LiveAnswerPhase,
+};
 
 use super::{motion::status_motion, style::Palette, MotionFrame};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum TurnControlState {
-    Running {
-        transcript_owns_work: bool,
-        cancel_available: bool,
-    },
+    Running { cancel_available: bool },
     CancelRequesting,
     CancelAwaitingTerminal,
     CancelOutcomeUnknown,
@@ -25,7 +24,6 @@ fn project(model: &AppModel) -> Option<TurnControlState> {
         }
         Some(CancelRequestPhase::OutcomeUnknown) => Some(TurnControlState::CancelOutcomeUnknown),
         None if model.execution == ExecutionState::Following => Some(TurnControlState::Running {
-            transcript_owns_work: transcript_owns_work_indicator(model),
             cancel_available: model.overlay.is_none(),
         }),
         None => None,
@@ -106,51 +104,46 @@ fn line(model: &AppModel, colors: Palette, motion: MotionFrame) -> Option<Line<'
             ratatui::text::Span::styled(label, colors.title),
         ]));
     }
-    let TurnControlState::Running {
-        transcript_owns_work,
-        cancel_available,
-    } = state
-    else {
+    let TurnControlState::Running { cancel_available } = state else {
         unreachable!("cancellation states handled above")
     };
-    let mut line = Line::default();
-    let show_work = !transcript_owns_work;
-    let show_cancel = cancel_available;
-    if show_work {
-        line.push_span(ratatui::text::Span::styled(
-            status_motion(model, motion).execution_label,
-            colors.accent,
-        ));
+    let label = running_label(model, motion);
+    if cancel_available {
+        Some(Line::from(vec![
+            ratatui::text::Span::styled(label, colors.accent),
+            ratatui::text::Span::styled(" (esc to interrupt)", colors.muted),
+        ]))
+    } else {
+        Some(Line::styled(label, colors.accent))
     }
-    if show_work && show_cancel {
-        line.push_span(ratatui::text::Span::styled(" · ", colors.muted));
-    }
-    if show_cancel {
-        line.push_span(ratatui::text::Span::styled(" Esc ", colors.keycap));
-        line.push_span(ratatui::text::Span::styled("interrupt", colors.muted));
-    }
-    Some(line)
 }
 
-fn transcript_owns_work_indicator(model: &AppModel) -> bool {
-    model.live_answer.current().is_some()
-        || model.turn_blocks.last().is_some_and(|turn| {
-            turn.activities
-                .iter()
-                .any(|item| item.tone == TimelineTone::Active)
-        })
+fn running_label(model: &AppModel, motion: MotionFrame) -> String {
+    match model.live_answer.current() {
+        Some(answer) if answer.availability == LiveAnswerAvailability::Unavailable => {
+            "• Live feedback unavailable".into()
+        }
+        Some(answer) if answer.ended => "• Saving…".into(),
+        Some(answer) => match answer.phase {
+            Some(LiveAnswerPhase::Preparing) => "• Preparing…".into(),
+            Some(LiveAnswerPhase::Generating) => "• Writing…".into(),
+            Some(LiveAnswerPhase::Finalizing) => "• Finishing…".into(),
+            None => status_motion(model, motion).execution_label,
+        },
+        None => status_motion(model, motion).execution_label,
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::{
-        application::{Overlay, TimelineItem, TimelineRole},
+        application::{Overlay, TimelineItem, TimelineRole, TimelineTone},
         Theme,
     };
 
     #[test]
-    fn running_rail_keeps_cancel_control_and_deduplicates_visible_work() {
+    fn running_rail_keeps_one_composer_adjacent_lifecycle_voice() {
         let colors = super::super::palette(Theme::Mono);
         let mut model = AppModel {
             execution: ExecutionState::Following,
@@ -160,7 +153,7 @@ mod tests {
             line(&model, colors, MotionFrame::reduced())
                 .unwrap()
                 .to_string(),
-            "• Working… ·  Esc interrupt"
+            "• Working… (esc to interrupt)"
         );
 
         model.push_test_timeline_item(TimelineItem {
@@ -181,14 +174,16 @@ mod tests {
             line(&model, colors, MotionFrame::reduced())
                 .unwrap()
                 .to_string(),
-            " Esc interrupt"
+            "• Working… (esc to interrupt)"
         );
 
         model.overlay = Some(Overlay::Help);
-        assert!(line(&model, colors, MotionFrame::reduced())
-            .unwrap()
-            .spans
-            .is_empty());
+        assert_eq!(
+            line(&model, colors, MotionFrame::reduced())
+                .unwrap()
+                .to_string(),
+            "• Working…"
+        );
         model.turn_blocks.clear();
         assert_eq!(
             line(&model, colors, MotionFrame::reduced())
@@ -201,7 +196,7 @@ mod tests {
             line(&model, colors, MotionFrame::reduced())
                 .unwrap()
                 .to_string(),
-            "• Working… ·  Esc interrupt"
+            "• Working… (esc to interrupt)"
         );
     }
 

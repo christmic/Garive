@@ -486,7 +486,25 @@ async fn shipping_tui_keeps_input_help_and_cancel_responsive_during_a_live_flood
         );
     }
     fs::write(&host_accepted, b"ready").unwrap();
-    wait_for(&accepted_seen).await;
+    if tokio::time::timeout(Duration::from_secs(10), async {
+        while !accepted_seen.exists() {
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    })
+    .await
+    .is_err()
+    {
+        stop.store(true, Ordering::Relaxed);
+        flood.await.unwrap();
+        let expect_code = expect.await.unwrap();
+        let transcript = fs::read_to_string(&log).unwrap_or_default();
+        panic!(
+            "fairness script missed accepted cancellation: code={expect_code}, stopping={}, cancelling={}, draft={}",
+            transcript.contains("Stopping…"),
+            transcript.contains("Cancelling…"),
+            transcript.contains("draft-under-flood")
+        );
+    }
     stop.store(true, Ordering::Relaxed);
     flood.await.unwrap();
     assert!(
@@ -741,8 +759,8 @@ const FAIRNESS_EXPECT_SCRIPT: &str = r#"
     encoding system utf-8
     log_user 0
     proc mark {path} { set file [open $path w]; puts $file ready; close $file }
-    proc wait_file {path code} {
-        for {set attempt 0} {$attempt < 1000} {incr attempt} {
+    proc wait_file {path code attempts} {
+        for {set attempt 0} {$attempt < $attempts} {incr attempt} {
             if {[file exists $path]} { return }
             after 10
         }
@@ -803,17 +821,15 @@ const FAIRNESS_EXPECT_SCRIPT: &str = r#"
     send "\033"
     mark $env(GARIVE_FAIRNESS_CANCELLED)
     after 100
-    send "\014"
-    must "\033\[2J" 34
-    must "Cancelling…" 35
+    must_redrawn "Cancelling…" 35
     must "draft-under-flood" 36
     mark $env(GARIVE_FAIRNESS_REQUESTING)
-    wait_file $env(GARIVE_FAIRNESS_HOST_ACCEPTED) 37
+    wait_file $env(GARIVE_FAIRNESS_HOST_ACCEPTED) 37 2000
     must_redrawn "Stopping…" 39
-    must "draft-under-flood" 40
+    must_redrawn "draft-under-flood" 40
     mark $env(GARIVE_FAIRNESS_ACCEPTED)
     set timeout 10
-    wait_file $env(GARIVE_FAIRNESS_TERMINAL) 41
+    wait_file $env(GARIVE_FAIRNESS_TERMINAL) 41 1000
     must_redrawn "stopped" 42
     send "x"
     after 100

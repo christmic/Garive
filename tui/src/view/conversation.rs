@@ -86,7 +86,7 @@ struct ViewportInsets {
 impl ViewportInsets {
     const fn resolve(available_height: u16) -> Self {
         Self {
-            horizontal: 2,
+            horizontal: 0,
             top: if available_height > 8 { 1 } else { 0 },
         }
     }
@@ -357,10 +357,10 @@ mod tests {
     fn compact_transcript_drops_decorative_top_inset_before_semantic_rows() {
         let model = AppModel::default();
         let compact = viewport_rect(&model, Rect::new(0, 0, 40, 8));
-        assert_eq!(compact, Rect::new(2, 0, 36, 8));
+        assert_eq!(compact, Rect::new(0, 0, 40, 8));
 
         let standard = viewport_rect(&model, Rect::new(0, 0, 100, 9));
-        assert_eq!(standard, Rect::new(2, 1, 96, 8));
+        assert_eq!(standard, Rect::new(0, 1, 100, 8));
     }
 
     #[test]

@@ -48,7 +48,7 @@ pub(super) fn render(
         } else if model.execution == ExecutionState::Following {
             "Draft while current Turn runs"
         } else {
-            "Ask Garive anything  ·  / commands"
+            "Ask Garive anything"
         };
         Text::from(Line::styled(
             placeholder,

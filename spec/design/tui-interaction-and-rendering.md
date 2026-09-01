@@ -44,7 +44,7 @@ remote authentication remain unavailable until their owning slices exist.
 • The Runtime commits the durable result while the live tail remains
   replaceable.▍
 
-  Esc interrupt
+• Writing… (esc to interrupt)
 › Ask a follow-up
 ```
 
@@ -111,10 +111,15 @@ authority. It offers explicit defer, exact retry, or abandonment actions
 allowed by the state.
 Input ownership is also a presentation invariant. While any overlay is open,
 the background `HintLine` is absent and the running-Turn rail never advertises
-`Esc` cancellation. The rail may retain passive `Agent running` status when the
-transcript does not already expose work; otherwise it is empty. The overlay
+`Esc` cancellation. The rail retains only its passive phase label. The overlay
 alone names the currently executable `Esc`, `Enter`, or decision action. Closing
 the overlay restores the background cue without changing execution state.
+While a Turn runs, this Composer-adjacent rail is the single lifecycle voice:
+`Preparing…`, `Writing…`, `Finishing…`, `Saving…`, or an honest unavailability
+state. Before the first presented text delta, `LiveAnswer` contributes no
+transcript row. Once text exists, the Agent `•` shares its first Markdown line;
+phase copy is never repeated above that answer and the interrupt binding never
+floats as a separate row.
 After cancellation is admitted, the same Turn-control component is the only
 status voice adjacent to the retained draft. It replaces generic
 frozen/running copy with `Cancelling…`; exact Host acceptance changes it to
