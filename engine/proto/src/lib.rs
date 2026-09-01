@@ -5,6 +5,7 @@
 
 mod process_digest;
 mod process_frame;
+mod process_state;
 
 pub use process_digest::{process_receipt_digest, process_workload_digest, ProcessDigestError};
 pub use process_frame::{
@@ -12,6 +13,7 @@ pub use process_frame::{
     decode_host_response_frame, encode_process_frame, ProcessFrameError,
     PROCESS_FRAME_MAX_PAYLOAD_BYTES,
 };
+pub use process_state::{ProcessStateError, ProcessStateReducer};
 
 /// Experimental common Garive protocol package.
 pub mod garive {
