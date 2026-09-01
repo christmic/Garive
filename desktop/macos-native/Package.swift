@@ -9,6 +9,7 @@ let package = Package(
         .library(name: "GariveNativeXPC", targets: ["GariveNativeXPC"]),
         .library(name: "GariveComputerUse", targets: ["GariveComputerUse"]),
         .library(name: "GariveProcessIsolation", targets: ["GariveProcessIsolation"]),
+        .library(name: "GariveProcessService", targets: ["GariveProcessService"]),
     ],
     dependencies: [
         .package(name: "GariveProtocolSchema", path: "../.."),
@@ -22,6 +23,13 @@ let package = Package(
                 .product(name: "GariveProcessProtocol", package: "GariveProtocolSchema"),
             ]
         ),
+        .target(
+            name: "GariveProcessService",
+            dependencies: [
+                "GariveNativeXPC",
+                .product(name: "GariveProcessProtocol", package: "GariveProtocolSchema"),
+            ]
+        ),
         .testTarget(
             name: "GariveComputerUseTests",
             dependencies: ["GariveComputerUse", "GariveNativeXPC"]
@@ -29,6 +37,14 @@ let package = Package(
         .testTarget(
             name: "GariveProcessIsolationTests",
             dependencies: ["GariveProcessIsolation"]
+        ),
+        .testTarget(
+            name: "GariveProcessServiceTests",
+            dependencies: [
+                "GariveNativeXPC",
+                "GariveProcessService",
+                .product(name: "GariveProcessProtocol", package: "GariveProtocolSchema"),
+            ]
         ),
     ]
 )
