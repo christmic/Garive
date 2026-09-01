@@ -32,6 +32,7 @@ import { createTranslator, resolveDesktopLocale, type MessageKey } from "./i18n"
 import { shouldSubmitComposer } from "./composer";
 import { isNearConversationTail } from "./conversationTail";
 import { nextDesktopZoom } from "./zoom";
+import { formatThreadMarkdown } from "./threadExport";
 import { useDesktopProduct } from "./app/useDesktopProduct";
 import type { ProductEffectPort } from "./app/ProductRuntime";
 import type { AppIntent, DefinitionItem, SessionItem } from "./state/controller";
@@ -688,6 +689,11 @@ export function App({ client = "desktop", webCapabilities, createProductPort,
           <div className="topbar-actions">
             {visibleUsage && screen !== "settings" && <UsageBudgetTrigger value={visibleUsage} label={t("usage.trigger")}
               onOpen={() => { setSettingsSection("usage"); setScreen("settings"); }} />}
+            {screen === "work" && state.messages.length > 0 && <button className="topbar-text-action"
+              type="button" aria-label={t("thread.exportAria")} title={t("thread.exportAria")}
+              onClick={() => downloadMarkdown(state.sessionId ?? "work", formatThreadMarkdown(title,
+                state.messages, { user: t("thread.user"), assistant: t("thread.assistant") }), "garive-thread")}>
+              <Icon name="download" /><span>{t("thread.export")}</span></button>}
             {screen === "work" && state.messages.length > 0 && <button className="icon-button"
               type="button" aria-label={t("shell.toggleInspector")} title={`${t("shell.toggleInspector")} (⌘⇧A)`}
               aria-expanded={state.inspectorOpen} aria-controls="work-inspector"
@@ -1568,11 +1574,11 @@ function recentLabel(session: RecentTask) {
     : `Work · ${opened.toLocaleDateString(undefined, { month: "short", day: "numeric" })}`;
 }
 
-function downloadMarkdown(id: string, text: string) {
+function downloadMarkdown(id: string, text: string, prefix = "garive-result") {
   const url = URL.createObjectURL(new Blob([text], { type: "text/markdown;charset=utf-8" }));
   const anchor = document.createElement("a");
   anchor.href = url;
-  anchor.download = `garive-result-${id.slice(0, 12)}.md`;
+  anchor.download = `${prefix}-${id.slice(0, 12)}.md`;
   anchor.click();
   URL.revokeObjectURL(url);
 }

@@ -109,14 +109,16 @@ pub(super) fn acquire(
                     return Err(ExecutionLeaseError::RecoveryRequired);
                 }
                 generation
-            } else {
-                if expires > request.now_ms {
-                    return Err(ExecutionLeaseError::AlreadyHeld);
-                }
+            } else if execution != request.execution_id.as_str() {
                 require_terminal(transaction, &request.turn_id, &execution)?;
                 generation
                     .checked_add(1)
                     .ok_or(ExecutionLeaseError::Storage)?
+            } else {
+                if expires > request.now_ms {
+                    return Err(ExecutionLeaseError::AlreadyHeld);
+                }
+                return Err(ExecutionLeaseError::RecoveryRequired);
             }
         }
     };

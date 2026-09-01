@@ -227,7 +227,10 @@ execution state appears once, attached to the composer/status rail. Durable
 task state remains in its rail row. Local host identity and readiness occupy a
 non-interactive rail-footer block unless a real account or host menu is
 available. Placeholder initials, logo buttons and inert account menus are
-forbidden. Web preserves this desktop composition without reserving the native
+forbidden. A completed or active thread exposes one quiet 30px text action for
+real Markdown export; it does not label a local download as cloud sharing.
+Below 760px the visible label collapses while the accessible name remains.
+Web preserves this desktop composition without reserving the native
 traffic-light safe zone.
 
 When a file is open, the workbench has two quiet chrome rows: the first owns one

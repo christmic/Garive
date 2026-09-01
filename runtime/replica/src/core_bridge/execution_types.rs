@@ -30,6 +30,8 @@ pub enum DurableExecutionError {
     Lease(ExecutionLeaseError),
     /// An internal synchronization boundary was poisoned.
     Coordination,
+    /// A durable pre-start F0 position must be continued by startup recovery.
+    RecoverableInterruption,
 }
 
 /// Redacted failure from terminal Host publication after commit.
@@ -63,6 +65,9 @@ impl fmt::Display for DurableExecutionError {
             Self::Ledger(error) => write!(formatter, "durable execution ledger failed: {error}"),
             Self::Lease(error) => write!(formatter, "durable execution lease failed: {error}"),
             Self::Coordination => formatter.write_str("durable execution coordination failed"),
+            Self::RecoverableInterruption => {
+                formatter.write_str("durable execution requires F0 startup recovery")
+            }
         }
     }
 }
@@ -73,7 +78,7 @@ impl Error for DurableExecutionError {
             Self::Command(error) => Some(error),
             Self::Ledger(error) => Some(error),
             Self::Lease(error) => Some(error),
-            Self::Coordination => None,
+            Self::Coordination | Self::RecoverableInterruption => None,
         }
     }
 }

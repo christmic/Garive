@@ -189,7 +189,8 @@ pub fn reconstruct_local_start(
     let completed_iterations =
         u32::try_from(number(&execution_payload, &["completed_iterations"])?)
             .map_err(|_| LocalReconstructionError::ReconstructionFailed)?;
-    number(&execution_payload, &["recovery_ordinal"])?;
+    let recovery_ordinal = number(&execution_payload, &["recovery_ordinal"])?;
+    let is_initial_start = is_start && recovery_ordinal == 0;
     let last_safe_position = number(&execution_payload, &["through_position"])?;
     let max_iterations = number(&execution_payload, &["limits", "max_iterations"])?;
     let max_iterations = u32::try_from(max_iterations)
@@ -239,9 +240,13 @@ pub fn reconstruct_local_start(
             &started_payload,
             "definition_revision",
         )?)?,
-        entry: if is_start {
+        entry: if is_initial_start {
             AgentEntry::Start {
                 trusted_input: trusted_input.to_owned(),
+            }
+        } else if is_start {
+            AgentEntry::Continue {
+                resume_input: ResumeInput::ResourceReady,
             }
         } else {
             AgentEntry::Continue {
@@ -250,7 +255,11 @@ pub fn reconstruct_local_start(
         },
         cursor: AgentCursor {
             completed_iterations,
-            last_durable_position: if is_start { 0 } else { last_safe_position },
+            last_durable_position: if is_initial_start {
+                0
+            } else {
+                last_safe_position
+            },
         },
         context_request: ContextRequest {
             session_id: committed.session_id.as_str().to_owned(),

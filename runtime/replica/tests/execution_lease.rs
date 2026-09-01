@@ -93,6 +93,7 @@ fn lease_takeover_requires_expiry_and_durable_recovery() {
     .unwrap();
     commit_planned_turn(&mut ledger, session.clone(), 2, &recovery).unwrap();
     competing.execution_id = recovery.execution_id.clone().unwrap();
+    competing.now_ms = 105;
     let replacement = ledger.acquire_execution_lease(&competing).unwrap();
     assert_eq!(replacement.generation, 2);
 

@@ -17,7 +17,7 @@ use crate::{
     execute_durable_agent_with_capabilities, execute_durable_model_only_with_capabilities,
     reconstruct_local_start, AuthorityPort, CommittedTurn, ExecutorPort, F0ExecutionGovernance,
     F0GovernanceContext, F0RecoveryContentPort, LiveOutputEndReason, LiveOutputHub, LiveOutputSink,
-    LocalExecutionAttempt, LocalExecutionPolicy, LocalReconstructionError,
+    LocalExecutionAttempt, LocalExecutionPolicy, LocalReconstructionError, LocalRecoveryReport,
     PreparedAgentCapabilities, SafetyPort, SandboxAdmissionPort, SqliteLedger,
     TerminalPublicationError, TerminalPublisher, TurnDispatchError, TurnDispatcher,
 };
@@ -227,6 +227,35 @@ impl LocalExecutionWorker {
         Ok(worker)
     }
 
+    /// Applies one explicitly bounded startup recovery scan without dispatching its results.
+    pub fn recover_startup(
+        &self,
+        max_recoveries: u64,
+        max_turns: usize,
+        max_arguments_bytes: usize,
+        recorded_at: &str,
+    ) -> Result<LocalRecoveryReport, LocalWorkerError> {
+        let mut ledger = SqliteLedger::open(&self.database_path)
+            .map_err(|_| LocalWorkerError::DurabilityUnavailable)?;
+        match &self.governed {
+            Some(factory) => crate::recover_local_dispatches_with_f0_bounded(
+                &mut ledger,
+                max_recoveries,
+                max_turns,
+                recorded_at,
+                factory.as_ref(),
+                max_arguments_bytes,
+            ),
+            None => crate::recover_local_dispatches_bounded(
+                &mut ledger,
+                max_recoveries,
+                max_turns,
+                recorded_at,
+            ),
+        }
+        .map_err(|_| LocalWorkerError::StartupRecoveryFailed)
+    }
+
     /// Reconstructs and executes one already committed start transaction.
     pub async fn execute(
         &self,
@@ -388,6 +417,8 @@ pub enum LocalWorkerError {
     KnowledgePreparationFailed,
     /// Durable Core execution did not reach a committed terminal.
     ExecutionFailed,
+    /// Bounded startup recovery could not classify or continue durable work.
+    StartupRecoveryFailed,
 }
 impl LocalWorkerError {
     /// Returns the stable operational code.
@@ -405,6 +436,7 @@ impl LocalWorkerError {
             Self::MemoryPreparationFailed => "memory_preparation_failed",
             Self::KnowledgePreparationFailed => "knowledge_preparation_failed",
             Self::ExecutionFailed => "execution_failed",
+            Self::StartupRecoveryFailed => "startup_recovery_failed",
         }
     }
 }

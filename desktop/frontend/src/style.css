@@ -638,6 +638,9 @@ kbd { font-size: var(--text-2xs); }
 .topbar-title .local-badge, .topbar-actions { flex: none; }
 .local-badge { min-height: 22px; padding: 1px 7px; font-size: var(--text-2xs); }
 .topbar-actions { gap: 5px; }
+.topbar-text-action { display: flex; align-items: center; gap: 5px; height: 30px; padding: 0 8px; border: 0; border-radius: var(--radius-control); color: var(--text-secondary); background: transparent; font-size: var(--text-xs); }
+.topbar-text-action:hover { color: var(--text-primary); background: var(--surface-hover); }
+.topbar-text-action svg { width: 13px; }
 .usage-trigger { min-height: 34px; border-color: transparent; background: transparent; font-size: var(--text-xs); }
 .usage-trigger:hover { border-color: transparent; background: var(--surface-hover); }
 .icon-button { width: 34px; height: 34px; border-radius: var(--radius-control); }
@@ -913,6 +916,8 @@ kbd { font-size: var(--text-2xs); }
 .settings-panel .usage-summary { margin-top: 20px; }
 
 @media (max-width: 760px) {
+  .topbar-text-action { display: grid; place-items: center; width: 34px; padding: 0; }
+  .topbar-text-action span { display: none; }
   .settings-page { width: calc(100% - 32px); }
   .settings-heading { padding: 24px 0 14px; }
   .settings-workbench { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); gap: 0; }

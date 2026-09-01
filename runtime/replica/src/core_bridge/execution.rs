@@ -4,9 +4,10 @@ use std::{
 };
 
 use garive_core::{
-    execute_agent_with_preparation, execute_model_only, AgentEvent, AgentEventKind,
-    AgentExecutionPorts, AgentToolCapabilities, AgentTurnRequest, CandidateKind, ClockPort,
-    ContextCandidate, ContextPort, ContextPurpose, EventSink, FactRef, PortFailure, Retention,
+    execute_agent_with_preparation, execute_model_only, merge_context_candidates, AgentEvent,
+    AgentEventKind, AgentExecutionPorts, AgentFailureReason, AgentOutcome, AgentToolCapabilities,
+    AgentTurnRequest, CandidateKind, ClockPort, ContextCandidate, ContextPort, ContextPortError,
+    ContextPurpose, ContextRequest, EventSink, FactRef, PortFailure, Retention,
     ToolPreparationPort, Visibility,
 };
 use garive_ledger::{
@@ -18,7 +19,10 @@ use garive_llm::{
 };
 use serde_json::json;
 
-use crate::{ExecutionLease, RuntimeCommandError, SqliteLedger, SqliteLedgerError};
+use crate::{
+    derive_runtime_recovery, select_runtime_recovery, ExecutionLease, RuntimeCommandError,
+    RuntimeRecoveryAction, SqliteLedger, SqliteLedgerError,
+};
 
 use super::encoding::digest;
 use super::{
@@ -207,8 +211,14 @@ async fn execute_durable_model_only_inner(
         turn_id: &config.model.turn_id,
     };
     let report = {
+        let mut durable_context = DurableContextPort {
+            upstream: context,
+            coordinator: &coordinator,
+            session_id: &config.session_id,
+            turn_id: &config.model.turn_id,
+        };
         let mut ports = AgentExecutionPorts {
-            context,
+            context: &mut durable_context,
             model: &durable_model,
             events: &mut gated_events,
             cancellation: &durable_cancellation,
@@ -235,6 +245,9 @@ fn finish_durable_execution(
     if let Some(failure) = coordinator.failure.take() {
         return Err(failure);
     }
+    if !coordinator.cancellation_requested && recoverable_f0_interruption(&coordinator, &report)? {
+        return Err(DurableExecutionError::RecoverableInterruption);
+    }
     let terminal = plan_core_terminal(
         &CoreTerminalContext {
             turn_id: config.model.turn_id.clone(),
@@ -255,6 +268,32 @@ fn finish_durable_execution(
         terminal_commit,
         publication,
     })
+}
+
+fn recoverable_f0_interruption(
+    coordinator: &CommitCoordinator<'_>,
+    report: &garive_core::ExecutionReport,
+) -> Result<bool, DurableExecutionError> {
+    if !matches!(
+        report.outcome,
+        AgentOutcome::Failed {
+            reason: AgentFailureReason::PortFailure
+        }
+    ) {
+        return Ok(false);
+    }
+    let snapshot = coordinator
+        .ledger
+        .load_turn(&coordinator.turn_id)
+        .map_err(DurableExecutionError::Ledger)?;
+    let recovery = derive_runtime_recovery(&snapshot, u64::MAX)
+        .map_err(|_| DurableExecutionError::Command(RuntimeCommandError::InvariantViolation))?;
+    Ok(matches!(
+        select_runtime_recovery(recovery),
+        RuntimeRecoveryAction::ReevaluateEffectSafety
+            | RuntimeRecoveryAction::ResumeEffectAdmission
+            | RuntimeRecoveryAction::RevalidateAndDispatchEffect
+    ))
 }
 
 /// Runs F0-governed Core after atomically committing one exact S0 activation.
@@ -380,8 +419,14 @@ async fn execute_durable_agent_inner(
         let mut effects = effects
             .with_f0_governance(f0.safety, f0.sandbox, f0.context)
             .map_err(|_| DurableExecutionError::Command(RuntimeCommandError::InvalidCommand))?;
+        let mut durable_context = DurableContextPort {
+            upstream: context,
+            coordinator: &coordinator,
+            session_id: &config.session_id,
+            turn_id: &config.model.turn_id,
+        };
         let mut ports = AgentExecutionPorts {
-            context,
+            context: &mut durable_context,
             model: &durable_model,
             events: &mut gated_events,
             cancellation: &durable_cancellation,
@@ -397,6 +442,85 @@ async fn execute_durable_agent_inner(
         .await
     };
     finish_durable_execution(coordinator, config, report, publisher)
+}
+
+struct DurableContextPort<'a, 'ledger> {
+    upstream: &'a mut dyn ContextPort,
+    coordinator: &'a Mutex<CommitCoordinator<'ledger>>,
+    session_id: &'a SessionId,
+    turn_id: &'a TurnId,
+}
+
+impl ContextPort for DurableContextPort<'_, '_> {
+    fn read_candidates(
+        &mut self,
+        request: &ContextRequest,
+        rebuild_attempt: u32,
+    ) -> Result<Vec<ContextCandidate>, ContextPortError> {
+        let base = self.upstream.read_candidates(request, rebuild_attempt)?;
+        if request.session_id != self.session_id.as_str() {
+            return Err(ContextPortError::PortFailure);
+        }
+        let observation_kind =
+            FactKind::new("effect.observation").map_err(|_| ContextPortError::PortFailure)?;
+        let kinds = BTreeSet::from([observation_kind]);
+        let coordinator = self
+            .coordinator
+            .lock()
+            .map_err(|_| ContextPortError::PortFailure)?;
+        let facts = coordinator
+            .ledger
+            .read_facts(
+                self.session_id,
+                request.after_position.unwrap_or(0),
+                request.through_position,
+                Some(&kinds),
+            )
+            .map_err(|_| ContextPortError::PortFailure)?;
+        let observations = facts
+            .into_iter()
+            .filter(|fact| fact.turn_id.as_ref() == Some(self.turn_id))
+            .map(|fact| {
+                let value: serde_json::Value = serde_json::from_str(fact.payload.as_json())
+                    .map_err(|_| ContextPortError::PortFailure)?;
+                let model_call_id = value
+                    .get("model_call_id")
+                    .and_then(serde_json::Value::as_str)
+                    .ok_or(ContextPortError::PortFailure)?;
+                let binding = value
+                    .get("observation")
+                    .and_then(serde_json::Value::as_object)
+                    .ok_or(ContextPortError::PortFailure)?;
+                let canonical = CanonicalPayload::from_canonical_parts(
+                    binding
+                        .get("inline_utf8")
+                        .and_then(serde_json::Value::as_str)
+                        .ok_or(ContextPortError::PortFailure)?
+                        .to_owned(),
+                    binding
+                        .get("digest")
+                        .and_then(serde_json::Value::as_str)
+                        .ok_or(ContextPortError::PortFailure)?
+                        .to_owned(),
+                )
+                .map_err(|_| ContextPortError::PortFailure)?;
+                Ok(ContextCandidate {
+                    fact_ref: FactRef {
+                        session_id: request.session_id.clone(),
+                        position: fact.position,
+                    },
+                    kind: CandidateKind::ToolObservation,
+                    retention: Retention::Required,
+                    visibility: Visibility::Visible,
+                    items: vec![ModelInputItem::ToolObservation {
+                        model_call_id: model_call_id.to_owned(),
+                        result_json: canonical.as_json().to_owned(),
+                    }],
+                })
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        merge_context_candidates(base, &observations).map_err(|_| ContextPortError::PortFailure)
+    }
 }
 
 /// Runs the complete tool-capable Core loop with mandatory Prepared-v3 governance.

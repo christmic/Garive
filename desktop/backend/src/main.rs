@@ -853,7 +853,9 @@ fn main() {
             if recovered {
                 match state.install_from_with_workspaces(&provider, workspaces.clone(), "main") {
                     Ok(installed) => {
-                        if setup.recover(installed).is_err() {
+                        let runtime_recovered = !installed
+                            || tauri::async_runtime::block_on(state.recover_startup()).is_ok();
+                        if !runtime_recovered || setup.recover(installed).is_err() {
                             setup
                                 .complete_startup(false, Some("setup_recovery_failed"))
                                 .map_err(|error| stable_setup_error(error.code()))?;
