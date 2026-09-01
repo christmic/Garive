@@ -39,18 +39,18 @@ use garive_memory::{MemoryAuthorizedScope, MemoryDocumentLimits, MemoryScope, Me
 use garive_plan::{PlanBoundsV1, PlanStepId, PlanStepV1};
 use garive_runtime::{
     commit_goal_command, plan_core_terminal, plan_create_goal, reconstruct_goal,
-    start_initial_goal_plan_proposal_execution, CatalogueCapabilityPreparationFactory,
-    CataloguePlanStepDispatchFactory, CommittedTurn, CoreTerminalContext, GoalCommandContext,
-    HostClock, KnowledgeConnector, KnowledgeConnectorFuture, KnowledgeConnectorOutcome,
-    LiveHostLimits, LiveOutputEventKind, LocalCapabilityPreparationFactory, LocalExecutionAttempt,
-    LocalExecutionPolicy, LocalGovernedExecution, LocalGovernedExecutionFactory,
-    LocalKnowledgeSystemBinding, LocalMemorySystemBinding, LocalWorkerError, MemoryControlAction,
-    MemoryControlGrant, PlanAdmissionDecision, PlanAdmissionInput, PlanAdmissionPolicy,
-    PlanFailureDecision, PlanFailureInput, PlanFailurePolicy, PlanProposalContent,
-    PlanProposalFuture, PlanProposalPort, PlanStepDispatchFactory, PlanStepDispatchInput,
-    ProcessBackendHostConfig, ProcessExecutable, ProcessLane, ProcessLaneRegistry,
-    RuntimeAgentCatalogue, SafetyFuture, SafetyPort, SqliteLedger, T1HostSystemConfig,
-    KEYWORD_CURRENT_INPUT_REVISION, USER_DECLARED_PUSH_REVISION,
+    reconstruct_plan_graph, start_initial_goal_plan_proposal_execution,
+    CatalogueCapabilityPreparationFactory, CataloguePlanStepDispatchFactory, CommittedTurn,
+    CoreTerminalContext, GoalCommandContext, HostClock, KnowledgeConnector,
+    KnowledgeConnectorFuture, KnowledgeConnectorOutcome, LiveHostLimits, LiveOutputEventKind,
+    LocalCapabilityPreparationFactory, LocalExecutionAttempt, LocalExecutionPolicy,
+    LocalGovernedExecution, LocalGovernedExecutionFactory, LocalKnowledgeSystemBinding,
+    LocalMemorySystemBinding, LocalWorkerError, MemoryControlAction, MemoryControlGrant,
+    PlanAdmissionDecision, PlanAdmissionInput, PlanAdmissionPolicy, PlanFailureDecision,
+    PlanFailureInput, PlanFailurePolicy, PlanProposalContent, PlanProposalFuture, PlanProposalPort,
+    PlanStepDispatchFactory, PlanStepDispatchInput, ProcessBackendHostConfig, ProcessExecutable,
+    ProcessLane, ProcessLaneRegistry, RuntimeAgentCatalogue, SafetyFuture, SafetyPort,
+    SqliteLedger, T1HostSystemConfig, KEYWORD_CURRENT_INPUT_REVISION, USER_DECLARED_PUSH_REVISION,
 };
 use garive_tools::{T1_APPLY_PATCH, T1_READ_TEXT};
 use sha2::{Digest, Sha256};
@@ -601,6 +601,108 @@ async fn desktop_goal_pump_requires_policy_before_failed_plan_closes_goal() {
     assert!(failure.payload.as_json().contains("failure-policy:test-v1"));
 }
 
+#[tokio::test]
+async fn desktop_goal_pump_replans_failed_revision_before_retrying_work() {
+    let directory = tempdir().unwrap();
+    let database = directory.path().join("goal-replan.sqlite3");
+    let mut config = desktop_host_config(
+        &database,
+        Arc::new(RejectingThenCompletingModel(AtomicU64::new(0))),
+    );
+    config.plan_admission_policy = Some(Arc::new(AdoptReplacement));
+    config.plan_failure_policy = Some(Arc::new(ReplanFirstRevision));
+    config.plan_proposal_port = Some(Arc::new(ReplanningProposal(AtomicU64::new(0))));
+    let governed = DesktopWorkspaceExecutionFactory::new(
+        database.clone(),
+        DesktopWorkspaceService::default(),
+        "main",
+    )
+    .unwrap();
+    let host = DesktopHost::new_governed(config, Arc::new(governed)).unwrap();
+    let session_id = host.create_session("definition-main").unwrap();
+    let session = SessionId::try_from(session_id.as_str()).unwrap();
+    let mut ledger = SqliteLedger::open(&database).unwrap();
+    let opened = ledger.read_facts(&session, 0, 1, None).unwrap().remove(0);
+    let goal = GoalDefinitionV1::new(
+        GoalId::new("goal-pump").unwrap(),
+        "Complete one installed Plan",
+        vec![GoalCriterion::DurableFact {
+            criterion_id: GoalCriterionId::new("session-opened").unwrap(),
+            fact_kind: "session.opened".into(),
+            subject_digest: opened.payload.sha256().into(),
+        }],
+        GoalScopeV1::new(Some(session_id.clone()), []).unwrap(),
+        GoalBoundsV1::new(1, 2, 1, None, None).unwrap(),
+        None,
+        [],
+    )
+    .unwrap();
+    let created = plan_create_goal(
+        &ledger,
+        &session,
+        &GoalCommandContext {
+            command_id: "goal-replan-create".into(),
+            actor_reference: "user:test".into(),
+            recorded_at: "2026-08-29T00:00:00Z".into(),
+        },
+        goal,
+    )
+    .unwrap();
+    commit_goal_command(&mut ledger, session.clone(), 1, &created).unwrap();
+    drop(ledger);
+
+    let mut executions = 0;
+    for advance in 0..20 {
+        match host.drive_goal(&session_id, "goal-pump", 1).await {
+            Ok(report) => executions += report.executions,
+            Err(error) => {
+                let ledger = SqliteLedger::open(&database).unwrap();
+                let kinds = ledger
+                    .read_facts(&session, 0, u64::MAX, None)
+                    .unwrap()
+                    .into_iter()
+                    .map(|fact| fact.kind.as_str().to_owned())
+                    .collect::<Vec<_>>();
+                panic!("advance {advance} failed with {error:?}: {kinds:?}");
+            }
+        }
+        let ledger = SqliteLedger::open(&database).unwrap();
+        if reconstruct_goal(&ledger, &session, "goal-pump")
+            .unwrap()
+            .snapshot
+            .state()
+            .is_terminal()
+        {
+            break;
+        }
+    }
+    assert_eq!(executions, 2);
+    let ledger = SqliteLedger::open(database).unwrap();
+    assert_eq!(
+        reconstruct_goal(&ledger, &session, "goal-pump")
+            .unwrap()
+            .snapshot
+            .state(),
+        GoalState::Succeeded
+    );
+    let graph = reconstruct_plan_graph(&ledger, &session).unwrap();
+    assert_eq!(graph.len(), 2);
+    assert!(graph.values().any(|plan| {
+        plan.snapshot.definition().plan_revision() == 1
+            && plan.snapshot.state() == garive_plan::PlanState::Superseded
+    }));
+    let kinds = ledger
+        .read_facts(&session, 0, u64::MAX, None)
+        .unwrap()
+        .into_iter()
+        .map(|fact| fact.kind.as_str().to_owned())
+        .collect::<Vec<_>>();
+    assert!(kinds.contains(&"plan.replan.admitted".into()));
+    assert!(kinds
+        .windows(2)
+        .any(|pair| pair == ["plan.superseded", "plan.adopted"]));
+}
+
 struct AdoptExactProposal;
 impl PlanAdmissionPolicy for AdoptExactProposal {
     fn decide(&self, input: &PlanAdmissionInput) -> PlanAdmissionDecision {
@@ -627,6 +729,52 @@ impl PlanFailurePolicy for FailExhaustedPlan {
     }
 }
 
+struct ReplanFirstRevision;
+impl PlanFailurePolicy for ReplanFirstRevision {
+    fn decide(&self, input: &PlanFailureInput) -> PlanFailureDecision {
+        assert_eq!(input.plan_revision, 1);
+        assert_eq!(input.failed_step_ids, ["complete"]);
+        PlanFailureDecision::Replan {
+            policy_reference: "failure-policy:replan-v1".into(),
+        }
+    }
+}
+
+struct AdoptReplacement;
+impl PlanAdmissionPolicy for AdoptReplacement {
+    fn decide(&self, input: &PlanAdmissionInput) -> PlanAdmissionDecision {
+        assert!(matches!(
+            (input.plan_revision, input.prior_plan_revision),
+            (1, None) | (2, Some(1))
+        ));
+        PlanAdmissionDecision::Adopt {
+            policy_reference: format!("policy:test-v{}", input.plan_revision),
+        }
+    }
+}
+
+struct ReplanningProposal(AtomicU64);
+impl PlanProposalPort for ReplanningProposal {
+    fn proposer_reference(&self) -> &str {
+        "planner:replan-v1"
+    }
+
+    fn propose<'a>(
+        &'a self,
+        request: &'a garive_runtime::PlanProposalRequest,
+    ) -> PlanProposalFuture<'a> {
+        Box::pin(async move {
+            let call = self.0.fetch_add(1, Ordering::SeqCst);
+            assert_eq!(request.replan.is_some(), call == 1);
+            if let Some(replan) = &request.replan {
+                assert_eq!(replan.source_plan_revision, 1);
+                assert_eq!(replan.failed_step_ids, ["complete"]);
+            }
+            Ok(single_step_proposal(request))
+        })
+    }
+}
+
 struct SingleStepProposal;
 impl PlanProposalPort for SingleStepProposal {
     fn proposer_reference(&self) -> &str {
@@ -641,19 +789,50 @@ impl PlanProposalPort for SingleStepProposal {
             assert_eq!(request.goal_id, "goal-pump");
             assert_eq!(request.goal_revision, 1);
             assert_eq!(request.objective, "Complete one installed Plan");
-            Ok(PlanProposalContent {
-                steps: vec![PlanStepV1::new(
-                    PlanStepId::new("complete").unwrap(),
-                    request.objective.clone(),
-                    [],
-                    request.criterion_ids.iter().cloned(),
-                    [],
-                    Vec::<String>::new(),
-                    1,
-                )
-                .unwrap()],
-                bounds: PlanBoundsV1::new(1, 1, 1, None, None).unwrap(),
-            })
+            Ok(single_step_proposal(request))
+        })
+    }
+}
+
+fn single_step_proposal(request: &garive_runtime::PlanProposalRequest) -> PlanProposalContent {
+    PlanProposalContent {
+        steps: vec![PlanStepV1::new(
+            PlanStepId::new("complete").unwrap(),
+            request.objective.clone(),
+            [],
+            request.criterion_ids.iter().cloned(),
+            [],
+            Vec::<String>::new(),
+            1,
+        )
+        .unwrap()],
+        bounds: PlanBoundsV1::new(1, 1, 1, None, None).unwrap(),
+    }
+}
+
+struct RejectingThenCompletingModel(AtomicU64);
+impl ModelPort for RejectingThenCompletingModel {
+    fn invoke<'a>(
+        &'a self,
+        _: &'a ModelRequest,
+        _: &'a mut dyn ModelObserver,
+        _: &'a dyn ModelCancellation,
+    ) -> ModelFuture<'a> {
+        Box::pin(async move {
+            if self.0.fetch_add(1, Ordering::SeqCst) == 0 {
+                Ok(InvokeOutcome::Rejected {
+                    kind: RejectionKind::ContentPolicy,
+                    sanitized_evidence: "first-revision-rejected".into(),
+                })
+            } else {
+                Ok(InvokeOutcome::Completed {
+                    items: vec![ModelItem::Text {
+                        text: "completed after replan".into(),
+                    }],
+                    usage: usage(),
+                    stop_reason: ModelStopReason::EndTurn,
+                })
+            }
         })
     }
 }
