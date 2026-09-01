@@ -97,8 +97,14 @@ private func validate(_ value: GRVProcessWorkloadV1) throws -> UInt8 {
     case .processWorkspaceModeReadWrite: mode = 2
     default: throw ProcessDigestFailure.invalidWorkload
     }
-    let argumentLengths = value.argv.map { $0.utf8.count }
-    let argumentTotal = argumentLengths.reduce(0, +)
+    var argumentTotal = 0
+    for argument in value.argv {
+        let length = argument.utf8.count
+        let (total, overflow) = argumentTotal.addingReportingOverflow(length)
+        guard (1...maximumArgumentBytes).contains(length), !argument.contains("\0"), !overflow
+        else { throw ProcessDigestFailure.invalidWorkload }
+        argumentTotal = total
+    }
     var priorKey: [UInt8]?
     var environmentTotal = 0
     for entry in value.environment {
@@ -109,14 +115,15 @@ private func validate(_ value: GRVProcessWorkloadV1) throws -> UInt8 {
               !valueBytes.contains(where: { $0 == 0 || $0 == 10 || $0 == 13 })
         else { throw ProcessDigestFailure.invalidWorkload }
         priorKey = key
-        environmentTotal += key.count + valueBytes.count
+        let (entryBytes, entryOverflow) = key.count.addingReportingOverflow(valueBytes.count)
+        let (total, totalOverflow) = environmentTotal.addingReportingOverflow(entryBytes)
+        guard !entryOverflow, !totalOverflow else { throw ProcessDigestFailure.invalidWorkload }
+        environmentTotal = total
     }
     guard validIdentityText(value.lane, maximum: 128),
           validAbsoluteGuestPath(value.executable),
           validRelativeWorkspacePath(value.workingDirectory),
           !value.argv.isEmpty, value.argv.count <= maximumArguments,
-          argumentLengths.allSatisfy({ (1...maximumArgumentBytes).contains($0) }),
-          value.argv.allSatisfy({ !$0.contains("\0") }),
           argumentTotal <= maximumArgumentsTotalBytes,
           value.environment.count <= maximumEnvironmentEntries,
           environmentTotal <= maximumEnvironmentTotalBytes,

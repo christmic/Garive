@@ -8,6 +8,42 @@ func workloadDigestVector() throws {
         == "570a130149d364aacd0929f6e6605a46005fc28e28b486a16fcdcbafe000c13d")
 }
 
+@Test("every canonical workload input changes or invalidates its digest")
+func everyWorkloadInputIsBound() throws {
+    let baseIdentity = identity(), baseWorkload = workload()
+    let base = try processWorkloadDigest(identity: baseIdentity, workload: baseWorkload)
+    var identityVariants: [GRVProcessIdentityV1] = []
+    func identityVariant(_ change: (inout GRVProcessIdentityV1) -> Void) {
+        var value = baseIdentity; change(&value); identityVariants.append(value)
+    }
+    identityVariant { $0.protocolRevision = "guest-v1.1" }
+    identityVariant { $0.invocationID = "inv-2" }
+    identityVariant { $0.dispatchAttemptID = "attempt-2" }
+    identityVariant { $0.executorRevision = "exec-2" }
+    identityVariant { $0.preparedDigest[0] = 9 }
+    identityVariant { $0.vmConfigurationDigest[0] = 9 }
+    for value in identityVariants {
+        #expect(try processWorkloadDigest(identity: value, workload: baseWorkload) != base)
+    }
+    var workloadVariants: [GRVProcessWorkloadV1] = []
+    func workloadVariant(_ change: (inout GRVProcessWorkloadV1) -> Void) {
+        var value = baseWorkload; change(&value); workloadVariants.append(value)
+    }
+    workloadVariant { $0.lane = "test" }
+    workloadVariant { $0.executable = "/usr/bin/env" }
+    workloadVariant { $0.argv.swapAt(0, 1) }
+    workloadVariant { $0.workingDirectory = "other" }
+    workloadVariant { $0.environment[0].value = "C" }
+    workloadVariant { $0.maxOutputBytes -= 1 }
+    workloadVariant { $0.timeoutMilliseconds -= 1 }
+    workloadVariant { $0.maxProcesses -= 1 }
+    workloadVariant { $0.maxOpenFiles -= 1 }
+    workloadVariant { $0.workspaceMode = .processWorkspaceModeReadWrite }
+    for value in workloadVariants {
+        #expect(try processWorkloadDigest(identity: baseIdentity, workload: value) != base)
+    }
+}
+
 @Test("workload digest rejects identity, ordering, bounds, and paths")
 func workloadDigestRejectsInvalidInputs() throws {
     var badIdentity = identity()

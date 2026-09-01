@@ -43,6 +43,66 @@ fn workload_digest_matches_the_cross_language_vector() {
 }
 
 #[test]
+fn every_canonical_workload_input_is_digest_bound() {
+    let base_identity = identity();
+    let base_workload = workload();
+    let base = process_workload_digest(&base_identity, &base_workload).unwrap();
+    let mut identities = Vec::new();
+    macro_rules! identity_variant {
+        ($field:ident, $value:expr) => {{
+            let mut value = base_identity.clone();
+            value.$field = $value;
+            identities.push(value);
+        }};
+    }
+    identity_variant!(protocol_revision, "guest-v1.1".into());
+    identity_variant!(invocation_id, "inv-2".into());
+    identity_variant!(dispatch_attempt_id, "attempt-2".into());
+    identity_variant!(executor_revision, "exec-2".into());
+    identity_variant!(prepared_digest, vec![9; 32]);
+    identity_variant!(vm_configuration_digest, vec![9; 32]);
+    for value in identities {
+        assert_ne!(
+            process_workload_digest(&value, &base_workload).unwrap(),
+            base
+        );
+    }
+    let mut workloads = Vec::new();
+    macro_rules! workload_variant {
+        ($field:ident, $value:expr) => {{
+            let mut value = base_workload.clone();
+            value.$field = $value;
+            workloads.push(value);
+        }};
+    }
+    workload_variant!(lane, "test".into());
+    workload_variant!(executable, "/usr/bin/env".into());
+    workload_variant!(argv, vec!["test".into(), "swift".into()]);
+    workload_variant!(working_directory, "other".into());
+    workload_variant!(
+        environment,
+        vec![ProcessEnvironmentEntryV1 {
+            key: "LANG".into(),
+            value: "C".into()
+        }]
+    );
+    workload_variant!(max_output_bytes, 1_048_575);
+    workload_variant!(timeout_milliseconds, 299_999);
+    workload_variant!(max_processes, 63);
+    workload_variant!(max_open_files, 255);
+    workload_variant!(
+        workspace_mode,
+        ProcessWorkspaceModeV1::ProcessWorkspaceModeReadWrite.into()
+    );
+    for value in workloads {
+        assert_ne!(
+            process_workload_digest(&base_identity, &value).unwrap(),
+            base
+        );
+    }
+}
+
+#[test]
 fn workload_digest_rejects_invalid_identity_order_bounds_and_paths() {
     let mut invalid_identity = identity();
     invalid_identity.prepared_digest.pop();
