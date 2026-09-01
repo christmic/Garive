@@ -22,7 +22,7 @@ fn create_session_with(state: &mut RuntimeState, requested: Option<String>) -> b
     if requested.is_none() && state.config.definition.is_none() && state.model.definitions.len() > 1
     {
         state.model.notice = Some("Choose an Agent with /new <definition-id>.".into());
-        state.model.overlay = Some(Overlay::ErrorDetails);
+        state.dispatch(AppAction::OverlayOpened(Overlay::ErrorDetails));
         return false;
     }
     let definition = requested
@@ -43,7 +43,7 @@ fn create_session_with(state: &mut RuntimeState, requested: Option<String>) -> b
             .any(|value| value.definition_id == definition)
         {
             state.model.notice = Some("That Agent definition is not installed.".into());
-            state.model.overlay = Some(Overlay::ErrorDetails);
+            state.dispatch(AppAction::OverlayOpened(Overlay::ErrorDetails));
             return false;
         }
         if !state.request_create_session(id, definition) {
@@ -52,7 +52,7 @@ fn create_session_with(state: &mut RuntimeState, requested: Option<String>) -> b
         true
     } else {
         state.model.notice = Some("No Agent definition is installed yet.".into());
-        state.model.overlay = Some(Overlay::ErrorDetails);
+        state.dispatch(AppAction::OverlayOpened(Overlay::ErrorDetails));
         false
     }
 }
@@ -71,7 +71,7 @@ pub(super) fn submit(state: &mut RuntimeState) {
         }
         CommandParse::Invalid => {
             state.model.notice = Some("The slash command is invalid; nothing was sent.".into());
-            state.model.overlay = Some(Overlay::ErrorDetails);
+            state.dispatch(AppAction::OverlayOpened(Overlay::ErrorDetails));
             return;
         }
         CommandParse::NotCommand => {}
@@ -89,7 +89,7 @@ pub(super) fn submit(state: &mut RuntimeState) {
         } else {
             "This suspension is read-only; the ordinary draft was not sent.".into()
         });
-        state.model.overlay = Some(Overlay::Suspension);
+        state.dispatch(AppAction::OverlayOpened(Overlay::Suspension));
         return;
     }
     let session = state.model.selected_session.clone().unwrap_or_default();
@@ -168,11 +168,11 @@ pub(super) fn execute_command(command: Command, state: &mut RuntimeState) {
         Command::Sessions { filter } => {
             state.model.session_filter = filter.unwrap_or_default();
             state.model.session_selection = 0;
-            state.model.overlay = Some(Overlay::SessionPicker);
+            state.dispatch(AppAction::OverlayOpened(Overlay::SessionPicker));
         }
         Command::Jump { filter } => super::navigation::open_turn_navigator(state, filter),
         Command::Inspect(command) => super::inspector::set_command(command, state),
-        Command::Help => state.model.overlay = Some(Overlay::Help),
+        Command::Help => state.dispatch(AppAction::OverlayOpened(Overlay::Help)),
         Command::Status => super::inspector::set_command(Some(InspectorCommand::Details), state),
         Command::EditPrompt => external_editor::request(state),
         Command::Reconnect => {
@@ -222,7 +222,7 @@ fn copy_value(value: Option<String>, state: &mut RuntimeState, show_details: boo
     };
     state.model.notice = Some(notice.into());
     if show_details {
-        state.model.overlay = Some(Overlay::ErrorDetails);
+        state.dispatch(AppAction::OverlayOpened(Overlay::ErrorDetails));
     }
 }
 
@@ -240,7 +240,7 @@ pub(super) fn cancel(state: &mut RuntimeState) {
 pub(super) fn retry_pending(state: &mut RuntimeState) {
     if state.exact_retry_in_progress() {
         state.model.notice = Some("An exact retry is already in progress.".into());
-        state.model.overlay = Some(Overlay::ErrorDetails);
+        state.dispatch(AppAction::OverlayOpened(Overlay::ErrorDetails));
         return;
     }
     let Some(pending) = state.recoverable_pending_for_context().cloned() else {
@@ -249,18 +249,18 @@ pub(super) fn retry_pending(state: &mut RuntimeState) {
         } else {
             "No recoverable pending command is loaded.".into()
         });
-        state.model.overlay = Some(Overlay::ErrorDetails);
+        state.dispatch(AppAction::OverlayOpened(Overlay::ErrorDetails));
         return;
     };
     if pending.validate().is_err() {
         state.model.notice =
             Some("The pending command digest is invalid; retry was blocked.".into());
-        state.model.overlay = Some(Overlay::ErrorDetails);
+        state.dispatch(AppAction::OverlayOpened(Overlay::ErrorDetails));
         return;
     }
     if !state.begin_exact_retry(&pending.command_id) {
         state.model.notice = Some("Exact retry ownership could not be acquired.".into());
-        state.model.overlay = Some(Overlay::ErrorDetails);
+        state.dispatch(AppAction::OverlayOpened(Overlay::ErrorDetails));
         return;
     }
     let _ = state.store.record_diagnostic(DiagnosticEvent::RetryQueued);

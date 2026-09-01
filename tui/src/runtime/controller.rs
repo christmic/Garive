@@ -31,9 +31,11 @@ pub(super) fn handle_terminal(event: Event, state: &mut RuntimeState) {
         }
         Event::Paste(text) => {
             state.composer_clicks.reset();
-            if state.model.overlay == Some(Overlay::Suspension) {
-                if let Some(response) = state.model.suspension_response.as_mut() {
-                    let _ = response.editor.insert(&text);
+            if let Some(overlay) = state.model.overlay {
+                if overlay == Overlay::Suspension {
+                    if let Some(response) = state.model.suspension_response.as_mut() {
+                        let _ = response.editor.insert(&text);
+                    }
                 }
                 return;
             }
@@ -446,3 +448,7 @@ fn handle_ctrl_c(state: &mut RuntimeState) {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "controller_tests.rs"]
+mod tests;

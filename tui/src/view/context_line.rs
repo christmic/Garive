@@ -59,13 +59,26 @@ pub(super) fn render(
 
 fn exceptional_state(model: &AppModel, motion: super::motion::StatusMotion) -> String {
     match model.connection {
-        ConnectionState::Online => match model.execution {
-            ExecutionState::Idle => String::new(),
-            ExecutionState::Following => motion.execution_label,
-            ExecutionState::Suspended => "Action required".into(),
-            ExecutionState::Failed => "Failed".into(),
-        },
+        ConnectionState::Online => online_state(
+            model.execution,
+            model.live_answer.current().is_some(),
+            motion,
+        ),
         value => super::style::connection_name(value).to_owned(),
+    }
+}
+
+fn online_state(
+    execution: ExecutionState,
+    live_answer_visible: bool,
+    motion: super::motion::StatusMotion,
+) -> String {
+    match execution {
+        ExecutionState::Idle => String::new(),
+        ExecutionState::Following if live_answer_visible => String::new(),
+        ExecutionState::Following => motion.execution_label,
+        ExecutionState::Suspended => "Action required".into(),
+        ExecutionState::Failed => "Failed".into(),
     }
 }
 
@@ -79,5 +92,31 @@ fn state_style(model: &AppModel, colors: super::style::Palette) -> ratatui::styl
             ExecutionState::Failed => colors.danger,
             ExecutionState::Idle => colors.muted,
         },
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn visible_live_answer_suppresses_only_the_duplicate_following_label() {
+        let motion = || super::super::motion::StatusMotion {
+            execution_label: "Agent running".into(),
+        };
+
+        assert_eq!(online_state(ExecutionState::Following, true, motion()), "");
+        assert_eq!(
+            online_state(ExecutionState::Following, false, motion()),
+            "Agent running"
+        );
+        assert_eq!(
+            online_state(ExecutionState::Suspended, true, motion()),
+            "Action required"
+        );
+        assert_eq!(
+            online_state(ExecutionState::Failed, true, motion()),
+            "Failed"
+        );
     }
 }
