@@ -8,12 +8,7 @@ use super::super::style::Palette;
 
 pub(super) fn render(boot: BootState, _width: u16, colors: Palette) -> Vec<Line<'static>> {
     match boot {
-        BootState::Cold | BootState::Loading => welcome("Starting workspace…", None, colors),
-        BootState::Ready => welcome(
-            "Ask, plan, or run work from this terminal.",
-            Some("/ commands  ·  ? help"),
-            colors,
-        ),
+        BootState::Cold | BootState::Loading | BootState::Ready => Vec::new(),
         BootState::NotConfigured => message(
             "No Agent is installed",
             "Install an Agent definition before starting a conversation.",
@@ -25,22 +20,6 @@ pub(super) fn render(boot: BootState, _width: u16, colors: Palette) -> Vec<Line<
             colors,
         ),
     }
-}
-
-fn welcome(
-    detail: &'static str,
-    discovery: Option<&'static str>,
-    colors: Palette,
-) -> Vec<Line<'static>> {
-    let mut lines = vec![
-        Line::default(),
-        Line::styled("  Garive", colors.empty_title),
-        Line::styled(format!("  {detail}"), colors.muted),
-    ];
-    if let Some(discovery) = discovery {
-        lines.push(Line::styled(format!("  {discovery}"), colors.muted));
-    }
-    lines
 }
 
 fn message(title: &'static str, detail: &'static str, colors: Palette) -> Vec<Line<'static>> {
@@ -57,7 +36,7 @@ mod tests {
     use crate::Theme;
 
     #[test]
-    fn ordinary_empty_states_have_one_compact_workspace_anchor() {
+    fn ordinary_empty_states_leave_the_transcript_quiet() {
         let colors = super::super::super::palette(Theme::Dark);
         for boot in [BootState::Cold, BootState::Loading, BootState::Ready] {
             let rendered = render(boot, 100, colors)
@@ -65,10 +44,7 @@ mod tests {
                 .map(|line| line.to_string())
                 .collect::<Vec<_>>()
                 .join("\n");
-            assert!(rendered.contains("Garive"));
-            assert_eq!(rendered.matches("Garive").count(), 1);
-            assert!(!rendered.contains('╭'));
-            assert!(!rendered.contains('│'));
+            assert!(rendered.is_empty());
         }
     }
 

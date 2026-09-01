@@ -77,7 +77,10 @@ boxes; controllers do not duplicate layout coordinates. `ContextLine` and
 focus, and recovery state used by input routing. `ContextLine` has no frame or
 background fill. `HintLine` renders at most one highest-priority action and may
 be absent. Its reserved slot then renders the muted `AmbientFooter` with public
-Agent/Session identity, never a permanent shortcut legend. At supported heights
+Agent/Session identity, never a permanent shortcut legend. When exceptional
+state makes `ContextLine` visible, it owns that identity and the reserved footer
+slot stays blank unless an actionable `HintLine` displaces it; identity cannot
+appear at both edges of the workspace. At supported heights
 of nine rows or more, the slot remains allocated so selection, notices, and Host events never
 move the Composer hit geometry; tiny layouts below nine rows remove the slot as
 part of their explicit degradation.
@@ -180,13 +183,13 @@ execution belongs to the Composer run rail instead of a distant second status
 owner. Brand background fills, padded status chips, clocks, raw IDs, and a
 second persistent status row are prohibited.
 
-An empty ready conversation is not an unanchored blank terminal. It renders one
-compact, left-aligned, unframed `WelcomeAnchor` near the transcript origin with
-the Garive name and the two truthful discovery affordances (`/` commands and
-`?` help). It has the density of Codex's welcome block, never expands into a
-hero or card, does not repeat the Composer invitation, and disappears as soon
-as a Turn or live answer exists. Loading and blocked states keep their own
-truthful copy.
+An ordinary empty transcript is intentionally silent. `ContextLine` owns
+loading and exceptional connection truth, `ComposerDock` owns the invitation
+to act, and `AmbientFooter` owns product and Session identity. The transcript
+must not repeat the brand, invitation, shortcut discovery, or loading state.
+Only blocking empty states render body copy: missing configuration names the
+Agent-install path and degraded Host access names `/status` as the recovery
+path.
 
 Spacing is the transcript's primary structure. Borders are reserved for modal
 boundaries and an explicitly opened Inspector. The ComposerDock is an open

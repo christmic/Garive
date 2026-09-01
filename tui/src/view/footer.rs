@@ -39,6 +39,9 @@ pub(super) fn render_footer(model: &AppModel, theme: Theme, area: Rect, buffer: 
             Span::styled(text, colors.normal),
         ]),
         None => {
+            if super::context_line::visible(model) {
+                return;
+            }
             render_ambient_footer(model, colors, area, buffer);
             return;
         }

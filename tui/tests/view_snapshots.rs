@@ -375,11 +375,27 @@ fn h4_responsive_workbench_timelines_match_reviewed_snapshots() {
 fn empty_state_responsive_hierarchy_matches_reviewed_snapshot() {
     let matrix = empty_state_responsive_matrix();
     assert_eq!(matrix.matches("connecting").count(), 3);
+    assert!(!matrix.contains("Starting workspace"));
+    assert!(!matrix.contains("Ask, plan, or run work"));
+    assert!(!matrix.contains("/ commands"));
     assert!(!matrix.contains("Connecting to your durable workspace"));
     assert!(!matrix.contains("A quiet place to get things done"));
     assert!(matrix.contains("Install an Agent definition"));
     assert!(matrix.contains("Open /status"));
     insta::assert_snapshot!("empty_state_responsive_matrix", matrix);
+}
+
+#[test]
+fn exceptional_context_displaces_duplicate_ambient_identity() {
+    let model = AppModel {
+        boot: BootState::Loading,
+        connection: ConnectionState::Connecting,
+        ..Default::default()
+    };
+    let rendered = frame(&model, Theme::Dark, 100, 18);
+    assert_eq!(rendered.matches("Garive").count(), 2);
+    assert_eq!(rendered.matches("New conversation").count(), 1);
+    assert!(rendered.contains("connecting"));
 }
 
 #[test]

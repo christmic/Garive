@@ -1,13 +1,14 @@
 ---
 source: tui/tests/view_snapshots.rs
+assertion_line: 385
 expression: matrix
 ---
 ===== loading compact · Mono · 40x18 =====
 New conversation              connecting
 
 
-  Garive
-  Starting workspace…
+
+
 
 
 
@@ -20,14 +21,14 @@ New conversation              connecting
 
 
 › Ask Garive anything
-  Garive · New conversation
+
 
 ===== loading standard · Dark · 80x18 =====
 New conversation  ·  Garive                                           connecting
 
 
-  Garive
-  Starting workspace…
+
+
 
 
 
@@ -40,14 +41,14 @@ New conversation  ·  Garive                                           connectin
 
 
 › Ask Garive anything
-  Garive · New conversation
+
 
 ===== loading wide · Light · 120x18 =====
 New conversation  ·  Garive                                                                                   connecting
 
 
-  Garive
-  Starting workspace…
+
+
 
 
 
@@ -60,14 +61,14 @@ New conversation  ·  Garive                                                    
 
 
 › Ask Garive anything
-  Garive · New conversation
+
 
 ===== ready · Dark · 100x18 =====
 
 
-  Garive
-  Ask, plan, or run work from this terminal.
-  / commands  ·  ? help
+
+
+
 
 
 

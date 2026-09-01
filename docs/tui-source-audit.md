@@ -359,6 +359,23 @@ overlay down, so a stale landmark can never activate.
 
 ## Codex findings
 
+### First-run hierarchy
+
+The pinned Codex revision renders first-run guidance as transcript history,
+not as permanent application chrome. `tui/src/history_cell/session.rs:125-182`
+builds one `SessionHeaderHistoryCell` and appends the command list only when
+`is_first_event` is true. The independent Composer invitation remains
+`Ask Codex to do anything` in `tui/src/keymap_setup.rs:805`; session-header
+snapshots under `tui/src/history_cell/snapshots/` confirm that the header itself
+already owns model, directory, and permission identity.
+
+Garive does not have equivalent Host-backed model, directory, and permission
+facts in its current client projection, so it cannot truthfully reproduce that
+header. Its ordinary empty transcript stays silent: the exceptional
+`ContextLine`, Composer invitation, and ambient Agent/Session footer each own
+one non-overlapping role. When `ContextLine` is visible, it displaces ambient
+identity so the same workspace identity is not repeated at the top and bottom.
+
 ### Event and terminal ownership
 
 `codex-rs/tui/src/tui.rs:549-568` separates terminal events from the
