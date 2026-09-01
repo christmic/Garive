@@ -116,6 +116,12 @@ the background `HintLine` is absent and the running-Turn rail never advertises
 transcript does not already expose work; otherwise it is empty. The overlay
 alone names the currently executable `Esc`, `Enter`, or decision action. Closing
 the overlay restores the background cue without changing execution state.
+After cancellation is admitted, the same Turn-control component replaces the
+generic frozen/running copy with `Requesting cancellation…`. Exact Host
+acceptance changes it to `Cancellation accepted · waiting for Turn to stop`;
+neither phase advertises another cancel action. Unknown outcome is passive
+behind its recovery overlay. Fullscreen, minimum-width and linear presenters
+consume this same semantic projection.
 An unknown command bound to a Session becomes an actionable overlay only after
 that exact Session is selected. Startup may announce that recovery exists, but
 must not expose `Enter` before the controller can acquire the same pending

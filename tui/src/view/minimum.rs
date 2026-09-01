@@ -7,9 +7,9 @@ use ratatui::{
     widgets::{Paragraph, Widget},
 };
 
-use crate::application::{AppModel, ExecutionState};
+use crate::application::AppModel;
 
-use super::style::Palette;
+use super::{composer_run_rail, style::Palette};
 
 pub(super) fn render(model: &AppModel, colors: Palette, area: Rect, buffer: &mut Buffer) {
     let mut lines = vec![Line::styled("Garive needs 40 columns", colors.title)];
@@ -21,8 +21,8 @@ pub(super) fn render(model: &AppModel, colors: Palette, area: Rect, buffer: &mut
         },
         colors.muted,
     ));
-    if model.execution == ExecutionState::Following {
-        lines.push(Line::styled("Run continues · Esc cancel", colors.warning));
+    if let Some(status) = composer_run_rail::minimum_status(model) {
+        lines.push(Line::styled(status, colors.warning));
     }
     Paragraph::new(lines).render(area, buffer);
 }

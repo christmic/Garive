@@ -103,6 +103,10 @@ impl ComposerDock {
         motion: MotionFrame,
         buffer: &mut Buffer,
     ) {
+        if composer_run_rail::has_cancel_request(model) {
+            composer_run_rail::render(model, colors, motion, self.status, buffer);
+            return;
+        }
         let line = match variant {
             ComposerVariant::Frozen => Some(Line::from(vec![
                 Span::styled(" ! ", colors.warning),

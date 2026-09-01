@@ -6,7 +6,9 @@ use crate::input::help_hints;
 const LIST_CAPACITY: usize = 10;
 
 pub(crate) fn composer_status(model: &AppModel) -> &'static str {
-    if model.composer_is_frozen {
+    if let Some(status) = super::composer_run_rail::linear_status(model) {
+        status
+    } else if model.composer_is_frozen {
         "Composer locked. Draft retained. Editing is unavailable until durable command truth."
     } else if model.execution == ExecutionState::Following {
         if model.overlay.is_some() {
