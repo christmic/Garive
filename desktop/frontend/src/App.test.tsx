@@ -115,6 +115,8 @@ describe("Desktop product experience", () => {
 
     await waitFor(() => expect(commands, JSON.stringify(commands)).toContain("start_product_turn"));
     expect(await screen.findByText("Durable product answer")).toBeTruthy();
+    expect(view.container.querySelector(".main-surface")?.getAttribute("data-thread-edge-scroll"))
+      .toBe("true");
     expect(view.container.querySelector(".composer")?.getAttribute("data-layout"))
       .toBe("multiline");
     const completedMeta = view.container.querySelector(".result-meta[data-terminal='completed']");

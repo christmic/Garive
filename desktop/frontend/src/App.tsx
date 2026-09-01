@@ -963,7 +963,9 @@ export function App({ client = "desktop", webCapabilities, createProductPort,
       {navigationOpen && <button className="navigation-backdrop" type="button"
         aria-label={t("shell.closeNavigation")} onClick={() => setNavigationOpen(false)} />}
 
-      <main className="main-surface" data-panel inert={smallWindow && navigationOpen}
+      <main className="main-surface" data-panel
+        data-thread-edge-scroll={screen === "work" && state.messages.length > 0}
+        inert={smallWindow && navigationOpen}
         aria-hidden={smallWindow && navigationOpen}>
         <header className="topbar" data-tauri-drag-region="deep">
           <div className="topbar-title"><button className={navigationCollapsed

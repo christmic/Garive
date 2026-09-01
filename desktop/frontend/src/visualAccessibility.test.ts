@@ -100,6 +100,9 @@ describe("Desktop visual accessibility contract", () => {
     expect(CSS).toContain(".app-shell:has(.workspace-panel)");
     expect(CSS).toContain(".app-shell:has(.workspace-panel) { --height-active-thread-toolbar: var(--height-toolbar-pane); }");
     expect(CSS).toContain(".app-shell:has(.workspace-panel) .main-surface { flex-grow: 0; max-width: var(--conversation-split); }");
+    expect(CSS).toContain('.main-surface[data-thread-edge-scroll="true"] { position: relative; grid-template-rows: minmax(0, 1fr); }');
+    expect(CSS).toContain("--thread-edge-scroll-top-inset: calc(var(--height-active-thread-toolbar) + var(--thread-content-top-inset))");
+    expect(CSS).toContain('.main-surface[data-thread-edge-scroll="true"] .topbar > * { max-width: max-content; background: var(--surface-canvas); }');
     expect(CSS).toContain(".panel-animated > [data-panel] { transition: flex-grow var(--motion-relaxed) var(--ease-basic), max-width var(--motion-relaxed) var(--ease-basic); }");
     expect(CSS).toContain(".panel-animated.panel-dragging > [data-panel] { transition: none; }");
     expect(CSS).toContain(".work-surface { min-width: 0; overflow: clip; }");

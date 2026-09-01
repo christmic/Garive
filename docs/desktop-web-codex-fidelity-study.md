@@ -1088,6 +1088,22 @@ top/bottom/right plus edge alignment. Garive chooses a quiet 350ms pointer delay
 and immediate focus disclosure; that timing is a documented Garive interaction
 decision rather than a fabricated Codex constant.
 
+### XXXIV. Active threads use source-backed edge-scroll chrome
+
+Installed Codex `app-initial-B6Gk5KCN.js` selects `thread-edge-scroll` for the
+active thread shell. In that state, `app-initial-NNCUNt29.css` removes the main
+frame toolbar offset, raises the thread content inset to toolbar height plus
+eight 4 px spacing units, caps each direct toolbar child at `max-content`, and
+does not apply the ordinary `.5px` thread-edge divider. Its 16 px top fade is a
+separate overlay rather than a permanent toolbar rule.
+
+Garive now maps that composition only to non-empty Work threads: the shared
+Desktop/Web toolbar overlays the scroll viewport, its direct title and action
+groups own the surface background, and the transcript starts at the active
+toolbar height plus the existing 32 px scroll-layout inset. Home, Agents and
+Settings retain an ordinary toolbar row. This removes a false full-width rule
+without claiming Codex's private state names as Garive product semantics.
+
 Live Web evidence at 1280×720 verifies immediate keyboard disclosure in 20ms,
 the separate `⌘⇧A` hint, removal of the native title, in-viewport placement for
 thread, Composer and file-tab edges, and zero document/main/workspace overflow.

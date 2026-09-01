@@ -677,6 +677,11 @@ kbd { font-size: var(--text-2xs); }
 .sidebar-resizer:hover::after, .sidebar-resizer:focus-visible::after { background: var(--border-strong); }
 
 .main-surface { flex: 1 1 auto; width: 100%; max-width: calc(100% - var(--sidebar-width)); grid-template-columns: minmax(0, 1fr); grid-template-rows: var(--height-active-thread-toolbar) minmax(0, 1fr); background: var(--surface-canvas); }
+.main-surface[data-thread-edge-scroll="true"] { position: relative; grid-template-rows: minmax(0, 1fr); }
+.main-surface[data-thread-edge-scroll="true"] .topbar { position: absolute; z-index: 21; top: 0; right: 0; left: 0; height: var(--height-active-thread-toolbar); border-bottom: 0; background: transparent; }
+.main-surface[data-thread-edge-scroll="true"] .topbar > * { max-width: max-content; background: var(--surface-canvas); }
+.main-surface[data-thread-edge-scroll="true"] .work-surface { --thread-edge-scroll-top-inset: calc(var(--height-active-thread-toolbar) + var(--thread-content-top-inset)); }
+.main-surface[data-thread-edge-scroll="true"] .timeline { padding-top: var(--thread-edge-scroll-top-inset); }
 .navigation-collapsed .main-surface { max-width: 100%; }
 .app-shell:has(.workspace-panel) .main-surface { flex-grow: 0; max-width: var(--conversation-split); }
 .work-surface { min-width: 0; overflow: clip; }
