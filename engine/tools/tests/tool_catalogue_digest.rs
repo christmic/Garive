@@ -9,6 +9,10 @@ fn catalogue_digest_is_order_independent_and_meaning_sensitive() {
     let alpha = definition("alpha", "Read alpha");
     let beta = definition("beta", "Read beta");
     let forward = tool_catalogue_digest(&[alpha.clone(), beta.clone()]).unwrap();
+    assert_eq!(
+        forward,
+        "92f7d0a98d5654275256bb4079da8a554992e1488b5f77ec95c297ca20bc7d93"
+    );
     let reverse = tool_catalogue_digest(&[beta, alpha.clone()]).unwrap();
     assert_eq!(forward, reverse);
     assert_ne!(

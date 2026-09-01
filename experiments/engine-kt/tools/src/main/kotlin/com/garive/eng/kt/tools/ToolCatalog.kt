@@ -222,8 +222,83 @@ public class ToolCatalog private constructor(definitions: Map<String, ToolDefini
             if (byName.size != definitions.size) return failure(PreparationErrorCode.INVALID_TOOL_DEFINITION)
             return ToolContractResult.Success(ToolCatalog(byName))
         }
+
+        /** Returns the canonical digest of one exact immutable Tool catalogue. */
+        public fun digest(definitions: List<ToolDefinition>): ToolContractResult<String> {
+            val ordered = definitions.sortedBy(ToolDefinition::name)
+            if (ordered.zipWithNext().any { (left, right) -> left.name == right.name }) {
+                return failure(PreparationErrorCode.INVALID_TOOL_DEFINITION)
+            }
+            val preimage = JsonObject(
+                mapOf(
+                    "contract" to JsonPrimitive("garive.tool-catalogue"),
+                    "version" to JsonPrimitive(1),
+                    "definitions" to JsonArray(ordered.map(::definitionJson)),
+                ),
+            )
+            val canonical = canonicalize(preimage.toString())
+                ?: return failure(PreparationErrorCode.NON_CANONICAL_VALUE)
+            return ToolContractResult.Success(sha256(canonical.encodeToByteArray()))
+        }
     }
 }
+
+private fun definitionJson(definition: ToolDefinition): JsonObject = JsonObject(
+    buildMap {
+        put("name", JsonPrimitive(definition.name))
+        put("revision", JsonPrimitive(definition.revision))
+        put("description", JsonPrimitive(definition.description))
+        put("input_schema", definition.inputSchema)
+        put(
+            "requirements",
+            JsonObject(
+                mapOf(
+                    "capabilities" to JsonArray(
+                        definition.requirements.capabilities.map { JsonPrimitive(it.wireName) },
+                    ),
+                    "max_duration_ms" to JsonPrimitive(definition.requirements.maxDurationMs),
+                    "max_output_bytes" to JsonPrimitive(definition.requirements.maxOutputBytes),
+                ),
+            ),
+        )
+        put("replay_class", JsonPrimitive(definition.replayClass.wireName))
+        definition.accessPolicy?.let { policy ->
+            put(
+                "access_contract",
+                JsonObject(
+                    mapOf(
+                        "policy" to accessPolicyJson(policy),
+                        "resolver_revision" to JsonPrimitive(definition.accessResolverRevision!!),
+                    ),
+                ),
+            )
+        }
+        definition.sandboxRequirements?.let { put("sandbox_requirements", it.canonicalJson()) }
+    },
+)
+
+private fun accessPolicyJson(policy: ToolAccessPolicyV1): JsonObject = JsonObject(
+    mapOf(
+        "policy_revision" to JsonPrimitive(policy.policyRevision),
+        "filesystem_roots" to policyEntriesJson(policy.filesystemRoots),
+        "process_lanes" to policyEntriesJson(policy.processLanes),
+        "network_origins" to policyEntriesJson(policy.networkOrigins),
+        "runtime_lanes" to policyEntriesJson(policy.runtimeLanes),
+        "max_accesses" to JsonPrimitive(policy.maxAccesses),
+        "max_result_bytes" to JsonPrimitive(policy.maxResultBytes),
+    ),
+)
+
+private fun policyEntriesJson(entries: List<AccessPolicyEntry>): JsonArray = JsonArray(
+    entries.map { entry ->
+        JsonObject(
+            mapOf(
+                "resource" to JsonPrimitive(entry.resource),
+                "allowed_modes" to JsonArray(entry.allowedModes.map { JsonPrimitive(it.wireName) }),
+            ),
+        )
+    },
+)
 
 private data class ValidatedIntent(
     val definition: ToolDefinition,
