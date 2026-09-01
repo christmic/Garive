@@ -40,6 +40,7 @@ mod native_cdp_port;
 mod native_executor;
 mod observability_runtime;
 mod plan_carry_forward;
+mod plan_dispatch_runtime;
 mod plan_recovery;
 mod plan_runtime;
 #[cfg(unix)]
@@ -214,6 +215,10 @@ pub use observability_runtime::{
 pub use plan_carry_forward::{
     commit_plan_replacement, plan_plan_replacement, verify_plan_carry_forward,
     PlannedPlanReplacement, VerifiedPlanCarryForward,
+};
+pub use plan_dispatch_runtime::{
+    dispatch_plan_step_once, PlanDispatchError, PlanDispatchOutcome, PlanDispatchTick,
+    PlanStepDispatchFactory, PlanStepDispatchInput, PreparedPlanStepDispatch,
 };
 pub use plan_recovery::{reconstruct_plan, reconstruct_plan_graph};
 pub use plan_runtime::{

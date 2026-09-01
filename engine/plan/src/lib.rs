@@ -218,6 +218,11 @@ impl PlanStepV1 {
         &self.step_id
     }
 
+    /// Returns the bounded objective supplied as trusted Step input.
+    pub fn objective(&self) -> &str {
+        &self.objective
+    }
+
     /// Returns canonical direct dependencies.
     pub const fn depends_on(&self) -> &BTreeSet<PlanStepId> {
         &self.depends_on
