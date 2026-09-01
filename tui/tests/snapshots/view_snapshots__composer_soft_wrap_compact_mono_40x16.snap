@@ -2,18 +2,18 @@
 source: tui/tests/view_snapshots.rs
 expression: "frame(&wrapped, Theme::Mono, 40, 16)"
 ---
-Session 1
 
   › Summarize the release plan.
     ✓ Agent action · completed
-  ◆ Garive
-    ## Release plan
+  • ## Release plan
 
     • Verify the Runtime
     • Ship with evidence
 
     cargo test passes.
 
-Agent running ·  Esc cancel Turn
+
+
+• Working… ·  Esc interrupt
 › Composer grows with soft wrapping and
   keeps every visible row.

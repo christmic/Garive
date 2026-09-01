@@ -43,7 +43,7 @@ New conversation  ·  Garive                                           connectin
 
 
 ===== loading wide · Light · 120x18 =====
-            New conversation  ·  Garive                                                           connecting
+New conversation  ·  Garive                                                                                   connecting
 
 
 
@@ -59,11 +59,10 @@ New conversation  ·  Garive                                           connectin
 
 
 
-            › Ask Garive anything  ·  / commands
+› Ask Garive anything  ·  / commands
 
 
 ===== ready · Dark · 100x18 =====
-  New conversation  ·  Garive
 
 
 
@@ -79,17 +78,15 @@ New conversation  ·  Garive                                           connectin
 
 
 
-  › Ask Garive anything  ·  / commands
+
+› Ask Garive anything  ·  / commands
 
 
 ===== not configured · Mono · 100x18 =====
-  New conversation  ·  Garive
 
 
-      No Agent is installed
-      Install an Agent definition before starting a conversation.
-
-
+    No Agent is installed
+    Install an Agent definition before starting a conversation.
 
 
 
@@ -99,18 +96,18 @@ New conversation  ·  Garive                                           connectin
 
 
 
-  › Ask Garive anything  ·  / commands
+
+
+
+› Ask Garive anything  ·  / commands
 
 
 ===== degraded · Dark · 100x18 =====
-  New conversation  ·  Garive                                                          unavailable
+New conversation  ·  Garive                                                              unavailable
 
 
-      Recovery details are available
-      Open /status to inspect the safe failure and reconnect.
-
-
-
+    Recovery details are available
+    Open /status to inspect the safe failure and reconnect.
 
 
 
@@ -119,5 +116,8 @@ New conversation  ·  Garive                                           connectin
 
 
 
-  › Ask Garive anything  ·  / commands
-    /reconnect try again safely  ·  Durable Session truth unavailable
+
+
+
+› Ask Garive anything  ·  / commands
+  /reconnect try again safely  ·  Durable Session truth unavailable

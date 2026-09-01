@@ -2,27 +2,27 @@
 source: tui/tests/view_snapshots.rs
 expression: "command_suggestion_frame(Theme::Light)"
 ---
-  Session 1  ·  Agent
 
-    › Summarize the release plan.
-      ✓  Agent action · completed
-    ◆ Garive
-      ## Release plan
+  › Summarize the release plan.
+    ✓  Agent action · completed
+  • ## Release plan
 
-      • Verify the Runtime
-      • Ship with evidence
+    • Verify the Runtime
+    • Ship with evidence
 
-      cargo test passes.
+    cargo test passes.
 
 
 
 
-  ╭ Commands ────────────────────────────────────────────────────────────────╮
-  │   /theme system  Follow terminal theme                                   │
-  │ › /theme dark  Use dark theme                                            │
-  │   /theme light  Use light theme                                          │
-  │   /theme mono  Use mono theme                                            │
-  ╰──────────────────────────────────────────────────────────────────────────╯
 
-  › /theme
-    Tab complete command
+
+╭ Commands ────────────────────────────────────────────────────────────────╮
+│   /theme system  Follow terminal theme                                   │
+│ › /theme dark  Use dark theme                                            │
+│   /theme light  Use light theme                                          │
+│   /theme mono  Use mono theme                                            │
+╰──────────────────────────────────────────────────────────────────────────╯
+
+› /theme
+  Tab complete command

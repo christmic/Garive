@@ -2,14 +2,14 @@
 source: tui/tests/view_snapshots.rs
 expression: "frame(&model, Theme::Mono, 40, 12)"
 ---
-Session 1
-  ◆ Garive
-    ## Release plan
+
+    ✓ Agent action · completed
+  • ## Release plan
 
     • Verify the Runtime
     • Ship with evidence
 
     cargo test passes.
 
-Agent running ·  Esc cancel Turn
+• Working… ·  Esc interrupt
 › Ask a follow-up…

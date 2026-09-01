@@ -6,25 +6,22 @@ expression: matrix
 ↓ 12 newer updates ·  End follow latest
   › Summarize the release plan.
     ✓ Agent action · completed
-  ◆ Garive
-    ## Release plan
+  • ## Release plan
 
-Agent running ·  Esc cancel Turn
+    • Verify the Runtime
+• Working… ·  Esc interrupt
 › Ask a follow-up…
 ===== standard dark 100x24 =====
-  Session 1  ·  Agent
                               ↓ 12 newer updates ·  End follow latest
 
-    › Summarize the release plan.
-      ✓  Agent action · completed
-    ◆ Garive
-      ## Release plan
+  › Summarize the release plan.
+    ✓  Agent action · completed
+  • ## Release plan
 
-      • Verify the Runtime
-      • Ship with evidence
+    • Verify the Runtime
+    • Ship with evidence
 
-      cargo test passes.
-
+    cargo test passes.
 
 
 
@@ -33,23 +30,23 @@ Agent running ·  Esc cancel Turn
 
 
 
-  Agent running ·  Esc cancel Turn
-  › Ask a follow-up…
+
+
+
+• Working… ·  Esc interrupt
+› Ask a follow-up…
 
 ===== wide light 160x28 =====
-                                Session 1  ·  Agent
                                                             ↓ 12 newer updates ·  End follow latest
 
-                                  › Summarize the release plan.
-                                    ✓  Agent action · completed
-                                  ◆ Garive
-                                    ## Release plan
+  › Summarize the release plan.
+    ✓  Agent action · completed
+  • ## Release plan
 
-                                    • Verify the Runtime
-                                    • Ship with evidence
+    • Verify the Runtime
+    • Ship with evidence
 
-                                    cargo test passes.
-
+    cargo test passes.
 
 
 
@@ -62,14 +59,16 @@ Agent running ·  Esc cancel Turn
 
 
 
-                                Agent running ·  Esc cancel Turn
-                                › Ask a follow-up…
+
+
+
+• Working… ·  Esc interrupt
+› Ask a follow-up…
 
 ===== overlay owns input =====
-  Session 1  ·  Agent
                                          ↓ 12 newer updates
 
-    › Summarize the release plan.
+  › Summarize the release plan.
               ╭ Keyboard guide ──────────────────────────────────────────────────────╮
               │                                                                      │
               │    Enter send   Ctrl+J new line   Ctrl+N new Session                 │
@@ -87,5 +86,6 @@ Agent running ·  Esc cancel Turn
 
 
 
-  Agent running
-  › Ask a follow-up…
+
+• Working…
+› Ask a follow-up…

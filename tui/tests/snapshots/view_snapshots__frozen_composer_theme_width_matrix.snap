@@ -3,9 +3,9 @@ source: tui/tests/view_snapshots.rs
 expression: frozen_composer_matrix()
 ---
 theme=Dark width=40 marker=Style::new().yellow().bg(Color::Reset).underline_color(Color::Reset) cursor=None
-Session 1
-  ◆ Garive
-    ## Release plan
+
+    ✓ Agent action · completed
+  • ## Release plan
 
     • Verify the Runtime
     • Ship with evidence
@@ -17,23 +17,23 @@ Session 1
  ● Waiting for durable command truth…
 
 theme=Dark width=100 marker=Style::new().yellow().bg(Color::Reset).underline_color(Color::Reset) cursor=None
-  Session 1  ·  Agent
-    ◆ Garive
-      ## Release plan
 
-      • Verify the Runtime
-      • Ship with evidence
+    ✓  Agent action · completed
+  • ## Release plan
 
-      cargo test passes.
+    • Verify the Runtime
+    • Ship with evidence
 
-   ! Draft locked · read only
-  › Retained pending draft
-   ● Waiting for durable command truth…
+    cargo test passes.
+
+ ! Draft locked · read only
+› Retained pending draft
+ ● Waiting for durable command truth…
 
 theme=Light width=40 marker=Style::new().yellow().bg(Color::Reset).underline_color(Color::Reset) cursor=None
-Session 1
-  ◆ Garive
-    ## Release plan
+
+    ✓ Agent action · completed
+  • ## Release plan
 
     • Verify the Runtime
     • Ship with evidence
@@ -45,23 +45,23 @@ Session 1
  ● Waiting for durable command truth…
 
 theme=Light width=100 marker=Style::new().yellow().bg(Color::Reset).underline_color(Color::Reset) cursor=None
-  Session 1  ·  Agent
-    ◆ Garive
-      ## Release plan
 
-      • Verify the Runtime
-      • Ship with evidence
+    ✓  Agent action · completed
+  • ## Release plan
 
-      cargo test passes.
+    • Verify the Runtime
+    • Ship with evidence
 
-   ! Draft locked · read only
-  › Retained pending draft
-   ● Waiting for durable command truth…
+    cargo test passes.
+
+ ! Draft locked · read only
+› Retained pending draft
+ ● Waiting for durable command truth…
 
 theme=Mono width=40 marker=Style::new().fg(Color::Reset).bg(Color::Reset).underline_color(Color::Reset) cursor=None
-Session 1
-  ◆ Garive
-    ## Release plan
+
+    ✓ Agent action · completed
+  • ## Release plan
 
     • Verify the Runtime
     • Ship with evidence
@@ -73,15 +73,15 @@ Session 1
  ● Waiting for durable command truth…
 
 theme=Mono width=100 marker=Style::new().fg(Color::Reset).bg(Color::Reset).underline_color(Color::Reset) cursor=None
-  Session 1  ·  Agent
-    ◆ Garive
-      ## Release plan
 
-      • Verify the Runtime
-      • Ship with evidence
+    ✓  Agent action · completed
+  • ## Release plan
 
-      cargo test passes.
+    • Verify the Runtime
+    • Ship with evidence
 
-   ! Draft locked · read only
-  › Retained pending draft
-   ● Waiting for durable command truth…
+    cargo test passes.
+
+ ! Draft locked · read only
+› Retained pending draft
+ ● Waiting for durable command truth…
