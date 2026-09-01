@@ -30,7 +30,7 @@ enum MouseAction {
 }
 
 pub(super) fn handle(mouse: MouseEvent, state: &mut RuntimeState) {
-    if state.composer_is_frozen() {
+    if state.model.overlay.is_some() || state.composer_is_frozen() {
         state.composer_mouse_selecting = false;
     }
     if state.composer_mouse_selecting {
@@ -229,6 +229,28 @@ mod tests {
             route(&model, mouse(MouseEventKind::Down(MouseButton::Left), 5, 5)),
             None
         );
+    }
+
+    #[test]
+    fn modal_opened_during_composer_drag_cancels_background_selection() {
+        let mut state = RuntimeState::test_ephemeral(Vec::new());
+        state.model.terminal_size = TerminalSize {
+            width: 100,
+            height: 24,
+        };
+        state.model.composer.replace("a界b").unwrap();
+        state.model.composer.move_document_start(false);
+        state.composer_mouse_selecting = true;
+        state.model.overlay = Some(Overlay::Help);
+
+        handle(
+            mouse(MouseEventKind::Drag(MouseButton::Left), 5, 21),
+            &mut state,
+        );
+
+        assert!(!state.composer_mouse_selecting);
+        assert_eq!(state.model.composer.cursor_grapheme(), 0);
+        assert!(!state.model.composer.has_selection());
     }
 
     #[test]

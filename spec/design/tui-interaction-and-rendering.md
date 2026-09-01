@@ -702,6 +702,20 @@ palette query. Explicit `dark`, `light`, or `mono` remains authoritative;
 explicit color themes override `NO_COLOR`, while an implicit `NO_COLOR`
 selection remains monochrome.
 
+Terminal rendering capability is frozen once before the first frame. Only
+`COLORTERM=truecolor|24bit` admits RGB; `TERM=*256color` maps semantic RGB
+tokens to the nearest xterm palette entry; other non-dumb terminals use named
+ANSI colors; `TERM=dumb` admits no color. Rounded Unicode borders require a
+UTF-8 `LC_ALL`, `LC_CTYPE`, or `LANG` value and otherwise degrade uniformly to
+`+`, `-`, and `|`. Theme choice and capability are independent: an explicit
+color theme may override `NO_COLOR`, but it cannot claim a color vocabulary
+the terminal did not advertise.
+
+Fullscreen clearing never requests a cursor report. Startup, explicit redraw,
+and external-editor return clear through the already known fullscreen viewport,
+reset Ratatui's previous buffer, and emit no `CSI 6n`; PTY tests synchronize on
+the actual clear sequence and reject a cursor query.
+
 - Every status has icon/text in addition to color.
 - Focus and selection remain visible in monochrome; keycaps and selected rows
   use terminal-native reverse video rather than assuming a dark background.

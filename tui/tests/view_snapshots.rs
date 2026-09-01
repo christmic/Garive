@@ -268,6 +268,17 @@ fn h4_full_workbench_timeline_matches_reviewed_snapshot() {
 }
 
 #[test]
+fn empty_state_responsive_hierarchy_matches_reviewed_snapshot() {
+    let matrix = empty_state_responsive_matrix();
+    assert_eq!(matrix.matches("connecting").count(), 3);
+    assert!(!matrix.contains("Connecting to your durable workspace"));
+    assert!(!matrix.contains("A quiet place to get things done"));
+    assert!(matrix.contains("Install an Agent definition"));
+    assert!(matrix.contains("Open /status"));
+    insta::assert_snapshot!("empty_state_responsive_matrix", matrix);
+}
+
+#[test]
 fn responsive_column_boundaries_match_reviewed_snapshots() {
     let model = product_model();
     for width in [39, 40, 51, 52, 79, 80, 119, 120, 160] {
@@ -420,6 +431,70 @@ fn product_model() -> AppModel {
     }
     model.composer.replace("Ask a follow-up…").unwrap();
     model
+}
+
+fn empty_state_responsive_matrix() -> String {
+    let cases = [
+        (
+            "loading compact",
+            BootState::Loading,
+            ConnectionState::Connecting,
+            Theme::Mono,
+            40,
+        ),
+        (
+            "loading standard",
+            BootState::Loading,
+            ConnectionState::Connecting,
+            Theme::Dark,
+            80,
+        ),
+        (
+            "loading wide",
+            BootState::Loading,
+            ConnectionState::Connecting,
+            Theme::Light,
+            120,
+        ),
+        (
+            "ready",
+            BootState::Ready,
+            ConnectionState::Online,
+            Theme::Dark,
+            100,
+        ),
+        (
+            "not configured",
+            BootState::NotConfigured,
+            ConnectionState::Online,
+            Theme::Mono,
+            100,
+        ),
+        (
+            "degraded",
+            BootState::Degraded,
+            ConnectionState::Unavailable {
+                safe_code: "host_unavailable",
+            },
+            Theme::Dark,
+            100,
+        ),
+    ];
+    cases
+        .into_iter()
+        .map(|(label, boot, connection, theme, width)| {
+            let model = AppModel {
+                boot,
+                connection,
+                ..Default::default()
+            };
+            format!(
+                "===== {label} · {theme:?} · {width}x18 =====\n{}",
+                frame(&model, theme, width, 18)
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n\n")
 }
 
 fn frozen_composer_matrix() -> String {
