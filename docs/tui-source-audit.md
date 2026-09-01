@@ -595,6 +595,32 @@ Authenticated Users ACE, does not repair a hostile existing ACL, and does not
 follow junctions for convenience. Administrator ownership privileges remain an
 operating-system authority and are not represented as ordinary Garive access.
 
+## Terminal appearance probe
+
+Codex's pinned `terminal_probe.rs:1-27,226-234,837-880` establishes a short,
+best-effort OSC 10/11 query with one deadline, paired foreground/background
+admission, BEL/ST termination, `rgb`/`rgba`, and two-/four-digit components.
+Its Unix implementation duplicates terminal handles, temporarily enables
+nonblocking input, restores flags on drop, and falls back to `/dev/tty`
+(`terminal_probe.rs:57-224`). `tui.rs:411-500` runs the startup probe after
+terminal modes are acquired and before ordinary event ownership begins.
+
+Garive adapts that ordering to its actual stderr renderer: stdin and stderr are
+duplicated, `/dev/tty` is the fallback, and only the reader is temporarily
+nonblocking. Garive queries appearance once for every fullscreen process so a
+later `/theme system` command resolves from the same immutable result; it does
+not re-query on focus, resize, reconnect, or external-editor resume.
+Screen-reader mode sends no OSC query. Missing or incomplete replies become
+dark after one 100 ms deadline. The user's `System` choice remains persisted;
+only the process-local render theme is resolved. No Codex palette values or UI
+styling are copied.
+
+Garive implementation `b3102335` and shipping macOS PTY coverage in
+`tui/tests/live_h1.rs` prove reverse-order light replies, real light palette
+bytes, fallback startup, and restoration. Follow-up `97fe6683` proves explicit
+themes override Crossterm's independent `NO_COLOR` suppression as the public
+CLI contract requires.
+
 ## Typed terminal-key catalog
 
 This increment is also source-bound. Codex defines typed runtime/editor

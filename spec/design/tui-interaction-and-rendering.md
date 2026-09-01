@@ -685,6 +685,23 @@ monochrome themes map tokens to terminal capabilities. No fixed RGB value is
 required for meaning. `NO_COLOR` selects monochrome unless an explicit CLI
 theme overrides it.
 
+`System` is a terminal-background decision, not an alias for `Dark`. A
+fullscreen launch performs one bounded OSC 10/11 query before Ratatui or the
+terminal event reader can own stdin. Both foreground and background must be
+returned under one 100 ms deadline; partial, malformed, or missing replies
+select the conservative dark palette. BEL and ST terminators, `rgb`/`rgba`,
+two- and four-digit components, and either reply order are accepted. The
+background luminance selects light or dark; the foreground is retained as part
+of the paired capability result. The resolved value is process-local and is
+never persisted in place of the user's `System` preference.
+
+The startup result is the sole resolver for initial rendering, resize reflow,
+scroll caching, and a later `/theme system` command. Focus, resize, reconnect,
+and external-editor resume do not repeat the query. Screen-reader mode emits no
+palette query. Explicit `dark`, `light`, or `mono` remains authoritative;
+explicit color themes override `NO_COLOR`, while an implicit `NO_COLOR`
+selection remains monochrome.
+
 - Every status has icon/text in addition to color.
 - Focus and selection remain visible in monochrome; keycaps and selected rows
   use terminal-native reverse video rather than assuming a dark background.

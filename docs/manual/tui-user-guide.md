@@ -59,6 +59,13 @@ Use `garive-tui --help` to inspect the executable's current CLI contract.
 capture. `NO_COLOR` selects the monochrome theme unless `--theme` explicitly
 overrides it.
 
+`system` reads the terminal's default foreground/background once during
+fullscreen startup and chooses the matching light or dark Garive palette. If
+the terminal does not answer within 100 ms, Garive uses dark. The choice is
+reused by `/theme system` for the rest of that process; only the `system`
+preference, not the detected palette, is saved. Screen-reader mode does not
+send this query.
+
 Ephemeral mode cannot preserve an unknown mutation response across process
 exit. The TUI therefore asks for one in-product confirmation before it permits
 Host mutations in that mode.
