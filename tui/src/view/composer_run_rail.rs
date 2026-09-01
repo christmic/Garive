@@ -93,7 +93,7 @@ pub(super) fn minimum_status(model: &AppModel) -> Option<&'static str> {
     }
 }
 
-fn line(model: &AppModel, colors: Palette, _motion: MotionFrame) -> Option<Line<'static>> {
+fn line(model: &AppModel, colors: Palette, motion: MotionFrame) -> Option<Line<'static>> {
     let state = project(model)?;
     if !matches!(state, TurnControlState::Running { .. }) {
         let (label, tone) = match state {
@@ -102,8 +102,13 @@ fn line(model: &AppModel, colors: Palette, _motion: MotionFrame) -> Option<Line<
             TurnControlState::CancelOutcomeUnknown => ("Cancel status unknown", colors.warning),
             TurnControlState::Running { .. } => unreachable!("running state handled above"),
         };
+        let indicator = if state == TurnControlState::CancelOutcomeUnknown {
+            "•"
+        } else {
+            motion.activity_indicator()
+        };
         return Some(Line::from(vec![
-            Span::styled("• ", tone),
+            Span::styled(format!("{indicator} "), tone),
             Span::styled(label, colors.title.patch(tone)),
         ]));
     }
@@ -113,13 +118,13 @@ fn line(model: &AppModel, colors: Palette, _motion: MotionFrame) -> Option<Line<
     let label = running_label(model);
     if cancel_available {
         Some(Line::from(vec![
-            Span::styled("• ", colors.accent),
+            Span::styled(format!("{} ", motion.activity_indicator()), colors.accent),
             Span::styled(label, colors.accent),
             Span::styled("  ·  esc to interrupt", colors.muted),
         ]))
     } else {
         Some(Line::from(vec![
-            Span::styled("• ", colors.accent),
+            Span::styled(format!("{} ", motion.activity_indicator()), colors.accent),
             Span::styled(label, colors.accent),
         ]))
     }
@@ -232,6 +237,28 @@ mod tests {
                 .unwrap()
                 .to_string(),
             "• Stopping…"
+        );
+    }
+
+    #[test]
+    fn animated_run_rail_uses_the_shared_single_cell_pulse() {
+        let colors = super::super::palette(Theme::Mono);
+        let model = AppModel {
+            execution: ExecutionState::Following,
+            ..Default::default()
+        };
+
+        assert_eq!(
+            line(&model, colors, MotionFrame::animated(0))
+                .unwrap()
+                .to_string(),
+            "• Working…  ·  esc to interrupt"
+        );
+        assert_eq!(
+            line(&model, colors, MotionFrame::animated(4))
+                .unwrap()
+                .to_string(),
+            "◦ Working…  ·  esc to interrupt"
         );
     }
 }

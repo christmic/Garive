@@ -428,6 +428,18 @@ dismissal, while retaining a separate searchable command palette. Garive does
 not adopt Codex's command set, attachments, shell mode, model selection, or
 approval shapes without corresponding Host authority.
 
+Codex also centralizes transient activity motion. In the pinned revision,
+`tui/src/motion.rs:35-75` owns both animated and reduced-motion indicators and
+uses a width-stable `•`/`◦` fallback at a 600 ms cadence; callers do not invent
+spinners. `tui/src/status_indicator_widget.rs:238-275` schedules frames only
+while animation is enabled and composes that indicator with the status and
+interrupt action on one row. Garive adopts the same ownership and calm
+single-cell rhythm through `view/motion.rs`, using its existing 160 ms shared
+clock and four-tick phases. It deliberately keeps phase words such as
+`Preparing…`, `Writing…`, and `Saving…`, and does not fabricate elapsed time
+that the current Host projection does not expose. Reduced motion remains a
+static bullet, and an unknown cancellation outcome never pulses.
+
 Codex also keeps shortcut reference content action-only. The pinned
 `bottom_pane/footer.rs:733-749,880-949` projects `FooterMode::ShortcutOverlay`
 into a two-column list plus one customization action; the reviewed

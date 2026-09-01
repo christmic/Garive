@@ -1,6 +1,6 @@
 ---
 source: tui/tests/view_snapshots.rs
-expression: "motion_frame(&model, Theme::Mono, 4, 100, 24)"
+expression: "motion_frame(&model, Theme::Mono, 8, 100, 24)"
 ---
 
 › Summarize the release plan.
@@ -23,6 +23,6 @@ expression: "motion_frame(&model, Theme::Mono, 4, 100, 24)"
 
 
 
-• Working…  ·  esc to interrupt
+◦ Working…  ·  esc to interrupt
 › Ask a follow-up…
   Agent · Session 1

@@ -129,11 +129,14 @@ the displayed and screen-reader labels must come from the typed key catalog
 that the controller resolves. Compact grouping may omit secondary aliases only
 when the complete set remains in the manual; it may not rename an action or
 show an unbound chord.
-All time-varying presentation lives in `view/motion.rs`. An active connection
-or execution may use its calm single-cell pulse, and active H4 output may use a
-`LiveCaret`. Reduced motion uses the same text and semantic style with a stable
-glyph or no caret; it does not suppress newly received content. Screens cannot
-invent local frame sequences or schedule their own redraw loops.
+All time-varying presentation lives in `view/motion.rs`. Active execution uses
+one width-stable `•`/`◦` pulse on the Composer run rail; each phase lasts four
+160 ms motion ticks, so the cue reads as calm state rather than a fast spinner.
+An unknown outcome stays static because no work progress is known. Active H4
+output may use a `LiveCaret`. Reduced motion keeps the same text and semantic
+style with a stable `•` or no caret; it does not suppress newly received
+content. Screens cannot invent local frame sequences or schedule their own
+redraw loops.
 
 ## Composite components
 

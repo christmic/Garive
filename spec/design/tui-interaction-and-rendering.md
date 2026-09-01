@@ -133,8 +133,8 @@ alone names the currently executable `Esc`, `Enter`, or decision action. Closing
 the overlay restores the background cue without changing execution state.
 While a Turn runs, this Composer-adjacent rail is the single lifecycle voice:
 `Preparing…`, `Writing…`, `Finishing…`, `Saving…`, or an honest unavailability
-state. It is right-aligned above the prompt like secondary input context, uses
-no answer/list marker, and keeps one stable phrase such as
+state. It starts on the shared transcript/Composer axis, uses one width-stable
+motion cue rather than an answer/list marker, and keeps one stable phrase such as
 `Writing…  ·  Esc interrupt`. Before the first presented text delta,
 `LiveAnswer` contributes no transcript row. Once text exists, the Agent `•`
 shares its first Markdown line;
