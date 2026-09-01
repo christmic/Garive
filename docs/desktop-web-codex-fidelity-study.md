@@ -652,6 +652,23 @@ the footer measures x=8, y=678, 189×32px with a 10px bottom safe inset and zero
 document overflow. Compact rail mode reduces both actions to icons; the 480px
 navigation drawer restores the Local label without creating a second footer.
 
+### XX. Progressive reading and Composer anchoring
+
+The supplied desktop references keep the conversation as a document surface:
+the reader can leave the live tail without the interface pulling them back, and
+the compact return affordance belongs spatially to the Composer. Garive's prior
+handler requested a smooth scroll and then immediately assigned `scrollTop`,
+cancelling the animation. Its fixed bottom offset also assumed one Composer
+height, so approval and attached-workspace states could collide with the control.
+
+Desktop and Web now share one tail policy. A normal return is genuinely smooth,
+reduced motion moves directly, and the control stays present until the actual
+scroll position crosses the attachment threshold. It is a child of the Composer
+wrapper and sits 25px above that wrapper rather than above the viewport bottom.
+The long running fixture exercises the same document density as the supplied
+reference; unit contracts cover both motion branches and variable Composer
+ownership without turning development fixture text into production state.
+
 ## Gate 1 — Codex fidelity
 
 This gate passes only when both Desktop and Web show:

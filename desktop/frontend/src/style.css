@@ -77,7 +77,7 @@ kbd { color: var(--subtle); font: 11px -apple-system, sans-serif; }
 .conversation { min-height: 0; overflow: auto; scroll-behavior: smooth; }
 .conversation-top-fade { pointer-events: none; position: absolute; z-index: 2; top: 0; right: 0; left: 0; height: 16px; background: linear-gradient(to bottom, var(--surface-canvas), transparent); opacity: 0; transition: opacity var(--motion-base) ease; }
 .conversation-top-fade[data-visible="true"] { opacity: 1; }
-.conversation-tail-button { position: absolute; z-index: 4; right: 50%; bottom: 174px; display: flex; align-items: center; gap: 5px; min-height: 30px; padding: 0 10px; border: 1px solid var(--border-strong); border-radius: var(--radius-pill); color: var(--text-secondary); background: color-mix(in srgb, var(--surface-raised) 94%, transparent); box-shadow: var(--shadow-raised); transform: translateX(50%); backdrop-filter: blur(12px); font-size: var(--text-xs); }
+.conversation-tail-button { pointer-events: auto; position: absolute; z-index: 4; top: -25px; left: 50%; display: flex; align-items: center; gap: 5px; min-height: 30px; padding: 0 10px; border: 1px solid var(--border-strong); border-radius: var(--radius-pill); color: var(--text-secondary); background: color-mix(in srgb, var(--surface-raised) 94%, transparent); box-shadow: var(--shadow-raised); transform: translateX(-50%); backdrop-filter: blur(12px); font-size: var(--text-xs); }
 .conversation-tail-button:hover { color: var(--text-primary); background: var(--surface-hover); }
 .conversation-tail-button svg { width: 13px; transform: rotate(90deg); }
 .conversation-tail-button.unread::before { width: 6px; height: 6px; border-radius: 50%; background: var(--action-primary); content: ""; }
@@ -766,7 +766,6 @@ kbd { font-size: var(--text-2xs); }
 .composer-stop-button:hover { background: var(--text-secondary); }
 .composer-stop-button svg { width: 15px; fill: currentColor; stroke-width: 0; }
 @supports (corner-shape: superellipse(1.5)) { .composer { corner-shape: superellipse(1.5); } }
-.conversation-tail-button { bottom: 132px; }
 .error-banner { bottom: 136px; }
 .approval-card { border-color: var(--border-subtle); border-left-color: var(--state-attention); color: var(--text-primary); background: color-mix(in srgb, var(--state-attention-surface) 22%, var(--surface-raised)); }
 .approval-icon { color: var(--state-attention); }

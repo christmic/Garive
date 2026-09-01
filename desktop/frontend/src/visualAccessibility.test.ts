@@ -124,6 +124,8 @@ describe("Desktop visual accessibility contract", () => {
     expect(CSS).toContain(".theme-dark .environment-panel, .theme-dark .environment-panel header");
     expect(CSS).toContain('.conversation-top-fade[data-visible="true"] { opacity: 1; }');
     expect(CSS).toContain("height: 16px; background: linear-gradient(to bottom, var(--surface-canvas), transparent)");
+    expect(CSS).toContain(".conversation-tail-button { pointer-events: auto; position: absolute; z-index: 4; top: -25px; left: 50%;");
+    expect(CSS).not.toContain(".conversation-tail-button { bottom:");
     expect(CSS).toContain("padding-left: 10px; padding-right: 0;");
     expect(CSS).toContain("box-shadow: var(--shadow-composer)");
     expect(CSS).toContain("scrollbar-color: var(--scrollbar-thumb) transparent");

@@ -201,6 +201,16 @@ shadows or rounded outer cards.
 - Layouts that require a stable gutter may retain it, but the reserved space
   must use the surrounding surface. Keyboard scrolling, focus order and scroll
   semantics never depend on the visual thumb being present.
+- Live output follows the tail only while the reader remains within the shared
+  attachment threshold. Leaving that threshold preserves the reading position
+  and reveals one explicit return control; new output changes its label and
+  unread marker without moving the document.
+- Return-to-latest uses a real smooth scroll unless the OS requests reduced
+  motion. The control remains visible until scroll events confirm attachment;
+  clicking it never fabricates the attached state before the viewport arrives.
+- The return control is anchored to the variable-height Composer wrapper, 25 px
+  above its leading edge. It must not use a fixed viewport-bottom offset, so
+  approval, suspension and attached-workspace rows cannot overlap it.
 
 ### File-document typography
 

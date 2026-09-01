@@ -30,7 +30,7 @@ import {
 } from "./preferences";
 import { createTranslator, resolveDesktopLocale, type MessageKey } from "./i18n";
 import { shouldSubmitComposer } from "./composer";
-import { isNearConversationTail } from "./conversationTail";
+import { isNearConversationTail, scrollConversationToTail } from "./conversationTail";
 import { nextDesktopZoom } from "./zoom";
 import { formatThreadMarkdown } from "./threadExport";
 import { useDesktopProduct } from "./app/useDesktopProduct";
@@ -396,7 +396,7 @@ export function App({ client = "desktop", webCapabilities, createProductPort,
           observed_max_position: 9, has_more: false, items: [{ turn_id: "completed-turn",
             started_position: 1, latest_position: 5, state: "completed",
             user_text: "Audit the Runtime boundary before implementation",
-            completion_text: "## Runtime boundary\n\nThe client owns the work surface; the Runtime owns durable execution.\n\n```text\nSession → Turn → admitted Activity → committed result\n```\n\n### Verified constraints\n\n- Workspace authority is explicit.\n- Live output never replaces the committed result.\n- Recovery preserves the next safe action.",
+            completion_text: "## Runtime boundary\n\nThe client owns the work surface; the Runtime owns durable execution.\n\n```text\nSession → Turn → admitted Activity → committed result\n```\n\n### Execution path\n\n1. The Host admits one exact Session and Turn.\n2. Runtime freezes model, authority, safety, and sandbox inputs.\n3. Activity is published from the durable ledger rather than inferred by the client.\n4. Only committed output becomes the final assistant result.\n\n### Verified constraints\n\n- Workspace authority is explicit and scoped to the selected Session.\n- Live output never replaces the committed result.\n- Recovery preserves the next safe action after restart.\n- Unknown outcomes remain visible until Runtime resolves them.\n\n### Client boundary\n\nDesktop and Web may create a Session, submit work, follow events, and render admitted facts. They do not manufacture tools, model identity, capacity, or execution state. The same contract keeps progressive UI useful without making presentation the source of truth.\n\n### Operational consequence\n\nA reconnect can restore the exact Turn cursor, while an approval resumes only the prepared call bound to that suspension. This keeps the interface calm because the durable ledger—not transient component state—owns continuity.",
             content_truncated: false, activities: [] }, { turn_id: "running-turn",
             started_position: 6, latest_position: 9, state: "running",
             user_text: "Compare the launch research and prepare a decision memo",
@@ -883,9 +883,10 @@ function WorkSurface({ state, composer, submit, startSuggestion, dispatch, conte
   const jumpToLatest = () => {
     const element = conversation.current;
     if (!element) return;
-    element.scrollTo?.({ top: element.scrollHeight, behavior: "smooth" });
-    element.scrollTop = element.scrollHeight;
-    setFollowingTail(true); setNewOutputBelow(false);
+    const motionReduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (scrollConversationToTail(element, motionReduced) === "instant") {
+      setFollowingTail(true); setNewOutputBelow(false);
+    }
   };
 
   if (state.boot === "loading") return <div className="center-state"><span className="orb loading"><Icon name="sparkle" /></span><h1>{t("work.boot.title")}</h1><p>{t("work.boot.body")}</p></div>;
@@ -913,11 +914,6 @@ function WorkSurface({ state, composer, submit, startSuggestion, dispatch, conte
         : <Timeline state={state} dispatch={dispatch} t={t} />}
     </div>
     <div className="conversation-top-fade" data-visible={scrolledFromTop} aria-hidden="true" />
-    {!followingTail && <button className={newOutputBelow
-      ? "conversation-tail-button unread" : "conversation-tail-button"} type="button"
-      aria-label={t(newOutputBelow ? "timeline.newOutput" : "timeline.jumpLatest")}
-      onClick={jumpToLatest}><Icon name="chevron" /><span>{t(newOutputBelow
-        ? "timeline.newOutput" : "timeline.jumpLatest")}</span></button>}
     {(state.error || disconnected || reconnecting) && <div className={disconnected || reconnecting
       ? "error-banner connection-banner" : "error-banner"} role={state.error ? "alert" : "status"}>
       <Icon name={reconnecting ? "activity" : "warning"} /><span>{reconnecting ? t("connection.reconnecting")
@@ -927,6 +923,11 @@ function WorkSurface({ state, composer, submit, startSuggestion, dispatch, conte
       {state.error && <button type="button" onClick={() => dispatch({ type: "error_dismissed" })}
         aria-label={t("error.dismiss")}><Icon name="close" /></button>}</div>}
     <div className="composer-wrap">
+      {!followingTail && <button className={newOutputBelow
+        ? "conversation-tail-button unread" : "conversation-tail-button"} type="button"
+        aria-label={t(newOutputBelow ? "timeline.newOutput" : "timeline.jumpLatest")}
+        onClick={jumpToLatest}><Icon name="chevron" /><span>{t(newOutputBelow
+          ? "timeline.newOutput" : "timeline.jumpLatest")}</span></button>}
       <div className={state.phase === "submitting" ? "composer busy" : "composer"}>
         {(state.phase === "submitting" || suspension) && <TurnProgress goal={activeGoal}
           status={suspension ? t("status.needsInput") : undefined} activities={state.activities}
