@@ -36,6 +36,7 @@ import com.garive.mobile.preferences.Theme
 import org.junit.Rule
 import org.junit.Test
 import org.junit.Assert.assertTrue
+import org.junit.Assert.assertFalse
 import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
@@ -82,6 +83,7 @@ public class GariveMobileAppJourneyTest {
         compose.onNodeWithText("Start with a clear outcome").assertIsDisplayed()
         compose.onNodeWithText("Start on server").assertIsDisplayed()
         compose.onNodeWithText("Analyze").performClick()
+        assertTrue(compose.onAllNodesWithText("Start with a clear outcome").fetchSemanticsNodes().isEmpty())
         compose.onNodeWithText("Start on server").assertIsEnabled()
         compose.onNodeWithText("Start on server").performClick()
         compose.waitUntil(5_000) {
@@ -89,7 +91,7 @@ public class GariveMobileAppJourneyTest {
         }
         compose.onNodeWithText("Find the key patterns and recommend next steps").assertIsDisplayed()
 
-        compose.onNodeWithContentDescription("Request cancellation").performClick()
+        compose.onNodeWithContentDescription("Stop current work").performClick()
         compose.onNodeWithText("Request cancel").performClick()
         compose.waitUntil(5_000) {
             compose.onAllNodesWithText("Cancellation recorded. Committed work remains available.")
@@ -106,6 +108,13 @@ public class GariveMobileAppJourneyTest {
         compose.onNodeWithText("Settings").performClick()
         compose.onNodeWithText("Light").performScrollTo().assertIsSelected()
         compose.onNodeWithText("Dark").performClick().assertIsSelected()
+    }
+
+    @Test
+    public fun starterDisclosureTracksTheEditableDraft(): Unit {
+        assertTrue(showMobileGoalStarters(""))
+        assertFalse(showMobileGoalStarters(" "))
+        assertFalse(showMobileGoalStarters(mobileGoalStarters.first().prompt))
     }
 
     @Test

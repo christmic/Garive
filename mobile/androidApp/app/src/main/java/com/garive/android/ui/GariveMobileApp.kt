@@ -6,9 +6,11 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
@@ -22,6 +24,7 @@ import androidx.compose.material.icons.automirrored.rounded.ViewList
 import androidx.compose.material.icons.rounded.Home
 import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material.icons.rounded.Menu
 import androidx.compose.material.icons.rounded.PeopleAlt
 import androidx.compose.material.icons.rounded.Settings
@@ -46,6 +49,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -486,21 +490,28 @@ internal fun NewTaskSheet(
                     )
                 }
             }
-            Text("Start with a clear outcome", style = MaterialTheme.typography.titleMedium)
-            LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                items(mobileGoalStarters, key = { it.label }) { starter ->
-                    OutlinedButton(
+            if (showMobileGoalStarters(draft)) {
+                Text("Start with a clear outcome", style = MaterialTheme.typography.titleMedium)
+                mobileGoalStarters.forEach { starter ->
+                    TextButton(
                         onClick = { onDraft(starter.prompt) },
-                        modifier = Modifier.width(224.dp),
-                        shape = RoundedCornerShape(14.dp),
+                        modifier = Modifier.fillMaxWidth().heightIn(min = 44.dp),
+                        shape = RoundedCornerShape(12.dp),
                     ) {
-                        Column(Modifier.padding(vertical = 4.dp)) {
+                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                             Text(starter.label, color = MaterialTheme.colorScheme.primary)
+                            Spacer(Modifier.width(12.dp))
                             Text(
                                 starter.prompt,
+                                modifier = Modifier.weight(1f),
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 style = MaterialTheme.typography.bodySmall,
                                 maxLines = 2,
+                            )
+                            Icon(
+                                Icons.Rounded.ChevronRight,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }
                     }
@@ -555,3 +566,5 @@ internal val mobileGoalStarters: List<MobileGoalStarter> = listOf(
     MobileGoalStarter("Analyze", "Find the key patterns and recommend next steps"),
     MobileGoalStarter("Create", "Draft a polished project brief from my outline"),
 )
+
+internal fun showMobileGoalStarters(draft: String): Boolean = draft.isEmpty()

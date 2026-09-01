@@ -274,8 +274,11 @@ does not retain the local credential.
 ### Conversation
 
 - Navigation title uses Agent label; status sits beneath it.
-- Timeline bubbles distinguish user, Agent, system status, suspension, and
-  activity. Activity is collapsed by default.
+- The timeline is one continuous reading surface. A committed user request is
+  a trailing, width-bounded work prompt with four continuous corners; Agent
+  output stays flush with the reading axis rather than acquiring an avatar,
+  tinted icon tile, or enclosing message card. System status, suspension, and
+  activity remain structurally distinct. Activity is collapsed by default.
 - Committed Agent output recognizes only line-delimited triple-backtick fenced
   code blocks. Prose stays literal selectable text; code uses a native
   monospace surface with horizontal scrolling and an optional bounded language
@@ -283,26 +286,40 @@ does not retain the local credential.
 - Expanded Activity renders the public label and committed state plus an
   optional selectable stable safe code. Raw provider bodies, paths, arguments,
   and internal identifiers remain absent.
-- Sticky composer respects keyboard/safe area and supports multiline input.
-- Blocking suspension replaces composer actions but never hides prior content.
+- Sticky composer respects keyboard/safe area and supports multiline input. It
+  is one borderless raised surface with a 24-point corner, not an outlined form
+  field inside a second dock card. Native text layout starts on one line and
+  grows only with content. The durable-clear rule remains an accessibility hint
+  and test invariant rather than permanent visual caption noise.
+- When the latest Turn is running, the trailing Send action is replaced by one
+  44-point Stop action in the same composer position. A second toolbar Stop is
+  forbidden; activation still opens the confirmation sheet.
+- Blocking suspension replaces the ordinary composer and attaches one compact
+  neutral decision rail to the same safe-area dock; it never appears again as
+  a duplicate timeline card and never hides prior content. A 2-point attention
+  edge carries urgency without saturating the complete surface.
   Boolean approval exposes explicit one-shot approve/decline actions; any other
   admitted public suspension exposes a bounded text response and the exact
   server-provided action label. Empty or over-16-KiB responses remain local.
 - Approval exposes two explicit actions, `Decline` and `Approve once`, and
-  states that scope is the current Turn and committed history remains.
+  states that scope is the current Turn and committed history remains. Actions
+  may share a row at default text size but stack under accessibility text or
+  narrow width without truncation; the safer decline action comes first.
 - Cancel uses a confirmation sheet. Share/copy is an explicit menu action.
 
 ### Agents and new task
 
 - Cards show installed public Agent label, availability, and public capability
   labels. Raw definition IDs remain in details.
-- The mobile composer adapts the desktop Work starters into one horizontal,
-  glanceable row: `Synthesize` writes `Turn notes into a clear decision memo`,
+- The mobile new-task surface adapts the desktop Work starters into at most
+  three flat 44-point command rows rather than horizontally scrolling cards:
+  `Synthesize` writes `Turn notes into a clear decision memo`,
   `Analyze` writes `Find the key patterns and recommend next steps`, and
   `Create` writes `Draft a polished project brief from my outline`.
 - A starter replaces only the editable draft. It never submits, selects broader
   authority, or changes the chosen Agent; users can edit the outcome before
-  starting server work.
+  starting server work. Typing or choosing a starter removes the complete
+  starter group without moving the composer.
 - Selecting an Agent opens the new-task composer; send remains disabled for
   empty/oversized text or offline/auth-invalid state.
 
@@ -326,8 +343,17 @@ text.primary, text.secondary, text.inverse
 accent.primary, status.running, status.attention,
 status.success, status.failure, border.subtle, focus.visible
 space.1=4, space.2=8, space.3=12, space.4=16, space.6=24, space.8=32
-radius.control=12, radius.card=20, radius.sheet=28
+radius.control=12, radius.card=20, radius.sheet=28,
+radius.composer=24, radius.userPrompt=22, edge.attention=2
 ```
+
+These are native mappings of the shared client token families, not a separate
+visual language. Mobile keeps 44-point actions even where Desktop uses 28 px.
+Composer and decision depth use the platform's quiet raised-material shadow;
+they have no physical outline. Cards remain reserved for real semantic
+containment. User prompts occupy at most 70% of the readable phone column with
+16-point inline and 10-point block padding. Light and dark modes preserve the
+same geometry and hierarchy.
 
 The light palette follows desktop Work's warm paper canvas (`#fbfaf6`), strong
 paper surface, ink text, and `#315fcf` primary action. Dark appearance maps the

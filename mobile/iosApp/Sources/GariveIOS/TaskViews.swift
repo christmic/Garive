@@ -28,22 +28,21 @@ struct NewTaskView: View {
                         }
                     }
                 }
-                Section("Start with a clear outcome") {
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(spacing: 10) {
-                            ForEach(mobileGoalStarters, id: \.label) { starter in
-                                Button { prompt = starter.prompt } label: {
-                                    VStack(alignment: .leading, spacing: 6) {
-                                        Text(starter.label).font(.subheadline.weight(.semibold))
-                                            .foregroundStyle(GarivePalette.coral)
-                                        Text(starter.prompt).font(.caption).foregroundStyle(.secondary)
-                                            .multilineTextAlignment(.leading).lineLimit(2)
-                                    }
-                                    .frame(width: 210, alignment: .leading).padding(12)
-                                    .background(GarivePalette.raised, in: RoundedRectangle(cornerRadius: 14))
-                                }.buttonStyle(.plain)
-                            }
-                        }.padding(.vertical, 2)
+                if showsMobileGoalStarters(prompt) {
+                    Section("Start with a clear outcome") {
+                        ForEach(mobileGoalStarters, id: \.label) { starter in
+                            Button { prompt = starter.prompt } label: {
+                                HStack(spacing: 12) {
+                                    Text(starter.label).font(.subheadline.weight(.semibold))
+                                        .foregroundStyle(GarivePalette.coral)
+                                    Text(starter.prompt).font(.caption).foregroundStyle(.secondary)
+                                        .multilineTextAlignment(.leading).lineLimit(2)
+                                    Spacer(minLength: 0)
+                                    Image(systemName: "chevron.right").font(.caption).foregroundStyle(.tertiary)
+                                }
+                                .frame(maxWidth: .infinity, minHeight: GariveMobileMetrics.touchTarget, alignment: .leading)
+                            }.buttonStyle(.plain)
+                        }
                     }
                 }
                 Section("Goal") {
@@ -96,12 +95,15 @@ let mobileGoalStarters = [
     MobileGoalStarter(label: "Create", prompt: "Draft a polished project brief from my outline"),
 ]
 
+func showsMobileGoalStarters(_ draft: String) -> Bool { draft.isEmpty }
+
 struct ConversationView: View {
     @ObservedObject var model: MobileViewModel
     let state: MobileWorkState
     @Environment(\.dismiss) private var dismiss
     @State private var confirmingCancel = false
     @State private var confirmingAbandonRetry = false
+    @State private var decisionResponse = ""
 
     var body: some View {
         VStack(spacing: 0) {
@@ -118,11 +120,7 @@ struct ConversationView: View {
                             )
                         }
                         ForEach(state.timeline, id: \.turnId) { turn in
-                            TurnView(
-                                turn: turn,
-                                controlsEnabled: state.connection == .online && state.pendingCommand == nil,
-                                respond: { model.continueDecision($0) }
-                            )
+                            TurnView(turn: turn)
                                 .id(turn.turnId)
                         }
                         if state.timeline.isEmpty {
@@ -135,12 +133,24 @@ struct ConversationView: View {
                     if let last = state.timeline.last { withAnimation { proxy.scrollTo(last.turnId, anchor: .bottom) } }
                 }
             }
-            Composer(
-                text: Binding(get: { state.draft }, set: { value in model.editDraft(value) }),
-                sending: state.pendingCommand != nil,
-                enabled: canCompose
-            ) {
-                model.send(state.draft)
+            if let decision = state.timeline.last?.decision {
+                DecisionRail(
+                    decision: decision,
+                    response: $decisionResponse,
+                    enabled: state.connection == .online && state.pendingCommand == nil
+                ) { value in
+                    model.continueDecision(value)
+                    decisionResponse = ""
+                }
+            } else {
+                Composer(
+                    text: Binding(get: { state.draft }, set: { value in model.editDraft(value) }),
+                    sending: state.pendingCommand != nil,
+                    running: canCancel,
+                    enabled: canCompose,
+                    send: { model.send(state.draft) },
+                    stop: { confirmingCancel = true }
+                )
             }
         }
         .background(GarivePalette.ink)
@@ -152,12 +162,6 @@ struct ConversationView: View {
                 ToolbarItem {
                     ShareLink(item: transcript) { Image(systemName: "square.and.arrow.up") }
                         .accessibilityLabel("Share conversation")
-                }
-            }
-            if canCancel {
-                ToolbarItem {
-                    Button(role: .destructive) { confirmingCancel = true } label: { Image(systemName: "stop.circle") }
-                        .accessibilityLabel("Stop current work")
                 }
             }
         }
@@ -200,9 +204,6 @@ struct ConversationView: View {
 
 private struct TurnView: View {
     let turn: MobileTurnItem
-    let controlsEnabled: Bool
-    let respond: (String) -> Void
-    @State private var response = ""
     @State private var activityExpanded = false
 
     var body: some View {
@@ -238,9 +239,6 @@ private struct TurnView: View {
                 .tint(GarivePalette.coral)
                 .padding(.leading, 44)
             }
-            if let decision = turn.decision {
-                DecisionCard(decision: decision, response: $response, enabled: controlsEnabled, submit: respond)
-            }
             HStack(spacing: 8) {
                 Text(turn.status.name.lowercased().replacingOccurrences(of: "_", with: " "))
                     .font(.caption.weight(.semibold)).foregroundStyle(statusColor)
@@ -266,10 +264,13 @@ private struct UserMessage: View {
     var body: some View {
         HStack {
             Spacer(minLength: 44)
-            Text(text).textSelection(.enabled).padding(15)
-                .background(GarivePalette.raised, in: UnevenRoundedRectangle(
-                    topLeadingRadius: 18, bottomLeadingRadius: 18, bottomTrailingRadius: 5, topTrailingRadius: 18
-                ))
+            Text(text).textSelection(.enabled)
+                .padding(.horizontal, 16).padding(.vertical, 10)
+                .containerRelativeFrame(.horizontal) { width, _ in width * 0.70 }
+                .background(
+                    GarivePalette.raised,
+                    in: RoundedRectangle(cornerRadius: GariveMobileMetrics.userPromptRadius, style: .continuous)
+                )
                 .foregroundStyle(.primary)
         }
     }
@@ -281,24 +282,18 @@ private struct AssistantMessage: View {
     let truncated: Bool
 
     var body: some View {
-        HStack(alignment: .top, spacing: 12) {
-            Image(systemName: "sparkles")
-                .font(.subheadline.weight(.semibold)).foregroundStyle(GarivePalette.coral)
-                .frame(width: 34, height: 34)
-                .background(GarivePalette.coral.opacity(0.10), in: RoundedRectangle(cornerRadius: 10))
-            VStack(alignment: .leading, spacing: 10) {
-                MobileResponseText(text: text)
-                if truncated {
-                    Text("Display content was safely bounded").font(.caption).foregroundStyle(.secondary)
-                }
-                Divider()
+        VStack(alignment: .leading, spacing: 10) {
+            MobileResponseText(text: text)
+            if truncated {
+                Text("Display content was safely bounded").font(.caption).foregroundStyle(.secondary)
             }
-            Spacer(minLength: 0)
+            Divider()
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
-private struct DecisionCard: View {
+private struct DecisionRail: View {
     let decision: MobileDecision
     @Binding var response: String
     let enabled: Bool
@@ -314,24 +309,56 @@ private struct DecisionCard: View {
             Text("This Turn only · one response · committed history stays")
                 .font(.caption.weight(.medium)).foregroundStyle(GarivePalette.amber)
             if !approval {
-                HStack(spacing: 10) {
-                    TextField("Your response", text: $response)
-                        .textFieldStyle(.roundedBorder)
-                        .submitLabel(.send)
-                        .onSubmit { if canSubmitResponse { submit(response) } }
-                    Button(decision.actionLabel) { submit(response) }
-                        .buttonStyle(.borderedProminent)
-                        .disabled(!canSubmitResponse)
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: 10) { responseField; responseButton }
+                    VStack(spacing: 8) { responseField; responseButton }
                 }
             }
             if approval {
-                HStack {
-                    Button("Decline") { submit("false") }.buttonStyle(.bordered).frame(maxWidth: .infinity)
-                    Button("Approve once") { submit("true") }.buttonStyle(.borderedProminent).frame(maxWidth: .infinity)
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: 10) { declineButton; approveButton }
+                    VStack(spacing: 8) { declineButton; approveButton }
                 }.disabled(!enabled)
             }
-        }.padding(17).background(GarivePalette.panel, in: RoundedRectangle(cornerRadius: 20))
-            .overlay(RoundedRectangle(cornerRadius: 18).stroke(GarivePalette.amber.opacity(0.35)))
+        }
+        .padding(16)
+        .background(
+            GarivePalette.panel,
+            in: RoundedRectangle(cornerRadius: GariveMobileMetrics.decisionRadius, style: .continuous)
+        )
+        .overlay(alignment: .leading) {
+            Rectangle().fill(GarivePalette.amber).frame(width: GariveMobileMetrics.attentionEdge)
+                .clipShape(RoundedRectangle(cornerRadius: GariveMobileMetrics.decisionRadius, style: .continuous))
+        }
+        .shadow(color: .black.opacity(0.06), radius: 8, y: 2)
+        .padding(.horizontal, 12).padding(.vertical, 9)
+        .background(.ultraThinMaterial)
+        .accessibilityIdentifier("mobile-decision-rail")
+        .accessibilityValue("Needs input for this Turn")
+    }
+
+    private var responseField: some View {
+        TextField("Your response", text: $response)
+            .textFieldStyle(.roundedBorder)
+            .submitLabel(.send)
+            .onSubmit { if canSubmitResponse { submit(response) } }
+    }
+
+    private var responseButton: some View {
+        Button(decision.actionLabel) { submit(response) }
+            .buttonStyle(.borderedProminent)
+            .frame(maxWidth: .infinity, minHeight: GariveMobileMetrics.touchTarget)
+            .disabled(!canSubmitResponse)
+    }
+
+    private var declineButton: some View {
+        Button("Decline") { submit("false") }.buttonStyle(.bordered)
+            .frame(maxWidth: .infinity, minHeight: GariveMobileMetrics.touchTarget)
+    }
+
+    private var approveButton: some View {
+        Button("Approve once") { submit("true") }.buttonStyle(.borderedProminent)
+            .frame(maxWidth: .infinity, minHeight: GariveMobileMetrics.touchTarget)
     }
 
     private var canSubmitResponse: Bool {
@@ -342,25 +369,40 @@ private struct DecisionCard: View {
 private struct Composer: View {
     @Binding var text: String
     let sending: Bool
+    let running: Bool
     let enabled: Bool
     let send: () -> Void
+    let stop: () -> Void
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(alignment: .bottom, spacing: 10) {
-                TextField(enabled ? "Give the Agent direction" : "Waiting for committed state", text: $text, axis: .vertical)
-                    .lineLimit(1...5).padding(.leading, 4)
+        HStack(alignment: .bottom, spacing: 10) {
+            TextField(enabled ? "Give the Agent direction" : "Waiting for committed state", text: $text, axis: .vertical)
+                .lineLimit(1...5).padding(.leading, 4)
+            if running {
+                Button(action: stop) {
+                    Image(systemName: "stop.fill").font(.subheadline.weight(.bold))
+                        .frame(width: GariveMobileMetrics.touchTarget, height: GariveMobileMetrics.touchTarget)
+                        .background(Color.red, in: Circle()).foregroundStyle(.white)
+                }.buttonStyle(.plain).accessibilityLabel("Stop current work").disabled(sending)
+            } else {
                 Button(action: send) {
-                    Image(systemName: "arrow.up").font(.headline).frame(width: 42, height: 42)
+                    Image(systemName: "arrow.up").font(.headline)
+                        .frame(width: GariveMobileMetrics.touchTarget, height: GariveMobileMetrics.touchTarget)
                         .background(GarivePalette.coral, in: Circle()).foregroundStyle(.white)
                 }.buttonStyle(.plain).accessibilityLabel("Send to Agent")
                     .disabled(text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
-                    text.utf8.count > mobileMaxInputBytes || sending || !enabled)
+                        text.utf8.count > mobileMaxInputBytes || sending || !enabled)
             }
-            .padding(7).background(GarivePalette.panel, in: RoundedRectangle(cornerRadius: 20))
-            .overlay(RoundedRectangle(cornerRadius: 20).stroke(.secondary.opacity(0.25)))
-            .shadow(color: .black.opacity(0.08), radius: 10, y: 3)
-            Text("Draft clears only after the server commits").font(.caption2).foregroundStyle(.secondary).padding(.horizontal, 8)
-        }.padding(.horizontal, 12).padding(.vertical, 9).background(.ultraThinMaterial)
+        }
+        .padding(7)
+        .background(
+            GarivePalette.panel,
+            in: RoundedRectangle(cornerRadius: GariveMobileMetrics.composerRadius, style: .continuous)
+        )
+        .shadow(color: .black.opacity(0.06), radius: 8, y: 2)
+        .padding(.horizontal, 12).padding(.vertical, 9).background(.ultraThinMaterial)
+        .accessibilityIdentifier("mobile-composer")
+        .accessibilityValue(running ? "Working on server. Stop action available." : "Ready for a new Turn.")
+        .accessibilityHint("Draft clears only after the server commits")
     }
 }
 

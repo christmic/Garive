@@ -9,6 +9,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.garive.mobile.preferences.Theme
 
@@ -19,6 +20,15 @@ internal val GariveFailure = Color(0xFFD85B63)
 internal val GariveInk = Color(0xFF000000)
 internal val GariveRaised = Color(0xFF111111)
 internal val GariveIvory = Color(0xFFF7F5EF)
+
+/** Native mappings of the shared client geometry tokens. */
+internal object GariveMobileMetrics {
+    val composerRadius = 24.dp
+    val userPromptRadius = 22.dp
+    val decisionRadius = 20.dp
+    val touchTarget = 48.dp
+    val attentionEdge = 2.dp
+}
 
 private val DarkColors = darkColorScheme(
     primary = Color(0xFF4F7CF7),

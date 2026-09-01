@@ -190,6 +190,16 @@ Compose uses Material 3 semantics with Garive tokens. SwiftUI uses native
 navigation, sheets, lists, materials, Dynamic Type, haptics, and safe areas.
 Both platforms share behavior and visual intent, not pixel-for-pixel layout.
 
+The shared Desktop/Web visual contract is also the source hierarchy for native
+mobile adaptation. Mobile preserves its platform navigation and 44-point touch
+targets while mapping the same work grammar: one continuous transcript,
+width-bounded continuous-corner user prompts, flush Agent output, one
+borderless progressive composer, one trailing Send-or-Stop action, and an
+attached neutral decision rail. New-task starters are compact command rows and
+disappear as soon as a draft exists. Native UI must not regress these concepts
+into messenger bubbles, avatar tiles, horizontally scrolling suggestion cards,
+permanent durability captions, or duplicate toolbar/composer actions.
+
 ## Responsive and accessibility behavior
 
 - Phones use an overlay navigation drawer and full-screen conversation destinations,

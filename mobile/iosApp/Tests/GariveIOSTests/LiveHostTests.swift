@@ -183,6 +183,9 @@ func mobileGoalStartersMatchDesktopWorkOutcomes() {
         MobileGoalStarter(label: "Analyze", prompt: "Find the key patterns and recommend next steps"),
         MobileGoalStarter(label: "Create", prompt: "Draft a polished project brief from my outline"),
     ])
+    #expect(showsMobileGoalStarters(""))
+    #expect(!showsMobileGoalStarters(" "))
+    #expect(!showsMobileGoalStarters(mobileGoalStarters[0].prompt))
 }
 
 @Test

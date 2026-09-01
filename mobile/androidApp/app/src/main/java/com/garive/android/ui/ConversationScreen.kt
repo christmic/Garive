@@ -1,6 +1,5 @@
 package com.garive.android.ui
 
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -8,29 +7,30 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.sizeIn
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.automirrored.rounded.Send
-import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.ExpandLess
 import androidx.compose.material.icons.rounded.ExpandMore
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Share
+import androidx.compose.material.icons.rounded.StopCircle
 import androidx.compose.material.icons.rounded.VerifiedUser
 import androidx.compose.material3.Button
 import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -46,7 +46,12 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.garive.android.MOBILE_MAX_INPUT_BYTES
@@ -91,11 +96,6 @@ internal fun ConversationScreen(
                 if (state.timeline.isNotEmpty()) {
                     IconButton(onClick = onShare) {
                         Icon(Icons.Rounded.Share, contentDescription = "Share conversation")
-                    }
-                }
-                if (latest?.status in setOf(MobileWorkStatus.WORKING, MobileWorkStatus.NEEDS_INPUT)) {
-                    IconButton(onClick = onCancel) {
-                        Icon(Icons.Rounded.Close, contentDescription = "Request cancellation")
                     }
                 }
             }
@@ -151,7 +151,9 @@ internal fun ConversationScreen(
                 draft = state.draft,
                 onDraft = onDraft,
                 onSend = onSend,
+                onStop = onCancel,
                 busy = state.pendingCommand != null,
+                running = latest?.status == MobileWorkStatus.WORKING,
                 enabled = state.connection == MobileConnectionState.ONLINE &&
                     latest?.status !in setOf(MobileWorkStatus.WORKING, MobileWorkStatus.NEEDS_INPUT),
             )
@@ -231,59 +233,46 @@ private fun TurnCard(turn: MobileTurnItem) {
     Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
             Surface(
-                shape = RoundedCornerShape(20.dp, 20.dp, 5.dp, 20.dp),
+                shape = RoundedCornerShape(GariveMobileMetrics.userPromptRadius),
                 color = MaterialTheme.colorScheme.surfaceVariant,
-                modifier = Modifier.sizeIn(maxWidth = 340.dp),
+                modifier = Modifier.fillMaxWidth(0.70f),
             ) {
                 Text(
                     turn.userText,
                     color = MaterialTheme.colorScheme.onSurface,
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
                     style = MaterialTheme.typography.bodyLarge,
                 )
             }
         }
         if (!turn.responseText.isNullOrBlank()) {
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.Top) {
-                Surface(
-                    shape = RoundedCornerShape(10.dp),
-                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.10f),
-                ) {
-                    Icon(
-                        Icons.Rounded.AutoAwesome,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.padding(8.dp),
+            Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                MobileResponseText(turn.responseText.orEmpty())
+                if (turn.contentTruncated) {
+                    Text(
+                        "Display content was safely bounded",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
-                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    MobileResponseText(turn.responseText.orEmpty())
-                    if (turn.contentTruncated) {
-                        Text(
-                            "Display content was safely bounded",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                    HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.18f))
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(
-                            turn.status.label(),
-                            color = statusColor(turn.status),
-                            style = MaterialTheme.typography.labelMedium,
-                        )
-                        Spacer(Modifier.weight(1f))
-                        Text(
-                            "Committed",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
+                HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.18f))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        turn.status.label(),
+                        color = statusColor(turn.status),
+                        style = MaterialTheme.typography.labelMedium,
+                    )
+                    Spacer(Modifier.weight(1f))
+                    Text(
+                        "Committed",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
                 }
             }
         }
         if (turn.activities.isNotEmpty()) {
-            Column(Modifier.padding(start = 44.dp)) {
+            Column {
                 TextButton(onClick = { activityExpanded = !activityExpanded }) {
                     Icon(
                         if (activityExpanded) Icons.Rounded.ExpandLess else Icons.Rounded.ExpandMore,
@@ -323,13 +312,6 @@ private fun TurnCard(turn: MobileTurnItem) {
                 }
             }
         }
-        if (turn.status == MobileWorkStatus.WORKING) {
-            Text(
-                "Agent is working on the server…",
-                color = statusColor(turn.status),
-                style = MaterialTheme.typography.labelLarge,
-            )
-        }
     }
 }
 
@@ -338,7 +320,9 @@ private fun MessageComposer(
     draft: String,
     onDraft: (String) -> Unit,
     onSend: () -> Unit,
+    onStop: () -> Unit,
     busy: Boolean,
+    running: Boolean,
     enabled: Boolean,
 ) {
     Surface(color = MaterialTheme.colorScheme.background) {
@@ -348,16 +332,25 @@ private fun MessageComposer(
                 .navigationBarsPadding()
                 .imePadding()
                 .padding(horizontal = 12.dp, vertical = 10.dp),
-            verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
             Surface(
-                shape = RoundedCornerShape(22.dp),
+                shape = RoundedCornerShape(GariveMobileMetrics.composerRadius),
                 color = MaterialTheme.colorScheme.surface,
-                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.45f)),
-                shadowElevation = 7.dp,
+                shadowElevation = 3.dp,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("mobile-composer")
+                    .semantics {
+                        stateDescription = if (running) {
+                            "Working on server. Stop action available."
+                        } else {
+                            "Ready for a new Turn. Draft clears only after the server commits."
+                        }
+                    },
             ) {
                 Row(
-                    Modifier.fillMaxWidth().padding(start = 4.dp, end = 8.dp, top = 3.dp, bottom = 3.dp),
+                    Modifier.fillMaxWidth().heightIn(min = 52.dp)
+                        .padding(start = 4.dp, end = 8.dp, top = 2.dp, bottom = 2.dp),
                     verticalAlignment = Alignment.Bottom,
                 ) {
                     OutlinedTextField(
@@ -376,22 +369,30 @@ private fun MessageComposer(
                             disabledBorderColor = Color.Transparent,
                         ),
                     )
-                    FilledIconButton(
-                        onClick = onSend,
-                        enabled = enabled && !busy && draft.isNotBlank() &&
-                            draft.encodeToByteArray().size <= MOBILE_MAX_INPUT_BYTES,
-                        modifier = Modifier.padding(bottom = 4.dp),
-                    ) {
-                        Icon(Icons.AutoMirrored.Rounded.Send, contentDescription = "Send to Agent")
+                    if (running) {
+                        FilledIconButton(
+                            onClick = onStop,
+                            enabled = !busy,
+                            colors = IconButtonDefaults.filledIconButtonColors(
+                                containerColor = MaterialTheme.colorScheme.error,
+                                contentColor = MaterialTheme.colorScheme.onError,
+                            ),
+                            modifier = Modifier.size(GariveMobileMetrics.touchTarget),
+                        ) {
+                            Icon(Icons.Rounded.StopCircle, contentDescription = "Stop current work")
+                        }
+                    } else {
+                        FilledIconButton(
+                            onClick = onSend,
+                            enabled = enabled && !busy && draft.isNotBlank() &&
+                                draft.encodeToByteArray().size <= MOBILE_MAX_INPUT_BYTES,
+                            modifier = Modifier.size(GariveMobileMetrics.touchTarget),
+                        ) {
+                            Icon(Icons.AutoMirrored.Rounded.Send, contentDescription = "Send to Agent")
+                        }
                     }
                 }
             }
-            Text(
-                "Draft clears only after the server commits",
-                modifier = Modifier.padding(horizontal = 8.dp),
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                style = MaterialTheme.typography.labelSmall,
-            )
         }
     }
 }
@@ -408,14 +409,29 @@ private fun DecisionComposer(
     busy: Boolean,
     enabled: Boolean,
 ) {
-    Surface(
-        color = MaterialTheme.colorScheme.surface,
-        shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.tertiary.copy(alpha = 0.45f)),
-        shadowElevation = 12.dp,
-    ) {
-        Column(
-            Modifier.fillMaxWidth().navigationBarsPadding().imePadding().padding(16.dp),
+    val stackActions = LocalDensity.current.fontScale >= 1.6f
+    val attention = MaterialTheme.colorScheme.tertiary
+    Surface(color = MaterialTheme.colorScheme.background) {
+        Surface(
+            color = MaterialTheme.colorScheme.surface,
+            shape = RoundedCornerShape(GariveMobileMetrics.decisionRadius),
+            shadowElevation = 3.dp,
+            modifier = Modifier.fillMaxWidth().navigationBarsPadding().imePadding()
+                .padding(horizontal = 12.dp, vertical = 10.dp)
+                .testTag("mobile-decision-rail")
+                .semantics { stateDescription = "Needs input for this Turn" }
+                .drawBehind {
+                    drawRect(
+                        color = attention,
+                        size = androidx.compose.ui.geometry.Size(
+                            GariveMobileMetrics.attentionEdge.toPx(),
+                            size.height,
+                        ),
+                    )
+                },
+        ) {
+            Column(
+            Modifier.fillMaxWidth().padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             Text(title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
@@ -440,17 +456,26 @@ private fun DecisionComposer(
                 )
             }
             if (approval) {
-                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                val actions: @Composable (Modifier) -> Unit = { modifier ->
                     OutlinedButton(
                         onClick = { onContinue("false") },
                         enabled = enabled && !busy,
-                        modifier = Modifier.weight(1f),
+                        modifier = modifier,
                     ) { Text("Decline") }
                     Button(
                         onClick = { onContinue("true") },
                         enabled = enabled && !busy,
-                        modifier = Modifier.weight(1f),
+                        modifier = modifier,
                     ) { Text("Approve once") }
+                }
+                if (stackActions) {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        actions(Modifier.fillMaxWidth())
+                    }
+                } else {
+                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        actions(Modifier.weight(1f))
+                    }
                 }
             } else {
                 Button(
@@ -462,6 +487,7 @@ private fun DecisionComposer(
                     Text(action)
                 }
             }
+        }
         }
     }
 }

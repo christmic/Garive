@@ -48,7 +48,7 @@ public class LiveHostJourneyTest {
             }
             compose.onNodeWithText("Find the key patterns and recommend next steps")
 
-            compose.onNodeWithContentDescription("Request cancellation", useUnmergedTree = true).performClick()
+            compose.onNodeWithContentDescription("Stop current work", useUnmergedTree = true).performClick()
             compose.onNodeWithText("Request cancel").performClick()
             compose.waitUntil(8_000) {
                 compose.onAllNodesWithText("Cancellation recorded. Committed work remains available.")

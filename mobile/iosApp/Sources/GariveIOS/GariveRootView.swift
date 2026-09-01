@@ -279,4 +279,12 @@ enum GarivePalette {
     static let mint = Color(red: 0.15, green: 0.51, blue: 0.35)
     static let amber = Color(red: 0.64, green: 0.41, blue: 0.09)
 }
+
+enum GariveMobileMetrics {
+    static let composerRadius: CGFloat = 24
+    static let userPromptRadius: CGFloat = 22
+    static let decisionRadius: CGFloat = 20
+    static let touchTarget: CGFloat = 44
+    static let attentionEdge: CGFloat = 2
+}
 #endif
