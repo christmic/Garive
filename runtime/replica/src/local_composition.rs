@@ -169,8 +169,19 @@ pub fn reconstruct_local_start(
     let execution_payload = payload(execution)?;
     let trusted_input = text(&input_payload, &["content", "inline_utf8"])?;
     let trusted_digest = text(&input_payload, &["content", "digest"])?;
+    let planner_owned = input_payload["input_kind"] == "trusted_system"
+        && valid_plan_proposal_ownership(
+            &facts,
+            committed,
+            started,
+            input,
+            execution,
+            &started_payload,
+            trusted_digest,
+            &execution_payload,
+        )?;
     let valid_input = if is_start {
-        input_payload["input_kind"] == "trusted_user"
+        (input_payload["input_kind"] == "trusted_user" || planner_owned)
             && started_payload["trusted_input_digest"] == trusted_digest
     } else {
         matches!(
@@ -185,6 +196,7 @@ pub fn reconstruct_local_start(
         || opened_payload["definition_revision"] != started_payload["definition_revision"]
         || opened_payload["snapshot_digest"] != started_payload["snapshot_digest"]
         || execution_payload["snapshot_digest"] != started_payload["snapshot_digest"]
+        || planner_owned && workspace_context.is_some()
     {
         return Err(LocalReconstructionError::ReconstructionFailed);
     }
@@ -208,6 +220,7 @@ pub fn reconstruct_local_start(
         position: input.position,
         text: trusted_input.to_owned(),
         workspace_context,
+        internal_instruction: planner_owned,
     };
     let frozen_input = optional_number(&execution_payload, &["limits", "max_input_tokens"])?;
     let max_total_tokens = match (frozen_input, frozen_output) {
@@ -319,6 +332,7 @@ pub struct LocalInputContext {
     position: u64,
     text: String,
     workspace_context: Option<ContextCandidate>,
+    internal_instruction: bool,
 }
 impl ContextPort for LocalInputContext {
     fn read_candidates(
@@ -333,7 +347,11 @@ impl ContextPort for LocalInputContext {
             return Err(ContextPortError::PortFailure);
         }
         let item = ModelInputItem::Message {
-            role: ModelRole::User,
+            role: if self.internal_instruction {
+                ModelRole::Developer
+            } else {
+                ModelRole::User
+            },
             content: vec![ModelInputContent::Text(self.text.clone())],
         };
         let reference = FactRef {
@@ -342,7 +360,11 @@ impl ContextPort for LocalInputContext {
         };
         let input = ContextCandidate {
             fact_ref: reference,
-            kind: CandidateKind::UserInput,
+            kind: if self.internal_instruction {
+                CandidateKind::Instruction
+            } else {
+                CandidateKind::UserInput
+            },
             retention: Retention::Required,
             visibility: Visibility::Visible,
             items: vec![item],
@@ -360,6 +382,35 @@ impl ContextPort for LocalInputContext {
         candidates.push(input);
         Ok(candidates)
     }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn valid_plan_proposal_ownership(
+    facts: &[DurableFact],
+    committed: &CommittedTurn,
+    started: &DurableFact,
+    input: &DurableFact,
+    execution: &DurableFact,
+    started_payload: &Value,
+    trusted_digest: &str,
+    execution_payload: &Value,
+) -> Result<bool, LocalReconstructionError> {
+    let owner = exactly_one(facts, |fact| {
+        fact.kind.as_str() == "plan.proposal.requested"
+            && fact.position.checked_add(1) == Some(started.position)
+    })?;
+    let value = payload(owner)?;
+    Ok(started.position.checked_add(1) == Some(input.position)
+        && input.position.checked_add(1) == Some(execution.position)
+        && text_value(&value, "command_id")? == text_value(started_payload, "command_id")?
+        && text_value(&value, "turn_id")? == committed.turn_id.as_str()
+        && text_value(&value, "execution_id")? == committed.execution_id.as_str()
+        && text_value(&value, "request_digest")? == trusted_digest
+        && number(&value, &["expected_session_version"])?.checked_add(1)
+            == Some(committed.session_version)
+        && number(&value, &["through_position"])?
+            == number(execution_payload, &["through_position"])?
+        && execution.position == committed.committed_position)
 }
 
 #[derive(Deserialize)]

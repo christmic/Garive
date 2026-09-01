@@ -11,6 +11,7 @@ const BASE: &[&str] = &["command_id", "plan_id", "plan_revision"];
 
 pub(super) fn validate(kind: &str, value: &Map<String, Value>) -> Result<(), LedgerError> {
     match kind {
+        "plan.proposal.requested" => proposal_requested(value),
         "plan.proposed" => proposed(value),
         "plan.adopted" => adopted(value),
         "plan.rejected" => rejected(value),
@@ -22,6 +23,46 @@ pub(super) fn validate(kind: &str, value: &Map<String, Value>) -> Result<(), Led
         step_kind if step_kind.starts_with("plan.step.") => plan_step::validate(step_kind, value),
         _ => Err(LedgerError::InvalidFact),
     }
+}
+
+fn proposal_requested(value: &Map<String, Value>) -> Result<(), LedgerError> {
+    fields(
+        value,
+        &[
+            "command_id",
+            "goal_id",
+            "goal_revision",
+            "goal_definition_digest",
+            "expected_session_version",
+            "through_position",
+            "proposer_reference",
+            "request_digest",
+            "output_schema_digest",
+            "turn_id",
+            "execution_id",
+        ],
+        &[],
+    )?;
+    for key in [
+        "command_id",
+        "goal_id",
+        "proposer_reference",
+        "turn_id",
+        "execution_id",
+    ] {
+        non_empty(value, key)?;
+    }
+    unsigned(value, "goal_revision", true)?;
+    unsigned(value, "expected_session_version", true)?;
+    unsigned(value, "through_position", false)?;
+    for key in [
+        "goal_definition_digest",
+        "request_digest",
+        "output_schema_digest",
+    ] {
+        digest(value, key)?;
+    }
+    Ok(())
 }
 
 fn proposed(value: &Map<String, Value>) -> Result<(), LedgerError> {

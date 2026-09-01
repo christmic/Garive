@@ -10,13 +10,66 @@ use sha2::{Digest, Sha256};
 use super::types::{
     CancelTurnCommand, ContinuationInput, ContinueTurnCommand, PlannedTurn,
     ReconcileInvocationCommand, ReconciliationDecision, RecoveryRestartCommand,
-    RuntimeCommandError, RuntimeSuspensionKind, StartTurnCommand, SuspendedTurnState,
+    RuntimeCommandError, RuntimeSuspensionKind, StartPlanProposalExecutionCommand,
+    StartTurnCommand, SuspendedTurnState,
 };
 
 /// Creates the exact three-fact StartTurn transaction with Runtime-owned identities.
 pub fn plan_start_turn(
     command: &StartTurnCommand,
     through_position: u64,
+) -> Result<PlannedTurn, RuntimeCommandError> {
+    plan_start_turn_with_input_kind(command, through_position, "trusted_user")
+}
+
+/// Creates one atomic ownership and C6 start batch for an internal Planner.
+pub fn plan_start_plan_proposal_execution(
+    command: &StartPlanProposalExecutionCommand,
+    through_position: u64,
+) -> Result<PlannedTurn, RuntimeCommandError> {
+    if command.goal_id.is_empty()
+        || command.goal_revision == 0
+        || command.expected_session_version == 0
+        || command.proposer_reference.is_empty()
+    {
+        return Err(RuntimeCommandError::InvalidCommand);
+    }
+    validate_digest(&command.goal_definition_digest)?;
+    validate_digest(&command.output_schema_digest)?;
+    let mut planned =
+        plan_start_turn_with_input_kind(&command.start, through_position, "trusted_system")?;
+    let execution_id = planned
+        .execution_id
+        .as_ref()
+        .ok_or(RuntimeCommandError::InvariantViolation)?;
+    let ownership = fact(
+        command.start.command_id.as_str(),
+        "plan.proposal.requested",
+        None,
+        None,
+        json!({
+            "command_id": command.start.command_id.as_str(),
+            "goal_id": command.goal_id,
+            "goal_revision": command.goal_revision,
+            "goal_definition_digest": command.goal_definition_digest,
+            "expected_session_version": command.expected_session_version,
+            "through_position": through_position,
+            "proposer_reference": command.proposer_reference,
+            "request_digest": digest(command.start.trusted_input.as_bytes()),
+            "output_schema_digest": command.output_schema_digest,
+            "turn_id": planned.turn_id.as_str(),
+            "execution_id": execution_id.as_str(),
+        }),
+        &command.start.recorded_at,
+    )?;
+    planned.facts.insert(0, ownership);
+    Ok(planned)
+}
+
+fn plan_start_turn_with_input_kind(
+    command: &StartTurnCommand,
+    through_position: u64,
+    input_kind: &'static str,
 ) -> Result<PlannedTurn, RuntimeCommandError> {
     command.limits.validate()?;
     validate_digest(&command.snapshot_digest)?;
@@ -54,7 +107,7 @@ pub fn plan_start_turn(
             "turn.input",
             Some(&turn_id),
             None,
-            json!({"input_kind":"trusted_user","content":{"digest":input_digest,"inline_utf8":command.trusted_input}}),
+            json!({"input_kind":input_kind,"content":{"digest":input_digest,"inline_utf8":command.trusted_input}}),
             &command.recorded_at,
         )?,
         fact(

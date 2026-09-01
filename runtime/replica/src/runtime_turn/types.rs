@@ -76,6 +76,25 @@ pub struct StartTurnCommand {
     pub recorded_at: String,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+/// Runtime-owned command starting one durable internal Plan proposal execution.
+pub struct StartPlanProposalExecutionCommand {
+    /// C6 start values, including the canonical bounded planner request.
+    pub start: StartTurnCommand,
+    /// Goal whose initial Plan is being proposed.
+    pub goal_id: String,
+    /// Exact Goal lifecycle revision frozen by the request.
+    pub goal_revision: u64,
+    /// Canonical immutable Goal definition digest.
+    pub goal_definition_digest: String,
+    /// Session version the atomic proposal start expects.
+    pub expected_session_version: u64,
+    /// Stable secret-free planner implementation revision.
+    pub proposer_reference: String,
+    /// Canonical structured-output schema digest.
+    pub output_schema_digest: String,
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 /// Stable cancellation reason admitted by C6 payload v1.
 pub enum CancelReason {
