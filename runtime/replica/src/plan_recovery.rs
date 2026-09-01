@@ -287,13 +287,8 @@ fn validate_completion_evidence(
     let goal = graph
         .get(definition.goal_id())
         .ok_or(PlanRuntimeError::RecoveryCorrupt)?;
-    if goal.snapshot.state().is_terminal()
-        || goal.snapshot.revision() != definition.goal_revision()
-        || goal.snapshot.definition().digest().map_err(corrupt)?
-            != definition.goal_definition_digest()
-    {
-        return Err(PlanRuntimeError::RecoveryCorrupt);
-    }
+    crate::plan_runtime::validate_active_goal_binding(definition, goal)
+        .map_err(|_| PlanRuntimeError::RecoveryCorrupt)?;
     let evidence =
         GoalEvidenceV1::list_from_canonical_json(bound_inline(value, "reduction_evidence")?)
             .map_err(corrupt)?;

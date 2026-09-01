@@ -1,7 +1,7 @@
 use std::collections::BTreeSet;
 
 use garive_goal::{GoalEvidenceV1, GoalState};
-use garive_ledger::{CanonicalPayload, SessionId, TurnId};
+use garive_ledger::{CanonicalPayload, DurableFact, SessionId, TurnId};
 use garive_plan::{PlanDefinitionV1, PlanState};
 use serde_json::{json, Value};
 
@@ -85,7 +85,7 @@ pub fn plan_suspend_goal_from_owned_turn(
     let mut authoritative = plans.values().filter(|plan| {
         let definition = plan.snapshot.definition();
         definition.goal_id() == goal_id
-            && definition.goal_revision() == expected_goal_revision
+            && definition.goal_revision() <= expected_goal_revision
             && definition.goal_definition_digest() == goal_digest
             && matches!(
                 plan.snapshot.state(),
@@ -102,38 +102,7 @@ pub fn plan_suspend_goal_from_owned_turn(
     let facts = ledger
         .read_facts(session_id, 0, goal.through_position, None)
         .map_err(|_| GoalPlanCoordinationError::CorruptState)?;
-    let mut turns = BTreeSet::new();
-    for start in facts
-        .iter()
-        .filter(|fact| fact.kind.as_str() == "plan.step.started")
-    {
-        let value = serde_json::from_str::<Value>(start.payload.as_json())
-            .map_err(|_| GoalPlanCoordinationError::CorruptState)?;
-        if value.get("plan_id").and_then(Value::as_str) != Some(definition.plan_id().as_str())
-            || value.get("plan_revision").and_then(Value::as_u64)
-                != Some(definition.plan_revision())
-        {
-            continue;
-        }
-        let execution_id = value
-            .get("execution_id")
-            .and_then(Value::as_str)
-            .ok_or(GoalPlanCoordinationError::CorruptState)?;
-        let executions = facts
-            .iter()
-            .filter(|fact| fact.kind.as_str() == "execution.started")
-            .filter(|fact| fact.execution_id.as_ref().map(|id| id.as_str()) == Some(execution_id))
-            .collect::<Vec<_>>();
-        let [execution] = executions.as_slice() else {
-            return Err(GoalPlanCoordinationError::CorruptState);
-        };
-        turns.insert(
-            execution
-                .turn_id
-                .clone()
-                .ok_or(GoalPlanCoordinationError::CorruptState)?,
-        );
-    }
+    let turns = owned_turns(&facts, definition)?;
     let mut resumable = Vec::new();
     for turn_id in turns {
         let view = get_turn(
@@ -191,6 +160,45 @@ pub fn plan_suspend_goal_from_owned_turn(
         },
     )
     .map_err(GoalPlanCoordinationError::Goal)
+}
+
+fn owned_turns(
+    facts: &[DurableFact],
+    definition: &PlanDefinitionV1,
+) -> Result<BTreeSet<TurnId>, GoalPlanCoordinationError> {
+    let mut turns = BTreeSet::new();
+    for start in facts
+        .iter()
+        .filter(|fact| fact.kind.as_str() == "plan.step.started")
+    {
+        let value = serde_json::from_str::<Value>(start.payload.as_json())
+            .map_err(|_| GoalPlanCoordinationError::CorruptState)?;
+        if value.get("plan_id").and_then(Value::as_str) != Some(definition.plan_id().as_str())
+            || value.get("plan_revision").and_then(Value::as_u64)
+                != Some(definition.plan_revision())
+        {
+            continue;
+        }
+        let execution_id = value
+            .get("execution_id")
+            .and_then(Value::as_str)
+            .ok_or(GoalPlanCoordinationError::CorruptState)?;
+        let executions = facts
+            .iter()
+            .filter(|fact| fact.kind.as_str() == "execution.started")
+            .filter(|fact| fact.execution_id.as_ref().map(|id| id.as_str()) == Some(execution_id))
+            .collect::<Vec<_>>();
+        let [execution] = executions.as_slice() else {
+            return Err(GoalPlanCoordinationError::CorruptState);
+        };
+        turns.insert(
+            execution
+                .turn_id
+                .clone()
+                .ok_or(GoalPlanCoordinationError::CorruptState)?,
+        );
+    }
+    Ok(turns)
 }
 
 /// Plans the next missing Turn cancellation caused by a committed Goal cancellation.
@@ -361,7 +369,7 @@ pub fn plan_succeed_goal_from_completed_plan(
     let mut completed = plans.values().filter(|plan| {
         let definition = plan.snapshot.definition();
         definition.goal_id() == goal_id
-            && definition.goal_revision() == expected_goal_revision
+            && definition.goal_revision() <= expected_goal_revision
             && definition.goal_definition_digest() == goal_digest
             && plan.snapshot.state() == PlanState::Completed
     });

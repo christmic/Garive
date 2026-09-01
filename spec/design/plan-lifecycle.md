@@ -70,6 +70,15 @@ PlanBoundsV1 {
 }
 ```
 
+`goal_revision` is the optimistic-concurrency anchor observed when this Plan
+lineage was proposed/adopted; it is not a demand that the Goal lifecycle stop
+advancing. Proposal and adoption require exact revision equality. After the
+Plan activates that Goal, Plan work requires the Goal to be Active, its current
+revision to be at least the anchor and its definition digest to remain exact.
+Suspend/resume may therefore advance Goal revisions without invalidating the
+Plan, while Goal revision through `Revise` changes the definition digest and
+fences the old Plan. Terminal Goal states always fence new Plan work.
+
 Step order is presentation/tie-break order. Dependencies determine readiness.
 Every dependency must exist in the same revision, cannot reference itself and
 the graph must be acyclic. Every Goal success criterion must be covered by at

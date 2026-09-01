@@ -1,7 +1,8 @@
 use std::collections::BTreeMap;
 
+use garive_goal::GoalState;
 use garive_ledger::{CanonicalPayload, FactDraft};
-use garive_plan::{PlanSnapshot, PlanStepId};
+use garive_plan::{PlanDefinitionV1, PlanSnapshot, PlanStepId};
 
 mod command;
 
@@ -9,6 +10,42 @@ pub use command::{
     commit_plan_command, plan_adopt_plan, plan_complete_plan, plan_plan_transition,
     plan_propose_plan, plan_start_step_execution,
 };
+
+pub(crate) fn validate_goal_anchor_binding(
+    definition: &PlanDefinitionV1,
+    goal: &crate::GoalRuntimeState,
+) -> Result<(), PlanRuntimeError> {
+    if goal.snapshot.state().is_terminal()
+        || goal.snapshot.revision() != definition.goal_revision()
+        || goal
+            .snapshot
+            .definition()
+            .digest()
+            .map_err(|_| PlanRuntimeError::RecoveryCorrupt)?
+            != definition.goal_definition_digest()
+    {
+        return Err(PlanRuntimeError::BindingStale);
+    }
+    Ok(())
+}
+
+pub(crate) fn validate_active_goal_binding(
+    definition: &PlanDefinitionV1,
+    goal: &crate::GoalRuntimeState,
+) -> Result<(), PlanRuntimeError> {
+    if goal.snapshot.state() != GoalState::Active
+        || goal.snapshot.revision() < definition.goal_revision()
+        || goal
+            .snapshot
+            .definition()
+            .digest()
+            .map_err(|_| PlanRuntimeError::RecoveryCorrupt)?
+            != definition.goal_definition_digest()
+    {
+        return Err(PlanRuntimeError::BindingStale);
+    }
+    Ok(())
+}
 
 /// Authenticated metadata bound to one idempotent Plan command.
 #[derive(Clone, Debug, Eq, PartialEq)]

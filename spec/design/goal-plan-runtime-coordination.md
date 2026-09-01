@@ -128,10 +128,14 @@ These are the same values used by the atomic `plan.step.started` plus C6 start
 binding. Host bodies, model output and tool arguments cannot supply or override
 them.
 
-An adopted Plan may activate only the exact non-terminal Goal revision it
-binds. Goal revision makes older proposals stale. At most one
-Adopted/Running/Suspended Plan revision is authoritative for a Goal; replacing
-it uses PL1's atomic supersede/adopt command.
+An adopted Plan may activate only the exact Draft Goal revision it anchored.
+That activation advances the Goal lifecycle revision, so later Plan work
+compares the immutable definition digest and requires `current_revision >=
+goal_revision_anchor`, not permanent revision equality. Suspend/resume may
+advance lifecycle revision; Revise changes the definition digest and fences
+the lineage. At most one Adopted/Running/Suspended Plan revision is
+authoritative for a Goal; replacing it uses PL1's atomic supersede/adopt
+command.
 
 ## Normal path
 

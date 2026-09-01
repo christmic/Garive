@@ -359,7 +359,7 @@ impl PlanDefinitionV1 {
         &self.goal_id
     }
 
-    /// Returns the exact bound Goal state revision.
+    /// Returns the exact Goal lifecycle revision anchored at proposal/adoption.
     pub const fn goal_revision(&self) -> u64 {
         self.goal_revision
     }

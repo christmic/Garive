@@ -6,7 +6,8 @@ use garive_plan::{PlanDefinitionV1, PlanErrorCode, PlanSnapshot, PlanStepId, Pla
 use serde_json::{json, Map, Value};
 
 use super::{
-    ActivePlanClaim, PlanCommandContext, PlanRuntimeError, PlanRuntimeState, PlanRuntimeTransition,
+    validate_active_goal_binding, validate_goal_anchor_binding, ActivePlanClaim,
+    PlanCommandContext, PlanRuntimeError, PlanRuntimeState, PlanRuntimeTransition,
     PlanStepExecutionStart, PlannedPlanCommand,
 };
 use crate::{PlannedTurn, SqliteLedger, SqliteLedgerError};
@@ -27,7 +28,7 @@ pub fn plan_propose_plan(
 ) -> Result<PlannedPlanCommand, PlanRuntimeError> {
     validate_context(context)?;
     let prefix = goal_prefix(ledger, session_id)?;
-    validate_goal_binding(&definition, &prefix.graph)?;
+    validate_goal_anchor_binding(&definition, goal(&prefix, definition.goal_id())?)?;
     let canonical = definition.canonical_json().map_err(map_plan)?;
     let digest = definition.digest().map_err(map_plan)?;
     let mut existing = 0usize;
@@ -113,7 +114,10 @@ pub fn plan_adopt_plan(
     {
         return Err(PlanRuntimeError::RevisionConflict);
     }
-    validate_goal_binding(current.snapshot.definition(), &prefix.graph)?;
+    validate_goal_anchor_binding(
+        current.snapshot.definition(),
+        goal(&prefix, current.snapshot.definition().goal_id())?,
+    )?;
     if let PlanRuntimeTransition::Adopt {
         expected_goal_revision,
         ..
@@ -159,7 +163,10 @@ pub fn plan_complete_plan(
     {
         return Err(PlanRuntimeError::RevisionConflict);
     }
-    validate_goal_binding(current.snapshot.definition(), &prefix.graph)?;
+    validate_active_goal_binding(
+        current.snapshot.definition(),
+        goal(&prefix, current.snapshot.definition().goal_id())?,
+    )?;
     let goal = prefix
         .graph
         .get(current.snapshot.definition().goal_id())
@@ -222,25 +229,14 @@ fn goal_prefix(
     })
 }
 
-fn validate_goal_binding(
-    definition: &PlanDefinitionV1,
-    graph: &BTreeMap<String, crate::GoalRuntimeState>,
-) -> Result<(), PlanRuntimeError> {
-    let goal = graph
-        .get(definition.goal_id())
-        .ok_or(PlanRuntimeError::BindingStale)?;
-    if goal.snapshot.state().is_terminal()
-        || goal.snapshot.revision() != definition.goal_revision()
-        || goal
-            .snapshot
-            .definition()
-            .digest()
-            .map_err(|_| PlanRuntimeError::RecoveryCorrupt)?
-            != definition.goal_definition_digest()
-    {
-        return Err(PlanRuntimeError::BindingStale);
-    }
-    Ok(())
+fn goal<'a>(
+    prefix: &'a GoalPrefix,
+    goal_id: &str,
+) -> Result<&'a crate::GoalRuntimeState, PlanRuntimeError> {
+    prefix
+        .graph
+        .get(goal_id)
+        .ok_or(PlanRuntimeError::BindingStale)
 }
 
 fn plan_transition(
@@ -610,16 +606,17 @@ pub fn commit_plan_command(
             .commit(session_id, expected_session_version, planned.facts.clone())
             .map_err(map_ledger);
     }
-    if planned.facts.iter().any(|fact| {
+    let binds_anchor = planned
+        .facts
+        .iter()
+        .any(|fact| fact.kind.as_str() == "plan.adopted");
+    let requires_active_goal = planned.facts.iter().any(|fact| {
         matches!(
             fact.kind.as_str(),
-            "plan.adopted"
-                | "plan.resumed"
-                | "plan.step.claimed"
-                | "plan.step.resumed"
-                | "plan.step.started"
+            "plan.resumed" | "plan.step.claimed" | "plan.step.resumed" | "plan.step.started"
         )
-    }) {
+    });
+    if binds_anchor || requires_active_goal {
         if expected_session_version != watermark.session_version
             || planned.next.session_version != watermark.session_version
             || planned.next.through_position != watermark.max_position
@@ -627,7 +624,13 @@ pub fn commit_plan_command(
             return Err(PlanRuntimeError::RevisionConflict);
         }
         let prefix = goal_prefix(ledger, &session_id)?;
-        validate_goal_binding(planned.next.snapshot.definition(), &prefix.graph)?;
+        let definition = planned.next.snapshot.definition();
+        let goal = goal(&prefix, definition.goal_id())?;
+        if binds_anchor {
+            validate_goal_anchor_binding(definition, goal)?;
+        } else {
+            validate_active_goal_binding(definition, goal)?;
+        }
     }
     ledger
         .commit(session_id, expected_session_version, planned.facts.clone())

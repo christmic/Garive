@@ -10,9 +10,9 @@ use garive_plan::{
 };
 use garive_runtime::{
     commit_goal_command, commit_plan_command, plan_activate_goal_from_authoritative_plan,
-    plan_adopt_plan, plan_create_goal, plan_propose_plan, reconstruct_goal, reconstruct_plan_graph,
-    GoalCommandContext, GoalPlanCoordinationError, PlanCommandContext, PlanRuntimeTransition,
-    SqliteLedger,
+    plan_adopt_plan, plan_create_goal, plan_plan_transition, plan_propose_plan, reconstruct_goal,
+    reconstruct_plan_graph, GoalCommandContext, GoalPlanCoordinationError, PlanCommandContext,
+    PlanRuntimeTransition, SqliteLedger,
 };
 use serde_json::{json, Value};
 use tempfile::tempdir;
@@ -103,6 +103,27 @@ fn activation_derives_the_unique_adopted_plan_reference_from_the_ledger() {
     let active = reconstruct_goal(&ledger, &session, "goal-1").unwrap();
     assert_eq!(active.snapshot.state(), GoalState::Active);
     assert_eq!(active.snapshot.revision(), 2);
+
+    let running = reconstruct_plan_graph(&ledger, &session)
+        .unwrap()
+        .remove(&("plan-1".into(), 1))
+        .unwrap();
+    let claim = plan_plan_transition(
+        &running,
+        running.state_version,
+        &plan_context("claim-after-activation"),
+        PlanRuntimeTransition::Claim {
+            step_id: PlanStepId::new("deliver").unwrap(),
+            claim_id: "claim-after-activation".into(),
+            worker_reference: "worker:local".into(),
+            lease_epoch: 1,
+            clock_revision: "monotonic-v1".into(),
+            claimed_at_tick: 1,
+            expires_at_tick: 2,
+        },
+    )
+    .unwrap();
+    commit_plan_command(&mut ledger, session, running.session_version, &claim).unwrap();
 }
 
 fn goal() -> GoalDefinitionV1 {
