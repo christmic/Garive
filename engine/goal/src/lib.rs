@@ -105,6 +105,16 @@ impl GoalCapabilityReference {
             Ok(value)
         }
     }
+
+    /// Returns the stable capability name.
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    /// Returns the exact capability revision.
+    pub fn exact_revision(&self) -> &str {
+        &self.exact_revision
+    }
 }
 
 /// Bounded scope references; workspace values are opaque Runtime capabilities.
@@ -371,6 +381,11 @@ impl GoalDefinitionV1 {
     /// Returns criteria in semantic declaration order.
     pub fn criteria(&self) -> &[GoalCriterion] {
         &self.criteria
+    }
+
+    /// Returns the exact capability revisions available to this Goal.
+    pub const fn capability_references(&self) -> &BTreeSet<GoalCapabilityReference> {
+        &self.capability_references
     }
 
     /// Returns the immutable hard bounds for this revision.

@@ -277,6 +277,14 @@ extra or changed references before `effect.prepared`. An Execution without a
 | step terminal, no Plan terminal/publication | rerun pure reduction; do not execute |
 | supersede transaction incomplete | old Plan remains authoritative |
 
+The Session Plan graph is recovered at one ledger watermark. Each proposal is
+first joined to the Goal graph at the proposal's own commit prefix; Runtime
+then derives the exact criterion and capability sets from that historical Goal
+revision, revalidates the canonical Plan definition, and replays all progress
+through the common Session watermark. Duplicate proposals, orphan Plan facts,
+unknown revisions, malformed coordinates or a changed Goal binding make the
+entire graph corrupt. Host projections consume only this verified graph.
+
 ## Stable failures
 
 `plan_invalid`, `plan_cycle`, `plan_command_conflict`,

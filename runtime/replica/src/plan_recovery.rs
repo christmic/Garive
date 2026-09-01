@@ -29,6 +29,116 @@ pub fn reconstruct_plan(
     let facts = ledger
         .read_facts(session_id, 0, watermark.max_position, None)
         .map_err(map_ledger)?;
+    reconstruct_plan_from_facts(
+        ledger,
+        &facts,
+        watermark.session_version,
+        watermark.max_position,
+        plan_id,
+        plan_revision,
+        required_goal_criteria,
+        already_satisfied_criteria,
+        available_capabilities,
+    )
+}
+
+/// Reconstructs every Plan revision from one verified fixed Session prefix.
+pub fn reconstruct_plan_graph(
+    ledger: &SqliteLedger,
+    session_id: &SessionId,
+) -> Result<BTreeMap<(String, u64), PlanRuntimeState>, PlanRuntimeError> {
+    let watermark = ledger
+        .session_watermark(session_id)
+        .map_err(map_ledger)?
+        .ok_or(PlanRuntimeError::RecoveryCorrupt)?;
+    let facts = ledger
+        .read_facts(session_id, 0, watermark.max_position, None)
+        .map_err(map_ledger)?;
+    let mut graph = BTreeMap::new();
+    for proposal in facts
+        .iter()
+        .filter(|fact| fact.kind.as_str() == "plan.proposed")
+    {
+        let value = payload(proposal)?;
+        let plan_id = text(&value, "plan_id")?.to_owned();
+        let plan_revision = unsigned(&value, "plan_revision")?;
+        if graph.contains_key(&(plan_id.clone(), plan_revision)) {
+            return Err(PlanRuntimeError::RecoveryCorrupt);
+        }
+        let proposal_version = ledger
+            .fact_commit_version(&proposal.fact_id)
+            .map_err(map_ledger)?
+            .ok_or(PlanRuntimeError::RecoveryCorrupt)?;
+        let goal_facts = facts
+            .iter()
+            .filter(|fact| fact.position <= proposal.position)
+            .cloned()
+            .collect::<Vec<_>>();
+        let goals = crate::goal_recovery::reconstruct_goal_graph_from_facts(
+            &goal_facts,
+            proposal_version,
+            proposal.position,
+        )
+        .map_err(|_| PlanRuntimeError::RecoveryCorrupt)?;
+        let goal = goals
+            .get(text(&value, "goal_id")?)
+            .ok_or(PlanRuntimeError::RecoveryCorrupt)?;
+        let definition = goal.snapshot.definition();
+        if goal.snapshot.state().is_terminal()
+            || goal.snapshot.revision() != unsigned(&value, "goal_revision")?
+            || definition.digest().map_err(corrupt)? != text(&value, "goal_definition_digest")?
+        {
+            return Err(PlanRuntimeError::RecoveryCorrupt);
+        }
+        let required = definition
+            .criteria()
+            .iter()
+            .map(|criterion| criterion.criterion_id().as_str().to_owned())
+            .collect::<BTreeSet<_>>();
+        let capabilities = definition
+            .capability_references()
+            .iter()
+            .map(|reference| {
+                PlanCapabilityReference::new(reference.name(), reference.exact_revision())
+                    .map_err(corrupt)
+            })
+            .collect::<Result<BTreeSet<_>, _>>()?;
+        let state = reconstruct_plan_from_facts(
+            ledger,
+            &facts,
+            watermark.session_version,
+            watermark.max_position,
+            &plan_id,
+            plan_revision,
+            &required,
+            &BTreeSet::new(),
+            &capabilities,
+        )?;
+        graph.insert((plan_id, plan_revision), state);
+    }
+    if facts.iter().any(|fact| {
+        fact.kind.as_str().starts_with("plan.")
+            && plan_coordinates(fact)
+                .ok()
+                .is_none_or(|coordinates| !graph.contains_key(&coordinates))
+    }) {
+        return Err(PlanRuntimeError::RecoveryCorrupt);
+    }
+    Ok(graph)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn reconstruct_plan_from_facts(
+    ledger: &SqliteLedger,
+    facts: &[DurableFact],
+    session_version: u64,
+    through_position: u64,
+    plan_id: &str,
+    plan_revision: u64,
+    required_goal_criteria: &BTreeSet<String>,
+    already_satisfied_criteria: &BTreeSet<String>,
+    available_capabilities: &BTreeSet<PlanCapabilityReference>,
+) -> Result<PlanRuntimeState, PlanRuntimeError> {
     let mut state = None;
     for fact in facts
         .iter()
@@ -37,7 +147,7 @@ pub fn reconstruct_plan(
         apply(
             &mut state,
             ledger,
-            &facts,
+            facts,
             fact,
             required_goal_criteria,
             already_satisfied_criteria,
@@ -45,9 +155,17 @@ pub fn reconstruct_plan(
         )?;
     }
     let mut state = state.ok_or(PlanRuntimeError::RecoveryCorrupt)?;
-    state.session_version = watermark.session_version;
-    state.through_position = watermark.max_position;
+    state.session_version = session_version;
+    state.through_position = through_position;
     Ok(state)
+}
+
+fn plan_coordinates(fact: &DurableFact) -> Result<(String, u64), PlanRuntimeError> {
+    let value = payload(fact)?;
+    Ok((
+        text(&value, "plan_id")?.to_owned(),
+        unsigned(&value, "plan_revision")?,
+    ))
 }
 
 fn belongs(fact: &DurableFact, plan_id: &str, revision: u64) -> bool {
@@ -643,6 +761,13 @@ fn content_digest<'a>(
         .and_then(Value::as_object)
         .ok_or(PlanRuntimeError::RecoveryCorrupt)
         .and_then(|binding| text(binding, "digest"))
+}
+
+fn payload(fact: &DurableFact) -> Result<Map<String, Value>, PlanRuntimeError> {
+    serde_json::from_str::<Value>(fact.payload.as_json())
+        .ok()
+        .and_then(|value| value.as_object().cloned())
+        .ok_or(PlanRuntimeError::RecoveryCorrupt)
 }
 
 fn text<'a>(value: &'a Map<String, Value>, key: &str) -> Result<&'a str, PlanRuntimeError> {

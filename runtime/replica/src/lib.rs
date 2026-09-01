@@ -205,7 +205,7 @@ pub use plan_carry_forward::{
     commit_plan_replacement, plan_plan_replacement, verify_plan_carry_forward,
     PlannedPlanReplacement, VerifiedPlanCarryForward,
 };
-pub use plan_recovery::reconstruct_plan;
+pub use plan_recovery::{reconstruct_plan, reconstruct_plan_graph};
 pub use plan_runtime::{
     commit_plan_command, plan_adopt_plan, plan_plan_transition, plan_propose_plan,
     plan_start_step_execution, ActivePlanClaim, PlanCommandContext, PlanRetryPosture,
