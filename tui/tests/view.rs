@@ -703,11 +703,12 @@ fn compact_command_palette_keeps_visual_and_accessible_windows_in_lockstep() {
     let visual = frame(&model, 40, 8);
     let linear = view::linear_overlay(&model);
     assert!(visual.contains("Search  type to search"));
-    assert!(visual.contains("Showing 19–21 / 21 · ↑18"));
+    assert!(visual.contains("Command palette · 18–21/21"));
+    assert!(!visual.contains("commands · showing"));
     assert!(visual.contains("› /quit"));
     assert!(visual.contains("Enter run"));
     assert!(visual.contains("Esc close"));
-    assert!(linear.contains("Showing commands 19 through 21 of 21"));
+    assert!(linear.contains("Showing commands 18 through 21 of 21"));
     assert!(linear.contains("Selected 21 of 21: /quit. Exit safely."));
 
     model.command_filter = "not present anywhere".into();

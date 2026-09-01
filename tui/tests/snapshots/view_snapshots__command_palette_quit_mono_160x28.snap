@@ -15,9 +15,9 @@ expression: "frame(&palette, Theme::Mono, 160, 28)"
 
 
 
- Command palette ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+ Command palette · 14–21/21 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 Search  type to search
-21 commands · showing 14–21 · ↑ 13 earlier
   /mouse auto         Keep terminal selection and scrolling
   /mouse on           Enable mouse capture now
   /mouse off          Disable mouse capture now

@@ -412,6 +412,15 @@ popups, and keeps an explicitly dismissed token closed until that token
 changes. Its tests at `chat_composer.rs:12000+` prove bare slash, valid prefix,
 space/invalid-prefix closure, and history isolation.
 
+The reviewed pinned
+`bottom_pane/snapshots/codex_tui__bottom_pane__command_popup__tests__command_popup_default_items.snap`
+and `command_popup_filter_reset_after_scroll.snap` spend popup rows on commands,
+not a separate prose count. Garive's global palette still needs an explicit
+search row and range because it is independently opened, but the bounded range
+belongs in the top-rule title (`1–8/21`) rather than a full
+`21 commands · showing …` metadata row. Removing that row exposes one more real
+command at compact height without weakening the linear spoken range.
+
 Garive adopts grapheme-aware cursor movement, bracketed paste as one edit,
 multiline drafts, bounded history, mode-specific key ownership, and snapshot
 coverage. It also adopts prompt-adjacent prefix discovery with explicit

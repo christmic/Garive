@@ -2,9 +2,9 @@
 source: tui/tests/view_snapshots.rs
 expression: "frame(&palette, Theme::Dark, 40, 8)"
 ---
- Command palette ───────────────────────
+ Command palette · 18–21/21 ────────────
 Search  type to search
-Showing 19–21 / 21 · ↑18
+  /copy selection   unavailable · no co…
   /copy session-id  Copy Session ID
   /help             Keyboard guide
 › /quit             Exit safely

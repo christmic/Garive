@@ -9,7 +9,7 @@ use crate::{application::AppModel, input::COMMAND_PALETTE};
 
 use super::super::{
     layout::FrameLayout,
-    primitives::{key_hints, selection_window, truncate_display, BottomPaneFrame, SelectionRow},
+    primitives::{key_hints, selection_window, BottomPaneFrame, SelectionRow},
     safe_text,
     style::Palette,
 };
@@ -94,9 +94,9 @@ fn layout(model: &AppModel, area: Rect) -> PaletteLayout {
     };
     let modal_area = transcript_area;
     let visible_items = projection.items.len().clamp(1, MAX_VISIBLE_ITEMS);
-    // Top rule + search + result window + item rows + action region. The pane
-    // grows with useful content and remains on the Composer axis.
-    let chrome_rows = if compact { 5 } else { 4 };
+    // Top rule + search + item rows + action region. The visible range belongs
+    // in the title instead of consuming a second metadata row.
+    let chrome_rows = if compact { 4 } else { 3 };
     let popup_height = u16::try_from(visible_items)
         .unwrap_or(u16::MAX)
         .saturating_add(chrome_rows)
@@ -108,7 +108,7 @@ fn layout(model: &AppModel, area: Rect) -> PaletteLayout {
         popup_height,
     );
     let inner = BottomPaneFrame::resolve(popup).inner();
-    let first_item_row = inner.y.saturating_add(2);
+    let first_item_row = inner.y.saturating_add(1);
     let action_rows = if compact { 2 } else { 1 };
     let action_row = inner
         .bottom()
@@ -130,7 +130,7 @@ pub(super) fn render(model: &AppModel, colors: Palette, area: Rect, buffer: &mut
     let projection = project(model);
     let layout = layout(model, area);
     BottomPaneFrame::resolve(layout.popup).render(
-        Line::styled(" Command palette ", colors.title),
+        Line::styled(palette_title(&projection, layout), colors.title),
         colors,
         buffer,
     );
@@ -140,13 +140,6 @@ pub(super) fn render(model: &AppModel, colors: Palette, area: Rect, buffer: &mut
         layout.inner.y,
         buffer,
     );
-    render_line(
-        window_line(&projection, layout, colors),
-        layout.inner,
-        layout.inner.y.saturating_add(1),
-        buffer,
-    );
-
     if projection.items.is_empty() {
         render_line(
             Line::styled("  No matching commands", colors.muted),
@@ -337,44 +330,13 @@ fn search_line(query: &str, colors: Palette) -> Line<'static> {
     ])
 }
 
-fn window_line(
-    projection: &PaletteProjection<'_>,
-    layout: PaletteLayout,
-    colors: Palette,
-) -> Line<'static> {
-    Line::styled(
-        truncate_display(
-            &visual_window(projection, layout),
-            usize::from(layout.inner.width),
-        ),
-        colors.muted,
-    )
-}
-
-fn visual_window(projection: &PaletteProjection<'_>, layout: PaletteLayout) -> String {
+fn palette_title(projection: &PaletteProjection<'_>, layout: PaletteLayout) -> String {
     let total = projection.items.len();
     if total == 0 {
-        return "0 commands · refine the search".into();
+        return " Command palette ".into();
     }
     let (start, end) = layout.window;
-    if layout.compact {
-        let mut parts = vec![format!("Showing {}–{end} / {total}", start + 1)];
-        if start > 0 {
-            parts.push(format!("↑{start}"));
-        }
-        if end < total {
-            parts.push(format!("↓{}", total - end));
-        }
-        return parts.join(" · ");
-    }
-    let mut parts = vec![format!("{total} commands · showing {}–{end}", start + 1)];
-    if start > 0 {
-        parts.push(format!("↑ {start} earlier"));
-    }
-    if end < total {
-        parts.push(format!("↓ {} more", total - end));
-    }
-    parts.join(" · ")
+    format!(" Command palette · {}–{end}/{total} ", start + 1)
 }
 
 fn spoken_window(projection: &PaletteProjection<'_>, layout: PaletteLayout) -> String {

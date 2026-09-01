@@ -65,9 +65,9 @@ expression: compact
 ===== overlay while streaming =====
 
 › Show every verified streaming stage.
- Command palette ───────────────────────
+  ● Verifying streamed output
+ Command palette · 1–8/21 ──────────────
 Search  type to search
-Showing 1–8 / 21 · ↓13
 › /new              unavailable · no Ag…
   /sessions         Switch session
   /jump             unavailable · fewer…

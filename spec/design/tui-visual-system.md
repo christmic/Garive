@@ -153,7 +153,10 @@ invent local frame sequences or schedule their own redraw loops.
 
 The master `5d1babef` component checkpoint is bound to executable visual,
 linear, and pointer evidence. CommandPalette owns its `160x28` and `40x8`
-window/overflow geometry (`db5b2de6`); TurnNavigator, Inspector, DecisionSheet,
+window/overflow geometry (`db5b2de6`). Its top-rule title carries the compact
+visible range (`1–8/21`), so a separate prose count cannot consume a result row;
+the search row, real results, and action row are the only interior owners.
+TurnNavigator, Inspector, DecisionSheet,
 and Recovery keep one selected row plus safe actions at `40x8` (`d7af6a4f`);
 public Session/Agent labels replace opaque identifiers (`60021509`); and
 connection hint, title, Inspector, and linear text share one truthful recovery
