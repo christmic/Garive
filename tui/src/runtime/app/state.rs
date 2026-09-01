@@ -138,7 +138,11 @@ impl RuntimeState {
             .collect::<BTreeSet<_>>();
         if !pending_recovery.is_empty() {
             model.notice = Some("A prior command has an unknown durable outcome. Use /retry after reviewing status.".into());
-            model.overlay = Some(Overlay::UnknownCommand);
+            if restored.pending.iter().any(|pending| {
+                pending.session_id.is_none() && pending_recovery.contains(&pending.command_id)
+            }) {
+                model.overlay = Some(Overlay::UnknownCommand);
+            }
         } else if restored.pending_quarantined != 0 {
             model.notice = Some(format!(
                 "Quarantined {} corrupt pending command file(s).",
@@ -405,6 +409,16 @@ impl RuntimeState {
         }
         self.model.selected_session = Some(session_id.clone());
         self.sync_pending_projection();
+        if switching_session
+            && !self.exact_retry_in_progress()
+            && self.recoverable_pending_for_context().is_some()
+        {
+            self.model.notice = Some(
+                "A prior command has an unknown durable outcome. Use /retry after reviewing status."
+                    .into(),
+            );
+            self.model.overlay = Some(Overlay::UnknownCommand);
+        }
         self.preferences.selected_session_id = Some(session_id.clone());
         let draft = self
             .preferences

@@ -108,6 +108,44 @@ fn mutation_responses_require_the_exact_pending_owner() {
 }
 
 #[tokio::test]
+async fn session_recovery_becomes_actionable_only_after_its_context_is_selected() {
+    let owner = pending(
+        PendingKind::StartTurn,
+        "recover-session-a",
+        Some("session-a"),
+        None,
+    );
+    let mut state = runtime(vec![owner]);
+
+    assert_eq!(state.model.overlay, None);
+    assert!(state.recoverable_pending_for_context().is_none());
+
+    state.load("session-a".into());
+
+    assert_eq!(state.model.overlay, Some(Overlay::UnknownCommand));
+    assert_eq!(
+        state
+            .recoverable_pending_for_context()
+            .map(|pending| pending.command_id.as_str()),
+        Some("recover-session-a")
+    );
+}
+
+#[test]
+fn sessionless_create_recovery_is_immediately_actionable() {
+    let owner = pending(PendingKind::CreateSession, "recover-create", None, None);
+    let state = runtime(vec![owner]);
+
+    assert_eq!(state.model.overlay, Some(Overlay::UnknownCommand));
+    assert_eq!(
+        state
+            .recoverable_pending_for_context()
+            .map(|pending| pending.command_id.as_str()),
+        Some("recover-create")
+    );
+}
+
+#[tokio::test]
 async fn unknown_turn_response_preserves_pending_queue_and_execution() {
     let owner = pending(
         PendingKind::ContinueTurn,

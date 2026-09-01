@@ -110,6 +110,11 @@ closing restores it when the target still exists. A blocking suspension or
 unknown-command overlay cannot be dismissed in a way that silently discards
 authority. It offers explicit defer, exact retry, or abandonment actions
 allowed by the state.
+An unknown command bound to a Session becomes an actionable overlay only after
+that exact Session is selected. Startup may announce that recovery exists, but
+must not expose `Enter` before the controller can acquire the same pending
+owner. A Session-less create recovery remains actionable after catalogue
+refresh without inventing a Session context.
 For action overlays, key identity, visual keycap, spoken key name, action label,
 and semantic controller intent are one application-owned binding. Fullscreen
 and linear presenters may format that binding differently but cannot invent an
