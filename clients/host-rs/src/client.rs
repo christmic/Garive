@@ -10,10 +10,10 @@ use tokio::time::{timeout, Duration};
 
 use crate::{
     reduce_host_events, reducer::validate_activity, AgentDefinitionPage, ClientLimits,
-    CreateSessionResponse, GoalPage, GoalSummary, HostClientError, HostClientErrorCode, HostEvent,
-    HostView, LiveOutputEndReason, LiveOutputEvent, LiveOutputEventKind, PlanPage, PlanSummary,
-    SessionPage, SessionSummary, SessionView, SuspensionView, TurnCommandResponse,
-    TurnTimelinePage,
+    CreateSessionResponse, GoalCommandResponse, GoalPage, GoalSummary, HostClientError,
+    HostClientErrorCode, HostEvent, HostView, LiveOutputEndReason, LiveOutputEvent,
+    LiveOutputEventKind, PlanPage, PlanSummary, SessionPage, SessionSummary, SessionView,
+    SuspensionView, TurnCommandResponse, TurnTimelinePage,
 };
 
 const KNOWN_HOST_ERRORS: [&str; 8] = [
@@ -160,6 +160,58 @@ impl LiveHostClient {
             return Err(invalid_event());
         }
         Ok(page)
+    }
+
+    /// Creates revision 1 through the Host's configured Goal authority.
+    pub async fn create_goal(
+        &self,
+        command_id: &str,
+        session_id: &str,
+        expected_session_version: u64,
+        definition_json: &str,
+    ) -> Result<GoalCommandResponse, HostClientError> {
+        if session_id.is_empty() || expected_session_version == 0 {
+            return Err(HostClientError::new(HostClientErrorCode::InvalidCommand));
+        }
+        let definition: Value = serde_json::from_str(definition_json)
+            .map_err(|_| HostClientError::new(HostClientErrorCode::InvalidCommand))?;
+        if serde_jcs::to_string(&definition)
+            .map_err(|_| HostClientError::new(HostClientErrorCode::InvalidCommand))?
+            != definition_json
+        {
+            return Err(HostClientError::new(HostClientErrorCode::InvalidCommand));
+        }
+        let goal_id = definition
+            .get("goal_id")
+            .and_then(Value::as_str)
+            .filter(|value| !value.is_empty())
+            .ok_or_else(|| HostClientError::new(HostClientErrorCode::InvalidCommand))?;
+        let path = format!("v1/sessions/{}/goals", encode_segment(session_id));
+        let value = self
+            .post(
+                &path,
+                command_id,
+                &CreateGoalCommand {
+                    expected_session_version,
+                    definition_json,
+                },
+            )
+            .await?;
+        let response: GoalCommandResponse = decode(value)?;
+        if response.api_version != "v1"
+            || response.session_id != session_id
+            || response.goal_id != goal_id
+            || response.revision != 1
+            || response.state != "draft"
+            || response.session_version
+                != expected_session_version
+                    .checked_add(1)
+                    .ok_or_else(invalid_event)?
+            || response.committed_position == 0
+        {
+            return Err(invalid_event());
+        }
+        Ok(response)
     }
 
     /// Reads the complete bounded Plan graph at one durable Session watermark.
@@ -774,6 +826,12 @@ impl LiveHostClient {
 #[derive(Serialize)]
 struct SessionCommand<'a> {
     agent_definition_id: &'a str,
+}
+
+#[derive(Serialize)]
+struct CreateGoalCommand<'a> {
+    expected_session_version: u64,
+    definition_json: &'a str,
 }
 
 #[derive(Serialize)]

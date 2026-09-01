@@ -326,6 +326,60 @@ async fn goal_page_is_typed_ordered_and_graph_checked() {
 }
 
 #[tokio::test]
+async fn goal_create_is_canonical_identity_bound_and_strictly_validated() {
+    let fixture = fixture();
+    let definition = serde_jcs::to_string(&serde_json::json!({
+        "bounds":{"duration_budget_ms":null,"max_attempts":1,"max_child_goals":1,"max_plan_revisions":1,"token_budget":null},
+        "capability_references":[],"contract":"garive.goal-definition",
+        "criteria":[{"criterion_id":"accepted","kind":"user_acceptance","response_schema_digest":"a".repeat(64)}],
+        "goal_id":"goal-client","objective":"deliver","parent_goal_id":null,
+        "scope":{"session_id":"session-goal-create","workspace_capability_ids":[]},"version":1
+    }))
+    .unwrap();
+    let valid = serde_json::json!({
+        "api_version":"v1","session_id":"session-goal-create","goal_id":"goal-client",
+        "revision":1,"state":"draft","session_version":2,"committed_position":2
+    });
+    let invalid = serde_json::json!({
+        "api_version":"v1","session_id":"session-goal-create","goal_id":"other",
+        "revision":1,"state":"draft","session_version":2,"committed_position":2
+    });
+    let requests = Arc::new(Mutex::new(Vec::new()));
+    let (base_url, server) = serve(
+        vec![
+            http_json(200, &valid.to_string()),
+            http_json(200, &invalid.to_string()),
+        ],
+        Arc::clone(&requests),
+    )
+    .await;
+    let client = LiveHostClient::new(&base_url, limits(&fixture)).unwrap();
+    let response = client
+        .create_goal("create-goal-client", "session-goal-create", 1, &definition)
+        .await
+        .unwrap();
+    assert_eq!(response.goal_id, "goal-client");
+    assert_eq!(
+        client
+            .create_goal(
+                "create-goal-client-2",
+                "session-goal-create",
+                1,
+                &definition,
+            )
+            .await
+            .unwrap_err()
+            .code,
+        HostClientErrorCode::InvalidEvent
+    );
+    server.await.unwrap();
+    let request = &requests.lock().await[0];
+    assert!(request.starts_with("POST /v1/sessions/session-goal-create/goals HTTP/1.1\r\n"));
+    assert!(request.contains("idempotency-key: create-goal-client"));
+    assert!(request.contains("\"expected_session_version\":1"));
+}
+
+#[tokio::test]
 async fn plan_page_is_typed_ordered_and_count_checked() {
     let fixture = fixture();
     let plan = serde_json::json!({

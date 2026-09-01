@@ -300,6 +300,25 @@ pub struct GoalPage {
     pub observed_max_position: u64,
 }
 
+/// Durable public receipt for one Goal mutation.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
+pub struct GoalCommandResponse {
+    /// Exact Host API version.
+    pub api_version: String,
+    /// Owning Session identity.
+    pub session_id: String,
+    /// Mutated Goal identity.
+    pub goal_id: String,
+    /// Resulting Goal revision.
+    pub revision: u64,
+    /// Resulting stable lifecycle state.
+    pub state: String,
+    /// Session version after commit or exact replay.
+    pub session_version: u64,
+    /// Durable command fact position.
+    pub committed_position: u64,
+}
+
 /// One bounded redacted durable Plan revision projection.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
 pub struct PlanSummary {

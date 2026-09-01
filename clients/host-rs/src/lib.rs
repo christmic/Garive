@@ -10,9 +10,9 @@ mod values;
 pub use client::LiveHostClient;
 pub use reducer::reduce_host_events;
 pub use values::{
-    AgentDefinitionPage, AgentDefinitionSummary, ClientLimits, CreateSessionResponse, GoalPage,
-    GoalSummary, HostActivity, HostClientError, HostClientErrorCode, HostEvent, HostTerminal,
-    HostView, LiveOutputEndReason, LiveOutputEvent, LiveOutputEventKind, PlanPage, PlanSummary,
-    SessionPage, SessionSummary, SessionView, SuspensionView, TurnCommandResponse,
-    TurnTimelineItem, TurnTimelinePage, HOST_CLIENT_FAILURES,
+    AgentDefinitionPage, AgentDefinitionSummary, ClientLimits, CreateSessionResponse,
+    GoalCommandResponse, GoalPage, GoalSummary, HostActivity, HostClientError, HostClientErrorCode,
+    HostEvent, HostTerminal, HostView, LiveOutputEndReason, LiveOutputEvent, LiveOutputEventKind,
+    PlanPage, PlanSummary, SessionPage, SessionSummary, SessionView, SuspensionView,
+    TurnCommandResponse, TurnTimelineItem, TurnTimelinePage, HOST_CLIENT_FAILURES,
 };
