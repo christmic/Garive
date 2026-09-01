@@ -402,6 +402,10 @@ describe("Desktop product experience", () => {
     }]} />);
     expect(screen.getByText("Pursuing goal")).toBeTruthy();
     expect(screen.getByText("Prepare the launch decision memo")).toBeTruthy();
+    const rail = view.container.querySelector(".turn-progress");
+    expect(rail?.getAttribute("data-composer-rail-item")).toBe("present");
+    expect(rail?.getAttribute("data-composer-rail-placement")).toBe("above");
+    expect(rail?.getAttribute("data-composer-rail-variant")).toBe("controls");
     expect(screen.getByText("Read scoped file")).toBeTruthy();
     expect(screen.getByText("Write scoped file")).toBeTruthy();
     expect(view.container.querySelector(".progress-state")?.textContent).toBe("Running");

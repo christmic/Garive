@@ -740,8 +740,10 @@ kbd { font-size: var(--text-2xs); }
 .live-answer > p { display: flex; align-items: center; gap: 8px; margin: 0; color: var(--text-tertiary); font-size: var(--text-sm); }
 .live-answer .result-markdown::after { display: inline-block; width: 5px; height: 15px; margin-left: 2px; border-radius: 2px; background: var(--text-tertiary); vertical-align: -2px; animation: live-caret 1s steps(1) infinite; content: ""; }
 @keyframes live-caret { 50% { opacity: 0; } }
-.turn-progress { margin: 0; overflow: hidden; border: 0; border-bottom: 1px solid var(--border-subtle); border-radius: var(--radius-composer) var(--radius-composer) 0 0; background: transparent; }
-.turn-progress-head { display: grid; grid-template-columns: 18px minmax(0, 1fr) auto auto; align-items: center; gap: 7px; min-height: 32px; padding: 0 7px 0 10px; }
+.composer-stack { width: min(var(--thread-content-max-width), 100%); margin: 0 auto; display: flex; min-width: 0; flex-direction: column; pointer-events: none; }
+.composer-stack > .composer { width: 100%; margin: 0; position: relative; z-index: 2; }
+.turn-progress { position: relative; z-index: 1; margin: 0 var(--composer-rail-inline-inset) calc(var(--composer-rail-tuck) * -1); padding: 0 var(--space-1) var(--composer-rail-tuck); overflow: clip; border: 0; border-radius: var(--radius-composer-rail) var(--radius-composer-rail) 0 0; background: var(--surface-composer-action-bar); pointer-events: auto; transition: margin var(--motion-relaxed) var(--ease-enter), opacity var(--motion-relaxed) var(--ease-enter); }
+.turn-progress-head { display: grid; grid-template-columns: 18px minmax(0, 1fr) auto auto; align-items: center; gap: 7px; min-height: 32px; padding: 0 3px 0 6px; }
 .turn-progress-head strong { font-size: var(--text-xs); font-weight: 590; }
 .progress-summary { display: flex; align-items: baseline; min-width: 0; gap: 6px; }
 .progress-summary strong { flex: none; }

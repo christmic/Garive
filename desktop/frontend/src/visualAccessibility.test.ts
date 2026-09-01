@@ -57,10 +57,14 @@ describe("Desktop visual accessibility contract", () => {
     expect(TOKENS).toContain("--radius-composer: 24px");
     expect(TOKENS).toContain("--size-composer-action: 28px");
     expect(TOKENS).toContain("--radius-composer-single-line: 22px");
+    expect(TOKENS).toContain("--radius-composer-rail: 20px");
     expect(TOKENS).toContain("--height-composer-single-line: 44px");
+    expect(TOKENS).toContain("--composer-rail-inline-inset: 13px");
+    expect(TOKENS).toContain("--composer-rail-tuck: 4px");
     expect(TOKENS).toContain("--shadow-composer: 0 0 0 1px rgba(0, 0, 0, .04)");
     expect(TOKENS).toContain("--shadow-composer: inset 0 0 1px rgba(255, 255, 255, .2)");
     expect(TOKENS).toContain("--surface-composer: #2a2a2a");
+    expect(TOKENS).toContain("--surface-composer-action-bar: rgba(255, 255, 255, .08)");
     expect(TOKENS).toContain("--surface-user-message: color-mix(in oklab, var(--text-primary) 5%, transparent)");
     expect(TOKENS).toContain("--surface-overlay: #2d2d2d");
     expect(TOKENS).toContain("--surface-selected: #3c3638");
@@ -157,7 +161,11 @@ describe("Desktop visual accessibility contract", () => {
     expect(CSS).toContain("grid-template-columns: 18px minmax(0, 1fr) auto");
     expect(CSS).toContain(".user-message > div { max-width: var(--user-chat-width); padding: 10px var(--thread-content-margin); border: 0; border-radius: var(--radius-user-message); corner-shape: round;");
     expect(CSS).toContain("background: var(--surface-user-message)");
-    expect(CSS).toContain(".turn-progress { margin: 0; overflow: hidden; border: 0; border-bottom: 1px solid var(--border-subtle); border-radius: var(--radius-composer) var(--radius-composer) 0 0; background: transparent; }");
+    expect(CSS).toContain(".composer-stack { width: min(var(--thread-content-max-width), 100%); margin: 0 auto;");
+    expect(CSS).toContain("margin: 0 var(--composer-rail-inline-inset) calc(var(--composer-rail-tuck) * -1)");
+    expect(CSS).toContain("border-radius: var(--radius-composer-rail) var(--radius-composer-rail) 0 0");
+    expect(CSS).toContain("background: var(--surface-composer-action-bar)");
+    expect(CSS).toContain(".composer-stack > .composer { width: 100%; margin: 0;");
     expect(CSS).toContain(".composer { width: min(var(--thread-content-max-width), 100%); border: 0; border-radius: var(--radius-composer);");
     expect(CSS).toContain("background: var(--surface-composer)");
     expect(CSS).toContain(".theme-dark .environment-panel, .theme-dark .environment-panel header");

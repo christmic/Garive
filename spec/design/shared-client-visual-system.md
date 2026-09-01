@@ -98,7 +98,7 @@ essential label is clipped or replaced by an icon.
 | Family | Tokens |
 |---|---|
 | space | `--space-1` 4, `--space-2` 8, `--space-3` 12, `--space-4` 16, `--space-5` 24, `--space-6` 32 px |
-| radius | `--radius-control` 8, `--radius-card` 12, `--radius-panel` 14, `--radius-composer` 24, `--radius-composer-single-line` 22, `--radius-pill` 999 px |
+| radius | `--radius-control` 8, `--radius-card` 12, `--radius-panel` 14, `--radius-composer` 24, `--radius-composer-single-line` 22, `--radius-composer-rail` 20, `--radius-pill` 999 px |
 | depth | `--shadow-raised` = 8/16/-4, `--shadow-overlay` = 16/32/-8; no other shadow families |
 | motion | `--motion-basic` 150 ms, `--motion-relaxed` 300 ms; exact basic, enter, exit and snappy curves |
 | material | `--blur-lg` 16 px; floating transparency only |
@@ -152,9 +152,10 @@ differs from these pixels.
 
 User work is its own semantic surface: the installed desktop definition mixes
 the current text color at 5% over a transparent background. It is not an alias
-for the activity/progress surface. The goal rail is part of the Composer and
-therefore inherits the Composer material; one subtle separator communicates
-the boundary without creating a dark card stacked on another card.
+for the activity/progress surface. The goal rail uses the dedicated
+`--surface-composer-action-bar`: 3% black in light mode and 8% white in dark
+mode. It is an attached sibling of the Composer, never a transparent internal
+row or a second message card.
 
 ## Layout contract
 
@@ -452,6 +453,15 @@ then occupy one adaptive grid row. Any failed condition restores the multiline
 layout. The transition uses the relaxed/snappy token and resolves to zero under
 reduced motion. Desktop and Web must use the same pure admission function and
 DOM; platform adapters may not decide layout independently.
+
+The running/suspended Turn uses a source-backed attached Utility Rail. Its
+container is inset 13px from both Composer edges, tucks 4px beneath the
+Composer, and uses 20px top corners with square hidden lower corners. The rail
+has a 32px content row and one-line ellipsis for the Goal. Its visible facts are
+only Garive's durable Goal, admitted Activity state and needs-input condition;
+elapsed time, model selection and execution controls remain absent until a
+trusted product capability supplies them. Reduced motion sets its attachment
+transition to zero through `--motion-relaxed`.
 
 The unified Desktop/Web main toolbar is 46px; compact chrome uses 36px. The file
 tab shares the main row, its location toolbar is 40px including its

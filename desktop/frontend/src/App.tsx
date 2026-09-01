@@ -1020,11 +1020,12 @@ function WorkSurface({ state, composer, submit, startSuggestion, dispatch, conte
         aria-label={t(newOutputBelow ? "timeline.newOutput" : "timeline.jumpLatest")}
         onClick={jumpToLatest}><Icon name="chevron" /><span>{t(newOutputBelow
           ? "timeline.newOutput" : "timeline.jumpLatest")}</span></button>}
-      <div ref={composerShell} className={state.phase === "submitting" ? "composer busy" : "composer"}
-        data-layout={composerLayout}>
+      <div className="composer-stack">
         {(state.phase === "submitting" || suspension) && <TurnProgress goal={activeGoal}
           status={suspension ? t("status.needsInput") : undefined} activities={state.activities}
           onOpen={() => dispatch({ type: "inspector_selected", tab: "activity" })} t={t} />}
+        <div ref={composerShell} className={state.phase === "submitting" ? "composer busy" : "composer"}
+          data-layout={composerLayout}>
         {needsApproval && <div className="approval-card" role="alert" aria-live="assertive" aria-label={t("approval.aria")}>
           <span className="approval-icon"><Icon name="shield" /></span><div><strong>{approvalEffect
             ? `${activityLabel(approvalEffect.label_key, t)} · ` : `${t("approval.operationPrefix")} `}<bdi>{approvalWorkspace?.display_name ?? t("approval.attachedWorkspace")}</bdi>?</strong>
@@ -1081,6 +1082,7 @@ function WorkSurface({ state, composer, submit, startSuggestion, dispatch, conte
             : <button className="send-button" type="button" disabled={!canSubmit(state)} aria-label={t("work.composer.send")} onClick={() => void submit()}>
               {state.phase === "submitting" ? <span className="spinner" /> : <Icon name="send" />}
             </button>}
+        </div>
         </div>
       </div>
       <p id="composer-commit-note" className="composer-note sr-only">{t("work.composer.commitNote")}</p>
@@ -1173,6 +1175,8 @@ export function TurnProgress({ goal, status, activities, onOpen, t }: { goal?: s
   const recent = activities.slice(-3);
   const current = [...recent].reverse().find((activity) => !activity.terminal) ?? recent.at(-1);
   return <article className={status ? "turn-progress attention" : "turn-progress"}
+    data-composer-rail-item="present" data-composer-rail-placement="above"
+    data-composer-rail-variant="controls"
     aria-label={t("timeline.progressTitle")}>
     <div className="turn-progress-head"><span className="live-pulse"><span /></span><div className="progress-summary">
       <strong>{t("timeline.progressTitle")}</strong><p>{goal || t("timeline.progressBody")}</p></div>

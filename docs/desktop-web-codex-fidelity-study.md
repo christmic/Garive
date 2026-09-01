@@ -442,6 +442,26 @@ to 66px, while Running remains 99px and Approval 253.34px. At 480px the compact
 Composer is 432×44px with a 235.45px measured input lane; a draft that no longer
 fits expands to 66px. Every state has zero document overflow.
 
+#### Attached Utility Rail
+
+The installed source also shows why an internally divided Composer still felt
+flatter than Codex. In `app-initial-NNCUNt29.css`, `_rail_e8rl5_1` applies the
+13px `--home-composer-inline-inset`; `_attached_e8rl5_26` tucks a present item
+4px beneath the Composer and gives an above-placed rail its own top corners.
+`_ComposerHomeUtilityBar_dqhd9_4` uses the dedicated Composer action-bar
+surface and 4px inline padding. In `app-initial-B6Gk5KCN.js`, `Xro` identifies
+the item as a `controls` Utility Bar with an approximately 32px content row.
+The pinned bundle resolves the Electron top radius to 20px and the action-bar
+surface to 3% black in light mode or 8% white in dark mode.
+
+Garive previously put `TurnProgress` inside `.composer` as a transparent row
+with a bottom border. It now shares a `.composer-stack` on Desktop and Web:
+the rail is the Composer's sibling, has the source insets/material/tuck, and
+passes placement/variant state through explicit data attributes. Garive keeps
+its own admitted Goal, Activity and needs-input facts. It does not invent the
+reference's elapsed timer, model control or execution actions because the Host
+projection does not supply those capabilities.
+
 ### T. Installed Codex desktop document-system audit
 
 The user clarified that fidelity must cover desktop composition, not only UX
