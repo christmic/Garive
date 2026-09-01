@@ -1217,6 +1217,28 @@ mobile labels leaked over Setup while the translated rail remained offscreen.
 The overlay now resets its flex/max-width and clips its closed bounds; the same
 run shows an unobstructed Setup surface and a fully operable opened navigation.
 
+### XL. Tooltip material has no browser-native islands
+
+Installed `thread-app-shell-chrome-DQMbICmE.js` composes shell disclosure through
+the shared Tooltip contract, and installed control sources pass disabled reasons
+through focusable tooltip content. Garive had already adopted that structure for
+its high-frequency actions, but a source audit found three remaining native
+`title` islands: durable navigation, Runtime identity and the current Workspace
+path. Their host-defined delay, material and keyboard behavior broke the shared
+Desktop/Web interaction language.
+
+All three now use the existing semantic Tooltip primitive. Unavailable Memory or
+Search explanations expose a focusable `aria-disabled` anchor while keeping the
+disabled action inert; Runtime identity retains its full rail geometry; a deep
+Workspace path binds its visible text to `role=tooltip` without changing durable
+display names. Executable tests forbid the native attributes and verify the
+description relationship.
+
+Live Web evidence confirms Memory and Workspace path have no `title`, both bind
+an explicit tooltip description and the Runtime status point remains aligned to
+the far side of its rail row after the wrapper change. This closes the last known
+native-tooltip exception in the shared client source.
+
 ## Gate 1 — Codex fidelity
 
 This gate passes only when both Desktop and Web show:

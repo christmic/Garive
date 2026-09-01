@@ -146,8 +146,23 @@ describe("Desktop product experience", () => {
     expect(view.container.querySelector(".topbar .local-badge")).toBeNull();
     expect(screen.queryByRole("button", { name: "Account and app menu" })).toBeNull();
     const runtime = screen.getByRole("button", { name: "Local Runtime · Runtime ready" });
+    expect(runtime.hasAttribute("title")).toBe(false);
+    expect(runtime.getAttribute("aria-describedby")).toBe(screen.getByRole("tooltip", {
+      name: "Local · Runtime ready",
+    }).id);
     fireEvent.click(runtime);
     expect(screen.getByRole("heading", { name: "Local Runtime" })).toBeTruthy();
+  });
+
+  it("explains unavailable navigation through the shared keyboard tooltip", async () => {
+    const view = render(<App />);
+    await waitFor(() => expect(view.container.querySelector(".nav-stack")).not.toBeNull());
+    const memory = screen.getByRole("button", { name: "Memory" });
+    expect(memory.getAttribute("aria-disabled")).toBe("true");
+    expect(memory.getAttribute("tabindex")).toBe("0");
+    expect(memory.hasAttribute("title")).toBe(false);
+    expect(screen.getByRole("tooltip", { name: "Requires M2-D" }).id)
+      .toBe(memory.getAttribute("aria-describedby"));
   });
 
   it("turns the product switcher into a truthful keyboard Runtime menu", async () => {
@@ -170,7 +185,10 @@ describe("Desktop product experience", () => {
 
   it("presents durable search as a compact desktop finder", async () => {
     const view = render(<App />);
-    fireEvent.click(await screen.findByTitle("Search durable work (⌘F)"));
+    const searchTooltip = await screen.findByRole("tooltip", { name: "Search durable work (⌘F)" });
+    const search = searchTooltip.parentElement?.querySelector<HTMLButtonElement>("button");
+    expect(search?.hasAttribute("title")).toBe(false);
+    fireEvent.click(search!);
     expect(screen.getByRole("heading", { name: "Find your work" })).toBeTruthy();
     expect(screen.getByRole("textbox", { name: "Search durable work" })).toBeTruthy();
     expect(screen.getByRole("group", { name: "Filter durable work" })).toBeTruthy();

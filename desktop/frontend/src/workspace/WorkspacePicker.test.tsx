@@ -22,7 +22,10 @@ describe("localized Workspace picker", () => {
     expect(document.querySelector(".workspace-heading")).toBeNull();
     expect(screen.getByText("Launch brief.md")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: /Research notes/ }));
-    expect(await screen.findByTitle("Research notes")).toBeTruthy();
+    const path = await screen.findByText("Research notes", { selector: ".workspace-path > .ui-tooltip-anchor > span" });
+    expect(path.hasAttribute("title")).toBe(false);
+    expect(screen.getByRole("tooltip", { name: "Research notes" }).id)
+      .toBe(path.getAttribute("aria-describedby"));
     fireEvent.click(screen.getByRole("button", { name: "返回上级文件夹" }));
     fireEvent.click(screen.getByRole("checkbox", { name: "选择文件作为上下文" }));
     fireEvent.click(screen.getByRole("button", { name: "添加 1 个文件" }));

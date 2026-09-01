@@ -3,6 +3,7 @@ import {
   listWorkspaceEntries, type WorkspaceEntry, type WorkspaceGrant,
 } from "../ipc/host";
 import { Icon } from "../ui/Icon";
+import { Tooltip } from "../ui/Tooltip";
 import { createTranslator, type Translator } from "../i18n";
 
 interface DirectoryLevel { readonly entryId?: string; readonly label: string }
@@ -104,7 +105,7 @@ export function WorkspacePicker({ grant, preview = false, onCancel, onConfirm,
       <div className="workspace-path">
         <button type="button" disabled={levels.length < 2} onClick={back}
           aria-label={t("workspace.back")}><Icon name="chevron" /></button>
-        <span title={current?.label}>{current?.label}</span>
+        <Tooltip label={current?.label ?? ""} align="start"><span>{current?.label}</span></Tooltip>
         <small>{selected.size}/8 {t("workspace.selected")}</small>
       </div>
       <div className="workspace-list" aria-label={t("workspace.files")} aria-busy={loading}>

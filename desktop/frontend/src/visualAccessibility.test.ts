@@ -136,6 +136,7 @@ describe("Desktop visual accessibility contract", () => {
     expect(CSS).toContain("calc(100% - var(--sidebar-scroll-fade-distance))");
     expect(CSS).toContain(".task-groups { -webkit-mask-image: none !important; mask-image: none !important; }");
     expect(CSS).toContain(".sidebar-footer { grid-template-columns: minmax(0, 1fr) 30px; align-items: center; gap: 2px; }");
+    expect(CSS).toContain(".sidebar-footer > .ui-tooltip-anchor, .sidebar-footer > .ui-tooltip-anchor > .host-identity { width: 100%; }");
     expect(CSS).toContain(".host-identity { grid-template-columns: 18px minmax(0, 1fr) 8px;");
     expect(CSS).toContain(".sidebar-settings-button { display: grid; place-items: center; width: 30px; height: 30px;");
     expect(CSS).toContain(".environment-panel { position: absolute");

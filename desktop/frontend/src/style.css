@@ -628,6 +628,7 @@ kbd { font-size: var(--text-2xs); }
 .recent-item small .task-state-dot { margin-left: 5px; }
 .status-dot { width: 6px; height: 6px; box-shadow: none !important; }
 .sidebar-footer { grid-template-columns: minmax(0, 1fr) 30px; align-items: center; gap: 2px; }
+.sidebar-footer > .ui-tooltip-anchor, .sidebar-footer > .ui-tooltip-anchor > .host-identity { width: 100%; }
 .host-identity { grid-template-columns: 18px minmax(0, 1fr) 8px; gap: 6px; min-width: 0; min-height: 32px; padding: 2px 5px; border: 0; border-radius: var(--radius-control); color: var(--text-secondary); background: transparent; text-align: left; }
 .host-identity:hover, .sidebar-settings-button:hover { background: var(--surface-hover); }
 .host-identity-icon { width: 18px; height: 18px; border-radius: 0; background: transparent; }

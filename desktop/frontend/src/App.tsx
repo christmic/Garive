@@ -791,17 +791,17 @@ export function App({ client = "desktop", webCapabilities, createProductPort,
           </section>}
         </div>
         <div className="sidebar-footer">
-          <button className={`host-identity ${state.capabilities?.configured ? "online" : "offline"}`}
+          <Tooltip label={`${t("shell.local")} · ${t(state.capabilities?.configured
+            ? "shell.runtimeReadyShort" : "shell.setupRequired")}`} side="top" align="start"><button
+            className={`host-identity ${state.capabilities?.configured ? "online" : "offline"}`}
             type="button" aria-label={`${t("settings.runtime.title")} · ${t(state.capabilities?.configured
-              ? "shell.runtimeReadyShort" : "shell.setupRequired")}`}
-            title={`${t("shell.local")} · ${t(state.capabilities?.configured
               ? "shell.runtimeReadyShort" : "shell.setupRequired")}`}
             onClick={() => { setSettingsSection("runtime"); setScreen("settings"); }}>
             <span className="host-identity-icon" aria-hidden="true"><Icon name="desktop" /></span>
             <span className="host-identity-copy"><strong>{t("shell.local")}</strong>
               <small>{state.capabilities?.configured ? t("shell.runtimeReadyShort") : t("shell.setupRequired")}</small></span>
             <span className="status-dot" aria-hidden="true" />
-          </button>
+          </button></Tooltip>
           <Tooltip label={t("nav.settings")} shortcut="⌘," side="top" align="end"><button
             className="sidebar-settings-button" type="button" aria-label={t("nav.settings")}
             onClick={() => { setSettingsSection("general"); setScreen("settings"); }}>
@@ -2005,7 +2005,12 @@ function LocaleOptions({ value, onChange, t }: {
   </span>;
 }
 function StatusCard({ icon, title, body, action }: { icon: IconName; title: string; body: string; action?: string }) { return <div className="center-state"><span className="orb"><Icon name={icon} /></span><h1>{title}</h1><p>{body}</p>{action && <button className="primary-button" type="button" disabled>{action}</button>}</div>; }
-function NavItem({ icon, label, selected, disabled, hint, onClick, soon = "Soon" }: { icon: IconName; label: string; selected?: boolean; disabled?: boolean; hint?: string; onClick?: () => void; soon?: string }) { return <button type="button" className={selected ? "nav-item selected" : "nav-item"} aria-label={label} disabled={disabled} title={hint} onClick={onClick}><Icon name={icon} /><span>{label}</span>{disabled && <small>{soon}</small>}</button>; }
+function NavItem({ icon, label, selected, disabled, hint, onClick, soon = "Soon" }: { icon: IconName; label: string; selected?: boolean; disabled?: boolean; hint?: string; onClick?: () => void; soon?: string }) {
+  const item = <button type="button" className={selected ? "nav-item selected" : "nav-item"}
+    aria-label={label} disabled={disabled} onClick={onClick}><Icon name={icon} /><span>{label}</span>
+    {disabled && <small>{soon}</small>}</button>;
+  return hint ? <Tooltip label={hint} side="right" align="start" focusDisabled>{item}</Tooltip> : item;
+}
 function terminalCopy(terminal?: "running" | "completed" | "suspended" | "stopped" | "failed", t?: (key: MessageKey) => string) { const key = terminal === "completed" ? "status.completed" : terminal === "suspended" ? "status.needsInput" : terminal === "stopped" ? "status.stopped" : terminal === "failed" ? "status.failed" : "status.working"; return t ? t(key) : key === "status.completed" ? "Completed" : key === "status.needsInput" ? "Needs input" : key === "status.stopped" ? "Stopped" : key === "status.failed" ? "Failed" : "Working"; }
 function TaskStateDot({ task }: { task: RecentTask }) {
   return <span className={`task-state-dot ${classifyTask(task)}`} aria-hidden="true" />;
