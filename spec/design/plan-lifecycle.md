@@ -168,12 +168,30 @@ A failed step does not automatically fail the Plan. Frozen policy chooses a
 bounded retry, suspension, replan request or explicit Plan failure. An
 attempt-limit breach cannot return the step to Ready.
 
-Terminal failure policy is a read-only fixed-prefix Runtime port. It sees the
-exact Goal/Plan definition digests and failed Step identities, but no Ledger or
-mutation capability. A bounded safe `Fail` decision becomes canonical policy
-evidence before the dedicated Plan failure command commits; an absent or
-deferred policy cannot terminalize the Plan. Suspend and replan remain distinct
-policies because neither is semantically equivalent to failure.
+Failure policy is a read-only fixed-prefix Runtime port. It sees the exact
+Goal/Plan definition digests, failed Step identities and an optional policy
+continuation, but no Ledger or mutation capability. Its closed decisions are:
+
+| Decision | Durable result |
+|---|---|
+| `Suspend` | one atomic `plan.suspended + goal.suspended` batch with a `policy` continuation |
+| `Resume` | one atomic `plan.resumed + goal.activated` batch resolving that exact continuation |
+| `Replan` | one `plan.replan.admitted` fact; it grants proposal work, not adoption |
+| `Fail` | one `plan.failed` fact with canonical policy evidence |
+| `Defer` | no mutation |
+
+The policy continuation is `<policy-reference>:<decision-digest>`. The digest
+binds the complete fixed-prefix input and safe Suspend decision. Resume must use
+the same policy reference and exact continuation; a different revision cannot
+resolve it. Policy Suspend/Resume changes Plan and Goal together in one Ledger
+transaction so recovery never exposes dispatchable Goal work around a suspended
+Plan.
+
+`plan.replan.admitted` binds the source Plan ID/revision/digest, current Goal
+revision/digest, declaration-ordered failed Step IDs, policy reference, Session
+version and through-position observed by the decision. A planner receives no
+adoption authority from this fact. Exact replay reuses it; a changed prefix,
+source failure set or policy revision requires a new admission decision.
 
 The generic Runtime transition entry rejects `FailPlan`. The dedicated Plan
 failure command rechecks the same active Goal binding and ledger watermark,
@@ -260,6 +278,30 @@ Replanning proposes revision `N + 1` with the same Plan ID and current Goal
 revision, or a new Plan ID when policy explicitly chooses replacement. Runtime
 validates and adopts the new revision while atomically superseding the old one.
 
+The local revision path is:
+
+```text
+failed source N
+  -> plan.replan.admitted
+  -> plan.replan.proposal.requested + internal C6 Planner start
+  -> plan.replan.proposal.result_bound
+  -> plan.proposed revision N+1
+  -> admission Adopt | Reject | Defer
+  -> plan.superseded(N) + plan.adopted(N+1)
+```
+
+The two proposal facts are separate from initial `plan.proposal.*` facts. They
+bind the source revision and replan-admission fact, while sharing the same
+topology-only structured output contract. The Planner cannot choose Plan ID,
+revision, Goal binding, Agent snapshot, Tool catalogue or Safety revision.
+Runtime derives all of them and rechecks the exact admitted prefix after the
+asynchronous result.
+
+An existing admitted request or terminal result is recovered before any new
+Planner invocation. A crash after the Planner terminal but before result
+binding binds that same terminal; a crash after `plan.proposed` proceeds to
+admission without invoking the Planner again.
+
 Completed step evidence may be carried forward only when:
 
 1. old and new `step_digest` are equal;
@@ -320,6 +362,9 @@ the Plan mutation and any corresponding C6 posture atomically.
 | `plan.adopted` | old/new state versions, expected Goal/prior-Plan revisions, actor/policy reference, canonical carry-forward evidence binding |
 | `plan.rejected` | old/new state versions, authenticated actor, exact admission-policy revision and stable safe reason |
 | `plan.superseded` | old/new state versions, replacement Plan/revision/digest and canonical unresolved-work binding |
+| `plan.replan.admitted` | source Plan/Goal bindings, failed Step IDs, policy reference and fixed-prefix coordinates |
+| `plan.replan.proposal.requested` | admission fact, source Plan binding, request/schema digests and internal C6 identities |
+| `plan.replan.proposal.result_bound` | request/terminal identities and exact topology result digest |
 | `plan.step.claimed` | old/new state versions, step/digest, claim, worker, positive lease epoch, monotonic clock revision and `[claimed_at_tick, expires_at_tick)` |
 | `plan.step.claim_expired` | old/new state versions, step/claim/lease epoch and observed monotonic expiry tick |
 | `plan.step.started` | old/new state versions, step/claim/lease epoch, same monotonic clock revision plus pre-expiry observed tick, attempt and Kernel Execution/snapshot binding |
