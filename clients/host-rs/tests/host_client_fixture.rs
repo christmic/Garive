@@ -328,14 +328,7 @@ async fn goal_page_is_typed_ordered_and_graph_checked() {
 #[tokio::test]
 async fn goal_create_is_canonical_identity_bound_and_strictly_validated() {
     let fixture = fixture();
-    let definition = serde_jcs::to_string(&serde_json::json!({
-        "bounds":{"duration_budget_ms":null,"max_attempts":1,"max_child_goals":1,"max_plan_revisions":1,"token_budget":null},
-        "capability_references":[],"contract":"garive.goal-definition",
-        "criteria":[{"criterion_id":"accepted","kind":"user_acceptance","response_schema_digest":"a".repeat(64)}],
-        "goal_id":"goal-client","objective":"deliver","parent_goal_id":null,
-        "scope":{"session_id":"session-goal-create","workspace_capability_ids":[]},"version":1
-    }))
-    .unwrap();
+    let definition = goal_definition_json("goal-client", "deliver", "session-goal-create");
     let valid = serde_json::json!({
         "api_version":"v1","session_id":"session-goal-create","goal_id":"goal-client",
         "revision":1,"state":"draft","session_version":2,"committed_position":2
@@ -432,6 +425,63 @@ async fn goal_cancel_binds_both_expected_revisions_and_identity() {
     assert!(request.starts_with("POST /v1/goals/goal-cancel:cancel HTTP/1.1\r\n"));
     assert!(request.contains("\"expected_session_version\":5"));
     assert!(request.contains("\"expected_revision\":2"));
+}
+
+#[tokio::test]
+async fn goal_revise_binds_canonical_definition_and_both_revisions() {
+    let fixture = fixture();
+    let definition = goal_definition_json("goal-revise", "refined", "session-revise");
+    let valid = serde_json::json!({
+        "api_version":"v1","session_id":"session-revise","goal_id":"goal-revise",
+        "revision":3,"state":"draft","session_version":6,"committed_position":8
+    });
+    let invalid = serde_json::json!({
+        "api_version":"v1","session_id":"session-revise","goal_id":"goal-revise",
+        "revision":3,"state":"active","session_version":6,"committed_position":8
+    });
+    let requests = Arc::new(Mutex::new(Vec::new()));
+    let (base_url, server) = serve(
+        vec![
+            http_json(200, &valid.to_string()),
+            http_json(200, &invalid.to_string()),
+        ],
+        Arc::clone(&requests),
+    )
+    .await;
+    let client = LiveHostClient::new(&base_url, limits(&fixture)).unwrap();
+    let response = client
+        .revise_goal(
+            "revise-goal",
+            "session-revise",
+            "goal-revise",
+            5,
+            2,
+            &definition,
+            "objective_refined",
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.state, "draft");
+    assert_eq!(
+        client
+            .revise_goal(
+                "revise-goal-2",
+                "session-revise",
+                "goal-revise",
+                5,
+                2,
+                &definition,
+                "objective_refined",
+            )
+            .await
+            .unwrap_err()
+            .code,
+        HostClientErrorCode::InvalidEvent
+    );
+    server.await.unwrap();
+    let request = &requests.lock().await[0];
+    assert!(request.starts_with("POST /v1/goals/goal-revise:revise HTTP/1.1\r\n"));
+    assert!(request.contains("\"replacement_reason\":\"objective_refined\""));
 }
 
 #[tokio::test]
@@ -666,6 +716,17 @@ async fn mutation_methods_use_exact_h1_paths_and_bodies() {
     assert!(requests[1].contains("\"suspension_id\":\"suspension-client\""));
     assert!(requests[1].contains("\"input\":\"approved input\""));
     assert!(requests[2].contains("\"input_json\":\"{\\\"approved\\\":true}\""));
+}
+
+fn goal_definition_json(goal_id: &str, objective: &str, session_id: &str) -> String {
+    serde_jcs::to_string(&serde_json::json!({
+        "bounds":{"duration_budget_ms":null,"max_attempts":1,"max_child_goals":1,"max_plan_revisions":1,"token_budget":null},
+        "capability_references":[],"contract":"garive.goal-definition",
+        "criteria":[{"criterion_id":"accepted","kind":"user_acceptance","response_schema_digest":"a".repeat(64)}],
+        "goal_id":goal_id,"objective":objective,"parent_goal_id":null,
+        "scope":{"session_id":session_id,"workspace_capability_ids":[]},"version":1
+    }))
+    .unwrap()
 }
 
 fn http_json(status: u16, body: &str) -> Vec<u8> {

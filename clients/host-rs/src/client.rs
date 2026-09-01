@@ -262,6 +262,66 @@ impl LiveHostClient {
         Ok(response)
     }
 
+    /// Revises one exact non-terminal Goal through the Host's configured authority.
+    #[allow(clippy::too_many_arguments)]
+    pub async fn revise_goal(
+        &self,
+        command_id: &str,
+        session_id: &str,
+        goal_id: &str,
+        expected_session_version: u64,
+        expected_revision: u64,
+        definition_json: &str,
+        replacement_reason: &str,
+    ) -> Result<GoalCommandResponse, HostClientError> {
+        if session_id.is_empty()
+            || goal_id.is_empty()
+            || expected_session_version == 0
+            || expected_revision == 0
+            || replacement_reason.is_empty()
+        {
+            return Err(HostClientError::new(HostClientErrorCode::InvalidCommand));
+        }
+        let definition: Value = serde_json::from_str(definition_json)
+            .map_err(|_| HostClientError::new(HostClientErrorCode::InvalidCommand))?;
+        if serde_jcs::to_string(&definition)
+            .map_err(|_| HostClientError::new(HostClientErrorCode::InvalidCommand))?
+            != definition_json
+            || definition.get("goal_id").and_then(Value::as_str) != Some(goal_id)
+        {
+            return Err(HostClientError::new(HostClientErrorCode::InvalidCommand));
+        }
+        let path = format!("v1/goals/{}:revise", encode_segment(goal_id));
+        let value = self
+            .post(
+                &path,
+                command_id,
+                &ReviseGoalCommand {
+                    session_id,
+                    expected_session_version,
+                    expected_revision,
+                    definition_json,
+                    replacement_reason,
+                },
+            )
+            .await?;
+        let response: GoalCommandResponse = decode(value)?;
+        if response.api_version != "v1"
+            || response.session_id != session_id
+            || response.goal_id != goal_id
+            || response.revision != expected_revision.checked_add(1).ok_or_else(invalid_event)?
+            || response.state != "draft"
+            || response.session_version
+                != expected_session_version
+                    .checked_add(1)
+                    .ok_or_else(invalid_event)?
+            || response.committed_position == 0
+        {
+            return Err(invalid_event());
+        }
+        Ok(response)
+    }
+
     /// Reads the complete bounded Plan graph at one durable Session watermark.
     pub async fn get_plans(&self, session_id: &str) -> Result<PlanPage, HostClientError> {
         if session_id.is_empty() {
@@ -888,6 +948,15 @@ struct CancelGoalCommand<'a> {
     expected_session_version: u64,
     expected_revision: u64,
     reason: &'a str,
+}
+
+#[derive(Serialize)]
+struct ReviseGoalCommand<'a> {
+    session_id: &'a str,
+    expected_session_version: u64,
+    expected_revision: u64,
+    definition_json: &'a str,
+    replacement_reason: &'a str,
 }
 
 #[derive(Serialize)]

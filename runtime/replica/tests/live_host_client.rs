@@ -136,13 +136,41 @@ async fn shared_client_completes_a_real_runtime_host_turn() {
     let goals = client.get_goals(&session.session_id).await.unwrap();
     assert_eq!(goals.goals.len(), 1);
     assert_eq!(goals.session_version, 2);
+    let revised_definition = GoalDefinitionV1::new(
+        GoalId::new("goal-e2e").unwrap(),
+        "complete the refined Host flow",
+        vec![garive_goal::GoalCriterion::UserAcceptance {
+            criterion_id: garive_goal::GoalCriterionId::new("accepted").unwrap(),
+            response_schema_digest: "a".repeat(64),
+        }],
+        GoalScopeV1::new(Some(session.session_id.clone()), []).unwrap(),
+        GoalBoundsV1::new(1, 1, 1, None, None).unwrap(),
+        None,
+        [],
+    )
+    .unwrap()
+    .canonical_json()
+    .unwrap();
+    let revised = client
+        .revise_goal(
+            "revise-goal-e2e",
+            &session.session_id,
+            "goal-e2e",
+            2,
+            1,
+            &revised_definition,
+            "objective_refined",
+        )
+        .await
+        .unwrap();
+    assert_eq!(revised.revision, 2);
     let cancelled = client
         .cancel_goal(
             "cancel-goal-e2e",
             &session.session_id,
             "goal-e2e",
+            3,
             2,
-            1,
             "operator_cancelled",
         )
         .await
@@ -150,10 +178,10 @@ async fn shared_client_completes_a_real_runtime_host_turn() {
     assert_eq!(cancelled.state, "cancelled");
     let goals = client.get_goals(&session.session_id).await.unwrap();
     assert_eq!(goals.goals[0].state, "cancelled");
-    assert_eq!(goals.session_version, 3);
+    assert_eq!(goals.session_version, 4);
     let plans = client.get_plans(&session.session_id).await.unwrap();
     assert!(plans.plans.is_empty());
-    assert_eq!(plans.session_version, 3);
+    assert_eq!(plans.session_version, 4);
     let started = client
         .start_turn("start-e2e", &session.session_id, "hello")
         .await
@@ -188,7 +216,7 @@ async fn shared_client_completes_a_real_runtime_host_turn() {
         .unwrap()
         .commit(
             SessionId::try_from(session.session_id.as_str()).unwrap(),
-            4,
+            5,
             terminal,
         )
         .unwrap();
