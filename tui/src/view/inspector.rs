@@ -38,10 +38,8 @@ pub(super) fn wide_area(area: Rect) -> Option<Rect> {
     if area.width < WIDE_INSPECTOR_MIN_WIDTH {
         return None;
     }
-    let combined_width = area.width.min(129);
-    let x = area.x + area.width.saturating_sub(combined_width) / 2;
     Some(Rect::new(
-        x + combined_width - WIDE_WIDTH,
+        area.right().saturating_sub(WIDE_WIDTH),
         area.y,
         WIDE_WIDTH,
         area.height,

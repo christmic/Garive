@@ -202,16 +202,6 @@ pub(super) fn centered_popup(area: Rect, width: u16, height: u16) -> Rect {
     )
 }
 
-pub(super) fn centered_column(area: Rect, width: u16) -> Rect {
-    let width = width.min(area.width);
-    Rect::new(
-        area.x + area.width.saturating_sub(width) / 2,
-        area.y,
-        width,
-        area.height,
-    )
-}
-
 pub(super) fn selection_window(total: usize, selected: usize, capacity: usize) -> (usize, usize) {
     if total == 0 || capacity == 0 {
         return (0, 0);

@@ -1,0 +1,22 @@
+---
+source: tui/tests/view_snapshots.rs
+expression: "inspector_frame(Theme::Dark, 160)"
+---
+                                                                                                                                ╭ Inspector · Activity ────────╮
+› Summarize the release plan.                                                                                                   │ › ✓ Read file                │
+                                                                                                                                │     Completed                │
+• Completed                                                                                                                     │                              │
+  └ Read file                                                                                                                   │                              │
+                                                                                                                                │                              │
+## Release plan                                                                                                                 │                              │
+                                                                                                                                │                              │
+  • Verify the Runtime                                                                                                          │                              │
+  • Ship with evidence                                                                                                          │                              │
+                                                                                                                                │                              │
+  cargo test passes.                                                                                                            │                              │
+                                                                                                                                │                              │
+• Working…  ·  esc to interrupt                                                                                                 │                              │
+                                                                                                                                │                              │
+                                                                                                                                │                              │
+› Ask a follow-up…                                                                                                              │ Enter jump · Esc close       │
+                                                                                                                    Session 1   ╰──────────────────────────────╯

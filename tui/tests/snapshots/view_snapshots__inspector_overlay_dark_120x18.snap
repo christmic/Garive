@@ -4,18 +4,18 @@ expression: "inspector_frame(theme, 120)"
 ---
 
 
-            › Summarize the release plan.
+› Summarize the release plan.
 
-            • Completed
-              └ Read file
+• Completed
+  └ Read file
 
-            ## Release plan
+## Release plan
 
-              • Verify the Runtime
-              • Ship with evidence
-             Inspector · Activity ──────────────────────────────────────────────────────────────────────────
-            › ✓ Read file
-                Completed
-            ↑↓ select · Enter jump · Esc close
-            • Working…
-            › Ask a follow-up…
+  • Verify the Runtime
+  • Ship with evidence
+ Inspector · Activity ──────────────────────────────────────────────────────────────────────────────────────────────────
+› ✓ Read file
+    Completed
+↑↓ select · Enter jump · Esc close
+• Working…
+› Ask a follow-up…

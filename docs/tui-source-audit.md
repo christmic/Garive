@@ -378,6 +378,23 @@ invitation is sufficient and the reserved footer stays blank. When
 `ContextLine` is visible, it displaces ambient identity so the same workspace
 identity is not repeated at the top and bottom.
 
+### Stable workbench axis
+
+Pinned Codex `tui/src/chatwidget/rendering.rs:8-61,72-117` passes the same
+render area into transcript and bottom-pane composition. Its transcript child
+keeps `area.x`; optional space is expressed as a right reserve rather than a
+centered replacement rectangle. This reinforces the reviewed snapshots: opening
+a secondary Composer surface does not translate the conversation axis.
+
+Garive's Inspector previously violated that rule twice: widths 80–128 centered
+the full conversation into 96 cells before drawing a bottom pane, while wider
+terminals centered a fixed 129-cell transcript/Inspector island. The corrected
+component geometry retains `x=0` in every supported mode. At 40–128 Inspector
+overlays the full-axis bottom pane; at 129 and above it owns the rightmost 32
+cells, with one gap and every remaining left cell assigned to the transcript.
+This retains Garive's explicit inspectable Host truth beyond Codex while keeping
+Codex's steadier reading axis.
+
 ### Event and terminal ownership
 
 `codex-rs/tui/src/tui.rs:549-568` separates terminal events from the

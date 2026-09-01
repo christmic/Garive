@@ -99,7 +99,7 @@ from the answer; linear 40–51 column layout omits that optional rhythm row.
 | `40..=51` | linear | full-width transcript, collapsed activity summary, and at most one hint |
 | `52..=79` | compact | full-width transcript with compact metadata; all secondary surfaces are overlays |
 | `80..=128` | standard | full-width workbench with a shared transcript/Composer axis; Session and Inspector surfaces are bottom panes |
-| `>=129` | wide | full-width workbench; opening Inspector explicitly reserves a 96-column transcript and one-cell gap |
+| `>=129` | wide | stable left-axis workbench; a right-docked 32-column Inspector leaves at least 96 transcript columns and one-cell gap |
 
 Height below eight rows shows a safe minimum-size view. Height pressure removes
 ambient context, secondary hints, and collapsed history before reducing the

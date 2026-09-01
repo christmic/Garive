@@ -192,6 +192,11 @@ unknown/new. Unknown public codes use neutral wording and never borrow success.
 An explicitly opened Inspector is exactly 32 cells wide at `>=129`, including
 its single border. The breakpoint is structural: 96 transcript cells, one gap,
 and 32 Inspector cells must all fit before the surfaces become side by side.
+The Inspector is flush with the terminal's right edge. The transcript remains
+at the terminal's left edge and consumes every cell before the one-cell gap; it
+is 96 cells at the breakpoint and grows with wider terminals. Opening, closing,
+or resizing Inspector may reflow text because available width changes, but it
+must never translate the conversation axis.
 At `40..=128` the same Activity, Recovery, or Details projection is a bounded,
 Composer-aligned `BottomPane` with one top rule and no backdrop dimming; below
 40 its open state is retained behind the safe minimum view. The variant title,
@@ -302,9 +307,10 @@ component without a transition card or duplicate answer.
 
 ## Layout and degradation
 
-At 129 cells and above, the bounded transcript is centered and an explicitly
-opened 32-column Inspector may share the work surface. From 80 through 128,
-the transcript remains centered and Inspector becomes a bottom pane. From 52
+At 129 cells and above, the transcript stays on the terminal's left axis and an
+explicitly opened 32-column Inspector docks against the right edge. From 80
+through 128, the full-width transcript retains that axis and Inspector becomes
+a bottom pane. From 52
 through 79, the transcript uses the available width and metadata collapses to
 compact labels. From 40 through 51, the transcript becomes linear,
 `ActivityStack` becomes one summary row, and `HintLine` shows at most one

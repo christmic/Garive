@@ -419,6 +419,10 @@ fn inspector_geometry_and_themes_match_reviewed_snapshots() {
     ] {
         insta::assert_snapshot!(name, inspector_frame(theme, 120));
     }
+    insta::assert_snapshot!(
+        "inspector_wide_dark_160x18",
+        inspector_frame(Theme::Dark, 160)
+    );
     for width in [119, 120, 128, 129] {
         let rendered = inspector_frame(Theme::Mono, width);
         let actual = rendered.lines().find_map(|line| {
@@ -426,13 +430,9 @@ fn inspector_geometry_and_themes_match_reviewed_snapshots() {
                 .map(|byte| UnicodeWidthStr::width(&line[..byte]))
         });
         if width < 129 {
-            let composer = rendered.lines().find_map(|line| {
-                line.find("› Ask")
-                    .map(|byte| UnicodeWidthStr::width(&line[..byte]))
-            });
-            assert_eq!(actual, composer.map(|column| column + 1), "width {width}");
+            assert_eq!(actual, Some(1), "width {width}");
         } else {
-            assert_eq!(actual, Some(99), "width {width}");
+            assert_eq!(actual, Some(usize::from(width - 30)), "width {width}");
         }
     }
 }

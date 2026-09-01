@@ -4,9 +4,7 @@ use ratatui::layout::{Constraint, Layout, Rect};
 
 use crate::application::AppModel;
 
-use super::{composer, context_line, inspector, primitives::centered_column};
-
-const STANDARD_TRANSCRIPT_WIDTH: u16 = 96;
+use super::{composer, context_line, inspector};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) struct FrameLayout {
@@ -25,16 +23,12 @@ impl FrameLayout {
             .then(|| inspector::wide_area(area))
             .flatten();
         let content = if let Some(inspector) = inspector {
-            let combined_width = area.width.min(129);
-            let x = area.x + area.width.saturating_sub(combined_width) / 2;
             Rect::new(
-                x,
+                area.x,
                 area.y,
-                inspector.x.saturating_sub(x).saturating_sub(1),
+                inspector.x.saturating_sub(area.x).saturating_sub(1),
                 area.height,
             )
-        } else if model.inspector.open && area.width >= 80 {
-            centered_column(area, STANDARD_TRANSCRIPT_WIDTH)
         } else {
             area
         };
@@ -110,19 +104,24 @@ mod tests {
     }
 
     #[test]
-    fn inspector_never_compresses_the_standard_transcript_column() {
+    fn inspector_preserves_the_terminal_axis_and_only_changes_available_width() {
         let mut model = AppModel::default();
         model.inspector.open = true;
 
         let overlay = FrameLayout::resolve(&model, Rect::new(0, 0, 128, 18));
         assert_eq!(overlay.inspector, None);
-        assert_eq!(overlay.transcript.x, 16);
-        assert_eq!(overlay.transcript.width, STANDARD_TRANSCRIPT_WIDTH);
+        assert_eq!(overlay.transcript.x, 0);
+        assert_eq!(overlay.transcript.width, 128);
 
         let side_by_side = FrameLayout::resolve(&model, Rect::new(0, 0, 129, 18));
         assert_eq!(side_by_side.inspector.map(|area| area.x), Some(97));
         assert_eq!(side_by_side.transcript.x, 0);
-        assert_eq!(side_by_side.transcript.width, STANDARD_TRANSCRIPT_WIDTH);
+        assert_eq!(side_by_side.transcript.width, 96);
+
+        let wide = FrameLayout::resolve(&model, Rect::new(0, 0, 160, 18));
+        assert_eq!(wide.inspector.map(|area| area.x), Some(128));
+        assert_eq!(wide.transcript.x, 0);
+        assert_eq!(wide.transcript.width, 127);
     }
 
     #[test]
