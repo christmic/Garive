@@ -539,6 +539,18 @@ far-edge workbench close. Real Browser measurements put the tab at x=575–695
 and its close action at x=672–694 in the 1280 px fixture, with no body overflow
 at 1280, 1120, 720 or 480 px.
 
+### XII. Truthful top-bar thread action
+
+Both supplied references reserve a low-noise text action in the current thread
+title row. Garive has no admitted cloud-share or immutable-link service, so a
+literal `Share` label would be false. The shared title row now occupies the
+same visual role with a real 30 px `Export` action: it downloads an ordered
+Markdown transcript containing the visible user and Garive turns while omitting
+internal Session metadata. At 1280 px in the split fixture it resolves to
+x=434–505 before the Environment control. At 720 px and below the label hides,
+leaving a 34 px icon target and the full accessible name. Dark/light
+1280/720/480 browser runs retain zero overflow.
+
 ## Gate 1 — Codex fidelity
 
 This gate passes only when both Desktop and Web show:
