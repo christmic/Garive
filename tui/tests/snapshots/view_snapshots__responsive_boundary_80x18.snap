@@ -5,7 +5,7 @@ expression: rendered
 
 › Summarize the release plan.
   ✓  Agent action · completed
-• ## Release plan
+## Release plan
 
   • Verify the Runtime
   • Ship with evidence
@@ -17,5 +17,6 @@ expression: rendered
 
 
 
-                                                      Working…  ·  Esc interrupt
+• Working…  ·  esc to interrupt
 › Ask a follow-up…
+  Agent · Session 1
