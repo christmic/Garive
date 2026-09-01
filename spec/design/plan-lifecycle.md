@@ -257,6 +257,29 @@ the Plan mutation and any corresponding C6 posture atomically.
 | `plan.completed` | old/new state versions and canonical complete reduction evidence |
 | `plan.failed` | old/new state versions, stable terminal reason and optional canonical evidence |
 
+For worker-derived Step completion, `step_evidence` is the canonical V1
+document below. It binds the reduction to the exact Turn terminal observed at
+the fixed prefix:
+
+```json
+{
+  "contract": "garive.plan-step-evidence",
+  "version": 1,
+  "terminal_commit_version": 12,
+  "terminal_fact_id": "...",
+  "terminal_payload_digest": "...",
+  "terminal_position": 34,
+  "turn_id": "..."
+}
+```
+
+`terminal_fact_id` identifies the unique `turn.completed`. Runtime also
+requires the matching `execution.completed` to share its commit version and
+response digest. `result_digest` is that response digest. `criterion_evidence`
+is the canonical ordered `GoalEvidenceV1[]` for exactly the Goal criteria named
+by the Step; Runtime observes and verifies it rather than accepting it from a
+worker, model or client.
+
 Every payload carries `command_id`, `plan_id` and `plan_revision`. Every
 non-proposal fact carries contiguous old/new state versions. Digests are
 lowercase SHA-256; content uses the L0 exact inline-or-reference binding. Lease

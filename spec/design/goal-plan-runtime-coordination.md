@@ -157,6 +157,30 @@ Plan completion does not imply Goal success. The Goal verifier independently
 resolves every declared criterion against the fixed ledger prefix. Conversely,
 a completed Turn does not imply a completed step, Plan or Goal.
 
+### Completed Turn reduction
+
+For a Plan-owned Execution, the local worker performs one bounded reduction
+after the atomic `execution.completed + turn.completed` commit:
+
+1. re-derive the `ExecutionWorkBinding` from the committed Step/C6 start;
+2. require one current Active Goal and one authoritative Running Plan with the
+   same Goal definition digest;
+3. prove the Turn is owned by the Plan's exact active Step claim and attempt;
+4. require one `execution.completed` and one `turn.completed` for the exact
+   Turn/Execution, in the same commit, with the same response digest;
+5. re-observe every completion criterion declared by that Step from the
+   current ledger prefix and run the Goal evidence verifier over that subset;
+6. commit `plan.step.completed` using only the derived Step, attempt,
+   Execution, result digest and evidence bindings.
+
+The worker API accepts none of those reduction values from the model or
+caller. A non-Plan Turn has no reduction. Suspension, stop and failure never
+enter the completed reduction path. If the process crashes after the Turn
+terminal but before Step completion, replay performs the missing reduction;
+if the Step terminal already exists, replay is a no-op. A coordination error
+does not roll back the already durable Turn terminal and is surfaced as a
+stable worker failure for restart/reconciliation.
+
 After `plan.completed` commits, the coordinator may propose Goal success only
 from that unique completed Plan. It reads the Plan's verified reduction set,
 re-observes the same durable references at the new current Session version and
@@ -228,6 +252,10 @@ Recovery cases:
 - claim committed but not started: PL1 lease recovery decides expiry;
 - start committed: C6/C5 recovery decides completion, suspension or
   uncertainty before another attempt;
+- completed Plan-owned Turn but no Step terminal: re-derive and commit the
+  exact Step reduction without another model call;
+- completed Plan-owned Turn and Step terminal: treat worker replay as already
+  terminal and do not duplicate the reduction;
 - Plan completed but Goal open: rerun Goal evidence verification and close only
   when complete;
 - Goal cancelled with live work: resume cancellation/reconciliation, never
