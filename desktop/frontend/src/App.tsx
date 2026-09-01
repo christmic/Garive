@@ -1225,6 +1225,7 @@ function ResultDeliverables({ state, t, previewCloseRequest, onPreviewTitle }: {
     ? visualArtifactPreview : undefined);
   const [sourceMode, setSourceMode] = useState(false);
   const [previewState, setPreviewState] = useState<"idle" | "loading" | "unavailable">("idle");
+  const autoOpenedArtifact = useRef<string | undefined>(undefined);
   const [exportStates, setExportStates] = useState<Readonly<Record<string,
     "exporting" | "exported" | "exists" | "unavailable">>>({});
   const [exportReceipts, setExportReceipts] = useState<Readonly<Record<string,
@@ -1241,14 +1242,21 @@ function ResultDeliverables({ state, t, previewCloseRequest, onPreviewTitle }: {
     setSelected(undefined); setSourceMode(false); onPreviewTitle(undefined);
     setPreview(undefined); setPreviewState("idle");
   }, [onPreviewTitle, previewCloseRequest]);
-  const openPreview = async (artifact: HostArtifact) => {
+  const openPreview = useCallback(async (artifact: HostArtifact) => {
     setSelected(artifact); setSourceMode(false); onPreviewTitle(artifact.display_name); setPreview(undefined); setPreviewState("loading");
     try {
       const content = visualTest ? visualArtifactPreview
         : await getArtifactPreview(state.sessionId ?? "", artifact);
       setPreview(content); setPreviewState("idle");
     } catch { setPreviewState("unavailable"); }
-  };
+  }, [onPreviewTitle, state.sessionId]);
+  useEffect(() => {
+    if (previewFixture || selected || autoOpenedArtifact.current || state.artifacts.length !== 1) return;
+    const artifact = state.artifacts[0];
+    if (artifact.preview !== "text") return;
+    autoOpenedArtifact.current = `${artifact.artifact_id}-${artifact.revision}`;
+    void openPreview(artifact);
+  }, [openPreview, previewFixture, selected, state.artifacts]);
   const exportCopy = async (artifact: HostArtifact) => {
     const key = `${artifact.artifact_id}-${artifact.revision}`;
     setExportStates((current) => ({ ...current, [key]: "exporting" }));
@@ -1280,23 +1288,24 @@ function ResultDeliverables({ state, t, previewCloseRequest, onPreviewTitle }: {
     }
   };
   if (!results.length && !state.artifacts.length) return <div className="inspector-empty"><Icon name="file" /><h2>{t("artifact.emptyTitle")}</h2><p>{t("artifact.emptyBody")}</p></div>;
-  return <div className="deliverable-list"><div className="activity-intro"><h2>{t("artifact.title")}</h2><p>{t("artifact.description")}</p></div>
+  return <div className="deliverable-list"><div className="deliverable-index" hidden={Boolean(selected)}><div className="activity-intro deliverable-intro"><h2>{t("artifact.title")}</h2><p>{t("artifact.description")}</p></div>
     {state.artifacts.map((artifact) => { const key = `${artifact.artifact_id}-${artifact.revision}`;
       const exportState = exportStates[key]; const receipt = exportReceipts[key];
-      return <article className="artifact-card" key={key}>
-      <span className="deliverable-icon"><Icon name="file" /></span><div className="artifact-card-body">
-        <div className="artifact-title"><strong dir="auto">{artifact.display_name}</strong><span>v{artifact.revision}</span></div>
-        <p>{formatBytes(artifact.byte_size)} · {artifact.mime_type} · {t("artifact.committed")}</p>
-        <div className="artifact-actions"><div><button type="button" disabled={artifact.preview !== "text"}
-          onClick={() => void openPreview(artifact)}>{t("artifact.preview")}</button><button type="button"
-            disabled={!artifact.exportable || exportState === "exporting"}
-            onClick={() => void exportCopy(artifact)}>{t(exportState === "exporting" ? "artifact.choosing" : "artifact.exportCopy")}</button></div>
-          {artifact.workspace_id && <span><Icon name="shield" />{t("artifact.authorizedWorkspace")}</span>}</div>
+      return <article className="artifact-row" key={key}>
+      <span className="deliverable-icon"><Icon name="file" /></span><button className="artifact-open" type="button"
+        disabled={artifact.preview !== "text"} aria-label={`${t("artifact.preview")}: ${artifact.display_name}`}
+        onClick={() => void openPreview(artifact)}><span className="artifact-title"><strong dir="auto">{artifact.display_name}</strong>
+          <span>v{artifact.revision}</span></span><small>{formatBytes(artifact.byte_size)} · {artifact.mime_type} · {t("artifact.committed")}</small></button>
+      <div className="artifact-row-actions"><button type="button" disabled={!artifact.exportable || exportState === "exporting"}
+        aria-label={t(exportState === "exporting" ? "artifact.choosing" : "artifact.exportCopy")}
+        onClick={() => void exportCopy(artifact)}><Icon name="download" /></button></div>
+      <div className="artifact-row-state">
         {exportState === "exported" && receipt && <p className="artifact-export-state success" role="status"><Icon name="check" />{t("artifact.exportedAs")} <bdi>{receipt.display_name}</bdi></p>}
         {exportState === "exists" && <p className="artifact-export-state error" role="alert"><Icon name="warning" />{t("artifact.overwriteError")}</p>}
         {exportState === "unavailable" && <p className="artifact-export-state error" role="alert"><Icon name="warning" />{t("artifact.exportError")}</p>}
+        {artifact.workspace_id && <span><Icon name="shield" />{t("artifact.authorizedWorkspace")}</span>}
       </div>
-    </article>; })}
+    </article>; })}</div>
     {selected && <section className="artifact-preview" aria-label={t("artifact.previewAria")}><div className="artifact-workbench-toolbar"><nav aria-label={t("artifact.breadcrumbs")}><span>{t("inspector.artifacts")}</span><Icon name="chevron" /><strong dir="auto">{selected.display_name}</strong></nav><div className="artifact-workbench-actions"><button type="button" disabled={!preview || previewState !== "idle"} onClick={() => setSourceMode((shown) => !shown)}><Icon name="source" /><span>{t(sourceMode ? "artifact.viewRendered" : "artifact.viewSource")}</span></button><button type="button"
         disabled={!selected.exportable || selectedExportState === "exporting"}
         aria-label={t(selectedExportState === "exporting" ? "artifact.choosing" : "artifact.exportCopy")}
@@ -1312,8 +1321,8 @@ function ResultDeliverables({ state, t, previewCloseRequest, onPreviewTitle }: {
                 pre: ({ children }) => <MarkdownCodeBlock t={t} variant="document">{children}</MarkdownCodeBlock> }}>{preview.content_utf8}</Markdown></div>)}
       <footer><Icon name="shield" />{t("artifact.digestPrefix")} {selected.revision}</footer>
     </section>}
-    {results.length > 0 && <div className="deliverable-section-label">{t("artifact.snapshots")}</div>}
-    {results.map((result, index) => <article className="deliverable-card" key={result.id}><span className="deliverable-icon"><Icon name="file" /></span><div><strong>{t("artifact.result")} {index + 1}.md</strong><p>{result.text.replace(/[#|*`>\[\]]/g, " ").trim().slice(0, 92)}</p><button type="button" onClick={() => downloadMarkdown(result.id, result.text)}>{t("artifact.exportMarkdown")}</button></div></article>)}
+    {results.length > 0 && <div className="deliverable-section-label" hidden={Boolean(selected)}>{t("artifact.snapshots")}</div>}
+    {results.map((result, index) => <article className="snapshot-row" hidden={Boolean(selected)} key={result.id}><span className="deliverable-icon"><Icon name="file" /></span><div><strong>{t("artifact.result")} {index + 1}.md</strong><p>{result.text.replace(/[#|*`>\[\]]/g, " ").trim().slice(0, 92)}</p></div><button type="button" onClick={() => downloadMarkdown(result.id, result.text)}>{t("artifact.exportMarkdown")}</button></article>)}
     {!state.capabilities?.artifacts && <p className="activity-gate"><Icon name="shield" />{t("artifact.gated")}</p>}
   </div>;
 }

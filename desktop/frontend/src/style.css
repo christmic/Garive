@@ -833,9 +833,9 @@ kbd { font-size: var(--text-2xs); }
 .workspace-panel .deliverable-list { width: 100%; margin: 0; }
 .workspace-panel .deliverable-list:has(.artifact-preview) > :not(.artifact-preview) { display: none; }
 .workspace-panel .artifact-preview { min-height: 100%; margin: 0; border: 0; border-radius: 0; background: transparent; }
-.artifact-workbench-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: var(--height-file-toolbar); padding: 0 14px 0 20px; border-bottom: 1px solid var(--border-subtle); }
-.artifact-workbench-toolbar nav, .artifact-workbench-toolbar > div { display: flex; align-items: center; min-width: 0; gap: 6px; }
-.artifact-workbench-toolbar nav { color: var(--text-tertiary); font-size: var(--text-2xs); }
+.artifact-workbench-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: var(--height-file-toolbar); padding: 0 8px 0 16px; border-bottom: 1px solid var(--border-subtle); background: var(--surface-canvas); }
+.artifact-workbench-toolbar nav, .artifact-workbench-toolbar > div { display: flex; align-items: center; min-width: 0; gap: 4px; }
+.artifact-workbench-toolbar nav { color: var(--text-tertiary); font-size: var(--text-xs); }
 .artifact-workbench-toolbar nav svg { flex: none; width: 10px; transform: rotate(-90deg); }
 .artifact-workbench-toolbar nav strong { min-width: 0; overflow: hidden; color: var(--text-secondary); font-weight: 540; text-overflow: ellipsis; white-space: nowrap; }
 .artifact-workbench-toolbar button { display: flex; align-items: center; gap: 5px; min-height: 29px; padding: 0 7px; border: 0; border-radius: var(--radius-control); color: var(--text-secondary); background: transparent; font-size: var(--text-xs); }
@@ -846,7 +846,7 @@ kbd { font-size: var(--text-2xs); }
 .artifact-workbench-notice svg { flex: none; width: 12px; }
 .artifact-workbench-notice.success { color: var(--state-success); }
 .artifact-workbench-notice.error { color: var(--state-danger); }
-.artifact-preview-content { width: min(46rem, 100%); min-height: 330px; margin: 0; padding: var(--space-1) var(--space-5) var(--space-6); font-size: var(--document-font-size); line-height: var(--document-leading); overflow-wrap: anywhere; }
+.artifact-preview-content { width: min(40rem, 100%); min-height: 330px; margin: 0; padding: var(--space-1) var(--space-5) var(--space-6); font-size: var(--document-font-size); line-height: var(--document-leading); overflow-wrap: anywhere; }
 .artifact-source { width: min(52rem, calc(100% - 48px)); min-height: 330px; max-height: none !important; margin: 24px auto !important; padding: 20px !important; border: 1px solid var(--border-subtle); border-radius: var(--radius-control); background: var(--surface-subtle) !important; font: var(--text-xs)/1.65 var(--font-mono) !important; white-space: pre-wrap; }
 .artifact-preview-content > :first-child { margin-top: 0; }
 .artifact-preview-content h1, .artifact-preview-content h2, .artifact-preview-content h3,
@@ -883,11 +883,28 @@ kbd { font-size: var(--text-2xs); }
 .activity-row { min-height: 58px; border-bottom-color: var(--border-subtle); }
 .activity-row strong { font-size: var(--text-xs); }
 .activity-row small { font-size: var(--text-2xs); }
-.artifact-card, .deliverable-card { margin-bottom: 8px; padding: 12px; border: 1px solid var(--border-subtle); border-radius: var(--radius-card); background: var(--surface-raised); }
-.artifact-title strong, .deliverable-card strong { font-size: var(--text-xs); }
-.artifact-title > span, .artifact-card p, .deliverable-card p, .artifact-actions button, .deliverable-card button { font-size: var(--text-2xs); }
-.artifact-actions button, .deliverable-card button { min-height: 28px; padding: 0 5px; border-radius: 6px; }
-.artifact-actions button:hover, .deliverable-card button:hover { background: var(--surface-hover); }
+.deliverable-intro { padding: 3px 8px 14px; border-bottom: 1px solid var(--border-subtle); }
+.artifact-row { display: grid; grid-template-columns: 28px minmax(0, 1fr) auto; align-items: center; gap: 8px; min-height: 52px; padding: 5px 6px; border-radius: var(--radius-control); }
+.artifact-row:hover { background: var(--surface-hover); }
+.artifact-row .deliverable-icon, .snapshot-row .deliverable-icon { width: 28px; height: 28px; border-radius: 0; color: var(--text-tertiary); background: transparent; }
+.artifact-open { display: grid; min-width: 0; padding: 0; border: 0; background: transparent; text-align: start; }
+.artifact-open:disabled { opacity: .55; }
+.artifact-title { min-width: 0; }
+.artifact-title strong { min-width: 0; overflow: hidden; font-size: var(--text-xs); font-weight: 590; text-overflow: ellipsis; white-space: nowrap; }
+.artifact-title > span { flex: none; padding: 0; color: var(--text-tertiary); background: transparent; font-size: var(--text-2xs); }
+.artifact-open small { margin-top: 2px; overflow: hidden; color: var(--text-tertiary); font-size: var(--text-2xs); text-overflow: ellipsis; white-space: nowrap; }
+.artifact-row-actions button, .snapshot-row > button { min-height: 28px; padding: 0 7px; border: 0; border-radius: var(--radius-control); color: var(--text-secondary); background: transparent; font-size: var(--text-2xs); }
+.artifact-row-actions button:hover, .snapshot-row > button:hover { color: var(--text-primary); background: var(--surface-selected); }
+.artifact-row-actions svg { width: 13px; }
+.artifact-row-state { grid-column: 2 / -1; min-width: 0; color: var(--state-success); font-size: var(--text-2xs); }
+.artifact-row-state:empty { display: none; }
+.artifact-row-state > span { display: flex; align-items: center; gap: 4px; }
+.artifact-row-state svg { width: 11px; }
+.snapshot-row { display: grid; grid-template-columns: 28px minmax(0, 1fr) auto; align-items: center; gap: 8px; min-height: 52px; padding: 5px 6px; border-radius: var(--radius-control); }
+.snapshot-row:hover { background: var(--surface-hover); }
+.snapshot-row strong, .snapshot-row p { display: block; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.snapshot-row strong { font-size: var(--text-xs); font-weight: 590; }
+.snapshot-row p { margin: 2px 0 0; color: var(--text-tertiary); font-size: var(--text-2xs); }
 .deliverable-section-label { margin: 18px 0 10px; font-size: var(--text-2xs); letter-spacing: 0; text-transform: none; }
 .artifact-preview { background: var(--surface-raised); box-shadow: none; }
 .artifact-preview > header span, .artifact-preview > header strong, .artifact-preview pre, .artifact-preview > footer { font-size: var(--text-2xs); }

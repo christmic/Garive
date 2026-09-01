@@ -809,6 +809,37 @@ Browser evidence at 1280×720 resolves Desktop root/shell to transparent, its
 rail to 70% `#212121`, its canvas to `#181818`, and Web rail/canvas to their
 solid tokens; both remain at zero horizontal overflow.
 
+### XXVIII. File-first workbench disclosure
+
+The remaining pre-preview surface still behaved like a Web dashboard: one
+large bordered card per file, repeated action labels, and a second large card
+for every response snapshot. That intermediate page delayed the document the
+user had explicitly asked to open and broke the continuous tab/file/document
+hierarchy visible in the supplied split-workbench reference.
+
+The installed source directly confirms a 40 px `h-toolbar-pane` breadcrumb
+row, surface background, bottom divider, 8 px outer padding, 12 px path text,
+medium active segment, and separate toolbar-sized `View source`/open actions.
+Those facts—not an inferred mockup—set Garive's file chrome. The supplied
+reference screenshot, rather than a claim about Codex internals, sets Garive's
+narrower rendered-document wrap.
+
+The concrete bundle evidence is in
+`review-file-source-breadcrumb-BdBSz0Rs.js`,
+`text-file-editor-tab-content.electron-DxCiFr1w.js`, and
+`artifact-tab-content.electron-NO4CTIoa.js`; the recorded package hash above
+pins the evidence to one installed build.
+
+As a separately labelled Garive enhancement, Desktop and Web share a
+file-first rule. When a Turn has exactly one
+verified text artifact, opening Deliverables enters its tab and digest-checked
+preview immediately. Closing the tab returns to a compact, flat file index;
+multiple artifacts remain in that index so the client never guesses which file
+the user intended. File rows use the same hover, type and 28 px icon grammar as
+the surrounding desktop shell, while export remains a distinct action. Garive
+uses a 40 rem document measure because it reproduces the supplied reference's
+line wrapping at the audited viewport; this is not asserted as Codex source.
+
 ## Gate 1 — Codex fidelity
 
 This gate passes only when both Desktop and Web show:

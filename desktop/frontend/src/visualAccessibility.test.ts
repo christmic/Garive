@@ -79,7 +79,7 @@ describe("Desktop visual accessibility contract", () => {
     expect(CSS).toContain(".panel-animated.panel-dragging > [data-panel] { transition: none; }");
     expect(CSS).toContain(".work-surface { min-width: 0; overflow: hidden; }");
     expect(CSS).toContain(".workspace-resizer { position: absolute");
-    expect(CSS).toContain(".artifact-preview-content { width: min(46rem, 100%)");
+    expect(CSS).toContain(".artifact-preview-content { width: min(40rem, 100%)");
     expect(CSS).toContain("font-size: calc(var(--document-font-size) * 1.5)");
     expect(CSS).toContain("font-size: calc(var(--document-font-size) * 1.25)");
     expect(CSS).toContain(".artifact-preview-content blockquote");
@@ -91,8 +91,11 @@ describe("Desktop visual accessibility contract", () => {
     expect(CSS).toContain(".result-markdown h1 { margin: 0 0 calc(var(--document-space) * 2);");
     expect(CSS).toContain(".assistant-message .result-markdown p { font-size: inherit; line-height: inherit; white-space: normal; }");
     expect(CSS).toContain(".artifact-workbench-toolbar { display: flex;");
+    expect(CSS).toContain("padding: 0 8px 0 16px; border-bottom: 1px solid var(--border-subtle); background: var(--surface-canvas)");
     expect(CSS).toContain(".artifact-workbench-actions { justify-content: flex-end; }");
     expect(CSS).toContain(".artifact-workbench-notice { display: flex; align-items: center; gap: 6px;");
+    expect(CSS).toContain(".artifact-row { display: grid; grid-template-columns: 28px minmax(0, 1fr) auto;");
+    expect(CSS).toContain(".artifact-row:hover { background: var(--surface-hover); }");
     expect(CSS).toContain(".task-state-dot { position: relative; display: grid; place-items: center; width: 10px; height: 10px;");
     expect(CSS).toContain(".task-state-dot.active::after { position: absolute; inset: -1.25px;");
     expect(CSS).toContain(".turn-progress.attention .live-pulse > span { background: var(--state-attention); animation: none; }");

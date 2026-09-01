@@ -416,7 +416,7 @@ trigger without changing the active Work.
 Disclosure buttons in the window bar use `aria-expanded` and `aria-controls`;
 the visible panel is the opened-state feedback, so the button does not retain a
 selected fill or pointer focus ring. Keyboard focus remains explicitly visible.
-The document retains a left-aligned 46rem measure rather than recentring inside
+The document retains a left-aligned 40rem Garive measure rather than recentring inside
 the pane. Opening Environment uses a bounded top-right fade/scale; file contents use a 4px lateral reveal after the
 grid track exists. Both animations are removed by reduced-motion preference.
 Only one rail destination is selected: Work on an empty canvas, otherwise the

@@ -339,8 +339,9 @@ describe("Desktop product experience", () => {
     expect(inspectorToggle).not.toBe(document.activeElement);
     expect(view.container.querySelectorAll(".nav-item.selected, .recent-item.selected")).toHaveLength(1);
     expect(view.container.querySelector(".recent-item.selected")).not.toBeNull();
-    expect(await screen.findByRole("heading", { name: "Deliverables" })).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "Preview" }));
+    expect(await screen.findByRole("tab", { name: "memo.md" })).toBeTruthy();
+    expect(commands).toContain("get_artifact_preview");
+    expect(screen.queryByRole("heading", { name: "Deliverables" })).toBeNull();
     expect(await screen.findByRole("tab", { name: "memo.md" })).toBeTruthy();
     expect(view.container.querySelector(".artifact-workbench-actions")?.textContent).toContain("Export copy…");
     const separator = screen.getByRole("separator", { name: "Resize workbench" });
@@ -365,6 +366,8 @@ describe("Desktop product experience", () => {
     expect(view.container.querySelector(".workspace-panel > header > .icon-button")).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Close Artifact preview" }));
     expect(await screen.findByRole("heading", { name: "Deliverables" })).toBeTruthy();
+    expect(view.container.querySelector(".artifact-row")).not.toBeNull();
+    expect(view.container.querySelector(".artifact-card")).toBeNull();
     expect(screen.getByRole("button", { name: "Close inspector" })).toBeTruthy();
     expect(view.container.querySelector(".workspace-panel > header > .icon-button")).not.toBeNull();
   });
