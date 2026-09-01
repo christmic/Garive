@@ -128,6 +128,13 @@ Adopted to Running in the same transaction as its durable claim/start posture.
 Plan Completed requires every step Completed and complete Goal-criterion
 evidence; it does not itself close the Goal.
 
+`CompletePlan` is not admitted through the generic pure Runtime transition
+entry. Runtime must reconstruct the current Goal and Plan at one Session
+watermark, verify the complete typed Goal evidence set against that prefix,
+and only then plan `plan.completed`. Recovery repeats the verification against
+the exact prefix preceding the completion commit; a valid content binding with
+incomplete, future or tampered evidence is corrupt state.
+
 ## Step state and readiness
 
 ```text

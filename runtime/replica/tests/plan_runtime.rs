@@ -2,7 +2,7 @@ use std::collections::BTreeSet;
 
 use garive_goal::{
     GoalBoundsV1, GoalCapabilityReference, GoalCriterion, GoalCriterionId, GoalDefinitionV1,
-    GoalId, GoalScopeV1,
+    GoalEvidenceId, GoalEvidenceKind, GoalEvidenceV1, GoalId, GoalScopeV1,
 };
 use garive_ledger::{
     AgentDefinitionId, AgentDefinitionRevision, AgentInstanceId, CanonicalPayload, FactDraft,
@@ -13,9 +13,9 @@ use garive_plan::{
     PlanStepV1, StepState,
 };
 use garive_runtime::{
-    commit_plan_command, commit_plan_replacement, get_turn, plan_adopt_plan, plan_plan_replacement,
-    plan_plan_transition, plan_propose_plan, plan_start_step_execution, plan_start_turn,
-    reconstruct_execution_work_binding, reconstruct_plan, reconstruct_plan_graph,
+    commit_plan_command, commit_plan_replacement, get_turn, plan_adopt_plan, plan_complete_plan,
+    plan_plan_replacement, plan_plan_transition, plan_propose_plan, plan_start_step_execution,
+    plan_start_turn, reconstruct_execution_work_binding, reconstruct_plan, reconstruct_plan_graph,
     verify_plan_carry_forward, EffectiveRuntimeLimits, GetTurnQuery, PlanCommandContext,
     PlanRetryPosture, PlanRuntimeError, PlanRuntimeState, PlanRuntimeTransition,
     PlanStepExecutionStart, RuntimeCommandId, SqliteLedger, StartTurnCommand,
@@ -186,13 +186,56 @@ fn claims_expire_before_start_and_started_work_recovers_to_completion() {
     )
     .unwrap();
     state = recover(&ledger, &session);
-    let terminal = plan_plan_transition(
+    assert_eq!(
+        plan_plan_transition(
+            &state,
+            state.state_version,
+            &context("bypass-complete-plan"),
+            PlanRuntimeTransition::CompletePlan {
+                reduction_evidence: evidence(),
+            },
+        ),
+        Err(PlanRuntimeError::TransitionInvalid)
+    );
+    let acceptance = acceptance_payload();
+    assert_eq!(
+        plan_complete_plan(
+            &ledger,
+            &session,
+            &state,
+            state.state_version,
+            &context("incomplete-plan"),
+            Vec::new(),
+        ),
+        Err(PlanRuntimeError::EvidenceInvalid)
+    );
+    let observed_version = state.session_version;
+    let terminal = plan_complete_plan(
+        &ledger,
+        &session,
         &state,
         state.state_version,
         &context("complete-plan"),
-        PlanRuntimeTransition::CompletePlan {
-            reduction_evidence: evidence(),
-        },
+        vec![
+            GoalEvidenceV1::new(
+                GoalEvidenceId::new("accepted-evidence").unwrap(),
+                GoalCriterionId::new("accepted").unwrap(),
+                GoalEvidenceKind::DurableFact,
+                "session-open",
+                acceptance.sha256(),
+                observed_version,
+            )
+            .unwrap(),
+            GoalEvidenceV1::new(
+                GoalEvidenceId::new("artifact-evidence").unwrap(),
+                GoalCriterionId::new("artifact").unwrap(),
+                GoalEvidenceKind::DurableFact,
+                "goal-activate",
+                goal_activation_payload().sha256(),
+                observed_version,
+            )
+            .unwrap(),
+        ],
     )
     .unwrap();
     commit_plan_command(
@@ -211,6 +254,42 @@ fn claims_expire_before_start_and_started_work_recovers_to_completion() {
     assert_eq!(graph.len(), 1);
     assert_eq!(projected.snapshot.state(), PlanState::Completed);
     assert_eq!(projected.state_version, 11);
+
+    let stored: String = ledger
+        .connection_for_test()
+        .query_row(
+            "SELECT payload_json FROM ledger_facts WHERE fact_id = 'complete-plan'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    let mut completion: serde_json::Value = serde_json::from_str(&stored).unwrap();
+    let empty = evidence();
+    completion["reduction_evidence"] = json!({
+        "digest":empty.sha256(),
+        "inline_utf8":empty.as_json(),
+    });
+    let corrupted = CanonicalPayload::from_value(&completion).unwrap();
+    ledger
+        .connection_for_test()
+        .execute(
+            "UPDATE ledger_facts SET payload_json = ?1, payload_sha256 = ?2 \
+             WHERE fact_id = 'complete-plan'",
+            rusqlite::params![corrupted.as_json(), corrupted.sha256()],
+        )
+        .unwrap();
+    assert_eq!(
+        reconstruct_plan(
+            &ledger,
+            &session,
+            "plan-1",
+            1,
+            &criteria(),
+            &BTreeSet::new(),
+            &capabilities(),
+        ),
+        Err(PlanRuntimeError::RecoveryCorrupt)
+    );
 }
 
 #[test]
@@ -1044,13 +1123,7 @@ fn open_session(ledger: &mut SqliteLedger, session: &SessionId) {
                 session_fact(
                     "goal-activate",
                     "goal.activated",
-                    json!({
-                        "command_id":"goal-activate",
-                        "goal_id":"goal-1",
-                        "revision":2,
-                        "attempt_number":1,
-                        "actor_reference":"agent:fixture",
-                    }),
+                    serde_json::from_str(goal_activation_payload().as_json()).unwrap(),
                 ),
             ],
         )
@@ -1062,14 +1135,15 @@ fn goal_definition() -> GoalDefinitionV1 {
         GoalId::new("goal-1").unwrap(),
         "Execute the durable Plan",
         vec![
-            GoalCriterion::UserAcceptance {
+            GoalCriterion::DurableFact {
                 criterion_id: GoalCriterionId::new("accepted").unwrap(),
-                response_schema_digest: digest('d'),
+                fact_kind: "session.opened".into(),
+                subject_digest: acceptance_payload().sha256().into(),
             },
-            GoalCriterion::Artifact {
+            GoalCriterion::DurableFact {
                 criterion_id: GoalCriterionId::new("artifact").unwrap(),
-                artifact_kind: "file".into(),
-                required_digest: None,
+                fact_kind: "goal.activated".into(),
+                subject_digest: goal_activation_payload().sha256().into(),
             },
         ],
         GoalScopeV1::new(Some("session-1".into()), []).unwrap(),
@@ -1077,6 +1151,21 @@ fn goal_definition() -> GoalDefinitionV1 {
         None,
         [GoalCapabilityReference::new("tools", "catalogue-v1").unwrap()],
     )
+    .unwrap()
+}
+
+fn acceptance_payload() -> CanonicalPayload {
+    CanonicalPayload::from_value(&json!({})).unwrap()
+}
+
+fn goal_activation_payload() -> CanonicalPayload {
+    CanonicalPayload::from_value(&json!({
+        "command_id":"goal-activate",
+        "goal_id":"goal-1",
+        "revision":2,
+        "attempt_number":1,
+        "actor_reference":"agent:fixture",
+    }))
     .unwrap()
 }
 

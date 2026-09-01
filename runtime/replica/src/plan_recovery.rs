@@ -1,5 +1,6 @@
 use std::collections::{BTreeMap, BTreeSet};
 
+use garive_goal::GoalEvidenceV1;
 use garive_ledger::{CanonicalPayload, DurableFact, SessionId};
 use garive_plan::{
     PlanCapabilityReference, PlanDefinitionV1, PlanSnapshot, PlanStepId, PlanTransition,
@@ -219,6 +220,9 @@ fn apply(
     if fact.kind.as_str() == "plan.step.started" {
         validate_execution_binding(ledger, facts, fact, value, current)?;
     }
+    if fact.kind.as_str() == "plan.completed" {
+        validate_completion_evidence(ledger, facts, fact, value, current)?;
+    }
     if fact.kind.as_str() == "plan.superseded"
         || (fact.kind.as_str() == "plan.adopted"
             && value.get("expected_prior_plan_revision").is_some())
@@ -242,6 +246,67 @@ fn apply(
         })?;
     current.state_version = next;
     Ok(())
+}
+
+fn validate_completion_evidence(
+    ledger: &SqliteLedger,
+    facts: &[DurableFact],
+    completion: &DurableFact,
+    value: &Map<String, Value>,
+    current: &PlanRuntimeState,
+) -> Result<(), PlanRuntimeError> {
+    let commit_version = ledger
+        .fact_commit_version(&completion.fact_id)
+        .map_err(map_ledger)?
+        .ok_or(PlanRuntimeError::RecoveryCorrupt)?;
+    let observed_version = commit_version
+        .checked_sub(1)
+        .filter(|version| *version > 0)
+        .ok_or(PlanRuntimeError::RecoveryCorrupt)?;
+    let mut prior_facts = Vec::new();
+    for fact in facts
+        .iter()
+        .filter(|fact| fact.position < completion.position)
+    {
+        if ledger
+            .fact_commit_version(&fact.fact_id)
+            .map_err(map_ledger)?
+            .is_some_and(|version| version <= observed_version)
+        {
+            prior_facts.push(fact.clone());
+        }
+    }
+    let through_position = prior_facts.last().map_or(0, |fact| fact.position);
+    let graph = crate::goal_recovery::reconstruct_goal_graph_from_facts(
+        &prior_facts,
+        observed_version,
+        through_position,
+    )
+    .map_err(|_| PlanRuntimeError::RecoveryCorrupt)?;
+    let definition = current.snapshot.definition();
+    let goal = graph
+        .get(definition.goal_id())
+        .ok_or(PlanRuntimeError::RecoveryCorrupt)?;
+    if goal.snapshot.state().is_terminal()
+        || goal.snapshot.revision() != definition.goal_revision()
+        || goal.snapshot.definition().digest().map_err(corrupt)?
+            != definition.goal_definition_digest()
+    {
+        return Err(PlanRuntimeError::RecoveryCorrupt);
+    }
+    let evidence =
+        GoalEvidenceV1::list_from_canonical_json(bound_inline(value, "reduction_evidence")?)
+            .map_err(corrupt)?;
+    crate::goal_evidence::verify_goal_success_evidence(
+        definition.goal_id(),
+        goal.snapshot.definition().criteria(),
+        &evidence,
+        &graph,
+        &prior_facts,
+        observed_version,
+        None,
+    )
+    .map_err(|_| PlanRuntimeError::RecoveryCorrupt)
 }
 
 fn validate_execution_binding(

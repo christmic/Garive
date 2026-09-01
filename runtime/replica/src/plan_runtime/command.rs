@@ -1,3 +1,4 @@
+use garive_goal::GoalEvidenceV1;
 use garive_ledger::{
     CanonicalPayload, CommitResult, FactDraft, FactId, FactKind, LedgerError, SessionId,
 };
@@ -134,11 +135,66 @@ pub fn plan_plan_transition(
 ) -> Result<PlannedPlanCommand, PlanRuntimeError> {
     if matches!(
         request,
-        PlanRuntimeTransition::Start { .. } | PlanRuntimeTransition::Adopt { .. }
+        PlanRuntimeTransition::Start { .. }
+            | PlanRuntimeTransition::Adopt { .. }
+            | PlanRuntimeTransition::CompletePlan { .. }
     ) {
         return Err(PlanRuntimeError::TransitionInvalid);
     }
     plan_transition(current, expected_state_version, context, request)
+}
+
+/// Completes one Plan only after Runtime verifies complete Goal evidence at the fixed prefix.
+pub fn plan_complete_plan(
+    ledger: &SqliteLedger,
+    session_id: &SessionId,
+    current: &PlanRuntimeState,
+    expected_state_version: u64,
+    context: &PlanCommandContext,
+    evidence: Vec<GoalEvidenceV1>,
+) -> Result<PlannedPlanCommand, PlanRuntimeError> {
+    let prefix = goal_prefix(ledger, session_id)?;
+    if current.session_version != prefix.session_version
+        || current.through_position != prefix.through_position
+    {
+        return Err(PlanRuntimeError::RevisionConflict);
+    }
+    validate_goal_binding(current.snapshot.definition(), &prefix.graph)?;
+    let goal = prefix
+        .graph
+        .get(current.snapshot.definition().goal_id())
+        .ok_or(PlanRuntimeError::BindingStale)?;
+    crate::goal_evidence::verify_goal_success_evidence(
+        current.snapshot.definition().goal_id(),
+        goal.snapshot.definition().criteria(),
+        &evidence,
+        &prefix.graph,
+        &prefix.facts,
+        prefix.session_version,
+        None,
+    )
+    .map_err(map_goal_evidence)?;
+    let evidence_json =
+        GoalEvidenceV1::canonical_json(&evidence).map_err(|_| PlanRuntimeError::EvidenceInvalid)?;
+    let evidence_value =
+        serde_json::from_str(&evidence_json).map_err(|_| PlanRuntimeError::EvidenceInvalid)?;
+    let reduction_evidence = CanonicalPayload::from_value(&evidence_value)
+        .map_err(|_| PlanRuntimeError::EvidenceInvalid)?;
+    plan_transition(
+        current,
+        expected_state_version,
+        context,
+        PlanRuntimeTransition::CompletePlan { reduction_evidence },
+    )
+}
+
+fn map_goal_evidence(error: crate::GoalRuntimeError) -> PlanRuntimeError {
+    match error {
+        crate::GoalRuntimeError::EvidenceInsufficient
+        | crate::GoalRuntimeError::EvidenceInvalid => PlanRuntimeError::EvidenceInvalid,
+        crate::GoalRuntimeError::DurabilityFailure => PlanRuntimeError::DurabilityFailure,
+        _ => PlanRuntimeError::RecoveryCorrupt,
+    }
 }
 
 fn goal_prefix(
