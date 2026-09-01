@@ -784,6 +784,11 @@ kbd { font-size: var(--text-2xs); }
 .artifact-workbench-toolbar button { display: flex; align-items: center; gap: 5px; min-height: 29px; padding: 0 7px; border: 0; border-radius: var(--radius-control); color: var(--text-secondary); background: transparent; font-size: var(--text-xs); }
 .artifact-workbench-toolbar button:hover:not(:disabled) { background: var(--surface-hover); }
 .artifact-workbench-toolbar button svg { width: 13px; }
+.artifact-workbench-actions { justify-content: flex-end; }
+.artifact-workbench-notice { display: flex; align-items: center; gap: 6px; min-height: 28px; margin: 0; padding: 3px 20px; border-bottom: 1px solid var(--border-subtle); color: var(--text-secondary); font-size: var(--text-2xs); }
+.artifact-workbench-notice svg { flex: none; width: 12px; }
+.artifact-workbench-notice.success { color: var(--state-success); }
+.artifact-workbench-notice.error { color: var(--state-danger); }
 .artifact-preview-content { width: min(46rem, 100%); min-height: 330px; margin: 0; padding: var(--space-1) var(--space-5) var(--space-6); font-size: var(--document-font-size); line-height: var(--document-leading); overflow-wrap: anywhere; }
 .artifact-source { width: min(52rem, calc(100% - 48px)); min-height: 330px; max-height: none !important; margin: 24px auto !important; padding: 20px !important; border: 1px solid var(--border-subtle); border-radius: var(--radius-control); background: var(--surface-subtle) !important; font: var(--text-xs)/1.65 var(--font-mono) !important; white-space: pre-wrap; }
 .artifact-preview-content > :first-child { margin-top: 0; }
@@ -918,6 +923,8 @@ kbd { font-size: var(--text-2xs); }
 @media (max-width: 760px) {
   .topbar-text-action { display: grid; place-items: center; width: 34px; padding: 0; }
   .topbar-text-action span { display: none; }
+  .artifact-workbench-toolbar button { justify-content: center; width: 29px; padding: 0; }
+  .artifact-workbench-toolbar button span { display: none; }
   .settings-page { width: calc(100% - 32px); }
   .settings-heading { padding: 24px 0 14px; }
   .settings-workbench { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); gap: 0; }

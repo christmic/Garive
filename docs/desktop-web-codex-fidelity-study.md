@@ -551,6 +551,22 @@ x=434–505 before the Environment control. At 720 px and below the label hides,
 leaving a 34 px icon target and the full accessible name. Dark/light
 1280/720/480 browser runs retain zero overflow.
 
+### XIII. File-workbench action cluster
+
+The supplied split-workbench reference keeps file actions in the preview title
+row, beside the source/rendered control, instead of making users rediscover an
+action on the originating card. Garive now promotes its real one-shot `Export
+copy…` capability into that row and returns the chosen filename as an inline
+success receipt. Source/rendered and export remain labeled at 1120 px and
+above, then collapse to two 29 px icon controls at 720 px and below without
+losing their accessible names.
+
+This cluster follows a strict capability rule: `revealable` artifact metadata
+does not create a Finder/Open action by itself. That control is admitted only
+after a native reveal command and its failure contract exist. Browser evidence
+at 1280, 1120, 720 and 480 px records zero horizontal overflow; both dark and
+light themes complete the export and expose the receipt through `role=status`.
+
 ## Gate 1 — Codex fidelity
 
 This gate passes only when both Desktop and Web show:

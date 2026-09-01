@@ -1078,6 +1078,9 @@ function ResultDeliverables({ state, t, previewCloseRequest, onPreviewTitle }: {
   const [exportReceipts, setExportReceipts] = useState<Readonly<Record<string,
     ArtifactExportReceipt>>>({});
   const results = state.messages.filter((message) => message.role === "assistant" && message.text);
+  const selectedKey = selected ? `${selected.artifact_id}-${selected.revision}` : undefined;
+  const selectedExportState = selectedKey ? exportStates[selectedKey] : undefined;
+  const selectedExportReceipt = selectedKey ? exportReceipts[selectedKey] : undefined;
   useEffect(() => {
     if (previewFixture && selected) onPreviewTitle(selected.display_name);
   }, [onPreviewTitle, previewFixture, selected]);
@@ -1142,7 +1145,13 @@ function ResultDeliverables({ state, t, previewCloseRequest, onPreviewTitle }: {
         {exportState === "unavailable" && <p className="artifact-export-state error" role="alert"><Icon name="warning" />{t("artifact.exportError")}</p>}
       </div>
     </article>; })}
-    {selected && <section className="artifact-preview" aria-label={t("artifact.previewAria")}><div className="artifact-workbench-toolbar"><nav aria-label={t("artifact.breadcrumbs")}><span>{t("inspector.artifacts")}</span><Icon name="chevron" /><strong dir="auto">{selected.display_name}</strong></nav><div><button type="button" disabled={!preview || previewState !== "idle"} onClick={() => setSourceMode((shown) => !shown)}><Icon name="source" />{t(sourceMode ? "artifact.viewRendered" : "artifact.viewSource")}</button></div></div>
+    {selected && <section className="artifact-preview" aria-label={t("artifact.previewAria")}><div className="artifact-workbench-toolbar"><nav aria-label={t("artifact.breadcrumbs")}><span>{t("inspector.artifacts")}</span><Icon name="chevron" /><strong dir="auto">{selected.display_name}</strong></nav><div className="artifact-workbench-actions"><button type="button" disabled={!preview || previewState !== "idle"} onClick={() => setSourceMode((shown) => !shown)}><Icon name="source" /><span>{t(sourceMode ? "artifact.viewRendered" : "artifact.viewSource")}</span></button><button type="button"
+        disabled={!selected.exportable || selectedExportState === "exporting"}
+        aria-label={t(selectedExportState === "exporting" ? "artifact.choosing" : "artifact.exportCopy")}
+        onClick={() => void exportCopy(selected)}><Icon name="download" /><span>{t(selectedExportState === "exporting" ? "artifact.choosing" : "artifact.exportCopy")}</span></button></div></div>
+      {selectedExportState === "exported" && selectedExportReceipt && <p className="artifact-workbench-notice success" role="status"><Icon name="check" />{t("artifact.exportedAs")} <bdi>{selectedExportReceipt.display_name}</bdi></p>}
+      {selectedExportState === "exists" && <p className="artifact-workbench-notice error" role="alert"><Icon name="warning" />{t("artifact.overwriteError")}</p>}
+      {selectedExportState === "unavailable" && <p className="artifact-workbench-notice error" role="alert"><Icon name="warning" />{t("artifact.exportError")}</p>}
       {previewState === "loading" ? <div className="preview-state" role="status"><span className="spinner" />{t("artifact.verifying")}</div>
         : previewState === "unavailable" ? <div className="preview-state error" role="alert"><Icon name="warning" />{t("artifact.changed")}</div>
           : preview && (sourceMode ? <pre className="artifact-source" aria-label={t("artifact.sourceAria")}>{preview.content_utf8}</pre>

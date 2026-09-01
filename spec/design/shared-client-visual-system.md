@@ -243,6 +243,12 @@ same immutable preview payload, preserve revision evidence, and never imply
 filesystem mutability. Closing the preview returns to deliverables; closing the
 workbench returns to the undisturbed thread.
 
+The file toolbar exposes only implemented capabilities. Source/Rendered changes
+presentation of the verified payload. Export copy consumes the existing native
+one-shot destination capability and never overwrites. Its success or error
+receipt appears progressively in the preview layer. `revealable` alone does not
+permit a Finder/Open affordance until a backend reveal command is implemented.
+
 Completed-result actions sit at the assistant content edge. Their visual form
 is a 30 px icon control; their accessible name and tooltip retain the full verb.
 The terminal state remains text-visible and is not replaced by color or an icon.

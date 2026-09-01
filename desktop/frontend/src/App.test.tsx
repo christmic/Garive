@@ -307,6 +307,7 @@ describe("Desktop product experience", () => {
     expect(await screen.findByRole("heading", { name: "Deliverables" })).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Preview" }));
     expect(await screen.findByRole("tab", { name: "memo.md" })).toBeTruthy();
+    expect(view.container.querySelector(".artifact-workbench-actions")?.textContent).toContain("Export copy…");
     const separator = screen.getByRole("separator", { name: "Resize workbench" });
     expect(separator.getAttribute("aria-valuenow")).toBe("352");
     fireEvent.keyDown(separator, { key: "ArrowRight" });

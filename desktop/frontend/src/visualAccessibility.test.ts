@@ -65,6 +65,8 @@ describe("Desktop visual accessibility contract", () => {
     expect(CSS).toContain(".result-markdown h1 { margin: 0 0 calc(var(--document-space) * 2);");
     expect(CSS).toContain(".assistant-message .result-markdown p { font-size: inherit; line-height: inherit; white-space: normal; }");
     expect(CSS).toContain(".artifact-workbench-toolbar { display: flex;");
+    expect(CSS).toContain(".artifact-workbench-actions { justify-content: flex-end; }");
+    expect(CSS).toContain(".artifact-workbench-notice { display: flex; align-items: center; gap: 6px;");
     expect(CSS).toContain(".workspace-tab { display: grid; grid-template-columns: minmax(0, 1fr) 22px; width: min(120px, 100%);");
     expect(CSS).toContain("min-height: var(--height-file-toolbar);");
     expect(CSS).toContain(".app-shell:has(.workspace-panel) .timeline { width: calc(100% - 20px); }");
