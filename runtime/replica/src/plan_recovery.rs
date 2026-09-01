@@ -591,7 +591,7 @@ fn validate_carry_evidence(
     let old = definition(source_proposal, required, satisfied, capabilities)?;
     let new = current.snapshot.definition();
     if old.goal_id() != new.goal_id()
-        || old.goal_revision() != new.goal_revision()
+        || old.goal_revision() > new.goal_revision()
         || old.goal_definition_digest() != new.goal_definition_digest()
         || records
             .iter()

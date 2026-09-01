@@ -100,7 +100,7 @@ pub fn verify_plan_carry_forward(
         || old.plan_id() != new.plan_id()
         || old.plan_revision().checked_add(1) != Some(new.plan_revision())
         || old.goal_id() != new.goal_id()
-        || old.goal_revision() != new.goal_revision()
+        || old.goal_revision() > new.goal_revision()
         || old.goal_definition_digest() != new.goal_definition_digest()
     {
         return Err(PlanRuntimeError::RevisionConflict);

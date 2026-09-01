@@ -7,7 +7,10 @@ use garive_ledger::{
     AgentDefinitionId, AgentDefinitionRevision, AgentInstanceId, CanonicalPayload, DurableFact,
     ExecutionId, SessionId, TurnId,
 };
-use garive_plan::{PlanBoundsV1, PlanCapabilityReference, PlanDefinitionV1, PlanId, PlanStepV1};
+use garive_plan::{
+    PlanBoundsV1, PlanCapabilityReference, PlanDefinitionV1, PlanId, PlanState, PlanStepV1,
+    StepState,
+};
 use sha2::{Digest, Sha256};
 
 use crate::{
@@ -36,6 +39,29 @@ pub struct PlanProposalRequest {
     pub available_capabilities: BTreeSet<PlanCapabilityReference>,
     /// Maximum total attempts admitted by the Goal.
     pub max_total_attempts: u32,
+    /// Exact admitted source context for revision N+1, when replanning.
+    pub replan: Option<PlanReplanContext>,
+}
+
+/// Bounded immutable source context exposed for one admitted replan.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PlanReplanContext {
+    /// Durable failure-policy admission fact.
+    pub admission_fact_id: String,
+    /// Stable policy revision that admitted proposal work.
+    pub policy_reference: String,
+    /// Source Plan identity retained by revision N+1.
+    pub source_plan_id: String,
+    /// Source immutable revision.
+    pub source_plan_revision: u64,
+    /// Canonical source definition digest.
+    pub source_plan_definition_digest: String,
+    /// Source topology in semantic declaration order.
+    pub source_steps: Vec<PlanStepV1>,
+    /// Completed source Steps in declaration order.
+    pub completed_step_ids: Vec<String>,
+    /// Failed source Steps in declaration order.
+    pub failed_step_ids: Vec<String>,
 }
 
 /// Untrusted topology content returned by a configured planner.
@@ -148,6 +174,7 @@ impl PlanProposalPort for BoundResultPort {
             if request.goal_id != self.bound.goal_id
                 || request.goal_revision != self.bound.goal_revision
                 || request.goal_definition_digest != self.bound.goal_definition_digest
+                || request.replan.is_some()
             {
                 Err(PlanProposalPortError::InvalidOutput)
             } else {
@@ -370,6 +397,7 @@ pub async fn propose_initial_goal_plan_once(
             .collect(),
         available_capabilities: available_capabilities.clone(),
         max_total_attempts: goal_definition.bounds().max_attempts(),
+        replan: None,
     };
     let expected_session_version = goal.session_version;
     let expected_through_position = goal.through_position;
@@ -448,6 +476,236 @@ pub async fn propose_initial_goal_plan_once(
     Ok(ProposedGoalPlan {
         plan_id,
         plan_revision: 1,
+        plan_definition_digest,
+    })
+}
+
+/// Constructs revision N+1 from one durable failure-policy admission.
+#[allow(clippy::too_many_arguments)]
+pub async fn propose_replacement_goal_plan_once(
+    database_path: &Path,
+    session_id: &SessionId,
+    goal_id: &str,
+    source_plan_id: &str,
+    source_plan_revision: u64,
+    admission_fact_id: &str,
+    recorded_at: &str,
+    catalogue: Arc<RuntimeAgentCatalogue>,
+    port: &dyn PlanProposalPort,
+) -> Result<ProposedGoalPlan, PlanProposalRuntimeError> {
+    if goal_id.is_empty()
+        || source_plan_id.is_empty()
+        || source_plan_revision == 0
+        || admission_fact_id.is_empty()
+        || port.proposer_reference().is_empty()
+        || chrono::DateTime::parse_from_rfc3339(recorded_at).is_err()
+    {
+        return Err(PlanProposalRuntimeError::InvalidInput);
+    }
+    let ledger =
+        SqliteLedger::open(database_path).map_err(|_| PlanProposalRuntimeError::CorruptState)?;
+    let goal = reconstruct_goal(&ledger, session_id, goal_id)
+        .map_err(|_| PlanProposalRuntimeError::CorruptState)?;
+    if goal.snapshot.state() != GoalState::Active {
+        return Err(PlanProposalRuntimeError::CorruptState);
+    }
+    let graph = reconstruct_plan_graph(&ledger, session_id)
+        .map_err(|_| PlanProposalRuntimeError::CorruptState)?;
+    let source = graph
+        .get(&(source_plan_id.into(), source_plan_revision))
+        .filter(|plan| {
+            plan.snapshot.state() == PlanState::Running
+                && plan.active_claims.is_empty()
+                && plan.session_version == goal.session_version
+                && plan.through_position == goal.through_position
+        })
+        .ok_or(PlanProposalRuntimeError::CorruptState)?;
+    let source_definition = source.snapshot.definition();
+    let source_digest = source_definition
+        .digest()
+        .map_err(|_| PlanProposalRuntimeError::CorruptState)?;
+    let failed_step_ids = source_definition
+        .steps()
+        .iter()
+        .filter(|step| {
+            source
+                .snapshot
+                .step(step.step_id())
+                .map(|value| value.state())
+                == Some(StepState::Failed)
+        })
+        .map(|step| step.step_id().as_str().into())
+        .collect::<Vec<_>>();
+    if failed_step_ids.is_empty() {
+        return Err(PlanProposalRuntimeError::CorruptState);
+    }
+    let facts = ledger
+        .read_facts(session_id, 0, goal.through_position, None)
+        .map_err(|_| PlanProposalRuntimeError::CorruptState)?;
+    let admission = facts
+        .last()
+        .filter(|fact| {
+            fact.fact_id.as_str() == admission_fact_id
+                && fact.kind.as_str() == "plan.replan.admitted"
+        })
+        .ok_or(PlanProposalRuntimeError::CorruptState)?;
+    let admission_value = serde_json::from_str::<serde_json::Value>(admission.payload.as_json())
+        .map_err(|_| PlanProposalRuntimeError::CorruptState)?;
+    let admitted_failed_step_ids = admission_value
+        .get("failed_step_ids")
+        .and_then(serde_json::Value::as_array)
+        .ok_or(PlanProposalRuntimeError::CorruptState)?
+        .iter()
+        .map(|value| {
+            value
+                .as_str()
+                .filter(|value| !value.is_empty())
+                .map(str::to_owned)
+                .ok_or(PlanProposalRuntimeError::CorruptState)
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    let goal_digest = goal
+        .snapshot
+        .definition()
+        .digest()
+        .map_err(|_| PlanProposalRuntimeError::CorruptState)?;
+    if text(&admission_value, "source_plan_id")? != source_plan_id
+        || admission_value
+            .get("source_plan_revision")
+            .and_then(serde_json::Value::as_u64)
+            != Some(source_plan_revision)
+        || text(&admission_value, "source_plan_definition_digest")? != source_digest
+        || text(&admission_value, "goal_id")? != goal_id
+        || admission_value
+            .get("goal_revision")
+            .and_then(serde_json::Value::as_u64)
+            != Some(goal.snapshot.revision())
+        || text(&admission_value, "goal_definition_digest")? != goal_digest
+        || admitted_failed_step_ids != failed_step_ids
+    {
+        return Err(PlanProposalRuntimeError::CorruptState);
+    }
+    let installation = resolve_session_installation(&ledger, session_id, &catalogue)?;
+    let goal_definition = goal.snapshot.definition();
+    let available_capabilities = goal_definition
+        .capability_references()
+        .iter()
+        .map(|capability| {
+            PlanCapabilityReference::new(capability.name(), capability.exact_revision())
+                .map_err(|_| PlanProposalRuntimeError::CorruptState)
+        })
+        .collect::<Result<BTreeSet<_>, _>>()?;
+    let request = PlanProposalRequest {
+        goal_id: goal_id.into(),
+        goal_revision: goal.snapshot.revision(),
+        goal_definition_digest: goal_digest.clone(),
+        objective: goal_definition.objective().into(),
+        criterion_ids: goal_definition
+            .criteria()
+            .iter()
+            .map(|criterion| criterion.criterion_id().as_str().into())
+            .collect(),
+        available_capabilities: available_capabilities.clone(),
+        max_total_attempts: goal_definition.bounds().max_attempts(),
+        replan: Some(PlanReplanContext {
+            admission_fact_id: admission_fact_id.into(),
+            policy_reference: text(&admission_value, "policy_reference")?.into(),
+            source_plan_id: source_plan_id.into(),
+            source_plan_revision,
+            source_plan_definition_digest: source_digest,
+            source_steps: source_definition.steps().to_vec(),
+            completed_step_ids: source_definition
+                .steps()
+                .iter()
+                .filter(|step| {
+                    source
+                        .snapshot
+                        .step(step.step_id())
+                        .map(|value| value.state())
+                        == Some(StepState::Completed)
+                })
+                .map(|step| step.step_id().as_str().into())
+                .collect(),
+            failed_step_ids,
+        }),
+    };
+    let expected_session_version = goal.session_version;
+    let expected_through_position = goal.through_position;
+    let agent_snapshot_digest = installation.snapshot().snapshot_digest().to_owned();
+    let tool_catalogue_digest = installation.tool_catalogue_digest().to_owned();
+    let safety_policy_revision = installation.snapshot().governance().exact_revision.clone();
+    drop(ledger);
+    let content = port
+        .propose(&request)
+        .await
+        .map_err(|_| PlanProposalRuntimeError::ProposalFailed)?;
+    if content.bounds.max_total_attempts() > request.max_total_attempts {
+        return Err(PlanProposalRuntimeError::ProposalFailed);
+    }
+    let mut ledger =
+        SqliteLedger::open(database_path).map_err(|_| PlanProposalRuntimeError::CorruptState)?;
+    let current = reconstruct_goal(&ledger, session_id, goal_id)
+        .map_err(|_| PlanProposalRuntimeError::CorruptState)?;
+    let current_goal_digest = current
+        .snapshot
+        .definition()
+        .digest()
+        .map_err(|_| PlanProposalRuntimeError::CorruptState)?;
+    if current.session_version != expected_session_version
+        || current.through_position != expected_through_position
+        || current.snapshot.revision() != request.goal_revision
+        || current_goal_digest != request.goal_definition_digest
+    {
+        return Err(PlanProposalRuntimeError::CorruptState);
+    }
+    let target_revision = source_plan_revision
+        .checked_add(1)
+        .ok_or(PlanProposalRuntimeError::CorruptState)?;
+    let graph = reconstruct_plan_graph(&ledger, session_id)
+        .map_err(|_| PlanProposalRuntimeError::CorruptState)?;
+    if graph.contains_key(&(source_plan_id.into(), target_revision)) {
+        return Err(PlanProposalRuntimeError::ExistingPlanLineage);
+    }
+    let definition = PlanDefinitionV1::new(
+        PlanId::new(source_plan_id).map_err(|_| PlanProposalRuntimeError::CorruptState)?,
+        target_revision,
+        goal_id,
+        request.goal_revision,
+        &request.goal_definition_digest,
+        agent_snapshot_digest,
+        tool_catalogue_digest,
+        safety_policy_revision,
+        content.steps,
+        content.bounds,
+        &request.criterion_ids.iter().cloned().collect(),
+        &BTreeSet::new(),
+        &available_capabilities,
+    )
+    .map_err(|_| PlanProposalRuntimeError::ProposalFailed)?;
+    let plan_definition_digest = definition
+        .digest()
+        .map_err(|_| PlanProposalRuntimeError::ProposalFailed)?;
+    let planned = plan_propose_plan(
+        &ledger,
+        session_id,
+        &PlanCommandContext {
+            command_id: format!("g2-replan-{}", &plan_definition_digest[..32]),
+            actor_reference: port.proposer_reference().into(),
+            recorded_at: recorded_at.into(),
+        },
+        definition,
+    )
+    .map_err(PlanProposalRuntimeError::Plan)?;
+    commit_plan_command(
+        &mut ledger,
+        session_id.clone(),
+        expected_session_version,
+        &planned,
+    )
+    .map_err(PlanProposalRuntimeError::Plan)?;
+    Ok(ProposedGoalPlan {
+        plan_id: source_plan_id.into(),
+        plan_revision: target_revision,
         plan_definition_digest,
     })
 }

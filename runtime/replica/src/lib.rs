@@ -238,9 +238,9 @@ pub use plan_proposal_execution::{
 };
 pub use plan_proposal_runtime::{
     commit_completed_plan_proposal_once, propose_initial_goal_plan_once,
-    start_initial_goal_plan_proposal_execution, PlanProposalContent, PlanProposalFuture,
-    PlanProposalPort, PlanProposalPortError, PlanProposalRequest, PlanProposalRuntimeError,
-    ProposedGoalPlan,
+    propose_replacement_goal_plan_once, start_initial_goal_plan_proposal_execution,
+    PlanProposalContent, PlanProposalFuture, PlanProposalPort, PlanProposalPortError,
+    PlanProposalRequest, PlanProposalRuntimeError, PlanReplanContext, ProposedGoalPlan,
 };
 pub use plan_recovery::{reconstruct_plan, reconstruct_plan_graph};
 pub use plan_runtime::{
