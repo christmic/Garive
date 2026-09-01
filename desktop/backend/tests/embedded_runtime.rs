@@ -38,19 +38,22 @@ use garive_llm::{
 use garive_memory::{MemoryAuthorizedScope, MemoryDocumentLimits, MemoryScope, MemoryScopeClass};
 use garive_plan::{PlanBoundsV1, PlanStepId, PlanStepV1};
 use garive_runtime::{
-    commit_goal_command, plan_core_terminal, plan_create_goal, reconstruct_goal,
+    advance_goal_plan_with_failure_once, commit_goal_command, local_dispatch_queue,
+    plan_core_terminal, plan_create_goal, reconstruct_goal, reconstruct_local_start,
     reconstruct_plan_graph, start_initial_goal_plan_proposal_execution,
-    CatalogueCapabilityPreparationFactory, CataloguePlanStepDispatchFactory, CommittedTurn,
-    CoreTerminalContext, GoalCommandContext, HostClock, KnowledgeConnector,
+    start_replacement_goal_plan_proposal_execution, CatalogueCapabilityPreparationFactory,
+    CataloguePlanStepDispatchFactory, CommittedTurn, CoreTerminalContext, GoalCommandContext,
+    GoalPlanAdvanceOutcome, GoalPlanCoordinationTick, HostClock, KnowledgeConnector,
     KnowledgeConnectorFuture, KnowledgeConnectorOutcome, LiveHostLimits, LiveOutputEventKind,
     LocalCapabilityPreparationFactory, LocalExecutionAttempt, LocalExecutionPolicy,
     LocalGovernedExecution, LocalGovernedExecutionFactory, LocalKnowledgeSystemBinding,
-    LocalMemorySystemBinding, LocalWorkerError, MemoryControlAction, MemoryControlGrant,
-    PlanAdmissionDecision, PlanAdmissionInput, PlanAdmissionPolicy, PlanFailureDecision,
-    PlanFailureInput, PlanFailurePolicy, PlanProposalContent, PlanProposalFuture, PlanProposalPort,
-    PlanStepDispatchFactory, PlanStepDispatchInput, ProcessBackendHostConfig, ProcessExecutable,
-    ProcessLane, ProcessLaneRegistry, RuntimeAgentCatalogue, SafetyFuture, SafetyPort,
-    SqliteLedger, T1HostSystemConfig, KEYWORD_CURRENT_INPUT_REVISION, USER_DECLARED_PUSH_REVISION,
+    LocalMemorySystemBinding, LocalReconstructionError, LocalWorkerError, MemoryControlAction,
+    MemoryControlGrant, PlanAdmissionDecision, PlanAdmissionInput, PlanAdmissionPolicy,
+    PlanFailureDecision, PlanFailureInput, PlanFailurePolicy, PlanProposalContent,
+    PlanProposalFuture, PlanProposalPort, PlanStepDispatchFactory, PlanStepDispatchInput,
+    ProcessBackendHostConfig, ProcessExecutable, ProcessLane, ProcessLaneRegistry,
+    RuntimeAgentCatalogue, SafetyFuture, SafetyPort, SqliteLedger, T1HostSystemConfig,
+    KEYWORD_CURRENT_INPUT_REVISION, USER_DECLARED_PUSH_REVISION,
 };
 use garive_tools::{T1_APPLY_PATCH, T1_READ_TEXT};
 use sha2::{Digest, Sha256};
@@ -703,6 +706,305 @@ async fn desktop_goal_pump_replans_failed_revision_before_retrying_work() {
         .any(|pair| pair == ["plan.superseded", "plan.adopted"]));
 }
 
+#[tokio::test]
+async fn desktop_goal_pump_runs_bound_model_replan_before_replacement() {
+    let directory = tempdir().unwrap();
+    let database = directory.path().join("goal-model-replan.sqlite3");
+    let model = Arc::new(PlanningFailingReplanningCompletingModel {
+        calls: AtomicU64::new(0),
+        work_calls: AtomicU64::new(0),
+    });
+    let mut config = desktop_host_config(&database, model.clone());
+    config.plan_admission_policy = Some(Arc::new(AdoptReplacement));
+    config.plan_failure_policy = Some(Arc::new(ReplanFirstRevision));
+    config.model_plan_proposer_reference = Some("planner:model-replan-v1".into());
+    let governed = DesktopWorkspaceExecutionFactory::new(
+        database.clone(),
+        DesktopWorkspaceService::default(),
+        "main",
+    )
+    .unwrap();
+    let host = DesktopHost::new_governed(config, Arc::new(governed)).unwrap();
+    let session_id = host.create_session("definition-main").unwrap();
+    let session = SessionId::try_from(session_id.as_str()).unwrap();
+    let mut ledger = SqliteLedger::open(&database).unwrap();
+    let opened = ledger.read_facts(&session, 0, 1, None).unwrap().remove(0);
+    let goal = GoalDefinitionV1::new(
+        GoalId::new("goal-pump").unwrap(),
+        "Complete one installed Plan",
+        vec![GoalCriterion::DurableFact {
+            criterion_id: GoalCriterionId::new("session-opened").unwrap(),
+            fact_kind: "session.opened".into(),
+            subject_digest: opened.payload.sha256().into(),
+        }],
+        GoalScopeV1::new(Some(session_id.clone()), []).unwrap(),
+        GoalBoundsV1::new(1, 2, 1, None, None).unwrap(),
+        None,
+        [],
+    )
+    .unwrap();
+    let created = plan_create_goal(
+        &ledger,
+        &session,
+        &GoalCommandContext {
+            command_id: "goal-model-replan-create".into(),
+            actor_reference: "user:test".into(),
+            recorded_at: "2026-08-29T00:00:00Z".into(),
+        },
+        goal,
+    )
+    .unwrap();
+    commit_goal_command(&mut ledger, session.clone(), 1, &created).unwrap();
+    drop(ledger);
+
+    let report = host.drive_goal(&session_id, "goal-pump", 20).await.unwrap();
+    assert_eq!(report.executions, 4);
+    assert_eq!(model.calls.load(Ordering::SeqCst), 4);
+    let ledger = SqliteLedger::open(database).unwrap();
+    assert_eq!(
+        reconstruct_goal(&ledger, &session, "goal-pump")
+            .unwrap()
+            .snapshot
+            .state(),
+        GoalState::Succeeded
+    );
+    let graph = reconstruct_plan_graph(&ledger, &session).unwrap();
+    assert_eq!(graph.len(), 2);
+    assert!(graph.values().any(|plan| {
+        plan.snapshot.definition().plan_revision() == 1
+            && plan.snapshot.state() == garive_plan::PlanState::Superseded
+    }));
+    let kinds = ledger
+        .read_facts(&session, 0, u64::MAX, None)
+        .unwrap()
+        .into_iter()
+        .map(|fact| fact.kind.as_str().to_owned())
+        .collect::<Vec<_>>();
+    assert!(kinds
+        .windows(2)
+        .any(|pair| { pair == ["plan.replan.proposal.result_bound", "plan.proposed",] }));
+}
+
+#[tokio::test]
+async fn desktop_restart_binds_terminal_replan_without_second_planner_call() {
+    let directory = tempdir().unwrap();
+    let database = directory.path().join("goal-replan-terminal-crash.sqlite3");
+    let catalogue = Arc::new(
+        RuntimeAgentCatalogue::new([builtin_desktop_agent_installation(
+            "definition-main",
+            "desktop-main",
+        )
+        .unwrap()])
+        .unwrap(),
+    );
+    let mut original_config = desktop_host_config(&database, Arc::new(RejectingModel));
+    original_config.capability_preparation = test_capability_preparation(catalogue.clone());
+    original_config.agent_catalogue = catalogue.clone();
+    original_config.plan_admission_policy = Some(Arc::new(AdoptExactProposal));
+    original_config.plan_proposal_port = Some(Arc::new(SingleStepProposal));
+    let original = DesktopHost::new_governed(
+        original_config,
+        Arc::new(
+            DesktopWorkspaceExecutionFactory::new(
+                database.clone(),
+                DesktopWorkspaceService::default(),
+                "main",
+            )
+            .unwrap(),
+        ),
+    )
+    .unwrap();
+    let session_id = original.create_session("definition-main").unwrap();
+    let session = SessionId::try_from(session_id.as_str()).unwrap();
+    let mut ledger = SqliteLedger::open(&database).unwrap();
+    let opened = ledger.read_facts(&session, 0, 1, None).unwrap().remove(0);
+    let goal = GoalDefinitionV1::new(
+        GoalId::new("goal-pump").unwrap(),
+        "Complete one installed Plan",
+        vec![GoalCriterion::DurableFact {
+            criterion_id: GoalCriterionId::new("session-opened").unwrap(),
+            fact_kind: "session.opened".into(),
+            subject_digest: opened.payload.sha256().into(),
+        }],
+        GoalScopeV1::new(Some(session_id.clone()), []).unwrap(),
+        GoalBoundsV1::new(1, 2, 1, None, None).unwrap(),
+        None,
+        [],
+    )
+    .unwrap();
+    let created = plan_create_goal(
+        &ledger,
+        &session,
+        &GoalCommandContext {
+            command_id: "goal-replan-terminal-crash-create".into(),
+            actor_reference: "user:test".into(),
+            recorded_at: "2026-08-29T00:00:00Z".into(),
+        },
+        goal,
+    )
+    .unwrap();
+    commit_goal_command(&mut ledger, session.clone(), 1, &created).unwrap();
+    drop(ledger);
+    let report = original
+        .drive_goal(&session_id, "goal-pump", 12)
+        .await
+        .unwrap();
+    assert_eq!(report.executions, 1);
+
+    let mut ledger = SqliteLedger::open(&database).unwrap();
+    let mut factory = CataloguePlanStepDispatchFactory::new(database.clone(), catalogue.clone());
+    let (dispatcher, _queue) = local_dispatch_queue(1).unwrap();
+    let outcome = advance_goal_plan_with_failure_once(
+        &mut ledger,
+        &session,
+        "goal-pump",
+        &GoalPlanCoordinationTick {
+            actor_reference: "coordinator:test".into(),
+            recorded_at: "2026-08-29T00:00:01Z".into(),
+            dispatch: None,
+        },
+        &mut factory,
+        dispatcher.as_ref(),
+        &ReplanFirstRevision,
+    )
+    .unwrap();
+    let admission_fact_id = match outcome {
+        GoalPlanAdvanceOutcome::ReplanRequested {
+            admission_fact_id, ..
+        } => admission_fact_id,
+        other => panic!("unexpected replan admission: {other:?}"),
+    };
+    drop(ledger);
+    let committed = start_replacement_goal_plan_proposal_execution(
+        &database,
+        &session,
+        "goal-pump",
+        reconstruct_plan_graph(&SqliteLedger::open(&database).unwrap(), &session)
+            .unwrap()
+            .values()
+            .next()
+            .unwrap()
+            .snapshot
+            .definition()
+            .plan_id()
+            .as_str(),
+        1,
+        &admission_fact_id,
+        "planner:model-replan-v1",
+        "2026-08-29T00:00:02Z",
+        catalogue.clone(),
+    )
+    .unwrap();
+    let usage = UsageSummary {
+        input_tokens: TokenCount::Known(3),
+        output_tokens: TokenCount::Known(4),
+        estimated: false,
+    };
+    let terminal = plan_core_terminal(
+        &CoreTerminalContext {
+            turn_id: committed.turn_id.clone(),
+            execution_id: committed.execution_id.clone(),
+            recorded_at: "2026-08-29T00:00:03Z".into(),
+        },
+        &ExecutionReport {
+            outcome: AgentOutcome::Completed {
+                response_items: vec![ModelItem::Text {
+                    text: model_plan_topology(),
+                }],
+                usage,
+            },
+            completed_iterations: 1,
+            usage,
+        },
+    )
+    .unwrap();
+    let mut ledger = SqliteLedger::open(&database).unwrap();
+    let version = ledger.session_version(&session).unwrap().unwrap();
+    ledger.commit(session.clone(), version, terminal).unwrap();
+    let probe_policy = desktop_host_config(&database, Arc::new(CompletingModel)).execution_policy;
+    assert!(matches!(
+        reconstruct_local_start(
+            &ledger,
+            &committed,
+            &probe_policy,
+            &LocalExecutionAttempt {
+                worker_owner_id: "probe-worker".into(),
+                lease_token: "unpredictable-probe-token".into(),
+                now_ms: 10_000,
+                clock_revision: "probe-clock-v1".into(),
+                lease_duration_ms: 5_000,
+                recorded_at: "2026-08-29T00:00:04Z".into(),
+            },
+        ),
+        Err(LocalReconstructionError::AlreadyTerminal)
+    ));
+    assert!(!ledger
+        .read_facts(&session, 0, u64::MAX, None)
+        .unwrap()
+        .iter()
+        .any(|fact| fact.kind.as_str() == "plan.replan.proposal.result_bound"));
+    drop(ledger);
+    drop(original);
+
+    let recovery_model = Arc::new(RecoveryCountingModel {
+        planner_calls: AtomicU64::new(0),
+        work_calls: AtomicU64::new(0),
+    });
+    let mut restarted_config = desktop_host_config(&database, recovery_model.clone());
+    restarted_config.capability_preparation = test_capability_preparation(catalogue.clone());
+    restarted_config.agent_catalogue = catalogue;
+    restarted_config.plan_admission_policy = Some(Arc::new(AdoptReplacement));
+    restarted_config.plan_failure_policy = Some(Arc::new(ReplanFirstRevision));
+    restarted_config.model_plan_proposer_reference = Some("planner:model-replan-v1".into());
+    let restarted = DesktopHost::new_governed(
+        restarted_config,
+        Arc::new(
+            DesktopWorkspaceExecutionFactory::new(
+                database.clone(),
+                DesktopWorkspaceService::default(),
+                "main",
+            )
+            .unwrap(),
+        ),
+    )
+    .unwrap();
+    let report = restarted
+        .drive_goal(&session_id, "goal-pump", 20)
+        .await
+        .unwrap();
+    assert_eq!(report.executions, 2);
+    let ledger = SqliteLedger::open(&database).unwrap();
+    let facts = ledger.read_facts(&session, 0, u64::MAX, None).unwrap();
+    let model_turns = facts
+        .iter()
+        .filter(|fact| fact.kind.as_str() == "model.requested")
+        .map(|fact| {
+            (
+                fact.turn_id.as_ref().map(|value| value.as_str().to_owned()),
+                fact.model_request_id
+                    .as_ref()
+                    .map(|value| value.as_str().to_owned()),
+            )
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        (
+            recovery_model.planner_calls.load(Ordering::SeqCst),
+            recovery_model.work_calls.load(Ordering::SeqCst),
+        ),
+        (0, 1),
+        "model requests: {model_turns:?}; recovered planner turn: {}",
+        committed.turn_id.as_str(),
+    );
+    assert_eq!(
+        reconstruct_goal(&ledger, &session, "goal-pump")
+            .unwrap()
+            .snapshot
+            .state(),
+        GoalState::Succeeded
+    );
+}
+
 struct AdoptExactProposal;
 impl PlanAdmissionPolicy for AdoptExactProposal {
     fn decide(&self, input: &PlanAdmissionInput) -> PlanAdmissionDecision {
@@ -828,6 +1130,76 @@ impl ModelPort for RejectingThenCompletingModel {
                 Ok(InvokeOutcome::Completed {
                     items: vec![ModelItem::Text {
                         text: "completed after replan".into(),
+                    }],
+                    usage: usage(),
+                    stop_reason: ModelStopReason::EndTurn,
+                })
+            }
+        })
+    }
+}
+
+struct PlanningFailingReplanningCompletingModel {
+    calls: AtomicU64,
+    work_calls: AtomicU64,
+}
+
+struct RecoveryCountingModel {
+    planner_calls: AtomicU64,
+    work_calls: AtomicU64,
+}
+
+impl ModelPort for RecoveryCountingModel {
+    fn invoke<'a>(
+        &'a self,
+        request: &'a ModelRequest,
+        _: &'a mut dyn ModelObserver,
+        _: &'a dyn ModelCancellation,
+    ) -> ModelFuture<'a> {
+        Box::pin(async move {
+            let text = if matches!(request.output.text_mode, TextMode::JsonSchema { .. }) {
+                self.planner_calls.fetch_add(1, Ordering::SeqCst);
+                model_plan_topology()
+            } else {
+                self.work_calls.fetch_add(1, Ordering::SeqCst);
+                "completed after recovery".into()
+            };
+            Ok(InvokeOutcome::Completed {
+                items: vec![ModelItem::Text { text }],
+                usage: usage(),
+                stop_reason: ModelStopReason::EndTurn,
+            })
+        })
+    }
+}
+
+impl ModelPort for PlanningFailingReplanningCompletingModel {
+    fn invoke<'a>(
+        &'a self,
+        request: &'a ModelRequest,
+        _: &'a mut dyn ModelObserver,
+        _: &'a dyn ModelCancellation,
+    ) -> ModelFuture<'a> {
+        Box::pin(async move {
+            self.calls.fetch_add(1, Ordering::SeqCst);
+            if matches!(request.output.text_mode, TextMode::JsonSchema { .. }) {
+                return Ok(InvokeOutcome::Completed {
+                    items: vec![ModelItem::Text {
+                        text: model_plan_topology(),
+                    }],
+                    usage: usage(),
+                    stop_reason: ModelStopReason::EndTurn,
+                });
+            }
+            if self.work_calls.fetch_add(1, Ordering::SeqCst) == 0 {
+                Ok(InvokeOutcome::Rejected {
+                    kind: RejectionKind::ContentPolicy,
+                    sanitized_evidence: "first-revision-rejected".into(),
+                })
+            } else {
+                Ok(InvokeOutcome::Completed {
+                    items: vec![ModelItem::Text {
+                        text: "completed after model replan".into(),
                     }],
                     usage: usage(),
                     stop_reason: ModelStopReason::EndTurn,
