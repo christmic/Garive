@@ -1,10 +1,135 @@
 use std::collections::{BTreeMap, BTreeSet};
 
-use garive_goal::{GoalCriterion, GoalEvidenceKind, GoalEvidenceV1, GoalState};
+use garive_goal::{GoalCriterion, GoalEvidenceId, GoalEvidenceKind, GoalEvidenceV1, GoalState};
 use garive_ledger::{CanonicalPayload, DurableFact};
 use serde_json::{json, Map, Value};
 
 use crate::{GoalRuntimeError, GoalRuntimeState};
+
+pub(crate) fn observe_goal_evidence(
+    goal_id: &str,
+    criteria: &[GoalCriterion],
+    graph: &BTreeMap<String, GoalRuntimeState>,
+    facts: &[DurableFact],
+    observed_session_version: u64,
+) -> Result<Vec<GoalEvidenceV1>, GoalRuntimeError> {
+    let mut evidence = Vec::with_capacity(criteria.len());
+    for criterion in criteria {
+        let (kind, durable_reference, evidence_digest) = match criterion {
+            GoalCriterion::DurableFact {
+                fact_kind,
+                subject_digest,
+                ..
+            } => {
+                let fact = facts
+                    .iter()
+                    .find(|fact| {
+                        fact.kind.as_str() == fact_kind && fact.payload.sha256() == subject_digest
+                    })
+                    .ok_or(GoalRuntimeError::EvidenceInsufficient)?;
+                (
+                    GoalEvidenceKind::DurableFact,
+                    fact.fact_id.as_str().to_owned(),
+                    subject_digest.clone(),
+                )
+            }
+            GoalCriterion::Artifact {
+                artifact_kind,
+                required_digest,
+                ..
+            } => {
+                let (fact, digest) = facts
+                    .iter()
+                    .filter(|fact| fact.kind.as_str() == "artifact.committed")
+                    .find_map(|fact| {
+                        let value = payload(fact).ok()?;
+                        let digest = text(&value, "content_digest").ok()?;
+                        (text(&value, "kind").ok()? == artifact_kind
+                            && required_digest
+                                .as_deref()
+                                .is_none_or(|required| required == digest))
+                        .then_some((fact, digest.to_owned()))
+                    })
+                    .ok_or(GoalRuntimeError::EvidenceInsufficient)?;
+                (
+                    GoalEvidenceKind::Artifact,
+                    fact.fact_id.as_str().to_owned(),
+                    digest,
+                )
+            }
+            GoalCriterion::UserAcceptance {
+                response_schema_digest,
+                ..
+            } => {
+                let (fact, digest) = facts
+                    .iter()
+                    .filter(|fact| fact.kind.as_str() == "interaction.resolved")
+                    .find_map(|fact| {
+                        acceptance_digest(fact, response_schema_digest, facts)
+                            .ok()
+                            .map(|digest| (fact, digest))
+                    })
+                    .ok_or(GoalRuntimeError::EvidenceInsufficient)?;
+                (
+                    GoalEvidenceKind::UserAcceptance,
+                    fact.fact_id.as_str().to_owned(),
+                    digest,
+                )
+            }
+            GoalCriterion::ChildGoals { child_goal_ids, .. } => {
+                let entries = child_goal_ids
+                    .iter()
+                    .map(|child_id| {
+                        let child = graph
+                            .get(child_id.as_str())
+                            .filter(|child| child.snapshot.state() == GoalState::Succeeded)
+                            .ok_or(GoalRuntimeError::EvidenceInsufficient)?;
+                        Ok(json!({
+                            "goal_id":child_id.as_str(),
+                            "revision":child.snapshot.revision(),
+                            "definition_digest":child.snapshot.definition().digest()
+                                .map_err(|_| GoalRuntimeError::RecoveryCorrupt)?,
+                        }))
+                    })
+                    .collect::<Result<Vec<_>, GoalRuntimeError>>()?;
+                let digest = CanonicalPayload::from_value(&Value::Array(entries))
+                    .map_err(|_| GoalRuntimeError::RecoveryCorrupt)?
+                    .sha256()
+                    .to_owned();
+                (
+                    GoalEvidenceKind::ChildGoals,
+                    format!("goal-set:{digest}"),
+                    digest,
+                )
+            }
+        };
+        evidence.push(
+            GoalEvidenceV1::new(
+                GoalEvidenceId::new(format!(
+                    "runtime-evidence-{}",
+                    criterion.criterion_id().as_str()
+                ))
+                .map_err(|_| GoalRuntimeError::EvidenceInvalid)?,
+                criterion.criterion_id().clone(),
+                kind,
+                durable_reference,
+                evidence_digest,
+                observed_session_version,
+            )
+            .map_err(|_| GoalRuntimeError::EvidenceInvalid)?,
+        );
+    }
+    verify_goal_success_evidence(
+        goal_id,
+        criteria,
+        &evidence,
+        graph,
+        facts,
+        observed_session_version,
+        None,
+    )?;
+    Ok(evidence)
+}
 
 pub(crate) fn verify_goal_success_evidence(
     goal_id: &str,
@@ -186,6 +311,37 @@ fn verify_user_acceptance(
         return Err(GoalRuntimeError::EvidenceInvalid);
     }
     Ok(())
+}
+
+fn acceptance_digest(
+    resolved: &DurableFact,
+    response_schema_digest: &str,
+    facts: &[DurableFact],
+) -> Result<String, GoalRuntimeError> {
+    let tool_id = resolved
+        .tool_invocation_id
+        .as_ref()
+        .ok_or(GoalRuntimeError::EvidenceInvalid)?;
+    let resolved_payload = payload(resolved)?;
+    let mut requested = facts.iter().filter(|fact| {
+        fact.kind.as_str() == "interaction.requested"
+            && fact.tool_invocation_id.as_ref() == Some(tool_id)
+            && fact.position < resolved.position
+    });
+    let request = requested.next().ok_or(GoalRuntimeError::EvidenceInvalid)?;
+    if requested.next().is_some() {
+        return Err(GoalRuntimeError::EvidenceInvalid);
+    }
+    let request_payload = payload(request)?;
+    for key in ["interaction_id", "suspension_id", "prepared_digest"] {
+        if text(&request_payload, key)? != text(&resolved_payload, key)? {
+            return Err(GoalRuntimeError::EvidenceInvalid);
+        }
+    }
+    if text(&request_payload, "response_schema_digest")? != response_schema_digest {
+        return Err(GoalRuntimeError::EvidenceInvalid);
+    }
+    content_digest(&resolved_payload, "response").map(str::to_owned)
 }
 
 fn verify_children(

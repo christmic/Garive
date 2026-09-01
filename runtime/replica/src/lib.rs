@@ -131,10 +131,11 @@ pub use effect_batch_sqlite::SqliteEffectBatchPublisher;
 pub use execution_work_binding::{reconstruct_execution_work_binding, ExecutionWorkBinding};
 pub use executor_router::{ExecutorRoute, RoutedExecutorPort};
 pub use goal_plan_coordination::{
-    plan_activate_goal_from_authoritative_plan, plan_continue_owned_plan_turn,
-    plan_next_turn_cancellation_for_goal, plan_resume_goal_from_continued_turn,
-    plan_succeed_goal_from_completed_plan, plan_suspend_goal_from_owned_turn,
-    plan_suspend_owned_plan_from_turn, GoalPlanCoordinationError, PlannedGoalTurnCancellation,
+    plan_activate_goal_from_authoritative_plan, plan_complete_owned_step_from_turn,
+    plan_continue_owned_plan_turn, plan_next_turn_cancellation_for_goal,
+    plan_resume_goal_from_continued_turn, plan_succeed_goal_from_completed_plan,
+    plan_suspend_goal_from_owned_turn, plan_suspend_owned_plan_from_turn,
+    GoalPlanCoordinationError, PlannedGoalTurnCancellation,
 };
 pub use goal_recovery::reconstruct_goal;
 pub use goal_runtime::{

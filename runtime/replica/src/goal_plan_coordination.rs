@@ -7,11 +7,12 @@ use serde_json::{json, Value};
 
 use crate::plan_runtime::{plan_resume_step_execution, plan_suspend_step_and_plan};
 use crate::{
-    get_turn, plan_cancel_turn, plan_goal_transition, reconstruct_goal, reconstruct_plan_graph,
-    reconstruct_suspended_turn, CancelReason, CancelTurnCommand, GetTurnQuery, GoalCommandContext,
-    GoalRuntimeError, GoalRuntimeTransition, PlanCommandContext, PlanRuntimeError,
-    PlanStepContinuation, PlanStepSuspension, PlannedGoalCommand, PlannedPlanCommand, PlannedTurn,
-    RuntimeCommandError, RuntimeCommandId, RuntimeSuspensionKind, RuntimeTurnStatus, SqliteLedger,
+    get_turn, plan_cancel_turn, plan_goal_transition, plan_plan_transition, reconstruct_goal,
+    reconstruct_plan_graph, reconstruct_suspended_turn, CancelReason, CancelTurnCommand,
+    GetTurnQuery, GoalCommandContext, GoalRuntimeError, GoalRuntimeTransition, PlanCommandContext,
+    PlanRuntimeError, PlanRuntimeTransition, PlanStepContinuation, PlanStepSuspension,
+    PlannedGoalCommand, PlannedPlanCommand, PlannedTurn, RuntimeCommandError, RuntimeCommandId,
+    RuntimeSuspensionKind, RuntimeTurnStatus, SqliteLedger,
 };
 
 /// Stable failure classes for cross-aggregate Goal/Plan coordination.
@@ -27,6 +28,8 @@ pub enum GoalPlanCoordinationError {
     ResumableSuspensionUnavailable,
     /// No unique durable continuation can resume the Goal's suspension.
     ContinuationUnavailable,
+    /// The owned Turn has no unique completed terminal to reduce.
+    CompletedTurnUnavailable,
     /// Goal planning rejected the derived activation.
     Goal(GoalRuntimeError),
     /// Durable Turn planning rejected a derived cancellation.
@@ -46,6 +49,213 @@ pub struct PlannedGoalTurnCancellation {
     pub turn_id: TurnId,
     /// Exact idempotent C6 cancellation request.
     pub planned: PlannedTurn,
+}
+
+/// Plans one owned Step completion from the exact committed Turn terminal.
+///
+/// Result and criterion evidence are re-observed at the current ledger prefix;
+/// the caller supplies no Step, attempt, Execution, result or evidence binding.
+pub fn plan_complete_owned_step_from_turn(
+    ledger: &SqliteLedger,
+    session_id: &SessionId,
+    goal_id: &str,
+    turn_id: &TurnId,
+    expected_session_version: u64,
+    expected_goal_revision: u64,
+    context: &PlanCommandContext,
+) -> Result<PlannedPlanCommand, GoalPlanCoordinationError> {
+    let goal =
+        reconstruct_goal(ledger, session_id, goal_id).map_err(GoalPlanCoordinationError::Goal)?;
+    if goal.snapshot.state() != GoalState::Active {
+        return Err(GoalPlanCoordinationError::Goal(
+            GoalRuntimeError::TransitionInvalid,
+        ));
+    }
+    if goal.session_version != expected_session_version {
+        return Err(GoalPlanCoordinationError::ConcurrentModification);
+    }
+    if goal.snapshot.revision() != expected_goal_revision {
+        return Err(GoalPlanCoordinationError::Goal(
+            GoalRuntimeError::RevisionConflict,
+        ));
+    }
+    let plans = reconstruct_plan_graph(ledger, session_id)
+        .map_err(|_| GoalPlanCoordinationError::CorruptState)?;
+    if plans.values().any(|plan| {
+        plan.session_version != goal.session_version
+            || plan.through_position != goal.through_position
+    }) {
+        return Err(GoalPlanCoordinationError::ConcurrentModification);
+    }
+    let goal_digest = goal
+        .snapshot
+        .definition()
+        .digest()
+        .map_err(|_| GoalPlanCoordinationError::CorruptState)?;
+    let mut candidates = plans.values().filter(|plan| {
+        let definition = plan.snapshot.definition();
+        definition.goal_id() == goal_id
+            && definition.goal_revision() <= expected_goal_revision
+            && definition.goal_definition_digest() == goal_digest
+            && plan.snapshot.state() == PlanState::Running
+    });
+    let plan = candidates
+        .next()
+        .ok_or(GoalPlanCoordinationError::AuthoritativePlanUnavailable)?;
+    if candidates.next().is_some() {
+        return Err(GoalPlanCoordinationError::CorruptState);
+    }
+    let facts = ledger
+        .read_facts(session_id, 0, goal.through_position, None)
+        .map_err(|_| GoalPlanCoordinationError::CorruptState)?;
+    if !owned_turns(&facts, plan.snapshot.definition())?.contains(turn_id) {
+        return Err(GoalPlanCoordinationError::CorruptState);
+    }
+    let view = get_turn(
+        ledger,
+        &GetTurnQuery {
+            session_id: session_id.clone(),
+            turn_id: turn_id.clone(),
+            through_position: None,
+        },
+    )
+    .map_err(GoalPlanCoordinationError::Runtime)?;
+    if view.status != RuntimeTurnStatus::Completed
+        || view.observed_session_version != expected_session_version
+    {
+        return Err(GoalPlanCoordinationError::CompletedTurnUnavailable);
+    }
+    let execution_id = view
+        .execution_id
+        .ok_or(GoalPlanCoordinationError::CorruptState)?;
+    let claims = plan
+        .active_claims
+        .iter()
+        .filter(|(_, claim)| claim.execution_id.as_deref() == Some(execution_id.as_str()))
+        .collect::<Vec<_>>();
+    let [(step_id, claim)] = claims.as_slice() else {
+        return Err(GoalPlanCoordinationError::CorruptState);
+    };
+    let step = plan
+        .snapshot
+        .definition()
+        .steps()
+        .iter()
+        .find(|step| step.step_id() == *step_id)
+        .ok_or(GoalPlanCoordinationError::CorruptState)?;
+    let criteria = goal
+        .snapshot
+        .definition()
+        .criteria()
+        .iter()
+        .filter(|criterion| {
+            step.completion_criteria()
+                .contains(criterion.criterion_id().as_str())
+        })
+        .cloned()
+        .collect::<Vec<_>>();
+    if criteria.len() != step.completion_criteria().len() {
+        return Err(GoalPlanCoordinationError::CorruptState);
+    }
+    let graph = crate::goal_recovery::reconstruct_goal_graph_from_facts(
+        &facts,
+        expected_session_version,
+        goal.through_position,
+    )
+    .map_err(|_| GoalPlanCoordinationError::CorruptState)?;
+    let criterion_evidence = crate::goal_evidence::observe_goal_evidence(
+        goal_id,
+        &criteria,
+        &graph,
+        &facts,
+        expected_session_version,
+    )
+    .map_err(GoalPlanCoordinationError::Goal)?;
+    let terminals = facts
+        .iter()
+        .filter(|fact| {
+            fact.kind.as_str() == "turn.completed" && fact.turn_id.as_ref() == Some(turn_id)
+        })
+        .collect::<Vec<_>>();
+    let [terminal] = terminals.as_slice() else {
+        return Err(GoalPlanCoordinationError::CorruptState);
+    };
+    let terminal_payload = serde_json::from_str::<Value>(terminal.payload.as_json())
+        .map_err(|_| GoalPlanCoordinationError::CorruptState)?;
+    if terminal_payload.get("execution_id").and_then(Value::as_str) != Some(execution_id.as_str()) {
+        return Err(GoalPlanCoordinationError::CorruptState);
+    }
+    let result_digest = terminal_payload
+        .get("response")
+        .and_then(Value::as_object)
+        .and_then(|binding| binding.get("digest"))
+        .and_then(Value::as_str)
+        .ok_or(GoalPlanCoordinationError::CorruptState)?;
+    let terminal_commit_version = ledger
+        .fact_commit_version(&terminal.fact_id)
+        .map_err(|_| GoalPlanCoordinationError::CorruptState)?
+        .ok_or(GoalPlanCoordinationError::CorruptState)?;
+    let execution_terminals = facts
+        .iter()
+        .filter(|fact| {
+            fact.kind.as_str() == "execution.completed"
+                && fact.turn_id.as_ref() == Some(turn_id)
+                && fact.execution_id.as_ref() == Some(&execution_id)
+        })
+        .collect::<Vec<_>>();
+    let [execution_terminal] = execution_terminals.as_slice() else {
+        return Err(GoalPlanCoordinationError::CorruptState);
+    };
+    let execution_commit_version = ledger
+        .fact_commit_version(&execution_terminal.fact_id)
+        .map_err(|_| GoalPlanCoordinationError::CorruptState)?
+        .ok_or(GoalPlanCoordinationError::CorruptState)?;
+    let execution_payload = serde_json::from_str::<Value>(execution_terminal.payload.as_json())
+        .map_err(|_| GoalPlanCoordinationError::CorruptState)?;
+    if execution_commit_version != terminal_commit_version
+        || execution_payload
+            .get("response")
+            .and_then(Value::as_object)
+            .and_then(|binding| binding.get("digest"))
+            .and_then(Value::as_str)
+            != Some(result_digest)
+    {
+        return Err(GoalPlanCoordinationError::CorruptState);
+    }
+    let step_evidence = CanonicalPayload::from_value(&json!({
+        "contract":"garive.plan-step-evidence",
+        "version":1,
+        "terminal_commit_version":terminal_commit_version,
+        "terminal_fact_id":terminal.fact_id.as_str(),
+        "terminal_payload_digest":terminal.payload.sha256(),
+        "terminal_position":terminal.position,
+        "turn_id":turn_id.as_str(),
+    }))
+    .map_err(|_| GoalPlanCoordinationError::CorruptState)?;
+    let criterion_json = GoalEvidenceV1::canonical_json(&criterion_evidence)
+        .map_err(|_| GoalPlanCoordinationError::CorruptState)?;
+    let criterion_evidence = CanonicalPayload::from_value(
+        &serde_json::from_str::<Value>(&criterion_json)
+            .map_err(|_| GoalPlanCoordinationError::CorruptState)?,
+    )
+    .map_err(|_| GoalPlanCoordinationError::CorruptState)?;
+    plan_plan_transition(
+        plan,
+        plan.state_version,
+        context,
+        PlanRuntimeTransition::CompleteStep {
+            step_id: (*step_id).clone(),
+            attempt_id: claim
+                .attempt_id
+                .clone()
+                .ok_or(GoalPlanCoordinationError::CorruptState)?,
+            execution_id: execution_id.as_str().into(),
+            result_digest: result_digest.into(),
+            step_evidence,
+            criterion_evidence,
+        },
+    )
+    .map_err(GoalPlanCoordinationError::Plan)
 }
 
 /// Plans Step and Plan suspension from one ledger-proven owned Turn terminal.
