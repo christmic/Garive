@@ -490,7 +490,7 @@ describe("Desktop product experience", () => {
     fireEvent.mouseUp(window);
     expect(view.container.querySelector(".app-shell")?.classList.contains("panel-dragging")).toBe(false);
     fireEvent.keyDown(separator, { key: "Home" });
-    expect(separator.getAttribute("aria-valuenow")).toBe("320");
+    expect(separator.getAttribute("aria-valuenow")).toBe("352");
     fireEvent.doubleClick(separator);
     expect(separator.getAttribute("aria-valuenow")).toBe("352");
     fireEvent.click(await screen.findByRole("button", { name: "View source" }));

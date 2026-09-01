@@ -127,6 +127,8 @@ describe("Desktop visual accessibility contract", () => {
     expect(CSS).toContain(".app-shell:has(.workspace-panel) .timeline { width: calc(100% - 20px); }");
     expect(CSS).toContain("grid-template-columns: minmax(0, 1fr); grid-template-rows: var(--height-active-thread-toolbar) minmax(0, 1fr)");
     expect(CSS).toContain(".workspace-panel { position: relative; flex: 1 1 auto; min-width: 0; max-width: calc(100% - var(--sidebar-width) - var(--conversation-split)); grid-template-rows: var(--height-toolbar-pane) 1fr;");
+    expect(CSS).toContain("width: min(680px, calc(100% - 72px)); max-width: min(680px, calc(100% - 72px));");
+    expect(CSS).toContain("width: 100%; max-width: 100%;");
     expect(CSS).toContain(".workspace-resizer { position: absolute; z-index: 4; top: var(--height-active-thread-toolbar);");
     expect(CSS).toContain(".sidebar-resizer { position: absolute; z-index: 11; top: var(--height-toolbar-sm);");
     expect(CSS).toContain(".timeline { width: min(var(--thread-content-max-width), calc(100% - 48px));");

@@ -1465,6 +1465,34 @@ fixture collapses the rail to exactly 0 px while preserving its mounted exit
 state. Desktop and Web report the same default variant, exact target SVG and
 80 px Composer height.
 
+### L. Workspace split defaults are adaptive; 352 px is only the floor
+
+The installed Codex `26.825.51511` AppShell source sets the left panel default
+to 275 px and bounds it from 240–520 px. The content pane uses a separate
+adaptive default. Its source constants are a 600 px nominal pane, 320 px pane
+minimum, 352 px regular main-content reserve, 500 px preferred main-content
+reserve, 640 px secondary cap and a 1.6× shell-height candidate. The effective
+default is:
+
+```text
+content = max(320, min(height * 1.6, workspace - 500),
+                   min(640, workspace - 352))
+conversation = workspace - content
+```
+
+Garive previously froze the conversation at 352 px—the source minimum—at every
+wide size. The shared preference contract now distinguishes `adaptive` from a
+manually resized pixel value. A double-click restores the adaptive calculation;
+keyboard and pointer resizing persist a bounded explicit value, and v4 values
+migrate without overwriting user state. Deterministic visual fixtures no longer
+read or write product preferences.
+
+At 1600×900 the live Desktop/Web layout now measures 275 / 500 / 825 px for
+navigation, conversation and Artifact panes, with zero overflow. At 480×720 the
+Artifact pane becomes a true 480 px single-panel surface instead of inheriting
+a one-pixel max-width. The covered conversation is inert and `aria-hidden`, so
+keyboard focus cannot move behind the visible workbench.
+
 ## Gate 1 — Codex fidelity
 
 This gate passes only when both Desktop and Web show:

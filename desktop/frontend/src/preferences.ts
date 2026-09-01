@@ -3,17 +3,17 @@ export type DesktopDensity = "comfortable" | "compact";
 export type DesktopLocalePreference = "system" | "en" | "zh-Hans" | "en-XA";
 
 export interface DesktopPreferences {
-  readonly schema_version: 4;
+  readonly schema_version: 5;
   readonly theme: DesktopTheme;
   readonly density: DesktopDensity;
   readonly locale: DesktopLocalePreference;
-  readonly workspaceSplitPx: number;
+  readonly workspaceSplitPx: number | "adaptive";
   readonly sidebarWidthPx: number;
 }
 
 export const DEFAULT_DESKTOP_PREFERENCES: DesktopPreferences = {
-  schema_version: 4, theme: "system", density: "comfortable", locale: "system",
-  workspaceSplitPx: 352, sidebarWidthPx: 275,
+  schema_version: 5, theme: "system", density: "comfortable", locale: "system",
+  workspaceSplitPx: "adaptive", sidebarWidthPx: 275,
 };
 
 const STORAGE_KEY = "garive.desktop.preferences.v1";
@@ -44,12 +44,21 @@ export function readDesktopPreferences(
       return { ...DEFAULT_DESKTOP_PREFERENCES, theme: value.theme, density: value.density,
         locale: value.locale, workspaceSplitPx: value.workspaceSplitPx };
     }
+    if (keys === "density,locale,schema_version,sidebarWidthPx,theme,workspaceSplitPx"
+        && value.schema_version === 4 && matchesTheme(value.theme)
+        && matchesDensity(value.density) && matchesLocale(value.locale)
+        && isWorkspaceSplit(value.workspaceSplitPx)
+        && isSidebarWidth(value.sidebarWidthPx)) {
+      return { schema_version: 5, theme: value.theme, density: value.density,
+        locale: value.locale, workspaceSplitPx: value.workspaceSplitPx,
+        sidebarWidthPx: value.sidebarWidthPx };
+    }
     if (keys !== "density,locale,schema_version,sidebarWidthPx,theme,workspaceSplitPx"
-        || value.schema_version !== 4 || !matchesTheme(value.theme)
+        || value.schema_version !== 5 || !matchesTheme(value.theme)
         || !matchesDensity(value.density) || !matchesLocale(value.locale)
-        || !isWorkspaceSplit(value.workspaceSplitPx)
+        || !(value.workspaceSplitPx === "adaptive" || isWorkspaceSplit(value.workspaceSplitPx))
         || !isSidebarWidth(value.sidebarWidthPx)) return DEFAULT_DESKTOP_PREFERENCES;
-    return { schema_version: 4, theme: value.theme, density: value.density,
+    return { schema_version: 5, theme: value.theme, density: value.density,
       locale: value.locale, workspaceSplitPx: value.workspaceSplitPx,
       sidebarWidthPx: value.sidebarWidthPx };
   } catch { return DEFAULT_DESKTOP_PREFERENCES; }
@@ -76,7 +85,15 @@ function matchesLocale(value: unknown): value is DesktopLocalePreference {
 }
 
 export function clampWorkspaceSplit(value: number): number {
-  return Math.min(520, Math.max(320, Math.round(value)));
+  return Math.min(2048, Math.max(352, Math.round(value)));
+}
+
+/** Mirrors Codex's adaptive 600px content-pane default and 352/500px main reserves. */
+export function sourceDefaultConversationSplit(workspaceWidth: number, shellHeight: number): number {
+  const contentWidth = Math.max(320,
+    Math.min(shellHeight * 1.6, workspaceWidth - 500),
+    Math.min(640, workspaceWidth - 352));
+  return clampWorkspaceSplit(workspaceWidth - contentWidth);
 }
 
 export function clampSidebarWidth(value: number): number {

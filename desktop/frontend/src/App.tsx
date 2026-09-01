@@ -28,7 +28,8 @@ import { SetupFlow } from "./features/setup/SetupFlow";
 import { WorkspacePicker } from "./workspace/WorkspacePicker";
 import { decodeDesktopMenuIntent, DESKTOP_MENU_EVENT } from "./desktopMenu";
 import {
-  clampSidebarWidth, clampWorkspaceSplit, readDesktopPreferences, writeDesktopPreferences, type DesktopDensity,
+  clampSidebarWidth, clampWorkspaceSplit, DEFAULT_DESKTOP_PREFERENCES, readDesktopPreferences,
+  sourceDefaultConversationSplit, writeDesktopPreferences, type DesktopDensity,
   type DesktopLocalePreference, type DesktopPreferences, type DesktopTheme,
 } from "./preferences";
 import { createTranslator, resolveDesktopLocale, type MessageKey } from "./i18n";
@@ -203,11 +204,15 @@ export function App({ client = "desktop", webCapabilities, createProductPort,
   const [selectedContext, setSelectedContext] = useState<SelectedContext>();
   const [pickerGrant, setPickerGrant] = useState<WorkspaceGrant>();
   const [detachingWorkspaceId, setDetachingWorkspaceId] = useState<string>();
-  const [preferences, setPreferences] = useState(readDesktopPreferences);
+  const [preferences, setPreferences] = useState(() => visualTest
+    ? DEFAULT_DESKTOP_PREFERENCES : readDesktopPreferences());
   const [systemDark, setSystemDark] = useState(() =>
     window.matchMedia("(prefers-color-scheme: dark)").matches);
   const [smallWindow, setSmallWindow] = useState(() =>
     window.matchMedia("(max-width: 480px)").matches);
+  const [viewport, setViewport] = useState(() => ({
+    width: window.innerWidth, height: window.innerHeight,
+  }));
   const locale = resolveDesktopLocale(preferences.locale);
   const t = useMemo(() => createTranslator(locale), [locale]);
   const orderedRecents = useMemo(() => filterAndOrderTasks(recents, "all", "", recentTitles),
@@ -268,6 +273,11 @@ export function App({ client = "desktop", webCapabilities, createProductPort,
     return () => query.removeEventListener("change", changed);
   }, []);
   useEffect(() => {
+    const resized = () => setViewport({ width: window.innerWidth, height: window.innerHeight });
+    window.addEventListener("resize", resized);
+    return () => window.removeEventListener("resize", resized);
+  }, []);
+  useEffect(() => {
     const query = window.matchMedia("(max-width: 480px)");
     const changed = (event: MediaQueryListEvent) => {
       setSmallWindow(event.matches);
@@ -276,7 +286,8 @@ export function App({ client = "desktop", webCapabilities, createProductPort,
     query.addEventListener("change", changed);
     return () => query.removeEventListener("change", changed);
   }, []);
-  useEffect(() => { try { writeDesktopPreferences(preferences); } catch { /* optional */ } },
+  useEffect(() => { if (visualTest) return;
+    try { writeDesktopPreferences(preferences); } catch { /* optional */ } },
     [preferences]);
   useEffect(() => { document.documentElement.lang = locale === "en-XA" ? "en-XA" : locale; },
     [locale]);
@@ -784,6 +795,15 @@ export function App({ client = "desktop", webCapabilities, createProductPort,
 
   const effectiveTheme = preferences.theme === "system"
     ? systemDark ? "dark" : "light" : preferences.theme;
+  const logicalViewport = { width: viewport.width / windowZoom, height: viewport.height / windowZoom };
+  const sidebarAllocated = !navigationCollapsed && logicalViewport.width > 720;
+  const workspaceWidth = Math.max(672, logicalViewport.width
+    - (sidebarAllocated ? preferences.sidebarWidthPx : 0));
+  const workspaceSplitMax = Math.max(352, Math.round(workspaceWidth - 320));
+  const workspaceSplitPx = Math.min(workspaceSplitMax,
+    preferences.workspaceSplitPx === "adaptive"
+      ? sourceDefaultConversationSplit(workspaceWidth, logicalViewport.height)
+      : preferences.workspaceSplitPx);
   const resizeSidebarFromPointer = (clientX: number) => {
     const shell = document.querySelector<HTMLElement>(".app-shell")?.getBoundingClientRect();
     if (shell) setPreferences((current) => ({ ...current,
@@ -792,7 +812,7 @@ export function App({ client = "desktop", webCapabilities, createProductPort,
   return <div className={`desktop-root theme-${effectiveTheme} density-${preferences.density}`}
     style={{ "--garive-window-zoom": windowZoom } as CSSProperties}>
     <div className={`${navigationCollapsed ? "app-shell navigation-collapsed" : "app-shell"} panel-animated${layoutDragging ? " panel-dragging" : ""}`}
-      style={{ "--conversation-split": `${preferences.workspaceSplitPx}px`,
+      style={{ "--conversation-split": `${workspaceSplitPx}px`,
         "--sidebar-preferred-width": `${preferences.sidebarWidthPx}px` } as CSSProperties}
       inert={Boolean(pickerGrant) || commandOpen}
       aria-hidden={Boolean(pickerGrant) || commandOpen}>
@@ -962,7 +982,8 @@ export function App({ client = "desktop", webCapabilities, createProductPort,
           openContext={openContext} authorizeOutputs={authorizeOutputs}
           resolveApproval={resolveApproval} removeContext={() => setSelectedContext(undefined)}
           detachWorkspace={detachWorkspace} detachingWorkspaceId={detachingWorkspaceId}
-          approvalAction={approvalAction} t={t} />
+          approvalAction={approvalAction} obscured={smallWindow && state.inspectorOpen
+            && state.inspectorTab !== "activity"} t={t} />
           : screen === "agents" ? <AgentsScreen definitions={visualTest
               ? visualAgentDefinitions : product.view?.definitions ?? []}
               sessions={visualTest ? visualAgentSessions : product.view?.sessions ?? []}
@@ -977,7 +998,9 @@ export function App({ client = "desktop", webCapabilities, createProductPort,
       {screen === "work" && state.inspectorOpen && <Inspector state={state} dispatch={workDispatch}
         onAddContext={openContext} canAddContext={Boolean(state.capabilities?.workspaces)
           && state.phase !== "submitting" && !state.messages.some((message) => message.suspension)}
-        workspaceSplitPx={preferences.workspaceSplitPx} onWorkspaceSplitChange={(workspaceSplitPx) =>
+        workspaceSplitPx={workspaceSplitPx} workspaceSplitMax={workspaceSplitMax}
+        onWorkspaceSplitReset={() => setPreferences((current) => ({ ...current,
+          workspaceSplitPx: "adaptive" }))} onWorkspaceSplitChange={(workspaceSplitPx) =>
           setPreferences((current) => ({ ...current,
             workspaceSplitPx: clampWorkspaceSplit(workspaceSplitPx) }))}
         onLayoutDragChange={setLayoutDragging} t={t} />}
@@ -1003,7 +1026,7 @@ export function App({ client = "desktop", webCapabilities, createProductPort,
 
 function WorkSurface({ state, composer, submit, startSuggestion, dispatch, context, openContext,
   authorizeOutputs, resolveApproval, removeContext, detachWorkspace, detachingWorkspaceId,
-  approvalAction, cancelTurn, retryPending, reconnect, t }: {
+  approvalAction, cancelTurn, retryPending, reconnect, obscured, t }: {
   state: WorkState;
   composer: React.RefObject<HTMLTextAreaElement | null>;
   submit: () => Promise<void>;
@@ -1020,6 +1043,7 @@ function WorkSurface({ state, composer, submit, startSuggestion, dispatch, conte
   detachWorkspace: (attachment: WorkspaceAttachment) => Promise<void>;
   detachingWorkspaceId?: string;
   approvalAction: React.RefObject<HTMLButtonElement | null>;
+  obscured: boolean;
   t: (key: MessageKey) => string;
 }) {
   const conversation = useRef<HTMLDivElement>(null);
@@ -1198,7 +1222,8 @@ function WorkSurface({ state, composer, submit, startSuggestion, dispatch, conte
   const disconnected = state.execution === "disconnected";
   const reconnecting = state.execution === "reconnecting";
   const activeGoal = selectDisplayedGoal(state.goals);
-  return <section className={state.messages.length ? "work-surface" : "work-surface new-work-surface"}>
+  return <section className={state.messages.length ? "work-surface" : "work-surface new-work-surface"}
+    inert={obscured ? true : undefined} aria-hidden={obscured ? true : undefined}>
     <div ref={conversation} onScroll={readScrollPosition}
       onWheel={(event) => markUserScroll(event.deltaY < 0 ? "away"
         : event.deltaY > 0 ? "toward" : undefined)}
@@ -1514,13 +1539,15 @@ export function selectDisplayedGoal(goals: readonly HostGoalSummary[]): HostGoal
 }
 
 function Inspector({ state, dispatch, onAddContext, canAddContext, workspaceSplitPx,
-  onWorkspaceSplitChange, onLayoutDragChange, t }: {
+  workspaceSplitMax, onWorkspaceSplitChange, onWorkspaceSplitReset, onLayoutDragChange, t }: {
   state: WorkState;
   dispatch: WorkDispatch;
   onAddContext: () => Promise<void>;
   canAddContext: boolean;
   workspaceSplitPx: number;
+  workspaceSplitMax: number;
   onWorkspaceSplitChange: (value: number) => void;
+  onWorkspaceSplitReset: () => void;
   onLayoutDragChange: (dragging: boolean) => void;
   t: (key: MessageKey) => string;
 }) {
@@ -1535,7 +1562,7 @@ function Inspector({ state, dispatch, onAddContext, canAddContext, workspaceSpli
   return <aside id="work-inspector" data-panel className={`inspector ${mode}`} aria-label={t("inspector.aria")}>
     {mode === "workspace-panel" && <div className="workspace-resizer" role="separator"
       aria-label={t("inspector.resizeWorkspace")} aria-orientation="vertical"
-      aria-valuemin={320} aria-valuemax={520} aria-valuenow={workspaceSplitPx} tabIndex={0}
+      aria-valuemin={352} aria-valuemax={workspaceSplitMax} aria-valuenow={workspaceSplitPx} tabIndex={0}
       onPointerDown={(event) => { onLayoutDragChange(true); event.currentTarget.setPointerCapture(event.pointerId);
         resizeFromPointer(event.clientX); }}
       onPointerMove={(event) => { if (event.currentTarget.hasPointerCapture(event.pointerId))
@@ -1549,11 +1576,11 @@ function Inspector({ state, dispatch, onAddContext, canAddContext, workspaceSpli
           window.removeEventListener("mouseup", stop); onLayoutDragChange(false); };
         window.addEventListener("mousemove", move); window.addEventListener("mouseup", stop);
       }}
-      onDoubleClick={() => onWorkspaceSplitChange(352)}
+      onDoubleClick={onWorkspaceSplitReset}
       onKeyDown={(event) => {
         const next = event.key === "ArrowLeft" ? workspaceSplitPx - 16
           : event.key === "ArrowRight" ? workspaceSplitPx + 16
-            : event.key === "Home" ? 320 : event.key === "End" ? 520 : undefined;
+            : event.key === "Home" ? 352 : event.key === "End" ? workspaceSplitMax : undefined;
         if (next !== undefined) { event.preventDefault(); onWorkspaceSplitChange(next); }
       }} />}
     <header>{state.inspectorTab === "activity"

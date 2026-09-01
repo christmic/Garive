@@ -1172,7 +1172,7 @@ html[data-client="desktop"] .navigation-collapsed .topbar { padding-left: 70px; 
 @media (max-width: 1120px) {
   .app-shell:has(.workspace-panel) { grid-template-columns: var(--sidebar-width) minmax(0, 1fr); }
   .app-shell.navigation-collapsed:has(.workspace-panel) { grid-template-columns: minmax(0, 1fr); }
-  .workspace-panel { position: absolute; z-index: 8; top: var(--height-active-thread-toolbar); right: 0; bottom: 0; width: min(680px, calc(100% - 72px)); box-shadow: var(--shadow-overlay); }
+  .workspace-panel { position: absolute; z-index: 8; top: var(--height-active-thread-toolbar); right: 0; bottom: 0; width: min(680px, calc(100% - 72px)); max-width: min(680px, calc(100% - 72px)); box-shadow: var(--shadow-overlay); }
   .app-shell:has(.workspace-panel) .main-surface { flex-grow: 1; max-width: calc(100% - var(--sidebar-width)); }
   .sidebar-resizer { display: none; }
   .workspace-resizer { display: none; }
@@ -1228,5 +1228,5 @@ html[data-client="desktop"] .navigation-collapsed .topbar { padding-left: 70px; 
   .agents-navigation button { flex-basis: 188px; }
   .agent-facts > div { grid-template-columns: 112px minmax(0, 1fr); }
   .environment-panel { top: 42px; right: 8px; }
-  .workspace-panel { top: var(--height-active-thread-toolbar); width: 100%; }
+  .workspace-panel { top: var(--height-active-thread-toolbar); width: 100%; max-width: 100%; }
 }

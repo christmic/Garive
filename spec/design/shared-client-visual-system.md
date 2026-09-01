@@ -701,6 +701,13 @@ product admits those actions.
   zero-height afterward. Goal progress uses the default variant and the static
   source target glyph. The multiline input floor is 44 px, its maximum is
   `25dvh`, and the action row remains a separate 36 px footer.
+- A split workbench uses Codex AppShell's adaptive content-pane calculation
+  until the operator resizes it. The regular main surface reserves at least
+  352 px and prefers 500 px; the content pane keeps a 320 px minimum and uses
+  the source 600 px / 640 px / 1.6×-height candidates. Pointer or keyboard
+  resize persists an explicit bounded value, while double-click restores
+  `adaptive`. At 480 px the selected Artifact is a full-width single panel;
+  the covered Work surface is inert and `aria-hidden`, never a clipped sliver.
 
 ## Content rules
 
