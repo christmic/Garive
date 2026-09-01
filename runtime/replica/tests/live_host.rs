@@ -22,10 +22,10 @@ use garive_plan::{
 use garive_runtime::{
     commit_goal_command, commit_plan_command, plan_core_terminal, plan_create_goal,
     plan_propose_plan, ActivityProjectionLimits, CommittedTurn, CoreTerminalContext,
-    EffectiveRuntimeLimits, GoalCommandContext, HostClock, HostContinuationInput, HostReadLimits,
-    InstalledActivityCatalogue, InstalledActivityDescriptor, InstalledAgent, LiveHost,
-    LiveHostError, LiveHostLimits, LiveHostServer, PlanCommandContext, SqliteLedger,
-    TurnDispatchError, TurnDispatcher,
+    EffectiveRuntimeLimits, GoalCommandAuthority, GoalCommandAuthorityError, GoalCommandContext,
+    HostClock, HostContinuationInput, HostReadLimits, InstalledActivityCatalogue,
+    InstalledActivityDescriptor, InstalledAgent, LiveHost, LiveHostError, LiveHostLimits,
+    LiveHostServer, PlanCommandContext, SqliteLedger, TurnDispatchError, TurnDispatcher,
 };
 use serde_json::Value;
 use tempfile::TempDir;
@@ -38,6 +38,22 @@ struct FixedClock;
 impl HostClock for FixedClock {
     fn recorded_at(&self) -> String {
         NOW.to_owned()
+    }
+}
+
+#[derive(Default)]
+struct AllowGoalAuthority {
+    calls: Mutex<u32>,
+}
+
+impl GoalCommandAuthority for AllowGoalAuthority {
+    fn authorize_create(
+        &self,
+        _session_id: &str,
+        _definition: &GoalDefinitionV1,
+    ) -> Result<String, GoalCommandAuthorityError> {
+        *self.calls.lock().unwrap() += 1;
+        Ok("actor:local-user".into())
     }
 }
 
@@ -229,6 +245,51 @@ fn h2_goal_projection_is_bounded_ordered_and_redacted() {
     ] {
         assert!(!encoded.contains(private));
     }
+}
+
+#[test]
+fn public_goal_create_requires_authority_and_exactly_replays_without_reauthorization() {
+    let harness = Harness::new(64);
+    let session = harness
+        .host
+        .create_session("create-authority-session", "definition-main")
+        .unwrap();
+    let definition = goal_definition("goal-public", "public objective", None, &session.session_id)
+        .canonical_json()
+        .unwrap();
+    assert_eq!(
+        harness
+            .host
+            .create_goal("create-public-goal", &session.session_id, 1, &definition,),
+        Err(LiveHostError::PreconditionFailed)
+    );
+    let authority = Arc::new(AllowGoalAuthority::default());
+    let host = harness.host.clone().with_goal_authority(authority.clone());
+    let first = host
+        .create_goal("create-public-goal", &session.session_id, 1, &definition)
+        .unwrap();
+    let replay = host
+        .create_goal("create-public-goal", &session.session_id, 1, &definition)
+        .unwrap();
+    assert_eq!(first, replay);
+    assert_eq!(*authority.calls.lock().unwrap(), 1);
+    let changed = goal_definition(
+        "goal-public",
+        "changed objective",
+        None,
+        &session.session_id,
+    )
+    .canonical_json()
+    .unwrap();
+    assert_eq!(
+        host.create_goal("create-public-goal", &session.session_id, 1, &changed,),
+        Err(LiveHostError::CommandConflict)
+    );
+    assert!(
+        !serde_json::to_string(&host.get_goals(&session.session_id).unwrap())
+            .unwrap()
+            .contains("actor:local-user")
+    );
 }
 
 #[test]

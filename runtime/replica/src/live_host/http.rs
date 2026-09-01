@@ -16,8 +16,8 @@ use serde::de::DeserializeOwned;
 use tokio::net::TcpListener;
 
 use super::{
-    validate_key, CancelTurnBody, ContinueTurnBody, CreateSessionBody, ErrorBody, LiveHost,
-    LiveHostError, LiveHostEvent, StartTurnBody,
+    validate_key, CancelTurnBody, ContinueTurnBody, CreateGoalBody, CreateSessionBody, ErrorBody,
+    LiveHost, LiveHostError, LiveHostEvent, StartTurnBody,
 };
 use crate::{LiveOutputReceiveError, LiveOutputSubscriber};
 
@@ -44,7 +44,10 @@ impl LiveHostServer {
             .route("/v1/agent-definitions", get(agent_definitions))
             .route("/v1/sessions", post(create_session).get(session_page))
             .route("/v1/sessions/:session_id", get(session_view))
-            .route("/v1/sessions/:session_id/goals", get(goal_page))
+            .route(
+                "/v1/sessions/:session_id/goals",
+                post(create_goal).get(goal_page),
+            )
             .route("/v1/sessions/:session_id/plans", get(plan_page))
             .route("/v1/sessions/:session_id/timeline", get(turn_timeline))
             .route("/v1/sessions/:session_id/turns", post(start_turn))
@@ -211,6 +214,26 @@ async fn create_session(State(host): State<LiveHost>, headers: HeaderMap, body: 
         let key = idempotency_key(&headers)?;
         let body: CreateSessionBody = decode_body(&host, body).await?;
         host.create_session(key, &body.agent_definition_id)
+    }
+    .await;
+    command_response(result)
+}
+
+async fn create_goal(
+    State(host): State<LiveHost>,
+    Path(session_id): Path<String>,
+    headers: HeaderMap,
+    body: Body,
+) -> Response {
+    let result = async {
+        let key = idempotency_key(&headers)?;
+        let body: CreateGoalBody = decode_body(&host, body).await?;
+        host.create_goal(
+            key,
+            &session_id,
+            body.expected_session_version,
+            &body.definition_json,
+        )
     }
     .await;
     command_response(result)

@@ -5,7 +5,7 @@ use std::{
     sync::Arc,
 };
 
-use garive_goal::GoalState;
+use garive_goal::{GoalDefinitionV1, GoalState};
 use garive_ledger::{
     AgentDefinitionId, AgentDefinitionRevision, AgentInstanceId, CanonicalPayload,
     CommitDisposition, DurableFact, ExecutionId, FactDraft, FactId, FactKind, LedgerError,
@@ -17,10 +17,11 @@ use serde_json::json;
 use sha2::{Digest, Sha256};
 
 use crate::{
-    commit_planned_turn, get_turn, goal_recovery::reconstruct_goal_graph_from_facts,
-    plan_cancel_turn, plan_continue_turn, plan_start_turn, reconstruct_plan_graph,
-    reconstruct_suspended_turn, CancelReason, CancelTurnCommand, ContinuationInput,
-    ContinueTurnCommand, GetTurnQuery, InteractionInputRepresentation, LiveOutputHub,
+    commit_goal_command, commit_planned_turn, get_turn,
+    goal_recovery::reconstruct_goal_graph_from_facts, plan_cancel_turn, plan_continue_turn,
+    plan_create_goal, plan_start_turn, reconstruct_plan_graph, reconstruct_suspended_turn,
+    CancelReason, CancelTurnCommand, ContinuationInput, ContinueTurnCommand, GetTurnQuery,
+    GoalCommandContext, GoalRuntimeError, InteractionInputRepresentation, LiveOutputHub,
     LiveOutputSubscriber, RuntimeCommandError, RuntimeCommandId, RuntimeSuspensionKind,
     RuntimeTurnStatus, SqliteLedger, SqliteLedgerError, StartTurnCommand,
 };
@@ -28,12 +29,12 @@ use crate::{
 use super::{
     completion_text, project_activities, project_fact, AgentDefinitionPageV1,
     AgentDefinitionSummary, AgentDefinitionSummaryV1, CommittedTurn, CreateSessionResponse,
-    GoalPageV1, GoalSummaryV1, HostArtifact, HostArtifactPage, HostClock, HostContinuationInput,
-    HostEventPage, HostReadLimits, HostWorkspaceAttachment, HostWorkspaceContextEntry,
-    HostWorkspaceDetachment, InstalledAgent, LiveHostError, LiveHostEvent, LiveHostLimits,
-    LiveHostState, PlanPageV1, PlanSummaryV1, SessionPageV1, SessionSummary, SessionViewV1,
-    TurnCommandResponse, TurnDispatcher, TurnSuspensionView, TurnTimelineItem, TurnTimelinePage,
-    TurnTimelinePageV1,
+    GoalCommandAuthority, GoalCommandAuthorityError, GoalCommandResponseV1, GoalPageV1,
+    GoalSummaryV1, HostArtifact, HostArtifactPage, HostClock, HostContinuationInput, HostEventPage,
+    HostReadLimits, HostWorkspaceAttachment, HostWorkspaceContextEntry, HostWorkspaceDetachment,
+    InstalledAgent, LiveHostError, LiveHostEvent, LiveHostLimits, LiveHostState, PlanPageV1,
+    PlanSummaryV1, SessionPageV1, SessionSummary, SessionViewV1, TurnCommandResponse,
+    TurnDispatcher, TurnSuspensionView, TurnTimelineItem, TurnTimelinePage, TurnTimelinePageV1,
 };
 use super::{read_cursor, read_model, timeline_projection};
 
@@ -196,8 +197,25 @@ impl LiveHost {
                 clock,
                 dispatcher,
                 live_output,
+                goal_authority: None,
             }),
         })
+    }
+
+    /// Returns an equivalent Host with an explicit product-owned Goal command authority.
+    pub fn with_goal_authority(self, authority: Arc<dyn GoalCommandAuthority>) -> Self {
+        Self {
+            state: Arc::new(LiveHostState {
+                database_path: self.state.database_path.clone(),
+                installed: self.state.installed.clone(),
+                limits: self.state.limits,
+                read_limits: self.state.read_limits,
+                clock: Arc::clone(&self.state.clock),
+                dispatcher: Arc::clone(&self.state.dispatcher),
+                live_output: self.state.live_output.clone(),
+                goal_authority: Some(authority),
+            }),
+        }
     }
 
     /// Returns the configured H4 hub for an explicitly shared worker composition.
@@ -284,6 +302,69 @@ impl LiveHost {
             return Err(LiveHostError::ReadBoundExceeded);
         }
         Ok(view)
+    }
+
+    /// Creates or exactly replays one authority-admitted canonical Goal definition.
+    pub fn create_goal(
+        &self,
+        idempotency_key: &str,
+        session: &str,
+        expected_session_version: u64,
+        definition_json: &str,
+    ) -> Result<GoalCommandResponseV1, LiveHostError> {
+        validate_key(idempotency_key)?;
+        validate_text(definition_json, self.state.limits.max_command_bytes)?;
+        if expected_session_version == 0 {
+            return Err(LiveHostError::InvalidRequest);
+        }
+        let session_id = identity::<SessionId>(session)?;
+        let definition = GoalDefinitionV1::from_canonical_json(definition_json)
+            .map_err(|_| LiveHostError::InvalidRequest)?;
+        let ledger = self.ledger()?;
+        let actor_reference =
+            match replayed_goal_actor(&ledger, &session_id, idempotency_key, definition_json)? {
+                Some(actor) => actor,
+                None => self
+                    .state
+                    .goal_authority
+                    .as_ref()
+                    .ok_or(LiveHostError::PreconditionFailed)?
+                    .authorize_create(session, &definition)
+                    .map_err(map_goal_authority)?,
+            };
+        validate_text(&actor_reference, 512)?;
+        let planned = plan_create_goal(
+            &ledger,
+            &session_id,
+            &GoalCommandContext {
+                command_id: idempotency_key.into(),
+                actor_reference,
+                recorded_at: self.recorded_at()?,
+            },
+            definition,
+        )
+        .map_err(map_goal_runtime)?;
+        let mut ledger = self.ledger()?;
+        let committed = commit_goal_command(
+            &mut ledger,
+            session_id.clone(),
+            expected_session_version,
+            &planned,
+        )
+        .map_err(map_goal_runtime)?;
+        let position = only_position(&committed.positions)?;
+        if committed.session_version > MAX_SAFE_JSON_INTEGER || position > MAX_SAFE_JSON_INTEGER {
+            return Err(LiveHostError::CorruptState);
+        }
+        Ok(GoalCommandResponseV1 {
+            api_version: "v1",
+            session_id: session.into(),
+            goal_id: planned.next.snapshot.definition().goal_id().as_str().into(),
+            revision: planned.next.snapshot.revision(),
+            state: goal_state(planned.next.snapshot.state()),
+            session_version: committed.session_version,
+            committed_position: position,
+        })
     }
 
     /// Reads all current Goals from one verified fixed Session prefix.
@@ -1907,6 +1988,54 @@ fn bounded_text(value: &str, max_bytes: usize) -> (String, bool) {
     (value[..boundary].to_owned(), true)
 }
 
+fn replayed_goal_actor(
+    ledger: &SqliteLedger,
+    session_id: &SessionId,
+    command_id: &str,
+    definition_json: &str,
+) -> Result<Option<String>, LiveHostError> {
+    let Some(watermark) = ledger.session_watermark(session_id).map_err(map_sqlite)? else {
+        return Ok(None);
+    };
+    let facts = ledger
+        .read_facts(session_id, 0, watermark.max_position, None)
+        .map_err(map_sqlite)?;
+    let matching = facts
+        .iter()
+        .filter(|fact| fact.fact_id.as_str() == command_id)
+        .collect::<Vec<_>>();
+    let [] = matching.as_slice() else {
+        let [fact] = matching.as_slice() else {
+            return Err(LiveHostError::CorruptState);
+        };
+        if fact.kind.as_str() != "goal.created" {
+            return Err(LiveHostError::CommandConflict);
+        }
+        let value = serde_json::from_str::<serde_json::Value>(fact.payload.as_json())
+            .ok()
+            .and_then(|value| value.as_object().cloned())
+            .ok_or(LiveHostError::CorruptState)?;
+        let inline = value
+            .get("definition")
+            .and_then(serde_json::Value::as_object)
+            .and_then(|binding| binding.get("inline_utf8"))
+            .and_then(serde_json::Value::as_str);
+        if value.get("command_id").and_then(serde_json::Value::as_str) != Some(command_id)
+            || inline != Some(definition_json)
+        {
+            return Err(LiveHostError::CommandConflict);
+        }
+        return value
+            .get("actor_reference")
+            .and_then(serde_json::Value::as_str)
+            .filter(|actor| !actor.is_empty())
+            .map(str::to_owned)
+            .map(Some)
+            .ok_or(LiveHostError::CorruptState);
+    };
+    Ok(None)
+}
+
 const fn goal_state(state: GoalState) -> &'static str {
     match state {
         GoalState::Draft => "draft",
@@ -2378,6 +2507,29 @@ fn map_runtime(error: RuntimeCommandError) -> LiveHostError {
         RuntimeCommandError::CorruptLedger | RuntimeCommandError::InvariantViolation => {
             LiveHostError::CorruptState
         }
+    }
+}
+
+fn map_goal_authority(error: GoalCommandAuthorityError) -> LiveHostError {
+    match error {
+        GoalCommandAuthorityError::Denied => LiveHostError::PreconditionFailed,
+        GoalCommandAuthorityError::Unavailable => LiveHostError::DurabilityUnavailable,
+    }
+}
+
+fn map_goal_runtime(error: GoalRuntimeError) -> LiveHostError {
+    match error {
+        GoalRuntimeError::Invalid => LiveHostError::InvalidRequest,
+        GoalRuntimeError::NotFound => LiveHostError::NotFound,
+        GoalRuntimeError::RevisionConflict => LiveHostError::ConcurrentModification,
+        GoalRuntimeError::CommandConflict => LiveHostError::CommandConflict,
+        GoalRuntimeError::TransitionInvalid
+        | GoalRuntimeError::EvidenceInsufficient
+        | GoalRuntimeError::EvidenceInvalid
+        | GoalRuntimeError::ScopeExceeded
+        | GoalRuntimeError::Cycle => LiveHostError::PreconditionFailed,
+        GoalRuntimeError::RecoveryCorrupt => LiveHostError::CorruptState,
+        GoalRuntimeError::DurabilityFailure => LiveHostError::DurabilityUnavailable,
     }
 }
 

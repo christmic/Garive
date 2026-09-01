@@ -1,5 +1,6 @@
 use std::{collections::BTreeMap, error::Error, fmt, path::PathBuf, sync::Arc};
 
+use garive_goal::GoalDefinitionV1;
 use garive_ledger::{ExecutionId, SessionId, TurnId};
 use serde::{Deserialize, Serialize};
 
@@ -297,6 +298,44 @@ pub struct PlanPageV1 {
     pub session_version: u64,
     /// Highest durable position included in this response.
     pub observed_max_position: u64,
+}
+
+/// Closed failure from the configured Goal command authority.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum GoalCommandAuthorityError {
+    /// The authenticated product policy denied the proposed command.
+    Denied,
+    /// The authority could not establish a trustworthy decision.
+    Unavailable,
+}
+
+/// Product-owned authority for public Goal mutations.
+pub trait GoalCommandAuthority: Send + Sync {
+    /// Authorizes one canonical create proposal and returns its private actor reference.
+    fn authorize_create(
+        &self,
+        session_id: &str,
+        definition: &GoalDefinitionV1,
+    ) -> Result<String, GoalCommandAuthorityError>;
+}
+
+/// Durable receipt for one public Goal mutation.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct GoalCommandResponseV1 {
+    /// Exact Host API version.
+    pub api_version: &'static str,
+    /// Owning Session identity.
+    pub session_id: String,
+    /// Mutated Goal identity.
+    pub goal_id: String,
+    /// Resulting Goal revision.
+    pub revision: u64,
+    /// Resulting stable lifecycle state.
+    pub state: &'static str,
+    /// Session version after commit or exact replay.
+    pub session_version: u64,
+    /// Durable command fact position.
+    pub committed_position: u64,
 }
 
 /// Content-free Session transition state consumed only by the mobile Gateway.
@@ -793,6 +832,13 @@ pub(crate) struct ContinueTurnBody {
     pub input_json: Option<String>,
 }
 
+#[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct CreateGoalBody {
+    pub expected_session_version: u64,
+    pub definition_json: String,
+}
+
 #[derive(Serialize)]
 pub(crate) struct ErrorBody {
     pub code: &'static str,
@@ -807,4 +853,5 @@ pub(crate) struct LiveHostState {
     pub clock: Arc<dyn HostClock>,
     pub dispatcher: Arc<dyn TurnDispatcher>,
     pub live_output: Option<crate::LiveOutputHub>,
+    pub goal_authority: Option<Arc<dyn GoalCommandAuthority>>,
 }

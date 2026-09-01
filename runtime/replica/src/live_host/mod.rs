@@ -12,8 +12,9 @@ pub use http::{LiveHostServer, LiveHostServerError};
 pub use service::LiveHost;
 pub use types::{
     ActivityProjectionLimits, AgentDefinitionPageV1, AgentDefinitionSummary,
-    AgentDefinitionSummaryV1, CommittedTurn, CreateSessionResponse, GoalPageV1, GoalSummaryV1,
-    HostActivity, HostArtifact, HostArtifactPage, HostClock, HostContinuationInput, HostEventPage,
+    AgentDefinitionSummaryV1, CommittedTurn, CreateSessionResponse, GoalCommandAuthority,
+    GoalCommandAuthorityError, GoalCommandResponseV1, GoalPageV1, GoalSummaryV1, HostActivity,
+    HostArtifact, HostArtifactPage, HostClock, HostContinuationInput, HostEventPage,
     HostReadLimits, HostWorkspaceAttachment, HostWorkspaceContextEntry, HostWorkspaceDetachment,
     InstalledActivityCatalogue, InstalledActivityDescriptor, InstalledAgent, LiveHostError,
     LiveHostEvent, LiveHostLimits, PlanPageV1, PlanSummaryV1, SessionPageV1, SessionSummary,
@@ -26,6 +27,6 @@ pub(crate) use activity_projection::project_activities;
 pub(crate) use projection::{completion_text, project_fact};
 pub(crate) use service::validate_key;
 pub(crate) use types::{
-    CancelTurnBody, ContinueTurnBody, CreateSessionBody, ErrorBody, LiveHostState,
+    CancelTurnBody, ContinueTurnBody, CreateGoalBody, CreateSessionBody, ErrorBody, LiveHostState,
     MobileWakeObservation, MobileWakePage, StartTurnBody,
 };

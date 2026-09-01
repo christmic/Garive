@@ -211,6 +211,23 @@ message GoalPageV1 {
   uint64 observed_max_position = 5;
 }
 
+// Authority-admitted canonical Goal creation proposal.
+message CreateGoalRequestV1 {
+  uint64 expected_session_version = 1;
+  string definition_json = 2;
+}
+
+// Durable public receipt for one Goal mutation.
+message GoalCommandResponseV1 {
+  string api_version = 1;
+  string session_id = 2;
+  string goal_id = 3;
+  uint64 revision = 4;
+  string state = 5;
+  uint64 session_version = 6;
+  uint64 committed_position = 7;
+}
+
 // One bounded redacted durable Plan revision projection.
 message PlanSummaryV1 {
   string api_version = 1;

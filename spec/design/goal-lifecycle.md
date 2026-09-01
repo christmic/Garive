@@ -244,6 +244,24 @@ order, closed state vocabulary, digests, counts, parent existence and graph
 acyclicity. H3 remains the public effect/activity stream and does not duplicate
 Goal lifecycle state; clients reread H2 after a durable change notification.
 
+## Public command authority
+
+Public Goal mutation is unavailable unless system composition installs a
+`GoalCommandAuthority`. Clients submit canonical proposals and optimistic
+Session versions; they never submit an actor identity or acquire authority from
+the loopback transport. The authority receives the canonical definition and
+Session identity, validates product policy including scope, Workspace grants,
+capabilities and bounds, and returns a private actor reference for the durable
+fact. Denial is a lifecycle precondition failure; authority uncertainty is a
+durability failure. The default Host remains read-only for Goals.
+
+`POST /v1/sessions/{session_id}/goals` creates revision 1 from an exact RFC 8785
+definition using `Idempotency-Key`. Exact replay is resolved from the original
+ledger fact and actor without calling the authority again; changed definition
+content under the same key is a command conflict. The receipt exposes only
+Session/Goal identity, resulting revision/state, Session version and committed
+position. Later transition routes must use the same authority boundary.
+
 ## Stable failures
 
 `goal_invalid`, `goal_command_conflict`, `goal_revision_conflict`,
