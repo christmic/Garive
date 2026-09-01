@@ -10,7 +10,7 @@ Session 1                  Agent running
     • Ship with evidence
     cargo test passes.
 
-╭──────────────────────────────────────╮
+╭ › ───────────────────────────────────╮
 │ Ask a follow-up…                     │
 ╰──────────────────────────────────────╯
   Esc cancel run

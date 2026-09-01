@@ -10,11 +10,12 @@ pub(super) struct Palette {
     pub(super) title: Style,
     pub(super) badge: Style,
     pub(super) border: Style,
-    pub(super) composer_border: Style,
     pub(super) overlay_border: Style,
     pub(super) modal_backdrop: Style,
     pub(super) selected: Style,
     pub(super) user: Style,
+    pub(super) request_surface: Style,
+    pub(super) request_marker: Style,
     pub(super) agent: Style,
     pub(super) activity: Style,
     pub(super) placeholder: Style,
@@ -89,11 +90,23 @@ pub(super) fn palette(theme: Theme) -> Palette {
         title: strong,
         badge: Style::default().fg(violet),
         border: Style::default().fg(muted),
-        composer_border: Style::default().fg(accent),
         overlay_border: Style::default().fg(violet),
         modal_backdrop: Style::default().add_modifier(Modifier::DIM),
         selected: Style::default().fg(accent).add_modifier(Modifier::BOLD),
         user: Style::default().fg(violet).add_modifier(Modifier::BOLD),
+        request_surface: if mono {
+            Style::default().fg(text)
+        } else {
+            Style::default().fg(text).bg(surface)
+        },
+        request_marker: if mono {
+            Style::default().fg(text).add_modifier(Modifier::BOLD)
+        } else {
+            Style::default()
+                .fg(accent)
+                .bg(surface)
+                .add_modifier(Modifier::BOLD)
+        },
         agent: strong,
         activity: Style::default().fg(if mono { text } else { Color::Yellow }),
         placeholder: Style::default().fg(muted).add_modifier(Modifier::ITALIC),

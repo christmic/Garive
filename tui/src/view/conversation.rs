@@ -1,7 +1,6 @@
 use ratatui::{
     buffer::Buffer,
     layout::Rect,
-    style::Style,
     text::{Line, Span, Text},
     widgets::{Paragraph, Widget, Wrap},
 };
@@ -19,6 +18,7 @@ use super::{
 
 mod block;
 pub(super) mod live_cache;
+mod request_surface;
 mod scroll;
 use block::*;
 pub(crate) use scroll::{reflow_visual_anchor, scroll_by_visual_cells};
@@ -284,8 +284,7 @@ fn render_timeline_item(
     let mut lines = Vec::new();
     match item.role {
         TimelineRole::User => {
-            lines.push(Line::styled("You", colors.user));
-            push_content(&mut lines, &item.text, "  ", colors.normal);
+            lines.extend(request_surface::render(&item.text, theme, width));
         }
         TimelineRole::Agent => {
             lines.push(Line::styled("◆ Garive", colors.agent));
@@ -325,18 +324,52 @@ fn wrapped_height(lines: &[Line<'static>], width: u16) -> usize {
         .sum()
 }
 
-fn push_content(lines: &mut Vec<Line<'static>>, text: &str, prefix: &str, style: Style) {
-    lines.extend(
-        safe_text(text)
-            .lines()
-            .map(|line| Line::styled(format!("{prefix}{line}"), style)),
-    );
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::application::{TimelineItem, TimelineRole};
+
+    #[test]
+    fn user_request_is_one_compact_hanging_surface() {
+        let item = TimelineItem {
+            stable_key: "request".into(),
+            position: 1,
+            role: TimelineRole::User,
+            tone: Default::default(),
+            text: "Ship a polished terminal experience".into(),
+        };
+
+        let lines = render_timeline_item(&item, Theme::Dark, 22);
+        let visible = lines
+            .iter()
+            .map(|line| {
+                line.spans
+                    .iter()
+                    .map(|span| span.content.as_ref())
+                    .collect::<String>()
+            })
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            visible,
+            ["› Ship a polished     ", "  terminal experience "]
+        );
+        assert!(lines.iter().all(|line| line.width() == 22));
+        assert!(lines.iter().all(|line| line
+            .spans
+            .iter()
+            .all(|span| { span.style.bg == Some(ratatui::style::Color::Rgb(24, 28, 38)) })));
+        let light = render_timeline_item(&item, Theme::Light, 22);
+        assert!(light.iter().all(|line| line
+            .spans
+            .iter()
+            .all(|span| { span.style.bg == Some(ratatui::style::Color::Rgb(235, 238, 244)) })));
+        let mono = render_timeline_item(&item, Theme::Mono, 22);
+        assert!(mono
+            .iter()
+            .flat_map(|line| &line.spans)
+            .all(|span| span.style.bg.is_none()));
+    }
 
     #[test]
     fn latest_window_layout_is_independent_of_history_length() {

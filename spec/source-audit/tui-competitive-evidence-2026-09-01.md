@@ -58,6 +58,14 @@ reverse-engineered tree because provenance and version parity are unverified.
   the top view first ownership and prefers popup dismissal before task
   interruption. `BottomPane::on_ctrl_c`, `:709-742`, lets the active view or
   history search consume cancellation before draft clearing or process quit.
+- **CX-V1 — restrained prompt surface.**
+  `/Users/christmix/OraculoSpace/codex/codex-rs/tui/src/style.rs:16-90`
+  derives a low-contrast User surface from the terminal background, while
+  `history_cell/messages.rs:100-126` and its reviewed
+  `user_history_cell_wraps_and_prefixes_each_line_snapshot` use one `›` marker
+  and hanging continuation indent. Garive adopts that density baseline, then
+  strengthens it with grapheme/display-width wrapping, explicit light/dark/mono
+  semantic styles, and a separate linear `You` announcement.
 - **CX-R1 — provider retry is not subscription resume.**
   `/Users/christmix/OraculoSpace/codex/codex-rs/core/src/responses_retry.rs:15-16`
   sets 5 s initial and 60 s maximum connection delay.
@@ -119,6 +127,7 @@ reverse-engineered tree because provenance and version parity are unverified.
 | Binding consistency | **Adopt** | Resolve visual keycap, spoken name, controller action, and hint from one application-owned binding snapshot. | CX-I2 |
 | Composer navigation | **Adapt** | Up/Down traverses wrapped visual rows before history; Garive retains its documented Unicode/grapheme and logical-line contracts. | CC-I1; implementation source unavailable |
 | Selection styling | **Adapt** | Use one selected row, bold match spans, and a textual marker/reverse style so selection never depends on blue alone. | CC-I1, CC-A1 |
+| User request hierarchy | **Adapt** | Use one low-contrast, unbordered request surface with a non-color marker and hanging Unicode indent; keep screen-reader role wording explicit. | CX-V1 |
 | Screen-reader projection | **Adapt** | Keep Garive's linear presenter and semantic announcements; suppress decorative animation and per-delta transcript chatter. | CC-A1; executable `claude --help` behavior |
 | Reconnect status | **Adopt** | A continuing failure is persistent, names the state, exposes details safely, and offers an explicit retry; it is not toast-only. | CX-R1, CC-R1 |
 | H1/H4 reconnect algorithm | **Reject** | Do not copy provider sampling retry or remote-session behavior. H1 resumes from its typed durable cursor; H4 reconnects by generation/sequence snapshot rules and never advances H1. | CX-R1, CC-R1; neither exposes Garive cursor semantics |

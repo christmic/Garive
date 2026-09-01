@@ -4,8 +4,7 @@ expression: "frame(&wrapped, Theme::Mono, 40, 16)"
 ---
 Session 1                  Agent running
 
-  You
-    Summarize the release plan.
+  › Summarize the release plan.
     ✓ Agent action · completed
   ◆ Garive
     ## Release plan
@@ -13,7 +12,8 @@ Session 1                  Agent running
     • Ship with evidence
     cargo test passes.
 
-╭──────────────────────────────────────╮
+
+╭ › ───────────────────────────────────╮
 │ Composer grows with soft wrapping    │
 │ and keeps every visible row.         │
 ╰──────────────────────────────────────╯

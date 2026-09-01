@@ -4,8 +4,7 @@ expression: "command_suggestion_frame(Theme::Dark)"
 ---
   Session 1  ·  Agent
 
-    You
-      Summarize the release plan.
+    › Summarize the release plan.
       ✓  Agent action · completed
     ◆ Garive
       ## Release plan
@@ -16,13 +15,14 @@ expression: "command_suggestion_frame(Theme::Dark)"
 
 
 
+
   ╭ Commands ────────────────────────────────────────────────────────────────╮
   │   /theme system  Follow terminal theme                                   │
   │ › /theme dark  Use dark theme                                            │
   │   /theme light  Use light theme                                          │
   │   /theme mono  Use mono theme                                            │
   ╰──────────────────────────────────────────────────────────────────────────╯
-  ╭──────────────────────────────────────────────────────────────────────────────────────────────╮
+  ╭ › ───────────────────────────────────────────────────────────────────────────────────────────╮
   │ /theme                                                                                       │
   ╰──────────────────────────────────────────────────────────────────────────────────────────────╯
     Tab complete command
