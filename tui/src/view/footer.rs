@@ -4,6 +4,7 @@ use ratatui::{
     text::{Line, Span},
     widgets::{Paragraph, Widget},
 };
+use unicode_width::UnicodeWidthStr;
 
 use crate::{
     application::{AppModel, ConnectionState, FocusTarget},
@@ -15,6 +16,9 @@ use super::{palette, primitives::key_hints};
 
 pub(super) fn render_footer(model: &AppModel, theme: Theme, area: Rect, buffer: &mut Buffer) {
     if area.is_empty() {
+        return;
+    }
+    if model.overlay.is_some() {
         return;
     }
     // Cancellation already owns the Composer's single status slot. Repeating a
@@ -55,15 +59,24 @@ fn render_ambient_footer(
     area: Rect,
     buffer: &mut Buffer,
 ) {
-    let Some(session) = ambient_session_label(model) else {
-        return;
-    };
-    let left = Line::from(vec![
-        Span::styled("  ", colors.muted),
-        Span::styled("Agent", colors.normal),
-        Span::styled(format!(" · {session}"), colors.muted),
-    ]);
-    Paragraph::new(left).render(area, buffer);
+    if model.composer.text().is_empty() {
+        let left = Line::from(vec![
+            Span::styled("  ", colors.muted),
+            Span::styled("Ctrl+P", colors.normal),
+            Span::styled(" commands", colors.muted),
+        ]);
+        Paragraph::new(left).render(area, buffer);
+    }
+    if area.width >= 52 {
+        if let Some(session) = ambient_session_label(model) {
+            let copy = format!("{session}  ");
+            let width = u16::try_from(UnicodeWidthStr::width(copy.as_str()))
+                .unwrap_or(area.width)
+                .min(area.width);
+            let right = Rect::new(area.right().saturating_sub(width), area.y, width, 1);
+            Paragraph::new(Line::styled(copy, colors.muted)).render(right, buffer);
+        }
+    }
 }
 
 fn ambient_session_label(model: &AppModel) -> Option<String> {
@@ -102,6 +115,53 @@ mod tests {
             turn_count: 0,
         });
         assert_eq!(ambient_session_label(&model).as_deref(), Some("Session 1"));
+    }
+
+    #[test]
+    fn ambient_footer_prioritizes_a_real_action_and_drops_generic_agent_copy() {
+        let mut model = AppModel {
+            selected_session: Some("session".into()),
+            focus: FocusTarget::Composer,
+            connection: ConnectionState::Online,
+            ..Default::default()
+        };
+        model.sessions.push(garive_host_client::SessionSummary {
+            api_version: "v1".into(),
+            session_id: "session".into(),
+            agent_instance_id: "agent".into(),
+            definition_id: "definition".into(),
+            definition_revision: "revision".into(),
+            opened_at: "2026-09-01T00:00:00Z".into(),
+            latest_position: 0,
+            latest_turn_id: None,
+            latest_turn_state: None,
+            turn_count: 0,
+        });
+        let area = Rect::new(0, 0, 80, 1);
+        let mut buffer = Buffer::empty(area);
+
+        render_footer(&model, Theme::Mono, area, &mut buffer);
+
+        let text = (0..area.width)
+            .map(|column| buffer[(column, 0)].symbol())
+            .collect::<String>();
+        assert!(text.starts_with("  Ctrl+P commands"));
+        assert!(text.ends_with("Session 1  "));
+        assert!(!text.contains("Agent"));
+    }
+
+    #[test]
+    fn overlay_suppresses_the_background_footer() {
+        let model = AppModel {
+            overlay: Some(crate::application::Overlay::Help),
+            ..Default::default()
+        };
+        let area = Rect::new(0, 0, 80, 1);
+        let mut buffer = Buffer::empty(area);
+
+        render_footer(&model, Theme::Mono, area, &mut buffer);
+
+        assert!((0..area.width).all(|column| buffer[(column, 0)].symbol() == " "));
     }
 }
 

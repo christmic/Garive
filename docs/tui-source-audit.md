@@ -582,13 +582,14 @@ non-color identity.
 The locally installed Claude Code 2.1.231 runtime was also observed at 80
 columns on 2026-09-01: its idle Composer uses full-axis horizontal boundaries
 with prompt and context/effort metadata in separate rows. This is product
-evidence only because the shipping TUI source is unavailable. Garive does not
-adopt the double rule. It combines Codex's single prompt-adjacent status voice
-with one Claude-corroborated full-axis separator: at widths `>=52`, one
-component-owned top rule anchors the Composer and embeds any phase/cancel state
-as its left-aligned title. Widths 40–51 retain plain status text. No variant
-adds side or bottom rules, and BottomPane/Modal components retain their own
-independent boundaries.
+evidence only because the shipping TUI source is unavailable. Garive rejects
+that double-rule treatment because Codex's source and reviewed `status_only`,
+`status_with_details_and_queued_messages`, `chat_composer__empty`, and
+`chat_composer__small` snapshots provide the stronger primary baseline: an
+open, borderless Composer; a separate status group; and a footer whose
+instruction disappears when a draft exists. Garive retains Claude's useful
+separation of status and input semantics, but expresses it as responsive blank
+space rather than decorative chrome.
 
 ### Markdown presentation
 

@@ -12,9 +12,7 @@ use crate::{
     input::EditorState,
 };
 
-use super::{
-    composer_run_rail, primitives::ComposerBoundary, safe_text, style::Palette, MotionFrame,
-};
+use super::{composer_run_rail, safe_text, style::Palette, MotionFrame};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum ComposerVariant {
@@ -32,15 +30,15 @@ pub(super) fn render(
     buffer: &mut Buffer,
 ) {
     let variant = variant(model);
-    let dock = ComposerDock::resolve(area);
-    dock.render_status(model, variant, colors, motion, buffer);
+    let status = status_line(model, variant, colors, motion);
+    let dock = ComposerDock::resolve(area, status.is_some());
+    dock.render_status(status, colors, buffer);
     Clear.render(dock.body, buffer);
-    buffer.set_style(dock.body, colors.request_surface);
     let marker_style = match variant {
-        ComposerVariant::Focused => colors.request_marker,
-        ComposerVariant::Frozen => colors.request_surface.patch(colors.warning),
-        ComposerVariant::ActionResponse => colors.request_surface.patch(colors.notice),
-        ComposerVariant::Idle => colors.request_surface.patch(colors.muted),
+        ComposerVariant::Focused => colors.accent,
+        ComposerVariant::Frozen => colors.warning,
+        ComposerVariant::ActionResponse => colors.notice,
+        ComposerVariant::Idle => colors.muted,
     };
     Paragraph::new(Line::styled("› ", marker_style))
         .render(Rect::new(dock.body.x, dock.body.y, 2, 1), buffer);
@@ -52,10 +50,7 @@ pub(super) fn render(
         } else {
             "Ask Garive anything"
         };
-        Text::from(Line::styled(
-            placeholder,
-            colors.request_surface.patch(colors.placeholder),
-        ))
+        Text::from(Line::styled(placeholder, colors.placeholder))
     } else {
         EditorLayout::new(&model.composer, dock.content.width).text(colors)
     };
@@ -69,7 +64,7 @@ pub(super) fn render(
         cursor_scroll
     };
     Paragraph::new(text)
-        .style(colors.request_surface)
+        .style(colors.normal)
         .scroll((scroll, 0))
         .render(dock.content, buffer);
 }
@@ -82,8 +77,14 @@ struct ComposerDock {
 }
 
 impl ComposerDock {
-    fn resolve(area: Rect) -> Self {
-        let status_height = u16::from(area.height > 1);
+    fn resolve(area: Rect, has_status: bool) -> Self {
+        let status_height = if area.height <= 1 {
+            0
+        } else if has_status {
+            area.height.saturating_sub(1).min(3)
+        } else {
+            1
+        };
         let status = Rect::new(area.x, area.y, area.width, status_height);
         let body = Rect::new(
             area.x,
@@ -104,33 +105,46 @@ impl ComposerDock {
         }
     }
 
-    fn render_status(
-        self,
-        model: &AppModel,
-        variant: ComposerVariant,
-        colors: Palette,
-        motion: MotionFrame,
-        buffer: &mut Buffer,
-    ) {
-        let line = if composer_run_rail::has_cancel_request(model) {
-            composer_run_rail::line(model, colors, motion)
-        } else {
-            match variant {
-                ComposerVariant::Frozen => Some(Line::from(vec![
-                    Span::styled(" ! ", colors.warning),
-                    Span::styled("Draft locked", colors.title),
-                    Span::styled(" · read only", colors.muted),
-                ])),
-                ComposerVariant::ActionResponse => Some(Line::from(vec![
-                    Span::styled(" ! ", colors.notice),
-                    Span::styled("Action response", colors.title),
-                ])),
-                ComposerVariant::Idle | ComposerVariant::Focused => None,
-            }
-        };
-        let line = line.or_else(|| composer_run_rail::line(model, colors, motion));
-        ComposerBoundary::resolve(self.status).render(line, colors, buffer);
+    fn render_status(self, line: Option<Line<'static>>, colors: Palette, buffer: &mut Buffer) {
+        Clear.render(self.status, buffer);
+        if let Some(line) = line {
+            Paragraph::new(line)
+                .style(colors.normal)
+                .render(self.status, buffer);
+        }
     }
+}
+
+fn status_line(
+    model: &AppModel,
+    variant: ComposerVariant,
+    colors: Palette,
+    motion: MotionFrame,
+) -> Option<Line<'static>> {
+    let variant_line = match variant {
+        ComposerVariant::Frozen => Some(Line::from(vec![
+            Span::styled("! ", colors.warning),
+            Span::styled("Draft locked", colors.title),
+            Span::styled(" · read only", colors.muted),
+        ])),
+        ComposerVariant::ActionResponse => Some(Line::from(vec![
+            Span::styled("! ", colors.notice),
+            Span::styled("Action response", colors.title),
+        ])),
+        ComposerVariant::Idle | ComposerVariant::Focused => None,
+    };
+    if composer_run_rail::has_cancel_request(model) {
+        composer_run_rail::line(model, colors, motion)
+    } else {
+        variant_line.or_else(|| composer_run_rail::line(model, colors, motion))
+    }
+}
+
+fn has_status(model: &AppModel, variant: ComposerVariant) -> bool {
+    matches!(
+        variant,
+        ComposerVariant::Frozen | ComposerVariant::ActionResponse
+    ) || composer_run_rail::visible(model)
 }
 
 fn variant(model: &AppModel) -> ComposerVariant {
@@ -149,7 +163,7 @@ pub(super) fn cursor(model: &AppModel, area: Rect) -> Option<(u16, u16)> {
     if model.composer_is_frozen {
         return None;
     }
-    let content = ComposerDock::resolve(area).content;
+    let content = ComposerDock::resolve(area, has_status(model, variant(model))).content;
     if content.is_empty() {
         return None;
     }
@@ -158,15 +172,21 @@ pub(super) fn cursor(model: &AppModel, area: Rect) -> Option<(u16, u16)> {
     Some((content.x + column, content.y + row.saturating_sub(scroll)))
 }
 
-pub(super) fn desired_height(editor: &EditorState, area_width: u16) -> u16 {
+pub(super) fn desired_height(model: &AppModel, area_width: u16, roomy: bool) -> u16 {
     let inner_width = area_width.saturating_sub(2);
     if inner_width == 0 {
         return 2;
     }
-    let layout = EditorLayout::new(editor, inner_width);
+    let layout = EditorLayout::new(&model.composer, inner_width);
     let ((_, cursor_row), _) = layout.visible_cursor(u16::MAX);
     let rows = u16::try_from(layout.rows.len()).unwrap_or(u16::MAX);
-    rows.max(cursor_row.saturating_add(1)).saturating_add(1)
+    let status_rows = if roomy && has_status(model, variant(model)) {
+        3
+    } else {
+        1
+    };
+    rows.max(cursor_row.saturating_add(1))
+        .saturating_add(status_rows)
 }
 
 pub(super) fn selection_at(
@@ -179,7 +199,7 @@ pub(super) fn selection_at(
     if model.composer_is_frozen {
         return None;
     }
-    let inner = ComposerDock::resolve(area).content;
+    let inner = ComposerDock::resolve(area, has_status(model, variant(model))).content;
     if inner.is_empty() || (!clamp && !inner.contains((column, row).into())) {
         return None;
     }

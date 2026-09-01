@@ -29,8 +29,8 @@ not depend on the terminal default being light or dark.
 | `KeyHint` | visually distinct keycap plus verb; ordered by current action priority |
 | `SelectionRow` | explicit marker-only or full-area policy plus stable cursor; reverse video in mono |
 | `ComposerDock` | low-contrast input body, responsive top boundary/status row, shared cursor/hit geometry |
-| `ComposerBoundary` | one top rule at `>=52`; optional left-aligned status title; compact text fallback; no sides/bottom |
-| `AmbientFooter` | one muted identity row below the Composer; displaced by actionable feedback |
+| `ComposerStatus` | standalone status row; two optional breathing rows only on roomy unobscured workbenches; no border |
+| `AmbientFooter` | empty-draft command action plus optional right Session ordinal; hidden by draft, overlay, or actionable feedback |
 | `CenteredColumn` | caps readable transcript width without changing model state |
 | `BottomPane` | one Composer-aligned top rule; content-driven height; no backdrop dimming or side/bottom border |
 | `ModalFrame` | dims retained workspace, clears popup bounds, rounded focus border, safe padding |
@@ -38,13 +38,13 @@ not depend on the terminal default being light or dark.
 | `RoleMarker` | restrained non-color User or Agent identity; never a full-width card border |
 | `LiveCaret` | single-cell active-output cue; hidden for reduced motion, unavailable preview, and terminal state |
 
-`ComposerDock` reuses the submitted-request visual grammar without copying its
-identity: dark/light use the low-contrast `request_surface`, mono uses the
-terminal background, and focus changes only the non-color `›` lead and terminal
-caret. At widths `>=52`, its reserved row is one muted top rule and carries
-`Draft locked`, `Action response`, or the running Turn rail as a left-aligned
-title only when that state is true. Widths `40..=51` omit the rule and render
-only real status text. Before transcript work is visible, the running rail combines the nearby
+`ComposerDock` is an open terminal surface, not another submitted-request
+block: it has no background fill or border, and focus changes only the
+non-color `›` lead and terminal caret. A quiet lead row precedes an idle input.
+When `Draft locked`, `Action response`, or the running Turn rail is true, that
+row becomes a standalone status. Roomy workbenches reserve two additional blank
+rows between status and input; compact width, compact height, and overlays omit
+that optional air. Before transcript work is visible, the running rail combines the nearby
 work state and cancel control and starts on the shared left axis as
 `• phase · esc to interrupt`. Once a non-terminal live answer or selected active
 Activity owns that signal, the rail reduces to the muted `esc to interrupt`
@@ -92,13 +92,15 @@ boxes; controllers do not duplicate layout coordinates. `ContextLine` and
 `HintLine` derive their copy from the same Session, execution, connection,
 focus, and recovery state used by input routing. `ContextLine` has no frame or
 background fill. `HintLine` renders at most one highest-priority action and may
-be absent. Its reserved slot then renders the muted `AmbientFooter` with public
-Agent/Session identity, never a permanent shortcut legend. When exceptional
+be absent. Its reserved slot then renders `Ctrl+P commands` only for an empty
+editable draft, plus an optional right-aligned public Session ordinal at widths
+`>=52`. It never renders a generic Agent label. A non-empty draft removes the
+ambient shortcut; an overlay removes the whole background footer. When exceptional
 state makes `ContextLine` visible, it owns that identity and the reserved footer
 slot stays blank unless an actionable `HintLine` displaces it; identity cannot
 appear at both edges of the workspace. Before a selected durable Session
 exists, the Composer invitation owns the new-work identity and the ambient
-footer remains blank instead of repeating `Agent · New conversation`. At supported heights
+footer omits Session context instead of inventing `New conversation`. At supported heights
 of nine rows or more, the slot remains allocated so selection, notices, and Host events never
 move the Composer hit geometry; tiny layouts below nine rows remove the slot as
 part of their explicit degradation.
@@ -118,7 +120,7 @@ pointer hit testing, and vertical navigation therefore cannot disagree about
 where a row begins or ends.
 Home/End targets are component-owned visual-row edges from the same result;
 controllers may not reinterpret them as newline-delimited logical edges.
-At non-tiny heights the ComposerDock grows from two to at most six rows
+At non-tiny heights the ComposerDock grows from two to at most eight rows
 using the layout's visual row count, including an exact-width cursor
 continuation row. It does not grow from logical newline count. Below the
 height breakpoint it remains two rows and follows the cursor so conversation
@@ -209,16 +211,17 @@ second persistent status row are prohibited.
 
 An ordinary empty transcript is intentionally silent. `ContextLine` owns
 loading and exceptional connection truth, `ComposerDock` owns the invitation
-to act, and `AmbientFooter` owns an existing selected Session's identity only. The transcript
+to act, and `AmbientFooter` owns empty-draft command discovery plus optional
+selected Session context. The transcript
 must not repeat the brand, invitation, shortcut discovery, or loading state.
 Only blocking empty states render body copy: missing configuration names the
 Agent-install path and degraded Host access names `/status` as the recovery
 path.
 
 Spacing is the transcript's primary structure. Enclosing borders are reserved
-for modal boundaries and an explicitly opened Inspector. `ComposerBoundary`
-owns one top rule without sides or a bottom; focus changes the Composer lead/
-caret styling without moving content. Accent is
+for modal boundaries and an explicitly opened Inspector. `ComposerStatus`
+uses spacing instead of a rule; focus changes the Composer lead/caret styling
+without moving content. Accent is
 limited to the insertion caret, current selection, active work cue, and primary
 decision. Large accent fills and repeated nested boxes are prohibited.
 

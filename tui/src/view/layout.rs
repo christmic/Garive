@@ -51,7 +51,12 @@ impl FrameLayout {
         let composer_height = if body.height < 11 {
             2
         } else {
-            composer::desired_height(&model.composer, body.width).clamp(2, 6)
+            composer::desired_height(
+                model,
+                body.width,
+                body.width >= 52 && body.height >= 18 && model.overlay.is_none(),
+            )
+            .clamp(2, 8)
         };
         let rows = Layout::vertical([
             Constraint::Min(1),

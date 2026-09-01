@@ -53,12 +53,12 @@ fn system_theme_uses_paired_terminal_colors_in_a_real_pty() {
         "fullscreen startup must not query the cursor position"
     );
     assert!(
-        text.contains("\x1b[38;5;4;48;5;255m"),
-        "light palette blue accent rendered on the composer surface"
+        text.contains("\x1b[38;5;4;49m"),
+        "light palette blue accent rendered on the open Composer"
     );
     assert!(
         text.contains("\x1b[38;5;0;48;5;255m"),
-        "xterm-256color palette emitted indexed dark text and surface"
+        "xterm-256color palette retained indexed dark text on bounded surfaces"
     );
     assert!(text.contains("\x1b[?1049l"), "terminal restored");
 }
@@ -93,8 +93,8 @@ fn shipping_tui_boots_and_restores_a_real_pty() {
                 expect -exact "\033\[2J"
                 expect { "Garive" {} timeout { exit 2 } }
                 send "\003"
-                after 100
-                send "\003"
+                expect { "Ctrl+C again" {} timeout { exit 5 } }
+                send "\021"
                 expect { "Garive?" {} timeout { exit 3 } }
                 send "\r"
                 expect { eof {} timeout { exit 4 } }
@@ -107,8 +107,7 @@ fn shipping_tui_boots_and_restores_a_real_pty() {
         let output = fs::read(&transcript).unwrap();
         let text = String::from_utf8_lossy(&output);
         assert!(text.contains("Garive"));
-        assert!(text.contains("Press") && text.contains("Ctrl+C"));
-        assert!(text.contains("Garive?"));
+        assert!(text.contains("Ctrl+C again"));
         assert!(text.contains("connecting"), "connection state rendered");
         assert!(
             !text.contains("· connecting")

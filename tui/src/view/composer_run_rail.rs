@@ -41,6 +41,10 @@ pub(super) fn has_cancel_request(model: &AppModel) -> bool {
     )
 }
 
+pub(super) fn visible(model: &AppModel) -> bool {
+    project(model).is_some()
+}
+
 pub(super) fn linear_status(model: &AppModel) -> Option<&'static str> {
     match project(model) {
         Some(TurnControlState::CancelRequesting) => {

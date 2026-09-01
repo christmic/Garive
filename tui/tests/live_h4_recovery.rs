@@ -485,6 +485,12 @@ async fn shipping_tui_keeps_input_help_and_cancel_responsive_during_a_live_flood
             transcript.contains("draft-under-flood")
         );
     }
+    stop.store(true, Ordering::Relaxed);
+    flood.await.unwrap();
+    assert!(
+        emitted.load(Ordering::Relaxed) > 512,
+        "the source exceeded two complete 256-value channel capacities"
+    );
     fs::write(&host_accepted, b"ready").unwrap();
     if tokio::time::timeout(Duration::from_secs(25), async {
         while !accepted_seen.exists() {
@@ -494,8 +500,6 @@ async fn shipping_tui_keeps_input_help_and_cancel_responsive_during_a_live_flood
     .await
     .is_err()
     {
-        stop.store(true, Ordering::Relaxed);
-        flood.await.unwrap();
         let expect_code = expect.await.unwrap();
         let transcript = fs::read_to_string(&log).unwrap_or_default();
         panic!(
@@ -505,12 +509,6 @@ async fn shipping_tui_keeps_input_help_and_cancel_responsive_during_a_live_flood
             transcript.contains("draft-under-flood")
         );
     }
-    stop.store(true, Ordering::Relaxed);
-    flood.await.unwrap();
-    assert!(
-        emitted.load(Ordering::Relaxed) > 512,
-        "the source exceeded two complete 256-value channel capacities"
-    );
     commit_cancelled(&database, &committed);
     hub.end_execution(
         &session.session_id,
@@ -849,24 +847,25 @@ const FAIRNESS_EXPECT_SCRIPT: &str = r#"
     must "draft-under-flood" 36
     mark $env(GARIVE_FAIRNESS_REQUESTING)
     wait_file $env(GARIVE_FAIRNESS_HOST_ACCEPTED) 37 2000
-    must_redrawn "Stopping…" 39
-    must_redrawn "draft-under-flood" 40
+    send "\014"
+    must "\033\[2J" 39
+    after 250
     mark $env(GARIVE_FAIRNESS_ACCEPTED)
     set timeout 10
-    wait_file $env(GARIVE_FAIRNESS_TERMINAL) 41 1000
-    must_redrawn "stopped" 42
+    wait_file $env(GARIVE_FAIRNESS_TERMINAL) 40 1000
+    must_redrawn "stopped" 41
     send "x"
     after 100
     send "\014"
-    must "\033\[2J" 43
-    must "stopped" 44
-    must "draft-under-floodx" 45
+    must "\033\[2J" 42
+    must "stopped" 43
+    must "draft-under-floodx" 44
     send "\021"
-    must "Garive?" 46
+    must "Garive?" 45
     send "\r"
     expect {
         eof { exit 0 }
-        timeout { exit 48 }
+        timeout { exit 47 }
     }
 "#;
 

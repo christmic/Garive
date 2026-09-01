@@ -15,6 +15,5 @@ expression: "frame(&wrapped, Theme::Mono, 40, 16)"
 
 
 • Working…  ·  esc to interrupt
-› Composer grows with soft wrapping and
-  keeps every visible row.
-  Agent · Session 1
+
+› keeps every visible row.

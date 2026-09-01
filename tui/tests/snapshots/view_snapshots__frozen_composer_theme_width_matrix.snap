@@ -12,7 +12,7 @@ theme=Dark width=40 marker=Style::new().yellow().bg(Color::Reset).underline_colo
 
   cargo test passes.
 
- ! Draft locked · read only
+! Draft locked · read only
 › Retained pending draft
  ● Waiting for durable command truth…
 
@@ -26,7 +26,7 @@ theme=Dark width=100 marker=Style::new().yellow().bg(Color::Reset).underline_col
 
   cargo test passes.
 
- ! Draft locked · read only ────────────────────────────────────────────────────────────────────────
+! Draft locked · read only
 › Retained pending draft
  ● Waiting for durable command truth…
 
@@ -40,7 +40,7 @@ theme=Light width=40 marker=Style::new().yellow().bg(Color::Reset).underline_col
 
   cargo test passes.
 
- ! Draft locked · read only
+! Draft locked · read only
 › Retained pending draft
  ● Waiting for durable command truth…
 
@@ -54,7 +54,7 @@ theme=Light width=100 marker=Style::new().yellow().bg(Color::Reset).underline_co
 
   cargo test passes.
 
- ! Draft locked · read only ────────────────────────────────────────────────────────────────────────
+! Draft locked · read only
 › Retained pending draft
  ● Waiting for durable command truth…
 
@@ -68,7 +68,7 @@ theme=Mono width=40 marker=Style::new().fg(Color::Reset).bg(Color::Reset).underl
 
   cargo test passes.
 
- ! Draft locked · read only
+! Draft locked · read only
 › Retained pending draft
  ● Waiting for durable command truth…
 
@@ -82,6 +82,6 @@ theme=Mono width=100 marker=Style::new().fg(Color::Reset).bg(Color::Reset).under
 
   cargo test passes.
 
- ! Draft locked · read only ────────────────────────────────────────────────────────────────────────
+! Draft locked · read only
 › Retained pending draft
  ● Waiting for durable command truth…
