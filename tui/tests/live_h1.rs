@@ -901,11 +901,11 @@ fn screen_reader_mode_is_linear_and_has_no_cursor_addressing() {
             must_expect "Search: keyboard." 28
             must_expect "Selected 1 of 1: /help. Keyboard guide." 29
             send "\r"
-            must_expect "No function keys are required." 30
+            must_expect "Control Q: ask to quit." 30
             send "\033"
             after 100
             send "\021"
-            after 100
+            must_expect "Quit Garive?" 31
             send "\r"
             must_expect "Terminal restored." 32
         "#])
@@ -919,7 +919,7 @@ fn screen_reader_mode_is_linear_and_has_no_cursor_addressing() {
         assert!(text.contains("Command palette."));
         assert!(text.contains("Unavailable: no unknown command"));
         assert!(text.contains("Search: keyboard."));
-        assert!(text.contains("No function keys are required."));
+        assert!(text.contains("Control Q: ask to quit."));
         assert!(!text.contains("\x1b[6n"));
         assert!(!text.contains("\x1b[2J"));
         assert!(!text.contains("\x1b[?1049h"));
