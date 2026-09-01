@@ -4,9 +4,9 @@ use std::{collections::BTreeSet, fs, os::unix::fs::PermissionsExt};
 
 use garive_runtime::{
     PodmanProcessConfig, ProcessExecutable, ProcessLane, ProcessLaneRegistry, T1HostSystemConfig,
-    T1RuntimeSystemConfig,
+    T1RuntimeSystemConfig, T1_PROCESS_EXECUTOR_ID, T1_WORKSPACE_EXECUTOR_ID,
 };
-use garive_tools::{ToolIntent, T1_READ_TEXT};
+use garive_tools::{ToolIntent, T1_PROCESS_RUN, T1_READ_TEXT};
 use tempfile::tempdir;
 
 #[test]
@@ -138,6 +138,173 @@ fn persistent_host_values_bind_an_explicit_workspace_without_discovery() {
     .is_err());
 }
 
+#[test]
+fn runtime_owns_backend_bound_executor_revisions() {
+    let directory = tempdir().unwrap();
+    let workspace = directory.path().join("workspace");
+    let patch_recovery = directory.path().join("patch-recovery");
+    let process_recovery = directory.path().join("process-recovery");
+    private_directory(&workspace, 0o755);
+    private_directory(&patch_recovery, 0o700);
+    private_directory(&process_recovery, 0o700);
+
+    let first = T1RuntimeSystemConfig::new(
+        "policy.v1",
+        "executor.v1",
+        &workspace,
+        &patch_recovery,
+        lanes(),
+        podman_with_digest(&workspace, &process_recovery, 'a'),
+    )
+    .unwrap()
+    .build()
+    .unwrap();
+    let workspace_binding = first.executor_binding(T1_READ_TEXT).unwrap();
+    assert_eq!(workspace_binding.executor_id(), T1_WORKSPACE_EXECUTOR_ID);
+    assert_eq!(workspace_binding.executor_revision(), "executor.v1");
+    let first_process = first.executor_binding(T1_PROCESS_RUN).unwrap();
+    assert_eq!(first_process.executor_id(), T1_PROCESS_EXECUTOR_ID);
+    assert!(first_process
+        .executor_revision()
+        .starts_with("executor.v1+podman-sha256:"));
+
+    let second = T1RuntimeSystemConfig::new(
+        "policy.v1",
+        "executor.v1",
+        &workspace,
+        &patch_recovery,
+        lanes(),
+        podman_with_digest(&workspace, &process_recovery, 'b'),
+    )
+    .unwrap()
+    .build()
+    .unwrap();
+    assert_ne!(
+        first_process.executor_revision(),
+        second
+            .executor_binding(T1_PROCESS_RUN)
+            .unwrap()
+            .executor_revision()
+    );
+    assert!(first.executor_binding("unknown").is_none());
+}
+
+#[test]
+fn every_podman_identity_field_changes_process_revision() {
+    let directory = tempdir().unwrap();
+    let workspace = directory.path().join("workspace");
+    let other_workspace = directory.path().join("other-workspace");
+    let patch_recovery = directory.path().join("patch-recovery");
+    let process_recovery = directory.path().join("process-recovery");
+    let other_recovery = directory.path().join("other-process-recovery");
+    for (path, mode) in [
+        (&workspace, 0o755),
+        (&other_workspace, 0o755),
+        (&patch_recovery, 0o700),
+        (&process_recovery, 0o700),
+        (&other_recovery, 0o700),
+    ] {
+        private_directory(path, mode);
+    }
+    let baseline = process_revision(
+        &workspace,
+        &patch_recovery,
+        podman_config(
+            "/opt/garive/bin/podman",
+            "unix:///var/run/garive-podman.sock",
+            &workspace,
+            &process_recovery,
+            5_000,
+            'a',
+        ),
+    );
+    let variants = [
+        podman_config(
+            "/other/podman",
+            "unix:///var/run/garive-podman.sock",
+            &workspace,
+            &process_recovery,
+            5_000,
+            'a',
+        ),
+        podman_config(
+            "/opt/garive/bin/podman",
+            "unix:///var/run/other.sock",
+            &workspace,
+            &process_recovery,
+            5_000,
+            'a',
+        ),
+        podman_config(
+            "/opt/garive/bin/podman",
+            "unix:///var/run/garive-podman.sock",
+            &workspace,
+            &process_recovery,
+            5_000,
+            'b',
+        ),
+        podman_config(
+            "/opt/garive/bin/podman",
+            "unix:///var/run/garive-podman.sock",
+            &workspace,
+            &other_recovery,
+            5_000,
+            'a',
+        ),
+        podman_config(
+            "/opt/garive/bin/podman",
+            "unix:///var/run/garive-podman.sock",
+            &workspace,
+            &process_recovery,
+            5_001,
+            'a',
+        ),
+    ];
+    for variant in variants {
+        assert_ne!(
+            baseline,
+            process_revision(&workspace, &patch_recovery, variant)
+        );
+    }
+    assert_ne!(
+        baseline,
+        process_revision(
+            &other_workspace,
+            &patch_recovery,
+            podman_config(
+                "/opt/garive/bin/podman",
+                "unix:///var/run/garive-podman.sock",
+                &other_workspace,
+                &process_recovery,
+                5_000,
+                'a',
+            )
+        )
+    );
+}
+
+fn process_revision(
+    workspace: &std::path::Path,
+    patch_recovery: &std::path::Path,
+    podman: PodmanProcessConfig,
+) -> String {
+    T1RuntimeSystemConfig::new(
+        "policy.v1",
+        "executor.v1",
+        workspace,
+        patch_recovery,
+        lanes(),
+        podman,
+    )
+    .unwrap()
+    .build()
+    .unwrap()
+    .executor_binding(T1_PROCESS_RUN)
+    .unwrap()
+    .executor_revision()
+    .to_owned()
+}
+
 fn lanes() -> ProcessLaneRegistry {
     ProcessLaneRegistry::new([ProcessLane::new(
         "rust",
@@ -149,13 +316,42 @@ fn lanes() -> ProcessLaneRegistry {
 }
 
 fn podman(workspace: &std::path::Path, process_recovery: &std::path::Path) -> PodmanProcessConfig {
-    PodmanProcessConfig::new(
+    podman_with_digest(workspace, process_recovery, 'a')
+}
+
+fn podman_with_digest(
+    workspace: &std::path::Path,
+    process_recovery: &std::path::Path,
+    digest: char,
+) -> PodmanProcessConfig {
+    podman_config(
         "/opt/garive/bin/podman",
         "unix:///var/run/garive-podman.sock",
-        format!("localhost/garive-runner@sha256:{}", "a".repeat(64)),
         workspace,
         process_recovery,
         5_000,
+        digest,
+    )
+}
+
+fn podman_config(
+    executable: &str,
+    socket: &str,
+    workspace: &std::path::Path,
+    process_recovery: &std::path::Path,
+    timeout_ms: u64,
+    digest: char,
+) -> PodmanProcessConfig {
+    PodmanProcessConfig::new(
+        executable,
+        socket,
+        format!(
+            "localhost/garive-runner@sha256:{}",
+            digest.to_string().repeat(64)
+        ),
+        workspace,
+        process_recovery,
+        timeout_ms,
     )
     .unwrap()
 }

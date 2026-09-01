@@ -13,8 +13,7 @@ use garive_runtime::{
 };
 use garive_tools::{
     EffectReceipt, ExecutionRequirements, InteractionKind, PreparedToolCall, SandboxRequirementsV1,
-    ToolAccessPolicyV1, ToolDefinition, ToolIntent, ToolInvocationId, T1_APPLY_PATCH, T1_LIST,
-    T1_PROCESS_RUN, T1_READ_TEXT, T1_SEARCH_TEXT,
+    ToolAccessPolicyV1, ToolIntent, ToolInvocationId, T1_APPLY_PATCH, T1_PROCESS_RUN,
 };
 use serde_json::json;
 use sha2::{Digest, Sha256};
@@ -23,7 +22,6 @@ const WRITE_TOOL: &str = "write_file";
 
 pub(crate) struct WorkspaceT1Governance {
     pub(crate) policy_revision: String,
-    pub(crate) executor_revision: String,
     pub(crate) workspace_capability_id: String,
     pub(crate) approved_digests: BTreeSet<String>,
     pub(crate) denied_digests: BTreeSet<String>,
@@ -34,9 +32,8 @@ pub(crate) fn extend_with_t1(
     t1: T1RuntimeExecution,
     governance: WorkspaceT1Governance,
 ) -> Result<LocalGovernedExecution, LocalWorkerError> {
+    let policies = enforcement_profiles(&t1)?;
     let (t1_capabilities, t1_preparation, t1_executor) = t1.into_parts();
-    let policies =
-        enforcement_profiles(&t1_capabilities.definitions, &governance.executor_revision)?;
     let requirements = t1_capabilities
         .definitions
         .iter()
@@ -370,18 +367,16 @@ impl ExecutorPort for ExecutorRouter {
 }
 
 fn enforcement_profiles(
-    definitions: &[ToolDefinition],
-    executor_revision: &str,
+    execution: &T1RuntimeExecution,
 ) -> Result<BTreeMap<String, EnforcementProfile>, LocalWorkerError> {
-    definitions
+    execution
+        .capabilities()
+        .definitions
         .iter()
         .map(|definition| {
-            let executor_id = match definition.name() {
-                T1_READ_TEXT | T1_LIST | T1_SEARCH_TEXT => T1_WORKSPACE_EXECUTOR_ID,
-                T1_APPLY_PATCH => T1_PATCH_EXECUTOR_ID,
-                T1_PROCESS_RUN => T1_PROCESS_EXECUTOR_ID,
-                _ => return Err(LocalWorkerError::InvalidComposition),
-            };
+            let binding = execution
+                .executor_binding(definition.name())
+                .ok_or(LocalWorkerError::InvalidComposition)?;
             Ok((
                 definition.name().to_owned(),
                 EnforcementProfile {
@@ -393,8 +388,13 @@ fn enforcement_profiles(
                         .sandbox_requirements()
                         .cloned()
                         .ok_or(LocalWorkerError::InvalidComposition)?,
-                    executor_id,
-                    executor_revision: executor_revision.to_owned(),
+                    executor_id: match binding.executor_id() {
+                        T1_WORKSPACE_EXECUTOR_ID => T1_WORKSPACE_EXECUTOR_ID,
+                        T1_PATCH_EXECUTOR_ID => T1_PATCH_EXECUTOR_ID,
+                        T1_PROCESS_EXECUTOR_ID => T1_PROCESS_EXECUTOR_ID,
+                        _ => return Err(LocalWorkerError::InvalidComposition),
+                    },
+                    executor_revision: binding.executor_revision().to_owned(),
                 },
             ))
         })

@@ -1,12 +1,13 @@
 //! Host-owned construction of the built-in T1 tool execution surface.
 
-use std::{fs, path::PathBuf, sync::Arc};
+use std::{collections::BTreeMap, fs, path::PathBuf, sync::Arc};
 
 use garive_core::{AgentToolCapabilities, ToolPreparationPort};
 use garive_tools::{
     BuiltinT1Catalogue, PreparationError, PreparedToolCall, ToolIntent, T1_APPLY_PATCH, T1_LIST,
     T1_PROCESS_RUN, T1_READ_TEXT, T1_SEARCH_TEXT,
 };
+use sha2::{Digest, Sha256};
 
 use crate::{
     BuiltinPatchExecutor, BuiltinProcessExecutor, BuiltinWorkspaceExecutor, ExecutorPort,
@@ -183,10 +184,11 @@ impl T1RuntimeSystemConfig {
             catalogue.clone(),
         )
         .map_err(|_| "T1 patch executor unavailable")?;
+        let process_revision = process_executor_revision(&self.executor_revision, &self.podman)?;
         let backend: Arc<dyn ProcessIsolationBackend> =
             Arc::new(PodmanProcessBackend::new(self.podman.clone()));
         let process = BuiltinProcessExecutor::new(
-            &self.executor_revision,
+            &process_revision,
             catalogue.clone(),
             self.process_lanes.clone(),
             backend,
@@ -200,13 +202,69 @@ impl T1RuntimeSystemConfig {
             ExecutorRoute::new(T1_PATCH_EXECUTOR_ID, [T1_APPLY_PATCH], Box::new(patch))?,
             ExecutorRoute::new(T1_PROCESS_EXECUTOR_ID, [T1_PROCESS_RUN], Box::new(process))?,
         ])?;
+        let executor_bindings = BTreeMap::from([
+            (
+                T1_READ_TEXT.into(),
+                T1ExecutorBinding::new(T1_WORKSPACE_EXECUTOR_ID, &self.executor_revision)?,
+            ),
+            (
+                T1_LIST.into(),
+                T1ExecutorBinding::new(T1_WORKSPACE_EXECUTOR_ID, &self.executor_revision)?,
+            ),
+            (
+                T1_SEARCH_TEXT.into(),
+                T1ExecutorBinding::new(T1_WORKSPACE_EXECUTOR_ID, &self.executor_revision)?,
+            ),
+            (
+                T1_APPLY_PATCH.into(),
+                T1ExecutorBinding::new(T1_PATCH_EXECUTOR_ID, &self.executor_revision)?,
+            ),
+            (
+                T1_PROCESS_RUN.into(),
+                T1ExecutorBinding::new(T1_PROCESS_EXECUTOR_ID, process_revision)?,
+            ),
+        ]);
         Ok(T1RuntimeExecution {
             capabilities: AgentToolCapabilities {
                 definitions: catalogue.definitions().to_vec(),
             },
             preparation: Box::new(T1Preparation(catalogue)),
             executor: Box::new(executor),
+            executor_bindings,
         })
+    }
+}
+
+/// One Runtime-derived concrete executor identity for an exact T1 Tool.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct T1ExecutorBinding {
+    executor_id: String,
+    executor_revision: String,
+}
+
+impl T1ExecutorBinding {
+    fn new(
+        executor_id: impl Into<String>,
+        executor_revision: impl Into<String>,
+    ) -> Result<Self, String> {
+        let value = Self {
+            executor_id: executor_id.into(),
+            executor_revision: executor_revision.into(),
+        };
+        if value.executor_id.is_empty() || value.executor_revision.is_empty() {
+            return Err("invalid T1 executor binding".into());
+        }
+        Ok(value)
+    }
+
+    /// Returns the closed Runtime executor route.
+    pub fn executor_id(&self) -> &str {
+        &self.executor_id
+    }
+
+    /// Returns the exact revision, including concrete backend identity.
+    pub fn executor_revision(&self) -> &str {
+        &self.executor_revision
     }
 }
 
@@ -215,12 +273,18 @@ pub struct T1RuntimeExecution {
     capabilities: AgentToolCapabilities,
     preparation: Box<dyn ToolPreparationPort>,
     executor: Box<dyn ExecutorPort>,
+    executor_bindings: BTreeMap<String, T1ExecutorBinding>,
 }
 
 impl T1RuntimeExecution {
     /// Returns the exact definitions that an Agent snapshot must contain.
     pub const fn capabilities(&self) -> &AgentToolCapabilities {
         &self.capabilities
+    }
+
+    /// Resolves the Runtime-owned concrete executor binding for one exact Tool.
+    pub fn executor_binding(&self, tool_name: &str) -> Option<&T1ExecutorBinding> {
+        self.executor_bindings.get(tool_name)
     }
 
     /// Consumes the assembly into Core preparation and Runtime execution ports.
@@ -233,6 +297,46 @@ impl T1RuntimeExecution {
     ) {
         (self.capabilities, self.preparation, self.executor)
     }
+}
+
+fn process_executor_revision(
+    configured_revision: &str,
+    podman: &PodmanProcessConfig,
+) -> Result<String, String> {
+    let control_timeout = podman.control_timeout_ms().to_string();
+    let fields = [
+        configured_revision,
+        podman
+            .podman_executable()
+            .to_str()
+            .ok_or("Podman executable identity is not UTF-8")?,
+        podman.socket_uri(),
+        podman.image(),
+        podman
+            .workspace_root()
+            .to_str()
+            .ok_or("Podman workspace identity is not UTF-8")?,
+        podman
+            .recovery_root()
+            .to_str()
+            .ok_or("Podman recovery identity is not UTF-8")?,
+        &control_timeout,
+    ];
+    let mut digest = Sha256::new();
+    digest.update(b"garive.t1.process-executor.podman.v1");
+    for field in fields {
+        let bytes = field.as_bytes();
+        digest.update(
+            u64::try_from(bytes.len())
+                .map_err(|_| "executor identity too large")?
+                .to_be_bytes(),
+        );
+        digest.update(bytes);
+    }
+    Ok(format!(
+        "{configured_revision}+podman-sha256:{:x}",
+        digest.finalize()
+    ))
 }
 
 struct T1Preparation(BuiltinT1Catalogue);

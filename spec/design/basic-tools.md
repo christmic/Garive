@@ -287,6 +287,16 @@ acknowledges its receipt. Timeout and startup recovery kill through Podman,
 require `Running=false` plus `Pid=0`, remove only a matching owned container,
 and finally prove the deterministic name is absent.
 
+The Process executor revision is Runtime-derived rather than copied from a
+client or Sandbox adapter. Its versioned length-delimited digest binds the
+configured executor revision to the exact Podman executable, socket, image,
+Workspace root, recovery root and control timeout. Process-lane and credential
+rotation must advance the configured executor revision. Read/list/search and
+patch keep the configured revision because they do not use the Podman backend.
+Runtime exposes the resulting per-Tool executor bindings to Sandbox admission;
+Desktop and other product adapters may consume them but cannot reconstruct or
+substitute them.
+
 After Runtime loss following `effect.started`, `NeverReplay` forbids command
 redispatch but does not permit a detached process to remain alive. Startup
 reconstructs the exact invocation, executor revision and dispatch-attempt
@@ -326,7 +336,8 @@ lane registry. It never stores or discovers a Workspace path. Binding one
 explicit authorized canonical Workspace produces `T1RuntimeSystemConfig`; the
 derived `PodmanProcessConfig` must own that identical root. Empty revisions,
 mismatched roots and non-private recovery authority fail before an executor is
-created.
+created. Runtime then derives the backend-bound Process executor revision and
+constructs the complete per-Tool binding map before exposing execution ports.
 
 Construction produces one five-definition `BuiltinT1Catalogue`, one preparation
 port backed by that exact catalogue, and a closed executor router. Read, list

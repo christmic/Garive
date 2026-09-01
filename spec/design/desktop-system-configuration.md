@@ -140,6 +140,10 @@ created below the app configuration directory and must remain owned by the
 current user with no group/other permissions. Literal environment values are
 non-secret fixed configuration; every secret uses `credential_ref` and is
 resolved in the backend. Diagnostics expose environment keys but never values.
+The configured `executor_revision` is the explicit revision authority for lane
+and credential changes. Runtime combines it with the complete bound Podman
+configuration to derive the Process executor revision; the frontend and
+Desktop governance adapter never calculate or persist a competing revision.
 
 The document deliberately contains no Workspace path. An opaque authorized
 Desktop Workspace capability supplies the canonical root for a Turn. Only then

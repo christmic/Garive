@@ -150,6 +150,14 @@ Runtime commits `sandbox.bound` and successful `sandbox.preflighted` before
 `requirement_unsupported`, `sandbox_binding_stale` or
 `sandbox_scope_mismatch` as appropriate.
 
+Concrete executor identity is owned by Runtime composition. A product Sandbox
+adapter must consume the exact per-Tool executor ID and revision produced with
+the executor; it may not copy a general configuration revision or derive a
+parallel value. For a Podman-backed Process executor, the revision additionally
+binds the executable, service socket, digest-pinned image, Workspace and
+recovery roots, and control timeout. Changing any of them therefore cannot
+resume a Started invocation as the same executor.
+
 The durable chain is exact and invocation-scoped:
 
 ```text

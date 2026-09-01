@@ -171,7 +171,6 @@ impl LocalGovernedExecutionFactory for DesktopWorkspaceExecutionFactory {
             t1,
             WorkspaceT1Governance {
                 policy_revision,
-                executor_revision: host.executor_revision().to_owned(),
                 workspace_capability_id: format!(
                     "{}:{}",
                     attachment.workspace_id, attachment.grant_revision

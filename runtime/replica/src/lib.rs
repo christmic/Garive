@@ -256,4 +256,6 @@ pub use static_knowledge::{
 };
 pub use t1_dispatch::t1_dispatch_attempt_id;
 #[cfg(unix)]
-pub use t1_system_composition::{T1HostSystemConfig, T1RuntimeExecution, T1RuntimeSystemConfig};
+pub use t1_system_composition::{
+    T1ExecutorBinding, T1HostSystemConfig, T1RuntimeExecution, T1RuntimeSystemConfig,
+};
