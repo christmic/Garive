@@ -535,13 +535,21 @@ fn activity_stack_model() -> AppModel {
             TimelineRole::User,
             "Verify the release candidate.",
         ),
-        activity("read", 3, TimelineTone::Success, "Read project rules"),
-        activity("tests", 4, TimelineTone::Success, "Checked focused tests"),
-        activity("run", 5, TimelineTone::Active, "Running strict validation"),
+        read_file_activity("read-a", 3, "completed"),
+        read_file_activity("read-b", 4, "completed"),
+        read_file_activity("read-run", 5, "running"),
     ] {
         model.push_test_timeline_item(item);
     }
     model
+}
+
+fn read_file_activity(key: &str, position: u64, state: &str) -> TimelineItem {
+    let (text, tone) =
+        view::presentation::activity_copy("tool", "agent.activity.read_file", state, None);
+    let mut item = item(key, position, TimelineRole::Status, &text);
+    item.tone = tone;
+    item
 }
 
 fn activity(key: &str, position: u64, tone: TimelineTone, text: &str) -> TimelineItem {
