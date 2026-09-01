@@ -3,6 +3,31 @@ use garive_host_client::SuspensionView;
 use super::*;
 
 #[test]
+fn overlay_escape_never_falls_through_to_running_turn_cancel() {
+    for (overlay, expected) in [
+        (Overlay::Help, None),
+        (Overlay::UnknownCommand, Some(Overlay::UnknownCommand)),
+    ] {
+        let mut state = RuntimeState::test_ephemeral(Vec::new());
+        state.model.execution = ExecutionState::Following;
+        state.model.selected_session = Some("session".into());
+        state.model.selected_turn = Some("turn".into());
+        state.model.observed_position = 1;
+        state.model.overlay = Some(overlay);
+        state.model.composer.replace("retained draft").unwrap();
+
+        handle_terminal(
+            Event::Key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE)),
+            &mut state,
+        );
+
+        assert_eq!(state.model.overlay, expected);
+        assert!(state.deferred_ephemeral.is_none());
+        assert_eq!(state.model.composer.text(), "retained draft");
+    }
+}
+
+#[test]
 fn non_suspension_overlays_consume_paste_without_mutating_the_composer() {
     for overlay in [
         Overlay::CommandPalette,

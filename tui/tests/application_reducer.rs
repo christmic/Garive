@@ -13,7 +13,7 @@ use application::{
     BootState, ConnectionState, ConversationLandmark, EffectFailure, EffectKind, EffectTracker,
     FocusTarget, HostReadResponse, InspectorVariant, Overlay, PendingMutationDraft,
     PendingMutationKind, PersistedPendingIdentity, PersistenceFailure, TerminalSize, TimelineItem,
-    TimelineRole,
+    TimelineRole, WIDE_INSPECTOR_MIN_WIDTH,
 };
 use garive_host_client::SuspensionView;
 use serde_json::json;
@@ -659,7 +659,7 @@ fn every_terminal_size_is_representable_without_underflow() {
 fn inspector_restores_its_surface_and_selection_across_resize_and_overlay_stack() {
     let mut model = AppModel {
         terminal_size: TerminalSize {
-            width: 120,
+            width: WIDE_INSPECTOR_MIN_WIDTH,
             height: 24,
         },
         ..Default::default()
@@ -679,7 +679,7 @@ fn inspector_restores_its_surface_and_selection_across_resize_and_overlay_stack(
     reduce(
         &mut model,
         AppAction::TerminalResized(TerminalSize {
-            width: 119,
+            width: WIDE_INSPECTOR_MIN_WIDTH - 1,
             height: 24,
         }),
     );
@@ -694,7 +694,7 @@ fn inspector_restores_its_surface_and_selection_across_resize_and_overlay_stack(
     reduce(
         &mut model,
         AppAction::TerminalResized(TerminalSize {
-            width: 120,
+            width: WIDE_INSPECTOR_MIN_WIDTH,
             height: 24,
         }),
     );

@@ -148,7 +148,7 @@ const HELP_HINTS: &[ShortcutHelp] = &[
         "yank killed text",
         &[ShortcutIntent::Yank],
     ),
-    help("Esc", "Escape", "cancel the running Turn", &[]),
+    help("Esc", "Escape", "close guide", &[]),
     help(
         "Ctrl+Q",
         "Control Q",

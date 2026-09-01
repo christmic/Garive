@@ -58,8 +58,12 @@ fn running_composer_keeps_recovery_selection_suggestion_limit_and_notice_priorit
     model.pending_recovery.current_session = true;
     assert!(hint(&model).contains("Ctrl+P open recovery actions"));
 
+    model.overlay = Some(Overlay::Help);
+    assert!(hint(&model).is_empty());
     model.overlay = Some(Overlay::UnknownCommand);
     assert!(hint(&model).is_empty());
+    model.overlay = None;
+    assert!(hint(&model).contains("Ctrl+P open recovery actions"));
 }
 
 #[test]

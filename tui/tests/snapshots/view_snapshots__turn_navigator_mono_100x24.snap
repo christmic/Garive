@@ -23,5 +23,5 @@ expression: "frame(&turns, Theme::Mono, 100, 24)"
               │                                                                      │
               ╰──────────────────────────────────────────────────────────────────────╯
 
-  Agent running ·  Esc cancel Turn
+  Agent running
   › Ask a follow-up…

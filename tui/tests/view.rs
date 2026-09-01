@@ -446,6 +446,14 @@ fn screen_reader_names_frozen_running_and_ready_composer_contracts() {
         view::linear_composer_status(&model),
         "Current Turn running. Draft retained. Enter reports the boundary; Escape requests cancellation."
     );
+    model.overlay = Some(Overlay::Help);
+    assert_eq!(
+        view::linear_composer_status(&model),
+        "Current Turn running. Draft retained. The active overlay owns input."
+    );
+    assert!(view::linear_overlay(&model).contains("Escape: close guide."));
+    assert!(!view::linear_overlay(&model).contains("cancel the running Turn"));
+    model.overlay = None;
     model.execution = ExecutionState::Idle;
     assert_eq!(
         view::linear_composer_status(&model),

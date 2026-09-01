@@ -87,10 +87,7 @@ impl HintTone {
 }
 
 fn project(model: &AppModel) -> Option<HintLine> {
-    if model
-        .overlay
-        .is_some_and(crate::application::Overlay::is_blocking)
-    {
+    if model.overlay.is_some() {
         return None;
     }
     let mut candidates = Vec::new();

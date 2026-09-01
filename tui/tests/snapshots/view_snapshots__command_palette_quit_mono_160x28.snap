@@ -27,5 +27,5 @@ expression: "frame(&palette, Theme::Mono, 160, 28)"
                                            │  › /quit               Exit safely                                     │
                                            ╰────────────────────────────────────────────────────────────────────────╯
 
-                                Agent running ·  Esc cancel Turn
+                                Agent running
                                 › Ask a follow-up…

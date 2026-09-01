@@ -110,6 +110,12 @@ closing restores it when the target still exists. A blocking suspension or
 unknown-command overlay cannot be dismissed in a way that silently discards
 authority. It offers explicit defer, exact retry, or abandonment actions
 allowed by the state.
+Input ownership is also a presentation invariant. While any overlay is open,
+the background `HintLine` is absent and the running-Turn rail never advertises
+`Esc` cancellation. The rail may retain passive `Agent running` status when the
+transcript does not already expose work; otherwise it is empty. The overlay
+alone names the currently executable `Esc`, `Enter`, or decision action. Closing
+the overlay restores the background cue without changing execution state.
 An unknown command bound to a Session becomes an actionable overlay only after
 that exact Session is selected. Startup may announce that recovery exists, but
 must not expose `Enter` before the controller can acquire the same pending
@@ -283,9 +289,10 @@ While the selected Turn is running, the Composer remains an explicit retained-
 draft editor, not a submit or queue affordance. Its placeholder names that
 state. `Enter` keeps the exact draft and emits a visible `Current Turn is
 running · draft retained` notice; it never fails silently and does not claim a
-durable queue. The Composer status row owns `Agent running` plus the `Esc`
-cancel control, or only that control when live output or an active Activity
-already exposes work. Cancellation therefore cannot monopolize `HintLine`;
+durable queue. With no overlay, the Composer status row owns `Agent running`
+plus the `Esc` cancel control, or only that control when live output or an
+active Activity already exposes work. With an overlay, it follows the input-
+ownership rule above. Cancellation therefore cannot monopolize `HintLine`;
 byte-limit, selection, suggestion, recovery, and notice feedback remain
 available by their normal priority.
 
@@ -334,7 +341,10 @@ frozen behind the pending command and cannot be edited into a different retry.
 The key router resolves overlay, editor, focused region, then global bindings
 in that order. A key is consumed by at most one owner. `HintLine` exposes only
 the highest-priority currently resolved binding or recovery action and may be
-absent; it is never a permanent shortcut legend.
+absent; it is never a permanent shortcut legend. Visual help, the running-Turn
+rail, and the linear screen-reader projection derive the same active owner: an
+open Help overlay says `Esc close guide`, never `Esc cancel Turn`, and the
+linear composer status says that the active overlay owns input.
 Kill ranges deliberately use newline-delimited logical lines, independent of
 the composer's visual Home/End contract. At a logical line boundary, `Ctrl+K`
 may consume the following newline and `Ctrl+U` the preceding newline so lines
@@ -759,7 +769,8 @@ the actual clear sequence and reject a cursor query.
   connection is omitted; exceptional connection and active execution use
   separate semantic spans rather than one color-coded sentence.
 - `HintLine` is contextual: recovery and cancellation outrank editing hints;
-  it shows at most one action and renders its key separately from its verb.
+  it shows at most one action and renders its key separately from its verb. It
+  is absent whenever an overlay owns input.
 - Reduced motion disables the live caret, spinners, and transition frames but
   never disables progressive received content. Active connection/execution
   pulses are composed by the shared motion component; `--reduced-motion`

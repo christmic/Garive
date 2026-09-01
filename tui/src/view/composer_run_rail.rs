@@ -21,15 +21,21 @@ pub(super) fn render(
 
 fn line(model: &AppModel, colors: Palette, motion: MotionFrame) -> Line<'static> {
     let mut line = Line::default();
-    if !transcript_owns_work_indicator(model) {
+    let show_work = !transcript_owns_work_indicator(model);
+    let show_cancel = model.overlay.is_none();
+    if show_work {
         line.push_span(ratatui::text::Span::styled(
             status_motion(model, motion).execution_label,
             colors.accent,
         ));
+    }
+    if show_work && show_cancel {
         line.push_span(ratatui::text::Span::styled(" · ", colors.muted));
     }
-    line.push_span(ratatui::text::Span::styled(" Esc ", colors.keycap));
-    line.push_span(ratatui::text::Span::styled("cancel Turn", colors.muted));
+    if show_cancel {
+        line.push_span(ratatui::text::Span::styled(" Esc ", colors.keycap));
+        line.push_span(ratatui::text::Span::styled("cancel Turn", colors.muted));
+    }
     line
 }
 
@@ -46,7 +52,7 @@ fn transcript_owns_work_indicator(model: &AppModel) -> bool {
 mod tests {
     use super::*;
     use crate::{
-        application::{TimelineItem, TimelineRole},
+        application::{Overlay, TimelineItem, TimelineRole},
         Theme,
     };
 
@@ -79,6 +85,21 @@ mod tests {
         assert_eq!(
             line(&model, colors, MotionFrame::reduced()).to_string(),
             " Esc cancel Turn"
+        );
+
+        model.overlay = Some(Overlay::Help);
+        assert!(line(&model, colors, MotionFrame::reduced())
+            .spans
+            .is_empty());
+        model.turn_blocks.clear();
+        assert_eq!(
+            line(&model, colors, MotionFrame::reduced()).to_string(),
+            "Agent running"
+        );
+        model.overlay = None;
+        assert_eq!(
+            line(&model, colors, MotionFrame::reduced()).to_string(),
+            "Agent running ·  Esc cancel Turn"
         );
     }
 }

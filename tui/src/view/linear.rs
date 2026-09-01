@@ -9,7 +9,11 @@ pub(crate) fn composer_status(model: &AppModel) -> &'static str {
     if model.composer_is_frozen {
         "Composer locked. Draft retained. Editing is unavailable until durable command truth."
     } else if model.execution == ExecutionState::Following {
-        "Current Turn running. Draft retained. Enter reports the boundary; Escape requests cancellation."
+        if model.overlay.is_some() {
+            "Current Turn running. Draft retained. The active overlay owns input."
+        } else {
+            "Current Turn running. Draft retained. Enter reports the boundary; Escape requests cancellation."
+        }
     } else {
         "Composer ready. Editing is available."
     }
