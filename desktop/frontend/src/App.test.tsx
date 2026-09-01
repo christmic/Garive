@@ -52,8 +52,9 @@ vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn(async (command: string, a
   }
 }) }));
 
-import { App, TurnProgress } from "./App";
+import { App, CommittedActivity, TurnProgress } from "./App";
 import { createTranslator } from "./i18n";
+import type { WorkState } from "./state/workspace";
 
 afterEach(cleanup);
 
@@ -372,5 +373,25 @@ describe("Desktop product experience", () => {
     expect(view.container.querySelector(".turn-progress.attention")).not.toBeNull();
     expect(view.container.querySelector(".progress-state")?.textContent).toBe("Needs input");
     expect(screen.getByText("Prepare the launch decision memo")).toBeTruthy();
+  });
+
+  it("groups admitted Runtime, Workspace and Activity facts in Environment", () => {
+    const state: WorkState = { boot: "ready", phase: "idle", execution: "idle",
+      capabilities: { configured: true, agent_definition_id: "definition-main", multi_turn: true,
+        durable_navigation: true, activity: true, setup: false, workspaces: true,
+        artifacts: true, updater: false }, sessionId: "session-1", messages: [], artifacts: [],
+      activities: [{ api_version: "v1", activity_id: "write-1", kind: "tool",
+        label_key: "agent.activity.write_file", state: "running", source_position: 7,
+        terminal: false }], workspaces: [{ api_version: "v1", session_id: "session-1",
+        workspace_id: "workspace-1", display_name: "Launch materials", grant_revision: 2,
+        access: "read_write", attached_position: 4 }], draft: "", inspectorOpen: true,
+      inspectorTab: "activity" };
+    render(<CommittedActivity state={state} t={createTranslator("en")} />);
+    expect(screen.getByRole("heading", { name: "Runtime" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Workspaces" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Activity" })).toBeTruthy();
+    expect(screen.getByText("Runtime ready")).toBeTruthy();
+    expect(screen.getByText("Launch materials")).toBeTruthy();
+    expect(screen.getByText("Write scoped file")).toBeTruthy();
   });
 });

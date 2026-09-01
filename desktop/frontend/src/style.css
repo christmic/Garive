@@ -760,10 +760,23 @@ kbd { font-size: var(--text-2xs); }
 .app-shell:has(.environment-panel) .work-surface { margin-right: 236px; }
 .environment-panel header { background: var(--surface-raised); }
 .environment-panel .inspector-tabs { gap: 14px; }
-.environment-panel .inspector-body { padding: 12px; overflow: auto; }
-.environment-panel .activity-intro { padding: 2px 2px 10px; }
-.environment-panel .activity-intro h2 { font-size: var(--text-sm); }
-.environment-panel .activity-row { min-height: 44px; }
+.environment-panel .inspector-body { padding: 8px 10px 10px; overflow: auto; }
+.environment-content { display: grid; gap: 7px; width: 100%; }
+.environment-section + .environment-section { padding-top: 7px; border-top: 1px solid var(--border-subtle); }
+.environment-section > h2 { height: 20px; margin: 0; color: var(--text-tertiary); font-size: var(--text-2xs); font-weight: 540; }
+.environment-row { display: grid; grid-template-columns: 18px minmax(0, 1fr) 14px; align-items: center; gap: 7px; min-height: 34px; }
+.environment-row-icon { display: grid; place-items: center; color: var(--text-tertiary); }
+.environment-row-icon svg, .environment-row-state svg { width: 12px; }
+.environment-row-state { display: grid; place-items: center; }
+.environment-row-state.ready { color: var(--state-success); }
+.environment-row-state.unavailable { color: var(--state-attention); }
+.environment-row strong, .environment-row small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.environment-row strong { font-size: var(--text-xs); font-weight: 540; }
+.environment-row small { margin-top: 1px; color: var(--text-tertiary); font-size: var(--text-2xs); }
+.environment-panel .activity-row { grid-template-columns: 18px minmax(0, 1fr); gap: 7px; min-height: 34px; border: 0; }
+.environment-panel .activity-status { width: 18px; height: 18px; border-radius: 5px; }
+.environment-panel .activity-status svg { width: 11px; }
+.environment-empty { margin: 2px 0 5px; color: var(--text-tertiary); font-size: var(--text-2xs); line-height: 1.4; }
 .workspace-panel { position: relative; min-width: 0; background: var(--surface-canvas); }
 .workspace-resizer { position: absolute; z-index: 4; top: var(--height-window-bar); bottom: 0; left: -5px; width: 10px; cursor: col-resize; touch-action: none; }
 .workspace-resizer::after { position: absolute; top: 0; bottom: 0; left: 4px; width: 1px; background: var(--border-subtle); transition: width var(--motion-fast), background var(--motion-fast); content: ""; }

@@ -134,6 +134,11 @@ workbench made from four persistent spatial layers:
    continuous canvas. Assistant output is document content, not a card stack.
    Environment may float above this layer; it does not permanently shrink an
    idle canvas.
+   Its compact fact hierarchy is Runtime, optional Workspaces, then Activity.
+   Each admitted section uses 34 px rows under a quiet 20 px label; sections
+   with no durable fact disappear. Git changes, branches, sources and provider
+   state must never be reproduced from the reference unless Garive owns that
+   exact fact. The reference-width overlay is 224 px, not a generic inspector.
    The goal rail belongs to the durable Turn, not to a transient network request:
    it remains attached to the Composer while work is running or suspended for
    approval, partial output, or external input. Suspension changes the admitted
@@ -310,7 +315,7 @@ and exact document width without becoming a separate mobile visual language.
 | durable task row | 26–34 px | unchanged |
 | readable turn measure | 39 rem / 546 px at the 14 px root | unchanged |
 | composer | 39 rem / 546 px at the 14 px root | pane width in split mode |
-| Environment overlay | 280–320 px | full overlay below 720 px |
+| Environment overlay | 224 px reference | 224 px viewport overlay below 1120 px |
 | artifact/file workbench | 320–520 px conversation split, 352 px default | full overlay below 1120 px |
 
 Localization and 200% text zoom may grow rows and must never clip content.

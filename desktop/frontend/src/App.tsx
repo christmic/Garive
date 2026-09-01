@@ -1174,25 +1174,40 @@ function formatBytes(bytes: number) {
   return bytes < 1_024 ? `${bytes} B` : `${(bytes / 1_024).toFixed(bytes < 10_240 ? 1 : 0)} KB`;
 }
 
-function CommittedActivity({ state, t }: { state: WorkState; t: (key: MessageKey) => string }) {
-  if (state.capabilities?.activity && state.activities.length) {
-    const activities = [...state.activities].sort((left, right) =>
-      Number(right.state === "attention_required") - Number(left.state === "attention_required")
-        || left.source_position - right.source_position);
-    return <div className="activity-list"><div className="activity-intro"><h2>{t("activity.committedTitle")}</h2><p>{t("activity.committedBody")}</p></div>
-      {activities.map((activity) => <div className="activity-row" key={`${activity.kind}-${activity.activity_id}`}>
+export function CommittedActivity({ state, t }: { state: WorkState; t: (key: MessageKey) => string }) {
+  const activities = state.capabilities?.activity ? [...state.activities].sort((left, right) =>
+    Number(right.state === "attention_required") - Number(left.state === "attention_required")
+      || left.source_position - right.source_position) : [];
+  const turns = state.messages.filter((message) => message.role === "assistant");
+  return <div className="environment-content">
+    <section className="environment-section" aria-labelledby="environment-runtime-label">
+      <h2 id="environment-runtime-label">{t("environment.runtime")}</h2>
+      <div className="environment-row"><span className="environment-row-icon"><Icon name="desktop" /></span>
+        <div><strong>{t("shell.local")}</strong><small>{t(state.capabilities?.configured
+          ? "shell.runtimeReadyShort" : "shell.setupRequired")}</small></div>
+        <span className={`environment-row-state ${state.capabilities?.configured ? "ready" : "unavailable"}`}>
+          <Icon name={state.capabilities?.configured ? "check" : "warning"} /></span></div>
+    </section>
+    {state.workspaces.length > 0 && <section className="environment-section" aria-labelledby="environment-workspaces-label">
+      <h2 id="environment-workspaces-label">{t("environment.workspaces")}</h2>
+      {state.workspaces.map((workspace) => <div className="environment-row" key={workspace.workspace_id}>
+        <span className="environment-row-icon"><Icon name="work" /></span><div><strong dir="auto">{workspace.display_name}</strong>
+          <small>{t(workspace.access === "read_write" ? "context.readOutput" : "context.readOnly")} · {t("context.attachedState")}</small></div>
+        <span className="environment-row-state ready"><Icon name="check" /></span></div>)}
+    </section>}
+    <section className="environment-section" aria-labelledby="environment-activity-label">
+      <h2 id="environment-activity-label">{t("inspector.activity")}</h2>
+      <p className="sr-only">{t(activities.length ? "activity.committedBody" : "activity.turnBody")}</p>
+      {activities.length > 0 ? activities.map((activity) => <div className="activity-row" key={`${activity.kind}-${activity.activity_id}`}>
         <span className={`activity-status ${activity.state}`}><Icon name={activityIcon(activity.state)} /></span>
         <div><strong>{activityLabel(activity.label_key, t)}</strong><small>{activityState(activity.state, t)}</small></div>
-      </div>)}
-    </div>;
-  }
-  const turns = state.messages.filter((message) => message.role === "assistant");
-  if (!turns.length && state.phase !== "submitting") return <div className="inspector-empty"><Icon name="activity" /><h2>{t("activity.emptyTitle")}</h2><p>{t("activity.emptyBody")}</p></div>;
-  return <div className="activity-list"><div className="activity-intro"><h2>{t("activity.turnTitle")}</h2><p>{t("activity.turnBody")}</p></div>
-    {turns.map((turn, index) => <div className="activity-row" key={turn.id}><span className={`activity-status ${turn.terminal ?? "running"}`}><Icon name={turn.terminal === "completed" ? "check" : "warning"} /></span>
-      <div><strong>{t("timeline.turn")} {index + 1}</strong><small>{terminalCopy(turn.terminal, t)}</small></div></div>)}
-    {state.phase === "submitting" && <div className="activity-row"><span className="activity-status running"><span className="spinner" /></span><div><strong>{t("activity.currentTurn")}</strong><small>{t("status.working")}</small></div></div>}
-    {!state.capabilities?.activity && <p className="activity-gate"><Icon name="shield" />{t("activity.gated")}</p>}
+      </div>) : turns.length || state.phase === "submitting" ? <>
+        {turns.map((turn, index) => <div className="activity-row" key={turn.id}><span className={`activity-status ${turn.terminal ?? "running"}`}><Icon name={turn.terminal === "completed" ? "check" : "warning"} /></span>
+          <div><strong>{t("timeline.turn")} {index + 1}</strong><small>{terminalCopy(turn.terminal, t)}</small></div></div>)}
+        {state.phase === "submitting" && <div className="activity-row"><span className="activity-status running"><span className="spinner" /></span><div><strong>{t("activity.currentTurn")}</strong><small>{t("status.working")}</small></div></div>}</>
+        : <p className="environment-empty">{t("activity.emptyBody")}</p>}
+      {!state.capabilities?.activity && <p className="activity-gate"><Icon name="shield" />{t("activity.gated")}</p>}
+    </section>
   </div>;
 }
 

@@ -587,6 +587,24 @@ preserving the exact goal and Activity drill-in. An empty suspended assistant
 record remains available to assistive technology but no longer creates a
 second visible `Needs input` message above the same Composer state.
 
+### XVI. Environment fact hierarchy
+
+The supplied running reference places Environment at x=1045 in a 1280 px
+window and gives it an approximately 224 px width. Its density comes from
+grouped desktop facts, not introductory prose. Garive formerly spent 72 px on
+an explanatory header before showing only Activity, which made the surface feel
+like a web card and hid the workbench hierarchy.
+
+The shared overlay now orders only admitted facts: Runtime, optional
+Workspaces, then Activity. Runtime readiness comes from the negotiated Host
+capabilities, Workspace name/access/attachment comes from the real Session,
+and Activity remains the durable Turn ledger. It does not invent the
+reference's Git Changes, branch or Sources rows. At 1280×802 the approval
+fixture measures x=1044, y=42, 224×283 px with all three sections; the running
+fixture truthfully omits Workspaces and contracts to 224×214 px. Both preserve
+the same 34 px row rhythm and leave the conversation/Composer axis aligned with
+the supplied screenshots.
+
 ## Gate 1 — Codex fidelity
 
 This gate passes only when both Desktop and Web show:

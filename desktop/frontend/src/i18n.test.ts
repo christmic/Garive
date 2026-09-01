@@ -28,6 +28,8 @@ describe("Desktop localization", () => {
     expect(t("work.composer.commitNote")).toContain("本地运行时提交");
     expect(t("search.description")).toContain("不会创建云端索引");
     expect(t("agents.description")).toContain("新工作");
+    expect(t("environment.runtime")).toBe("运行时");
+    expect(t("environment.workspaces")).toBe("工作区");
   });
 
   it("preserves approval and Artifact trust semantics in Chinese", () => {
