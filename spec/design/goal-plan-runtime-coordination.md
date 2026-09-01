@@ -307,6 +307,13 @@ identities for non-worker decisions are derived from the frozen Goal/Session
 prefix and transition class; every domain planner and commit boundary still
 revalidates the prefix.
 
+Ready-Step dispatch includes recovery of a declaration-ordered active claim
+whose attempt has not started. Such a claim remains a dispatch decision so the
+same fenced worker coordinates can re-enter PL1 preparation after a crash. A
+claim with a started attempt yields no new dispatch decision; C6/Worker recovery
+owns it. Treating every active claim as `NoAction` would strand the admitted
+claim-before-preparation crash cut and is forbidden.
+
 A Draft Goal with no Plan requests `ProposePlan`. A proposed Plan is never
 silently adopted: until a constructed admission-policy port supplies a bounded
 decision, coordination returns `plan_admission_required`. Suspended work and

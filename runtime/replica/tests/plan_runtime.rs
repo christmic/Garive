@@ -566,6 +566,16 @@ fn bounded_dispatch_resumes_claim_and_starts_exactly_one_execution() {
         StepState::Claimed
     );
     assert!(dispatcher.committed.lock().unwrap().is_empty());
+    assert_eq!(
+        evaluate_goal_plan_once(&ledger, &session, "goal-1")
+            .unwrap()
+            .decision,
+        GoalPlanDecision::DispatchReadyStep {
+            plan_id: "plan-1".into(),
+            plan_revision: 1,
+            step_id: step_id("prepare"),
+        }
+    );
 
     let mut mismatched = DispatchFactory {
         unavailable: false,

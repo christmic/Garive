@@ -423,8 +423,27 @@ fn decide_authoritative(
             plan_revision,
         });
     }
-    if !plan.active_claims.is_empty() {
+    if plan
+        .active_claims
+        .values()
+        .any(|claim| claim.attempt_id.is_some())
+    {
         return Ok(GoalPlanDecision::NoAction);
+    }
+    if let Some(step_id) = plan
+        .snapshot
+        .definition()
+        .steps()
+        .iter()
+        .map(|step| step.step_id())
+        .find(|step_id| plan.active_claims.contains_key(*step_id))
+        .cloned()
+    {
+        return Ok(GoalPlanDecision::DispatchReadyStep {
+            plan_id,
+            plan_revision,
+            step_id,
+        });
     }
     if let Some(step_id) = plan.snapshot.ready_steps().first().copied().cloned() {
         return Ok(GoalPlanDecision::DispatchReadyStep {
