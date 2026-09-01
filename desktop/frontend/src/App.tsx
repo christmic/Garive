@@ -1043,12 +1043,15 @@ function Inspector({ state, dispatch, workspaceSplitPx, onWorkspaceSplitChange, 
       }} />}
     <header>{state.inspectorTab === "activity"
     ? <strong className="environment-title">{t("inspector.environment")}</strong>
-    : <div className="workspace-tabs" role="tablist" aria-label={t("inspector.views")}><button type="button" role="tab" aria-selected="true"><Icon name="file" /><span>{workspaceTitle ?? t("inspector.artifacts")}</span></button></div>}
-    <button className="icon-button" type="button"
-      aria-label={t(mode === "workspace-panel" && workspaceTitle ? "artifact.closePreview" : "inspector.close")}
-      onClick={() => mode === "workspace-panel" && workspaceTitle
-        ? setPreviewCloseRequest((request) => request + 1)
-        : dispatch({ type: "inspector_toggled" })}><Icon name="close" /></button></header>
+    : <div className="workspace-tabs" role="tablist" aria-label={t("inspector.views")}><div className="workspace-tab">
+      <button type="button" role="tab" aria-selected="true"><Icon name="file" /><span>{workspaceTitle ?? t("inspector.artifacts")}</span></button>
+      {workspaceTitle && <button className="workspace-tab-close" type="button"
+        aria-label={t("artifact.closePreview")} title={t("artifact.closePreview")}
+        onClick={() => setPreviewCloseRequest((request) => request + 1)}><Icon name="close" /></button>}
+    </div></div>}
+    {(mode !== "workspace-panel" || !workspaceTitle) && <button className="icon-button" type="button"
+      aria-label={t("inspector.close")} onClick={() => dispatch({ type: "inspector_toggled" })}>
+      <Icon name="close" /></button>}</header>
     {state.inspectorTab === "activity" ? <div className="inspector-body" role="tabpanel"><CommittedActivity state={state} t={t} /></div>
       : <div className="inspector-body" role="tabpanel"><ResultDeliverables state={state} t={t}
         previewCloseRequest={previewCloseRequest} onPreviewTitle={setWorkspaceTitle} /></div>}

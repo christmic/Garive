@@ -527,6 +527,18 @@ then completed and idle Sessions in `Recents`. Empty groups disappear and the
 same Session cannot be repeated across groups. This keeps the Codex desktop
 hierarchy while making Garive's durable attention state more useful.
 
+### XI. Active file-tab geometry and closure
+
+The supplied split-workbench reference places the active file tab in the first
+approximately 110–120 px of the output title row, ellipsizes the long filename,
+and keeps preview closure inside that tab. Garive formerly used a 166–260 px
+file tab while sending the close action to the far edge of the output pane.
+The shared workbench now uses a measured 120 px active tab with a 22 px close
+slot. Closing it returns to Deliverables; only that parent surface restores the
+far-edge workbench close. Real Browser measurements put the tab at x=575–695
+and its close action at x=672–694 in the 1280 px fixture, with no body overflow
+at 1280, 1120, 720 or 480 px.
+
 ## Gate 1 — Codex fidelity
 
 This gate passes only when both Desktop and Web show:

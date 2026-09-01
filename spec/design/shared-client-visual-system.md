@@ -231,7 +231,10 @@ forbidden. Web preserves this desktop composition without reserving the native
 traffic-light safe zone.
 
 When a file is open, the workbench has two quiet chrome rows: the first owns one
-selected file tab and the second owns bounded location plus file actions. It
+selected file tab and the second owns bounded location plus file actions. The
+active file tab is capped at 120 px, ellipsizes its name, and owns its adjacent
+close action; it does not send preview closure to an unrelated far-edge panel
+button. It
 must not retain an unrelated Activity tab. Rendered and Source views consume the
 same immutable preview payload, preserve revision evidence, and never imply
 filesystem mutability. Closing the preview returns to deliverables; closing the
