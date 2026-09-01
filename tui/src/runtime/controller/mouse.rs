@@ -351,7 +351,7 @@ mod tests {
         assert_eq!(
             route(
                 &model,
-                mouse(MouseEventKind::Down(MouseButton::Left), 5, 21)
+                mouse(MouseEventKind::Down(MouseButton::Left), 5, 22)
             ),
             Some(MouseAction::ComposerPlace(1))
         );

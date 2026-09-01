@@ -49,9 +49,9 @@ impl FrameLayout {
             content.height.saturating_sub(context_height),
         );
         let composer_height = if body.height < 11 {
-            3
+            2
         } else {
-            composer::desired_height(&model.composer, body.width).clamp(3, 7)
+            composer::desired_height(&model.composer, body.width).clamp(2, 6)
         };
         let rows = Layout::vertical([
             Constraint::Min(1),

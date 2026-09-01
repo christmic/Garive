@@ -41,7 +41,9 @@ fn minimum_and_compact_frames_are_truthful() {
     let model = AppModel::default();
     assert!(frame(&model, 19, 7).contains("20×8"));
     let compact = frame(&model, 60, 12);
-    assert!(compact.contains("Connecting to your durable workspace"));
+    assert!(compact.contains("connecting"));
+    assert!(compact.contains("Ask Garive anything"));
+    assert!(!compact.contains("Connecting to your durable workspace"));
     assert!(!compact.contains("Enter send"));
     assert!(!compact.contains("Sessions ("));
 }

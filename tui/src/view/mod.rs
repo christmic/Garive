@@ -147,7 +147,7 @@ pub(crate) fn composer_vertical_target(model: &AppModel, direction: i8) -> (usiz
     let frame = FrameLayout::resolve(model, full);
     composer::vertical_target(
         &model.composer,
-        frame.composer.width.saturating_sub(4),
+        frame.composer.width.saturating_sub(2),
         direction,
     )
 }
@@ -157,7 +157,7 @@ pub(crate) fn composer_line_edge_target(model: &AppModel, direction: i8) -> usiz
     let frame = FrameLayout::resolve(model, full);
     composer::line_edge_target(
         &model.composer,
-        frame.composer.width.saturating_sub(4),
+        frame.composer.width.saturating_sub(2),
         direction,
     )
 }

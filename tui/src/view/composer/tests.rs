@@ -3,7 +3,7 @@ use crate::{view::style::palette, Theme};
 use ratatui::{buffer::Buffer, layout::Rect};
 
 #[test]
-fn focused_frame_reserves_accent_for_one_input_marker() {
+fn composer_dock_uses_one_accent_marker_without_a_persistent_frame() {
     let model = AppModel::default();
     let colors = palette(Theme::Dark);
     let area = Rect::new(0, 0, 24, 3);
@@ -11,19 +11,14 @@ fn focused_frame_reserves_accent_for_one_input_marker() {
 
     render(&model, colors, area, &mut buffer);
 
-    let border_cells = (0..area.width)
-        .flat_map(|x| [(x, 0), (x, area.height - 1)])
-        .chain((1..area.height - 1).flat_map(|y| [(0, y), (area.width - 1, y)]))
-        .collect::<Vec<_>>();
-    let accent_cells = border_cells
-        .iter()
-        .filter(|(x, y)| buffer[(*x, *y)].style().fg == colors.accent.fg)
-        .count();
-
-    assert!((1..=3).contains(&accent_cells));
-    assert!(border_cells
-        .iter()
-        .any(|(x, y)| { buffer[(*x, *y)].style().fg == colors.border.fg }));
+    let marker = &buffer[(0, 1)];
+    assert_eq!(marker.symbol(), "›");
+    assert_eq!(marker.style().fg, colors.accent.fg);
+    assert_eq!(marker.style().bg, colors.request_surface.bg);
+    assert_eq!(buffer[(2, 1)].style().bg, colors.request_surface.bg);
+    assert!((0..area.height).all(|y| (0..area.width).all(|x| {
+        !matches!(buffer[(x, y)].symbol(), "╭" | "╮" | "╰" | "╯" | "│" | "─")
+    })));
 }
 
 #[test]
@@ -100,11 +95,11 @@ fn pointer_hit_testing_uses_wrapped_grapheme_boundaries() {
 #[test]
 fn desired_height_counts_visual_rows_and_exact_width_cursor() {
     let mut editor = EditorState::new(128);
-    assert_eq!(desired_height(&editor, 12), 3);
+    assert_eq!(desired_height(&editor, 12), 2);
     editor.replace("hello world").unwrap();
-    assert_eq!(desired_height(&editor, 12), 4);
+    assert_eq!(desired_height(&editor, 12), 3);
     editor.replace("12345").unwrap();
-    assert_eq!(desired_height(&editor, 9), 4);
+    assert_eq!(desired_height(&editor, 7), 3);
 }
 
 #[test]

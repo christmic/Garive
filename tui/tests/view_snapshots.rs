@@ -350,18 +350,15 @@ fn assert_responsive_frame(rendered: &str, width: u16, height: u16) {
 
     let composer = lines
         .iter()
-        .find(|line| line.contains('╭'))
-        .expect("composer top border");
+        .find(|line| line.contains("› Ask a follow-up…"))
+        .expect("composer dock input");
     let content_width = if width >= 80 { width.min(96) } else { width };
     let expected_x = width.saturating_sub(content_width) / 2;
     assert_eq!(
         composer.chars().take_while(|ch| *ch == ' ').count(),
         usize::from(expected_x)
     );
-    assert_eq!(
-        UnicodeWidthStr::width(*composer),
-        usize::from(expected_x + content_width)
-    );
+    assert!(UnicodeWidthStr::width(*composer) <= usize::from(expected_x + content_width));
 }
 
 #[test]
@@ -514,13 +511,13 @@ fn frozen_composer_matrix() -> String {
                 &mut buffer,
                 &mut view::RenderCache::default(),
             );
-            let border = (0..area.height)
+            let marker = (0..area.height)
                 .flat_map(|y| (0..area.width).map(move |x| (x, y)))
-                .find(|&(x, y)| buffer[(x, y)].symbol() == "╭")
-                .expect("frozen composer border");
+                .find(|&(x, y)| buffer[(x, y)].symbol() == "!")
+                .expect("frozen composer warning marker");
             sections.push(format!(
-                "theme={theme:?} width={width} border={:?} cursor={cursor:?}\n{}",
-                buffer[border].style(),
+                "theme={theme:?} width={width} marker={:?} cursor={cursor:?}\n{}",
+                buffer[marker].style(),
                 frame(&model, theme, width, 12)
             ));
         }
