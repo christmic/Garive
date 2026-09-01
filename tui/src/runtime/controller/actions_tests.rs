@@ -4,6 +4,24 @@ use super::*;
 use crate::persistence::{now, PendingKind};
 
 #[tokio::test]
+async fn submit_during_a_running_turn_keeps_the_draft_and_reports_the_boundary() {
+    let mut state = RuntimeState::test_ephemeral(Vec::new());
+    state.model.selected_session = Some("session".into());
+    state.model.execution = ExecutionState::Following;
+    state.model.composer.replace("Retain this draft").unwrap();
+
+    submit(&mut state);
+
+    assert_eq!(state.model.composer.text(), "Retain this draft");
+    assert_eq!(
+        state.model.notice.as_deref(),
+        Some("Current Turn is running · draft retained")
+    );
+    assert!(state.pending.is_empty());
+    assert!(state.queued_prompt.is_none());
+}
+
+#[tokio::test]
 async fn retry_rejects_a_command_that_is_still_in_flight() {
     let pending = create_pending("in-flight");
     let mut state = RuntimeState::test_ephemeral(Vec::new());

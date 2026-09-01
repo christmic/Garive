@@ -24,9 +24,9 @@ expression: filmstrip
 
 
 
-
+   Esc cancel Turn
   › A retained follow-up draft
-    Esc cancel run
+
 
 ===== first presented delta =====
   Current session  ·  Garive
@@ -50,9 +50,9 @@ expression: filmstrip
 
 
 
-
+   Esc cancel Turn
   › A retained follow-up draft
-    Esc cancel run
+
 
 ===== second delta with activity =====
   Current session  ·  Garive
@@ -76,9 +76,9 @@ expression: filmstrip
 
 
 
-
+   Esc cancel Turn
   › A retained follow-up draft
-    Esc cancel run
+
 
 ===== overlay while streaming =====
   Current session  ·  Garive
@@ -102,9 +102,9 @@ expression: filmstrip
              │                                                                        │
              │    ↑/↓ select   Home/End edge   Enter run   Esc close                  │
              ╰────────────────────────────────────────────────────────────────────────╯
-
+   Esc cancel Turn
   › A retained follow-up draft
-    Esc cancel run
+
 
 ===== stream restored after overlay =====
   Current session  ·  Garive
@@ -128,9 +128,9 @@ expression: filmstrip
 
 
 
-
+   Esc cancel Turn
   › A retained follow-up draft
-    Esc cancel run
+
 
 ===== finalizing =====
   Current session  ·  Garive
@@ -154,9 +154,9 @@ expression: filmstrip
 
 
 
-
+   Esc cancel Turn
   › A retained follow-up draft
-    Esc cancel run
+
 
 ===== ended awaiting durable =====
   Current session  ·  Garive
@@ -180,9 +180,9 @@ expression: filmstrip
 
 
 
-
+   Esc cancel Turn
   › A retained follow-up draft
-    Esc cancel run
+
 
 ===== durable takeover =====
   Current session  ·  Garive

@@ -12,15 +12,9 @@ use crate::{
     Theme,
 };
 
-use super::{agent_label, motion::status_motion, palette, MotionFrame};
+use super::{agent_label, palette};
 
-pub(super) fn render(
-    model: &AppModel,
-    theme: Theme,
-    motion: MotionFrame,
-    area: Rect,
-    buffer: &mut Buffer,
-) {
+pub(super) fn render(model: &AppModel, theme: Theme, area: Rect, buffer: &mut Buffer) {
     if area.is_empty() {
         return;
     }
@@ -51,41 +45,23 @@ pub(super) fn render(
     }
     Line::from(identity).render(cells[0], buffer);
 
-    let state = exceptional_state(model, status_motion(model, motion));
+    let state = exceptional_state(model);
     Line::styled(state, state_style(model, colors))
         .alignment(Alignment::Right)
         .render(cells[1], buffer);
 }
 
-fn exceptional_state(model: &AppModel, motion: super::motion::StatusMotion) -> String {
+fn exceptional_state(model: &AppModel) -> String {
     match model.connection {
-        ConnectionState::Online => online_state(
-            model.execution,
-            transcript_owns_work_indicator(model),
-            motion,
-        ),
+        ConnectionState::Online => online_state(model.execution),
         value => super::style::connection_name(value).to_owned(),
     }
 }
 
-fn transcript_owns_work_indicator(model: &AppModel) -> bool {
-    model.live_answer.current().is_some()
-        || model.turn_blocks.last().is_some_and(|turn| {
-            turn.activities
-                .iter()
-                .any(|item| item.tone == crate::application::TimelineTone::Active)
-        })
-}
-
-fn online_state(
-    execution: ExecutionState,
-    live_answer_visible: bool,
-    motion: super::motion::StatusMotion,
-) -> String {
+fn online_state(execution: ExecutionState) -> String {
     match execution {
         ExecutionState::Idle => String::new(),
-        ExecutionState::Following if live_answer_visible => String::new(),
-        ExecutionState::Following => motion.execution_label,
+        ExecutionState::Following => String::new(),
         ExecutionState::Suspended => "Action required".into(),
         ExecutionState::Failed => "Failed".into(),
     }
@@ -107,45 +83,11 @@ fn state_style(model: &AppModel, colors: super::style::Palette) -> ratatui::styl
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::application::{TimelineItem, TimelineRole, TimelineTone};
-
-    fn timeline_item(role: TimelineRole, tone: TimelineTone) -> TimelineItem {
-        TimelineItem {
-            stable_key: format!("{role:?}"),
-            position: 1,
-            role,
-            tone,
-            text: "semantic work".into(),
-        }
-    }
 
     #[test]
-    fn visible_semantic_work_suppresses_only_the_duplicate_following_label() {
-        let motion = || super::super::motion::StatusMotion {
-            execution_label: "Agent running".into(),
-        };
-
-        assert_eq!(online_state(ExecutionState::Following, true, motion()), "");
-        assert_eq!(
-            online_state(ExecutionState::Following, false, motion()),
-            "Agent running"
-        );
-        assert_eq!(
-            online_state(ExecutionState::Suspended, true, motion()),
-            "Action required"
-        );
-        assert_eq!(
-            online_state(ExecutionState::Failed, true, motion()),
-            "Failed"
-        );
-    }
-
-    #[test]
-    fn active_activity_in_latest_turn_owns_the_work_indicator() {
-        let mut model = AppModel::default();
-        model.push_test_timeline_item(timeline_item(TimelineRole::User, TimelineTone::Neutral));
-        model.push_test_timeline_item(timeline_item(TimelineRole::Status, TimelineTone::Active));
-
-        assert!(transcript_owns_work_indicator(&model));
+    fn context_line_keeps_running_state_near_the_composer() {
+        assert_eq!(online_state(ExecutionState::Following), "");
+        assert_eq!(online_state(ExecutionState::Suspended), "Action required");
+        assert_eq!(online_state(ExecutionState::Failed), "Failed");
     }
 }

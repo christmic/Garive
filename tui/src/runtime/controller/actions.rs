@@ -99,6 +99,8 @@ pub(super) fn submit(state: &mut RuntimeState) {
         ExecutionState::Idle | ExecutionState::Failed
     ) {
         state.request_start_turn(id, session, text);
+    } else if state.model.execution == ExecutionState::Following {
+        state.model.notice = Some("Current Turn is running · draft retained".into());
     }
 }
 

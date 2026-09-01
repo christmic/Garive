@@ -2,7 +2,7 @@
 source: tui/tests/view_snapshots.rs
 expression: "frame(&wrapped, Theme::Mono, 40, 16)"
 ---
-Session 1                  Agent running
+Session 1
 
   › Summarize the release plan.
     ✓ Agent action · completed
@@ -14,7 +14,6 @@ Session 1                  Agent running
 
     cargo test passes.
 
-
+Agent running ·  Esc cancel Turn
 › Composer grows with soft wrapping and
   keeps every visible row.
-  Esc cancel run

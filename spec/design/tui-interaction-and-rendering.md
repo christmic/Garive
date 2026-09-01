@@ -274,6 +274,16 @@ bounded warning; crossing it leaves the draft editable, disables send, and
 names the excess byte count without truncating. A permanent byte counter is
 not part of the default surface.
 
+While the selected Turn is running, the Composer remains an explicit retained-
+draft editor, not a submit or queue affordance. Its placeholder names that
+state. `Enter` keeps the exact draft and emits a visible `Current Turn is
+running · draft retained` notice; it never fails silently and does not claim a
+durable queue. The Composer status row owns `Agent running` plus the `Esc`
+cancel control, or only that control when live output or an active Activity
+already exposes work. Cancellation therefore cannot monopolize `HintLine`;
+byte-limit, selection, suggestion, recovery, and notice feedback remain
+available by their normal priority.
+
 Drafts are per Session. Switching Sessions swaps editor state without losing
 the bounded draft. On committed start, that Session's editor clears and its
 submitted text enters prompt history. On unknown response, the draft remains
@@ -286,7 +296,7 @@ frozen behind the pending command and cannot be edited into a different retry.
 | `Enter` | visible command suggestions | complete selected catalog row; the next Enter submits the completed command |
 | `Tab` / `Shift+Tab`, `Up` / `Down` | visible command suggestions | complete, move backward, or move with wrapping |
 | `Esc` | visible command suggestions | dismiss for the unchanged draft without deleting text |
-| `Enter` | composer | submit when valid; accept selected modal item otherwise |
+| `Enter` | composer | submit when admitted; while a Turn runs retain the draft and show explicit feedback; accept selected modal item otherwise |
 | `Ctrl+J` | composer | insert newline |
 | `Shift+Enter` | composer, when distinguishable | insert newline |
 | `Alt+C` | composer selection | copy exactly the selected composer text through bounded OSC 52 |

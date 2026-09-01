@@ -39,8 +39,11 @@ not depend on the terminal default being light or dark.
 identity: dark/light use the low-contrast `request_surface`, mono uses the
 terminal background, and focus changes only the non-color `›` lead and terminal
 caret. Its reserved row is blank during ordinary editing and carries `Draft
-locked` or `Action response` only when that state is true. No Composer variant
-adds a persistent surrounding border. `RequestSurface` renders User input as an unbordered,
+locked`, `Action response`, or the running Turn rail only when that state is
+true. The running rail combines the nearby work state and cancel control; when
+the transcript already shows a live answer or active Activity, it keeps only
+the control and does not repeat the work state. No Composer variant adds a
+persistent surrounding border. `RequestSurface` renders User input as an unbordered,
 low-contrast terminal-width row with the same non-color `›` identity and a
 two-cell hanging indent. Its wrapper measures sanitized grapheme display width,
 so CJK and combining sequences cannot split or shift later components.
@@ -116,12 +119,12 @@ invent local frame sequences or schedule their own redraw loops.
 
 | Component | Required variants |
 |---|---|
-| `ContextLine` | compact/full; safe Session and Agent identity; exceptional connection; active execution |
+| `ContextLine` | compact/full; safe Session and Agent identity; exceptional connection |
 | `TurnBlock` | User request; activity; live/committed answer; suspended/terminal outcome |
 | `ActivityStack` | active row; collapsed completed summary; explicit expanded Inspector detail |
 | `LiveAnswer` | empty/phase/streaming/unavailable/ended; stable prefix; mutable tail; optional caret |
 | `MarkdownAnswer` | nested inline styles; numbered/unordered lists; transparent links; labeled/clipped and syntax-aware code; responsive table grid/records |
-| Composer | idle/focused/frozen/action response; placeholder/draft/over-limit; visible grapheme selection |
+| Composer | idle/focused/running/frozen/action response; truthful placeholder/draft/over-limit; visible grapheme selection |
 | `HintLine` | absent/action/notice/recovery; one highest-priority item |
 | `SessionSwitcher` | empty/filtered/selected/terminal/running/action/failed; overflow |
 | `Inspector` | closed/activity/recovery/details; optional wide column or overlay |
@@ -164,10 +167,10 @@ The footer remains reserved and is never a selectable entry row.
 
 `ContextLine` is exactly one unbordered row. Public Session identity leads,
 followed by the Agent label. Healthy connection is absent; reconnecting,
-disconnected, and unavailable states appear only while exceptional. Active
-execution may add one compact semantic phrase. Brand background fills, padded
-status chips, clocks, raw IDs, and a second persistent status row are
-prohibited.
+disconnected, and unavailable states appear only while exceptional. Running
+execution belongs to the Composer run rail instead of a distant second status
+owner. Brand background fills, padded status chips, clocks, raw IDs, and a
+second persistent status row are prohibited.
 
 Spacing is the transcript's primary structure. Borders are reserved for modal
 boundaries and an explicitly opened Inspector. The ComposerDock is an open
@@ -201,8 +204,9 @@ ordinary transcript chrome.
 `ActivityStack` paints at most one active safe row plus the latest completed
 safe label and a supplemental completed count. Compact width retains the active
 label first, then a display-width-budgeted `✓N` suffix; CJK and emoji cannot
-silently consume that counter. The generic ContextLine execution phrase is
-absent whenever a live answer or active Activity already owns the work signal.
+silently consume that counter. The Composer run rail omits its generic
+execution phrase whenever a live answer or active Activity already owns the
+work signal, while retaining its cancel control.
 Expanding details opens Inspector or an overlay; it does not insert a
 dashboard pane or expose tool arguments, raw paths, provider values, or hidden
 reasoning. State always has a semantic word or glyph in addition to color.
