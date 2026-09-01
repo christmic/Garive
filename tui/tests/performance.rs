@@ -71,7 +71,10 @@ fn representative_render_and_editor_latency_stay_interactive() {
 
 #[test]
 fn bounded_syntax_highlighting_stays_interactive() {
-    let source = (0..64)
+    const BLOCKS: usize = 64;
+    const LINES_PER_BLOCK: usize = 6;
+    let expected_lines = BLOCKS * LINES_PER_BLOCK + BLOCKS.saturating_sub(1);
+    let source = (0..BLOCKS)
         .map(|index| {
             format!(
                 "```rust\n// request {index}\nfn render_{index}(value: &str) -> usize {{\n    value.chars().count() + 42\n}}\n```"
@@ -85,7 +88,7 @@ fn bounded_syntax_highlighting_stays_interactive() {
     for _ in 0..30 {
         let started = Instant::now();
         let lines = view::markdown_preview_at_width(&source, Theme::Dark, 100);
-        assert_eq!(lines.len(), 384);
+        assert_eq!(lines.len(), expected_lines);
         samples.push(started.elapsed().as_micros());
     }
     samples.sort_unstable();
@@ -96,7 +99,7 @@ fn bounded_syntax_highlighting_stays_interactive() {
         "release"
     };
     eprintln!(
-        "TUI_SYNTAX_BASELINE render_p95_us={render_p95} blocks=64 lines=384 width=100 profile={profile}"
+        "TUI_SYNTAX_BASELINE render_p95_us={render_p95} blocks={BLOCKS} lines={expected_lines} width=100 profile={profile}"
     );
     assert!(
         render_p95 < 150_000,
