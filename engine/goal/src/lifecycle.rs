@@ -71,6 +71,26 @@ impl GoalEvidenceV1 {
         self.kind
     }
 
+    /// Returns the stable evidence identity.
+    pub const fn evidence_id(&self) -> &GoalEvidenceId {
+        &self.evidence_id
+    }
+
+    /// Returns the exact durable reference interpreted by Runtime.
+    pub fn durable_reference(&self) -> &str {
+        &self.durable_reference
+    }
+
+    /// Returns the digest Runtime must derive from durable state.
+    pub fn evidence_digest(&self) -> &str {
+        &self.evidence_digest
+    }
+
+    /// Returns the exact Session version at which Runtime observed the evidence.
+    pub const fn observed_at_commit_version(&self) -> u64 {
+        self.observed_at_commit_version
+    }
+
     /// Serializes an ordered evidence set for one durable content binding.
     pub fn canonical_json(values: &[Self]) -> Result<String, GoalError> {
         if values.len() > MAX_COLLECTION_ITEMS {

@@ -105,6 +105,30 @@ flags, live events and diagnostic strings are not evidence. A criterion is
 satisfied only by its admitted evidence kind. Goal success requires every
 criterion, unless a later contract adds an explicit composite criterion.
 
+### Runtime evidence authority
+
+`Succeed` is admitted only by Runtime against one fixed Session prefix. Every
+evidence item must declare that prefix's exact `session_version`; all referenced
+facts must belong to the same Session and precede the future `goal.succeeded`
+fact. Recovery repeats the same derivation and requires referenced facts or
+child success facts to have smaller durable positions than `goal.succeeded`.
+The four v1 reference forms are closed:
+
+| Criterion | `durable_reference` | Runtime-derived `evidence_digest` |
+|---|---|---|
+| `UserAcceptance` | Fact ID of `interaction.resolved` | resolved response content digest; its earlier matching `interaction.requested` must bind the declared response-schema digest |
+| `Artifact` | Fact ID of `artifact.committed` | committed `content_digest`; Artifact kind and optional required digest must match |
+| `DurableFact` | Fact ID of the declared fact kind | SHA-256 of that fact's canonical payload, equal to the declared subject digest |
+| `ChildGoals` | `goal-set:<digest>` | SHA-256 of canonical ordered `{goal_id, revision, definition_digest}` entries for the exact declared direct children, all `Succeeded` |
+
+Fact IDs are resolved uniquely inside the fixed Session prefix. User-acceptance
+request and resolution must share the exact tool invocation, interaction,
+suspension and prepared digest bindings. Child entries use Goal-ID order.
+Missing, later, cross-Session, wrong-kind, stale-version, digest-mismatched or
+ambiguous evidence is `goal_evidence_invalid`; incomplete criterion coverage is
+`goal_evidence_insufficient`. No caller-implemented verifier or boolean
+"verified" flag crosses this boundary.
+
 ## Canonical definition digest
 
 `definition_digest` is lowercase SHA-256 over RFC 8785 JSON:
