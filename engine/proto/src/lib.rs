@@ -3,8 +3,10 @@
 #![forbid(unsafe_code)]
 #![deny(missing_docs)]
 
+mod process_digest;
 mod process_frame;
 
+pub use process_digest::{process_receipt_digest, process_workload_digest, ProcessDigestError};
 pub use process_frame::{
     decode_guest_request_frame, decode_guest_response_frame, decode_host_request_frame,
     decode_host_response_frame, encode_process_frame, ProcessFrameError,
