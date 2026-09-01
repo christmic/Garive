@@ -62,6 +62,7 @@ fn ordered_lists_and_fenced_code_keep_semantic_structure() {
         vec![
             "3. first",
             "4. second",
+            "",
             "╭─ CODE · rust",
             "│ fn main() {}",
             "╰─",
@@ -81,8 +82,9 @@ fn ordered_lists_and_fenced_code_keep_semantic_structure() {
         .style
         .add_modifier
         .contains(Modifier::UNDERLINED));
-    assert_eq!(heading[1].spans[0].style.fg, Some(Color::White));
-    assert!(!heading[1].spans[0]
+    assert!(heading[1].spans.is_empty());
+    assert_eq!(heading[2].spans[0].style.fg, Some(Color::White));
+    assert!(!heading[2].spans[0]
         .style
         .add_modifier
         .contains(Modifier::UNDERLINED));
@@ -96,8 +98,58 @@ fn ordered_lists_and_fenced_code_keep_semantic_structure() {
         syntax(),
         10,
     );
-    assert_eq!(text(&clipped)[1], "│     界a…");
-    assert_eq!(UnicodeWidthStr::width(text(&clipped)[1].as_str()), 10);
+    let clipped_row = text(&clipped)
+        .into_iter()
+        .find(|row| row.contains('界'))
+        .expect("clipped code row");
+    assert_eq!(clipped_row, "│     界a…");
+    assert_eq!(UnicodeWidthStr::width(clipped_row.as_str()), 10);
+}
+
+#[test]
+fn every_wrapped_agent_row_keeps_its_gutter_width_and_inline_style() {
+    let lines = render_markdown(
+        "Long **styled 界面** text with emoji 🦀 and a durable continuation gutter.",
+        "  ",
+        Style::default().fg(Color::White),
+        Style::default().fg(Color::Cyan),
+        Style::default().fg(Color::DarkGray),
+        syntax(),
+        18,
+    );
+
+    let rows = text(&lines);
+    assert!(rows.len() >= 4);
+    assert!(rows.iter().all(|row| row.starts_with("  ")));
+    assert!(rows
+        .iter()
+        .all(|row| UnicodeWidthStr::width(row.as_str()) <= 18));
+    assert!(lines
+        .iter()
+        .flat_map(|line| &line.spans)
+        .any(|span| span.style.add_modifier.contains(Modifier::BOLD)));
+}
+
+#[test]
+fn wrapped_list_items_use_hanging_indent_and_major_blocks_breathe() {
+    let lines = render_markdown(
+        "Intro paragraph.\n\n- a long list item that wraps onto another physical row\n- short\n\n> quote\n\n```text\ncode\n```",
+        "  ",
+        Style::default(),
+        Style::default(),
+        Style::default(),
+        syntax(),
+        22,
+    );
+    let rows = text(&lines);
+
+    assert!(rows
+        .iter()
+        .any(|row| row.starts_with("    ") && row.trim_start().starts_with("that wraps")));
+    assert_eq!(rows.iter().filter(|row| row.is_empty()).count(), 3);
+    assert!(rows
+        .windows(2)
+        .all(|pair| !(pair[0].is_empty() && pair[1].is_empty())));
 }
 
 #[test]

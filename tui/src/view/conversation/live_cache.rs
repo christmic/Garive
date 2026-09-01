@@ -55,7 +55,11 @@ impl LiveRenderCache {
             {
                 self.tail_parses += 1;
             }
-            lines.extend(render_source(tail, colors, width));
+            let tail_lines = render_source(tail, colors, width);
+            if !lines.is_empty() && !tail_lines.is_empty() {
+                lines.push(Line::default());
+            }
+            lines.extend(tail_lines);
         }
         lines
     }
@@ -162,6 +166,7 @@ mod tests {
             "Heading\n=======\n\nBody",
             "| A | B |\n|---|---|\n| 1 | 2 |\n\nAfter",
             "See [guide][g].\n\nAfter.\n\n[g]: https://example.test",
+            "# Heading\n\nParagraph\n\n- first\n- second\n\n> quote\n\n```rust\nfn main() {}\n```",
         ] {
             let projection = live_projection(source);
             let mut cache = LiveRenderCache::default();

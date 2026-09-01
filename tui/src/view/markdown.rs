@@ -39,6 +39,7 @@ struct Renderer<'a> {
     lines: Vec<Line<'static>>,
     spans: Vec<Span<'static>>,
     lists: Vec<ListState>,
+    hanging_indents: Vec<usize>,
     quote_depth: usize,
     code_block: bool,
     code_highlighter: Option<CodeHighlighter>,
@@ -77,6 +78,7 @@ impl<'a> Renderer<'a> {
             lines: Vec::new(),
             spans: Vec::new(),
             lists: Vec::new(),
+            hanging_indents: Vec::new(),
             quote_depth: 0,
             code_block: false,
             code_highlighter: None,
@@ -120,20 +122,20 @@ impl<'a> Renderer<'a> {
     fn start(&mut self, tag: Tag<'_>) {
         match tag {
             Tag::Heading { level, .. } => {
-                self.flush();
+                self.start_block();
                 self.block_style = heading_style(level, self.accent);
                 self.push(heading_marker(level), self.current_style());
             }
-            Tag::Paragraph => self.flush(),
+            Tag::Paragraph => self.start_block(),
             Tag::Strong => self.push_inline(Modifier::BOLD),
             Tag::Emphasis => self.push_inline(Modifier::ITALIC),
             Tag::Strikethrough => self.push_inline(Modifier::CROSSED_OUT),
             Tag::BlockQuote(_) => {
-                self.flush();
+                self.start_block();
                 self.quote_depth += 1;
             }
             Tag::List(start) => {
-                self.flush();
+                self.start_block();
                 self.lists
                     .push(start.map_or(ListState::Unordered, ListState::Ordered));
             }
@@ -148,10 +150,13 @@ impl<'a> Renderer<'a> {
                     }
                     _ => "• ".to_owned(),
                 };
-                self.push(&format!("{}{marker}", "  ".repeat(depth)), self.accent);
+                let marker = format!("{}{marker}", "  ".repeat(depth));
+                self.hanging_indents
+                    .push(UnicodeWidthStr::width(marker.as_str()));
+                self.push(&marker, self.accent);
             }
             Tag::CodeBlock(kind) => {
-                self.flush();
+                self.start_block();
                 let language = match kind {
                     CodeBlockKind::Fenced(value) => bounded_label(&safe_text(&value)),
                     CodeBlockKind::Indented => None,
@@ -169,7 +174,7 @@ impl<'a> Renderer<'a> {
                 self.block_style = self.muted;
             }
             Tag::Table(alignments) => {
-                self.flush();
+                self.start_block();
                 self.table = Some(TableBuilder::new(alignments));
             }
             Tag::TableHead => {
@@ -209,7 +214,11 @@ impl<'a> Renderer<'a> {
 
     fn end(&mut self, tag: TagEnd) {
         match tag {
-            TagEnd::Paragraph | TagEnd::Item => self.flush(),
+            TagEnd::Paragraph => self.flush(),
+            TagEnd::Item => {
+                self.flush();
+                self.hanging_indents.pop();
+            }
             TagEnd::TableCell => {
                 if let Some(table) = self.table.as_mut() {
                     table.finish_cell();
@@ -323,6 +332,16 @@ impl<'a> Renderer<'a> {
         }
     }
 
+    fn start_block(&mut self) {
+        self.flush();
+        if self.lists.is_empty()
+            && self.quote_depth == 0
+            && self.lines.last().is_some_and(|line| !line.spans.is_empty())
+        {
+            self.lines.push(Line::default());
+        }
+    }
+
     fn flush(&mut self) {
         let current_style = self.current_style();
         if self
@@ -335,18 +354,34 @@ impl<'a> Renderer<'a> {
         if self.spans.is_empty() {
             return;
         }
-        let mut spans = Vec::new();
+        let mut lead = Vec::new();
         if !self.prefix.is_empty() {
-            spans.push(Span::raw(self.prefix.to_owned()));
+            lead.push(Span::raw(self.prefix.to_owned()));
         }
         if self.quote_depth > 0 {
-            spans.push(Span::styled("│ ".repeat(self.quote_depth), self.muted));
+            lead.push(Span::styled("│ ".repeat(self.quote_depth), self.muted));
         }
         if self.code_block {
-            spans.push(Span::styled("│ ", self.muted));
+            lead.push(Span::styled("│ ", self.muted));
         }
-        spans.append(&mut self.spans);
-        self.lines.push(Line::from(spans));
+        let lead_width = lead.iter().map(|span| span.width()).sum::<usize>();
+        let content_width = self.width.saturating_sub(lead_width).max(1);
+        let hanging = self
+            .hanging_indents
+            .last()
+            .copied()
+            .unwrap_or(0)
+            .min(content_width.saturating_sub(1));
+        let rows = wrap_styled(&self.spans, content_width, hanging);
+        self.spans.clear();
+        for (index, mut row) in rows.into_iter().enumerate() {
+            let mut spans = lead.clone();
+            if index > 0 && hanging > 0 {
+                spans.push(Span::raw(" ".repeat(hanging)));
+            }
+            spans.append(&mut row);
+            self.lines.push(Line::from(spans));
+        }
     }
 
     fn finish_table(&mut self) {
@@ -367,6 +402,76 @@ impl<'a> Renderer<'a> {
         self.flush();
         self.lines
     }
+}
+
+fn wrap_styled(
+    spans: &[Span<'static>],
+    first_width: usize,
+    hanging: usize,
+) -> Vec<Vec<Span<'static>>> {
+    let graphemes = spans
+        .iter()
+        .flat_map(|span| {
+            span.content
+                .graphemes(true)
+                .map(|value| (value.to_owned(), span.style))
+                .collect::<Vec<_>>()
+        })
+        .collect::<Vec<_>>();
+    if graphemes.is_empty() {
+        return vec![Vec::new()];
+    }
+    let mut rows = Vec::new();
+    let mut start = 0;
+    while start < graphemes.len() {
+        let capacity = if rows.is_empty() {
+            first_width
+        } else {
+            first_width.saturating_sub(hanging).max(1)
+        };
+        let mut used = 0_usize;
+        let mut end = start;
+        let mut last_space = None;
+        while end < graphemes.len() {
+            let width = UnicodeWidthStr::width(graphemes[end].0.as_str());
+            if end > start && used.saturating_add(width) > capacity {
+                break;
+            }
+            used = used.saturating_add(width);
+            end += 1;
+            if graphemes[end - 1].0.chars().all(char::is_whitespace) {
+                last_space = Some(end);
+            }
+            if used >= capacity {
+                break;
+            }
+        }
+        let cut = if end < graphemes.len() {
+            last_space
+                .filter(|cut| *cut > start)
+                .unwrap_or(end.max(start + 1))
+        } else {
+            end
+        };
+        let visible_end = (start..cut)
+            .rev()
+            .find(|index| !graphemes[*index].0.chars().all(char::is_whitespace))
+            .map_or(start, |index| index + 1);
+        let mut row: Vec<Span<'static>> = Vec::new();
+        for (value, style) in &graphemes[start..visible_end] {
+            if let Some(last) = row.last_mut().filter(|last| last.style == *style) {
+                last.content.to_mut().push_str(value);
+            } else {
+                row.push(Span::styled(value.clone(), *style));
+            }
+        }
+        rows.push(row);
+        start = cut;
+        while start < graphemes.len() && graphemes[start].0.chars().all(char::is_whitespace) {
+            start += 1;
+        }
+    }
+    rows
 }
 
 fn heading_marker(level: HeadingLevel) -> &'static str {
