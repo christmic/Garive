@@ -22,6 +22,8 @@ describe("Desktop visual accessibility contract", () => {
     expect(narrow).toContain(".approval-actions { align-self: flex-end; }");
     expect(CSS).toContain(".app-shell, .app-shell:has(.environment-panel), .app-shell:has(.workspace-panel) { grid-template-columns: minmax(0, 1fr); }");
     expect(CSS).toContain(".app-shell, .app-shell:has(.environment-panel), .app-shell:has(.workspace-panel) { grid-template-columns: 72px minmax(0, 1fr); }");
+    expect(CSS).toContain("flex-basis: auto; width: min(300px, calc(100% - 48px)); max-width: min(300px, calc(100% - 48px));");
+    expect(CSS).toContain("padding: 18px 10px 12px; overflow: hidden;");
   });
 
   it("keeps normal semantic text tokens at WCAG AA contrast in light and dark", () => {
@@ -160,6 +162,8 @@ describe("Desktop visual accessibility contract", () => {
     expect(CSS).toContain(".setup-card { position: relative; width: min(39rem, 100%); margin: 0 auto;");
     expect(CSS).toContain(".setup-card::before { display: none; }");
     expect(CSS).toContain(".setup-grid { display: grid; grid-template-columns: 1fr 1fr;");
+    expect(CSS).toContain(".setup-step { min-width: 0;");
+    expect(CSS).toContain("@keyframes setup-step-enter");
     expect(CSS).toContain(".approval-card { display: grid; grid-template-columns: 24px minmax(0,1fr);");
     expect(CSS).toContain("border-left-color: var(--state-attention)");
     expect(CSS).toContain(".approval-foot { display: flex; align-items: center; justify-content: space-between;");

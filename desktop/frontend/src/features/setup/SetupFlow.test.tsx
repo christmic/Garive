@@ -41,6 +41,10 @@ describe("secure Desktop setup", () => {
     await screen.findByRole("heading", { name: "Configure Garive" });
     fireEvent.change(screen.getByLabelText("Model target"), { target: { value: "target-a" } });
     fireEvent.change(screen.getByLabelText("Model ID"), { target: { value: "model-a" } });
+    expect(screen.queryByLabelText("Deployment")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+    await screen.findByLabelText("Deployment");
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByLabelText("Deployment")));
     fireEvent.change(screen.getByLabelText("Deployment"), { target: { value: "deployment-a" } });
     fireEvent.change(screen.getByLabelText("Agent definition"), { target: { value: "definition-a" } });
     fireEvent.click(screen.getByRole("button", { name: "Review setup" }));
@@ -79,6 +83,10 @@ describe("secure Desktop setup", () => {
     await screen.findByRole("heading", { name: "配置 Garive" });
     for (const [label, value] of [
       ["模型目标", "target-a"], ["模型 ID", "model-a"],
+    ]) fireEvent.change(screen.getByLabelText(label), { target: { value } });
+    fireEvent.click(screen.getByRole("button", { name: "继续" }));
+    await screen.findByLabelText("部署");
+    for (const [label, value] of [
       ["部署", "deployment-a"], ["智能体定义", "definition-a"],
     ]) fireEvent.change(screen.getByLabelText(label), { target: { value } });
     fireEvent.click(screen.getByRole("button", { name: "检查设置" }));
@@ -87,12 +95,31 @@ describe("secure Desktop setup", () => {
     fireEvent.click(screen.getByRole("button", { name: "提交配置" }));
     await screen.findByRole("heading", { name: "需要重新启动" });
   });
+
+  it("preserves each progressive group when navigating back", async () => {
+    render(<SetupFlow api={setupApi(async (input) => plan(input), async () => undefined)} />);
+    await screen.findByRole("heading", { name: "Configure Garive" });
+    fireEvent.change(screen.getByLabelText("Model target"), { target: { value: "target-a" } });
+    fireEvent.change(screen.getByLabelText("Model ID"), { target: { value: "model-a" } });
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+    const deployment = await screen.findByLabelText("Deployment") as HTMLInputElement;
+    fireEvent.change(deployment, { target: { value: "deployment-a" } });
+    fireEvent.click(screen.getByRole("button", { name: "Back" }));
+    expect(screen.queryByLabelText("Deployment")).toBeNull();
+    expect((screen.getByLabelText("Model target") as HTMLInputElement).value).toBe("target-a");
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+    expect((await screen.findByLabelText("Deployment") as HTMLInputElement).value).toBe("deployment-a");
+  });
 });
 
 async function fillRequiredDetails() {
   await screen.findByRole("heading", { name: "Configure Garive" });
   for (const [label, value] of [
     ["Model target", "target-a"], ["Model ID", "model-a"],
+  ]) fireEvent.change(screen.getByLabelText(label), { target: { value } });
+  fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+  await screen.findByLabelText("Deployment");
+  for (const [label, value] of [
     ["Deployment", "deployment-a"], ["Agent definition", "definition-a"],
   ]) fireEvent.change(screen.getByLabelText(label), { target: { value } });
   fireEvent.click(screen.getByRole("button", { name: "Review setup" }));

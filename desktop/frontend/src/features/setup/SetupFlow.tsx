@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type Ref } from "react";
 import {
   cancelSetup, commitSetup, getSetupCatalogue, prepareSetup, restartDesktop,
   type SetupCatalogue, type SetupInput, type SetupPlan,
@@ -6,6 +6,7 @@ import {
 import { createTranslator, type MessageKey, type Translator } from "../../i18n";
 
 type Stage = "details" | "review" | "ready";
+type DetailsStep = "connection" | "runtime";
 
 /** Injectable write-only setup boundary used by the product flow and UI tests. */
 export interface SetupFlowApi {
@@ -68,6 +69,7 @@ export function SetupFlow({
   const boundary = api ?? (preview ? PREVIEW_API : DEFAULT_API);
   const [catalogue, setCatalogue] = useState<SetupCatalogue>();
   const [stage, setStage] = useState<Stage>("details");
+  const [detailsStep, setDetailsStep] = useState<DetailsStep>("connection");
   const [values, setValues] = useState<Record<string, string>>({});
   const [advanced, setAdvanced] = useState(false);
   const [plan, setPlan] = useState<SetupPlan>();
@@ -75,6 +77,7 @@ export function SetupFlow({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const credentialRef = useRef<HTMLInputElement>(null);
+  const deploymentRef = useRef<HTMLInputElement>(null);
   const livePlan = useRef<string | undefined>(undefined);
 
   useEffect(() => {
@@ -92,11 +95,15 @@ export function SetupFlow({
     };
   }, [boundary]);
 
-  const valid = useMemo(() => catalogue !== undefined && [
-    values.preset, values.profile, values.target, values.model, values.deployment, values.definition,
+  const connectionValid = useMemo(() => catalogue !== undefined && [
+    values.preset, values.profile, values.target, values.model,
   ].every((value) => bounded(value, catalogue.limits.max_text_bytes))
     && (!advanced || bounded(values.endpoint, catalogue.limits.max_endpoint_bytes)),
   [advanced, catalogue, values]);
+  const runtimeValid = useMemo(() => catalogue !== undefined
+    && [values.deployment, values.definition]
+      .every((value) => bounded(value, catalogue.limits.max_text_bytes)), [catalogue, values]);
+  const valid = connectionValid && runtimeValid;
 
   const review = async () => {
     if (!catalogue || !valid) return;
@@ -132,7 +139,13 @@ export function SetupFlow({
     const digest = livePlan.current;
     livePlan.current = undefined;
     if (digest) void boundary.cancel(digest);
-    clearCredential(); setPlan(undefined); setError(""); setStage("details");
+    clearCredential(); setPlan(undefined); setError(""); setDetailsStep("runtime"); setStage("details");
+  };
+
+  const advanceDetails = () => {
+    if (!connectionValid) return;
+    setDetailsStep("runtime");
+    queueMicrotask(() => deploymentRef.current?.focus());
   };
 
   if (!catalogue) return <main className="setup-shell"><p role="status">{t("setup.loading")}</p>
@@ -144,18 +157,23 @@ export function SetupFlow({
     {reconfigure && <p className="setup-warning" role="note">{t("setup.reconfigure")}</p>}
     <ol className="setup-progress" aria-label={t("setup.progress")}><li aria-current={stage === "details" ? "step" : undefined}>{t("setup.step.connect")}</li><li aria-current={stage === "review" ? "step" : undefined}>{t("setup.step.review")}</li><li aria-current={stage === "ready" ? "step" : undefined}>{t("setup.step.restart")}</li></ol>
 
-    {stage === "details" && <form onSubmit={(event) => { event.preventDefault(); void review(); }}>
-      <div className="setup-grid">
-        <Select label={t("setup.field.preset")} value={values.preset} change={(preset) => update("preset", preset)} options={catalogue.presets.map((item) => [item.preset_id, label(item.display_name_key)])} />
-        <Select label={t("setup.field.profile")} value={values.profile} change={(profile) => update("profile", profile)} options={catalogue.profiles.map((item) => [item.profile_id, label(item.display_name_key)])} />
-        <Field label={t("setup.field.target")} value={values.target} change={(value) => update("target", value)} />
-        <Field label={t("setup.field.model")} value={values.model} change={(value) => update("model", value)} />
-        <Field label={t("setup.field.deployment")} value={values.deployment} change={(value) => update("deployment", value)} />
-        <Field label={t("setup.field.agent")} value={values.definition} change={(value) => update("definition", value)} />
-      </div>
-      <button className="disclosure" type="button" aria-expanded={advanced} onClick={() => setAdvanced(!advanced)}>{t("setup.advanced")}</button>
-      {advanced && <Field label={t("setup.field.endpoint")} value={values.endpoint} change={(value) => update("endpoint", value)} />}
-      <div className="setup-actions"><button className="primary" disabled={!valid || busy} type="submit">{t(busy ? "setup.preparing" : "setup.review")}</button></div>
+    {stage === "details" && <form onSubmit={(event) => { event.preventDefault();
+      if (detailsStep === "connection") advanceDetails(); else void review(); }}>
+      {detailsStep === "connection" ? <fieldset className="setup-step">
+        <legend>{t("setup.connect.connection")}</legend><div className="setup-grid">
+          <Select label={t("setup.field.preset")} value={values.preset} change={(preset) => update("preset", preset)} options={catalogue.presets.map((item) => [item.preset_id, label(item.display_name_key)])} />
+          <Select label={t("setup.field.profile")} value={values.profile} change={(profile) => update("profile", profile)} options={catalogue.profiles.map((item) => [item.profile_id, label(item.display_name_key)])} />
+          <Field label={t("setup.field.target")} value={values.target} change={(value) => update("target", value)} />
+          <Field label={t("setup.field.model")} value={values.model} change={(value) => update("model", value)} />
+        </div><button className="disclosure" type="button" aria-expanded={advanced} onClick={() => setAdvanced(!advanced)}>{t("setup.advanced")}</button>
+        {advanced && <Field label={t("setup.field.endpoint")} value={values.endpoint} change={(value) => update("endpoint", value)} />}
+      </fieldset> : <fieldset className="setup-step">
+        <legend>{t("setup.connect.runtime")}</legend><div className="setup-grid">
+          <Field inputRef={deploymentRef} label={t("setup.field.deployment")} value={values.deployment} change={(value) => update("deployment", value)} />
+          <Field label={t("setup.field.agent")} value={values.definition} change={(value) => update("definition", value)} />
+        </div>
+      </fieldset>}
+      <div className="setup-actions">{detailsStep === "runtime" && <button type="button" onClick={() => setDetailsStep("connection")}>{t("setup.back")}</button>}<button className="primary" disabled={detailsStep === "connection" ? !connectionValid : !valid || busy} type="submit">{t(detailsStep === "connection" ? "setup.continue" : busy ? "setup.preparing" : "setup.review")}</button></div>
     </form>}
 
     {stage === "review" && plan && <div><dl className="setup-summary">
@@ -177,8 +195,8 @@ export function SetupFlow({
   }
 }
 
-function Field({ label: name, value = "", change }: { label: string; value?: string; change: (value: string) => void }) {
-  return <label className="field">{name}<input value={value} onChange={(event) => change(event.target.value)} autoComplete="off" /></label>;
+function Field({ label: name, value = "", change, inputRef }: { label: string; value?: string; change: (value: string) => void; inputRef?: Ref<HTMLInputElement> }) {
+  return <label className="field">{name}<input ref={inputRef} value={value} onChange={(event) => change(event.target.value)} autoComplete="off" /></label>;
 }
 function Select({ label: name, value = "", change, options }: { label: string; value?: string; change: (value: string) => void; options: readonly (readonly [string, string])[] }) {
   return <label className="field">{name}<select value={value} onChange={(event) => change(event.target.value)}>{options.map(([id, copy]) => <option key={id} value={id}>{copy}</option>)}</select></label>;

@@ -1195,6 +1195,28 @@ retains its 525px scroll position, the 432px Composer remains at the bottom and
 document overflow is zero. The 1280px split workbench likewise retains zero
 outer/workspace overflow and an independently scrolling file surface.
 
+### XXXIX. Setup reveals one decision group at a time
+
+Installed `onboarding-page-CHw3TEaW.js` implements onboarding as explicit
+progressive phases (`thinking`, `role`, `invitation`, `revealed`) and does not
+render later choices before the preceding phase is complete. Its transitions
+use a restrained fade/vertical entrance. This is source evidence for staged
+disclosure, not permission to copy Codex product copy or invent Garive options.
+
+Garive maps that structure onto configuration the Runtime actually accepts.
+Connect first shows preset, profile, target and model; Continue then reveals
+deployment and agent identity; Review and Restart retain their existing secure
+boundaries. Back preserves both groups, the first newly revealed field receives
+keyboard focus and the credential remains write-only on the review boundary.
+Desktop and Web consume the same component and translations.
+
+Live Web evidence verifies the runtime group is absent before Continue,
+Deployment becomes active afterward and target/model values survive Back. A
+480×720 run also exposed a separate inherited 72px sidebar maximum: restored
+mobile labels leaked over Setup while the translated rail remained offscreen.
+The overlay now resets its flex/max-width and clips its closed bounds; the same
+run shows an unobstructed Setup surface and a fully operable opened navigation.
+
 ## Gate 1 — Codex fidelity
 
 This gate passes only when both Desktop and Web show:
