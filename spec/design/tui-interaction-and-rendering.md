@@ -741,7 +741,9 @@ client-side imitation.
 - scroll/reflow properties preserve stable anchors and bounded visible work;
 - live-output reducer tests cover snapshot replacement, exact delta append,
   unavailable clearing, late-event rejection, H1/H2 terminal replacement,
-  reduced motion, and Unicode Markdown boundaries;
+  reduced motion, and Unicode Markdown boundaries. A full-workbench filmstrip
+  reuses one model and one render cache across preparing, multiple presented
+  deltas, an overlay round trip, finalizing, Ended, and durable takeover;
 - Turn-navigator tests cover seeded filtering, no match, exact public-position
   activation, Escape immutability, reload teardown, hostile text, and shared
   keyboard/mouse/linear result ordering;

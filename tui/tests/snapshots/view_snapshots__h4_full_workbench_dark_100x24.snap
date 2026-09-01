@@ -1,0 +1,210 @@
+---
+source: tui/tests/view_snapshots.rs
+expression: filmstrip
+---
+===== preparing =====
+  Current session  ·  Garive                                                       · Agent running
+
+    › Show every verified streaming stage.
+    ◆ Garive · Preparing context
+      ▍
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  ╭ › ───────────────────────────────────────────────────────────────────────────────────────────╮
+  │ A retained follow-up draft                                                                   │
+  ╰──────────────────────────────────────────────────────────────────────────────────────────────╯
+    Esc cancel run
+
+===== first presented delta =====
+  Current session  ·  Garive                                                       · Agent running
+
+    › Show every verified streaming stage.
+    ◆ Garive · Preparing context
+      The first visible▍
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  ╭ › ───────────────────────────────────────────────────────────────────────────────────────────╮
+  │ A retained follow-up draft                                                                   │
+  ╰──────────────────────────────────────────────────────────────────────────────────────────────╯
+    Esc cancel run
+
+===== second delta with activity =====
+  Current session  ·  Garive                                                       · Agent running
+
+    › Show every verified streaming stage.
+      ●  Verifying streamed output
+    ◆ Garive · Generating response
+      The first visible streaming frame arrives.▍
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  ╭ › ───────────────────────────────────────────────────────────────────────────────────────────╮
+  │ A retained follow-up draft                                                                   │
+  ╰──────────────────────────────────────────────────────────────────────────────────────────────╯
+    Esc cancel run
+
+===== overlay while streaming =====
+  Current session  ·  Garive                                                       · Agent running
+             ╭ Command palette ───────────────────────────────────────────────────────╮
+    › Show   │  Search  type to search                                                │
+      ●  Ve  │  21 commands · showing 1–13 · ↓ 8 more                                 │
+    ◆ Gariv  │  › /new                unavailable · no Agent is installed             │
+      The f  │    /sessions           Switch session                                  │
+             │    /jump               unavailable · fewer than two Turns are loaded   │
+             │    /inspect            Open Inspector                                  │
+             │    /status             Connection details                              │
+             │    /edit-prompt        Edit draft externally                           │
+             │    /retry              unavailable · no unknown command                │
+             │    /reconnect          Resume event stream                             │
+             │    /cancel             Cancel running turn                             │
+             │    /theme system       Follow terminal theme                           │
+             │    /theme dark         Use dark theme                                  │
+             │    /theme light        Use light theme                                 │
+             │    /theme mono         Use mono theme                                  │
+             │                                                                        │
+             │    ↑/↓ select   Home/End edge   Enter run   Esc close                  │
+             ╰────────────────────────────────────────────────────────────────────────╯
+  ╭ › ───────────────────────────────────────────────────────────────────────────────────────────╮
+  │ A retained follow-up draft                                                                   │
+  ╰──────────────────────────────────────────────────────────────────────────────────────────────╯
+    Esc cancel run
+
+===== stream restored after overlay =====
+  Current session  ·  Garive                                                       · Agent running
+
+    › Show every verified streaming stage.
+      ●  Verifying streamed output
+    ◆ Garive · Generating response
+      The first visible streaming frame arrives.▍
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  ╭ › ───────────────────────────────────────────────────────────────────────────────────────────╮
+  │ A retained follow-up draft                                                                   │
+  ╰──────────────────────────────────────────────────────────────────────────────────────────────╯
+    Esc cancel run
+
+===== finalizing =====
+  Current session  ·  Garive                                                       · Agent running
+
+    › Show every verified streaming stage.
+      ●  Verifying streamed output
+    ◆ Garive · Finalizing response
+      The first visible streaming frame arrives.▍
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  ╭ › ───────────────────────────────────────────────────────────────────────────────────────────╮
+  │ A retained follow-up draft                                                                   │
+  ╰──────────────────────────────────────────────────────────────────────────────────────────────╯
+    Esc cancel run
+
+===== ended awaiting durable =====
+  Current session  ·  Garive                                                       · Agent running
+
+    › Show every verified streaming stage.
+      ●  Verifying streamed output
+    ◆ Garive · Waiting for durable result
+      The first visible streaming frame arrives.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  ╭ › ───────────────────────────────────────────────────────────────────────────────────────────╮
+  │ A retained follow-up draft                                                                   │
+  ╰──────────────────────────────────────────────────────────────────────────────────────────────╯
+    Esc cancel run
+
+===== durable takeover =====
+  Current session  ·  Garive
+
+    › Show every verified streaming stage.
+      ●  Verifying streamed output
+    ◆ Garive
+      Saved streaming answer.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  ╭ › ───────────────────────────────────────────────────────────────────────────────────────────╮
+  │ A retained follow-up draft                                                                   │
+  ╰──────────────────────────────────────────────────────────────────────────────────────────────╯

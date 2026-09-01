@@ -321,6 +321,9 @@ screen. Linear mode emits one bounded handoff line and one result line.
 Every new component or variant requires a semantic buffer test,
 dark/light/mono snapshot coverage at its responsive boundary, keyboard
 ownership tests, and a real macOS PTY review when it changes terminal behavior.
+H4 changes also require a continuous full-workbench snapshot with a shared
+render cache; isolated live-line previews cannot establish convergence or the
+absence of overlay and takeover residue.
 Anchored menus also require geometry-derived mouse hit tests and proof that
 modal and screen-reader paths retain higher ownership. Reviews reject raw
 colors outside the palette, duplicated key-hint formatting, color-only state,
