@@ -251,7 +251,7 @@ the Plan mutation and any corresponding C6 posture atomically.
 | `plan.step.completed` | old/new state versions, step/attempt/Execution, result digest and canonical step/criterion evidence bindings |
 | `plan.step.failed` | old/new state versions, step/attempt/Execution, stable reason, optional evidence and closed retry posture |
 | `plan.step.suspended` | old/new state versions, step/attempt/Execution and typed continuation reference |
-| `plan.step.resumed` | old/new state versions, step and resolved continuation reference |
+| `plan.step.resumed` | old/new state versions, step/attempt, prior/fresh Execution and resolved continuation reference |
 | `plan.suspended` | old/new state versions and typed Plan-level continuation reference |
 | `plan.resumed` | old/new state versions and resolved continuation reference |
 | `plan.completed` | old/new state versions and canonical complete reduction evidence |
@@ -272,6 +272,10 @@ The public Runtime transition planner rejects a standalone Step Start. Runtime
 must compose the Plan mutation with the C6 Turn/Execution start batch; recovery
 requires their persisted SQLite commit versions, command identity, Turn,
 Execution and snapshot digest to match before accepting the prefix.
+For continuation, `plan.resumed`, the C6 `turn.started(kind=continue)` plus
+fresh `execution.started`, and `plan.step.resumed` share one SQLite commit.
+The suspended claim/attempt remains fenced and is rebound to that fresh
+Execution; no unowned continuation Execution may appear between Plan facts.
 
 Runtime derives an `ExecutionWorkBinding` from that atomic prefix. Goal and
 Plan references are canonical JSON strings containing exact identity, revision

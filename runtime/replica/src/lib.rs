@@ -132,8 +132,8 @@ pub use execution_work_binding::{reconstruct_execution_work_binding, ExecutionWo
 pub use executor_router::{ExecutorRoute, RoutedExecutorPort};
 pub use goal_plan_coordination::{
     plan_activate_goal_from_authoritative_plan, plan_next_turn_cancellation_for_goal,
-    plan_succeed_goal_from_completed_plan, plan_suspend_goal_from_owned_turn,
-    GoalPlanCoordinationError, PlannedGoalTurnCancellation,
+    plan_resume_goal_from_continued_turn, plan_succeed_goal_from_completed_plan,
+    plan_suspend_goal_from_owned_turn, GoalPlanCoordinationError, PlannedGoalTurnCancellation,
 };
 pub use goal_recovery::reconstruct_goal;
 pub use goal_runtime::{
@@ -215,9 +215,10 @@ pub use plan_carry_forward::{
 pub use plan_recovery::{reconstruct_plan, reconstruct_plan_graph};
 pub use plan_runtime::{
     commit_plan_command, plan_adopt_plan, plan_complete_plan, plan_plan_transition,
-    plan_propose_plan, plan_start_step_execution, ActivePlanClaim, PlanCommandContext,
-    PlanRetryPosture, PlanRuntimeError, PlanRuntimeState, PlanRuntimeTransition,
-    PlanStepExecutionStart, PlannedPlanCommand,
+    plan_propose_plan, plan_resume_step_execution, plan_start_step_execution,
+    plan_suspend_step_and_plan, ActivePlanClaim, PlanCommandContext, PlanRetryPosture,
+    PlanRuntimeError, PlanRuntimeState, PlanRuntimeTransition, PlanStepContinuation,
+    PlanStepExecutionStart, PlanStepSuspension, PlannedPlanCommand,
 };
 #[cfg(unix)]
 pub use podman_process_backend::{PodmanProcessBackend, PodmanProcessConfig};

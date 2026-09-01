@@ -19,15 +19,18 @@ use garive_plan::{
 use garive_runtime::{
     commit_goal_command, commit_plan_command, commit_plan_replacement, commit_planned_turn,
     get_turn, plan_activate_goal_from_authoritative_plan, plan_adopt_plan, plan_complete_plan,
-    plan_core_terminal, plan_goal_transition, plan_next_turn_cancellation_for_goal,
-    plan_plan_replacement, plan_plan_transition, plan_propose_plan, plan_start_step_execution,
-    plan_start_turn, plan_succeed_goal_from_completed_plan, plan_suspend_goal_from_owned_turn,
+    plan_continue_turn, plan_core_terminal, plan_goal_transition,
+    plan_next_turn_cancellation_for_goal, plan_plan_replacement, plan_plan_transition,
+    plan_propose_plan, plan_resume_goal_from_continued_turn, plan_resume_step_execution,
+    plan_start_step_execution, plan_start_turn, plan_succeed_goal_from_completed_plan,
+    plan_suspend_goal_from_owned_turn, plan_suspend_step_and_plan,
     reconstruct_execution_work_binding, reconstruct_goal, reconstruct_plan, reconstruct_plan_graph,
-    verify_plan_carry_forward, CoreTerminalContext, EffectiveRuntimeLimits, GetTurnQuery,
-    GoalCommandContext, GoalPlanCoordinationError, GoalRuntimeError, GoalRuntimeTransition,
-    PlanCommandContext, PlanRetryPosture, PlanRuntimeError, PlanRuntimeState,
-    PlanRuntimeTransition, PlanStepExecutionStart, RuntimeCommandId, SqliteLedger,
-    StartTurnCommand,
+    reconstruct_suspended_turn, verify_plan_carry_forward, ContinuationInput, ContinueTurnCommand,
+    CoreTerminalContext, EffectiveRuntimeLimits, GetTurnQuery, GoalCommandContext,
+    GoalPlanCoordinationError, GoalRuntimeError, GoalRuntimeTransition,
+    InteractionInputRepresentation, PlanCommandContext, PlanRetryPosture, PlanRuntimeError,
+    PlanRuntimeState, PlanRuntimeTransition, PlanStepContinuation, PlanStepExecutionStart,
+    PlanStepSuspension, RuntimeCommandId, SqliteLedger, StartTurnCommand,
 };
 use serde_json::json;
 use sha2::{Digest, Sha256};
@@ -744,7 +747,7 @@ fn step_start_and_c6_execution_commit_as_one_restart_safe_command() {
             2,
             &goal_context("suspend-open-turn"),
         ),
-        Err(GoalPlanCoordinationError::ResumableSuspensionUnavailable)
+        Err(GoalPlanCoordinationError::AuthoritativePlanUnavailable)
     );
     ledger
         .commit(
@@ -784,6 +787,37 @@ fn step_start_and_c6_execution_commit_as_one_restart_safe_command() {
     ledger
         .commit(session.clone(), recovered.session_version + 1, terminal)
         .unwrap();
+    let running = recover(&ledger, &session);
+    let plan_suspension = plan_suspend_step_and_plan(
+        &running,
+        running.state_version,
+        &context("suspend-plan-from-turn"),
+        PlanStepSuspension {
+            step_id: step_id("prepare"),
+            attempt_id: "atomic-attempt".into(),
+            execution_id: execution_id.as_str().into(),
+            continuation_kind: "interaction".into(),
+            continuation_reference: "suspension-external-input".into(),
+        },
+    )
+    .unwrap();
+    commit_plan_command(
+        &mut ledger,
+        session.clone(),
+        running.session_version,
+        &plan_suspension,
+    )
+    .unwrap();
+    let plan_suspended = recover(&ledger, &session);
+    assert_eq!(plan_suspended.snapshot.state(), PlanState::Suspended);
+    assert_eq!(
+        plan_suspended
+            .snapshot
+            .step(&step_id("prepare"))
+            .unwrap()
+            .state(),
+        StepState::Suspended
+    );
     let active = reconstruct_goal(&ledger, &session, "goal-1").unwrap();
     let suspension = plan_suspend_goal_from_owned_turn(
         &ledger,
@@ -833,11 +867,75 @@ fn step_start_and_c6_execution_commit_as_one_restart_safe_command() {
             GoalRuntimeError::TransitionInvalid
         ))
     );
+    let suspended_turn = reconstruct_suspended_turn(&ledger.load_turn(&turn_id).unwrap()).unwrap();
+    let plan_awaiting_resume = recover(&ledger, &session);
+    let continuation = plan_continue_turn(
+        &ContinueTurnCommand {
+            command_id: RuntimeCommandId::new("continue-goal-owned-turn").unwrap(),
+            session_id: session.clone(),
+            turn_id: turn_id.clone(),
+            expected_suspension_id: suspended_turn.suspension_id.clone(),
+            expected_session_version: suspended_turn.session_version,
+            continuation_input: ContinuationInput::InteractionResponse {
+                canonical_json: r#""provided""#.into(),
+                representation: InteractionInputRepresentation::StringField,
+            },
+            interaction: suspended_turn.interaction.clone(),
+            recorded_at: "2026-08-31T00:00:01Z".into(),
+        },
+        &suspended_turn,
+    )
+    .unwrap();
+    let continued_execution_id = continuation.execution_id.clone().unwrap();
+    let plan_continuation = plan_resume_step_execution(
+        &plan_awaiting_resume,
+        plan_awaiting_resume.state_version,
+        &PlanCommandContext {
+            command_id: "continue-goal-owned-turn".into(),
+            actor_reference: "runtime:goal-plan-coordinator".into(),
+            recorded_at: "2026-08-31T00:00:01Z".into(),
+        },
+        PlanStepContinuation {
+            step_id: step_id("prepare"),
+            attempt_id: "atomic-attempt".into(),
+            prior_execution_id: execution_id.as_str().into(),
+            resolved_continuation_reference: suspended_turn.suspension_id.clone(),
+        },
+        &continuation,
+    )
+    .unwrap();
+    commit_plan_command(
+        &mut ledger,
+        session.clone(),
+        suspended_turn.session_version,
+        &plan_continuation,
+    )
+    .unwrap();
+    let awaiting_resume = reconstruct_goal(&ledger, &session, "goal-1").unwrap();
+    let resume = plan_resume_goal_from_continued_turn(
+        &ledger,
+        &session,
+        "goal-1",
+        awaiting_resume.session_version,
+        3,
+        &goal_context("resume-goal-from-turn-continuation"),
+    )
+    .unwrap();
+    commit_goal_command(
+        &mut ledger,
+        session.clone(),
+        awaiting_resume.session_version,
+        &resume,
+    )
+    .unwrap();
+    let active = reconstruct_goal(&ledger, &session, "goal-1").unwrap();
+    assert_eq!(active.snapshot.state(), GoalState::Active);
+    assert_eq!(active.snapshot.revision(), 4);
     let cancellation = plan_goal_transition(
         &ledger,
         &session,
         "goal-1",
-        3,
+        4,
         &goal_context("cancel-started-goal"),
         GoalRuntimeTransition::Cancel {
             reason: "user_request".into(),
@@ -847,7 +945,7 @@ fn step_start_and_c6_execution_commit_as_one_restart_safe_command() {
     commit_goal_command(
         &mut ledger,
         session.clone(),
-        suspended.session_version,
+        active.session_version,
         &cancellation,
     )
     .unwrap();
@@ -872,7 +970,7 @@ fn step_start_and_c6_execution_commit_as_one_restart_safe_command() {
         },
     )
     .unwrap();
-    assert_eq!(turn.execution_id.as_ref(), Some(&execution_id));
+    assert_eq!(turn.execution_id.as_ref(), Some(&continued_execution_id));
     assert!(turn.cancellation_requested);
     assert!(plan_next_turn_cancellation_for_goal(
         &ledger,

@@ -23,6 +23,8 @@ pub enum GoalPlanCoordinationError {
     CompletedPlanUnavailable,
     /// No unique ledger-proven resumable Turn can suspend the Goal.
     ResumableSuspensionUnavailable,
+    /// No unique durable continuation can resume the Goal's suspension.
+    ContinuationUnavailable,
     /// Goal planning rejected the derived activation.
     Goal(GoalRuntimeError),
     /// Durable Turn planning rejected a derived cancellation.
@@ -87,10 +89,7 @@ pub fn plan_suspend_goal_from_owned_turn(
         definition.goal_id() == goal_id
             && definition.goal_revision() <= expected_goal_revision
             && definition.goal_definition_digest() == goal_digest
-            && matches!(
-                plan.snapshot.state(),
-                PlanState::Running | PlanState::Suspended
-            )
+            && plan.snapshot.state() == PlanState::Suspended
     });
     let plan = authoritative
         .next()
@@ -157,6 +156,119 @@ pub fn plan_suspend_goal_from_owned_turn(
         GoalRuntimeTransition::Suspend {
             reason: reason.into(),
             suspension_reference: Some(suspension.suspension_id.clone()),
+        },
+    )
+    .map_err(GoalPlanCoordinationError::Goal)
+}
+
+/// Plans Goal resume only after its exact owned Turn continuation is durable.
+///
+/// Runtime reads the Goal's committed suspension identity and matches it to a
+/// later C6 continuation start. Neither binding is accepted from the caller.
+pub fn plan_resume_goal_from_continued_turn(
+    ledger: &SqliteLedger,
+    session_id: &SessionId,
+    goal_id: &str,
+    expected_session_version: u64,
+    expected_goal_revision: u64,
+    context: &GoalCommandContext,
+) -> Result<PlannedGoalCommand, GoalPlanCoordinationError> {
+    let goal =
+        reconstruct_goal(ledger, session_id, goal_id).map_err(GoalPlanCoordinationError::Goal)?;
+    if goal.snapshot.state() != GoalState::Suspended {
+        return Err(GoalPlanCoordinationError::Goal(
+            GoalRuntimeError::TransitionInvalid,
+        ));
+    }
+    let plans = reconstruct_plan_graph(ledger, session_id)
+        .map_err(|_| GoalPlanCoordinationError::CorruptState)?;
+    if goal.session_version != expected_session_version
+        || plans.values().any(|plan| {
+            plan.session_version != goal.session_version
+                || plan.through_position != goal.through_position
+        })
+    {
+        return Err(GoalPlanCoordinationError::ConcurrentModification);
+    }
+    if goal.snapshot.revision() != expected_goal_revision {
+        return Err(GoalPlanCoordinationError::Goal(
+            GoalRuntimeError::RevisionConflict,
+        ));
+    }
+    let goal_digest = goal
+        .snapshot
+        .definition()
+        .digest()
+        .map_err(|_| GoalPlanCoordinationError::CorruptState)?;
+    let mut authoritative = plans.values().filter(|plan| {
+        let definition = plan.snapshot.definition();
+        definition.goal_id() == goal_id
+            && definition.goal_revision() <= expected_goal_revision
+            && definition.goal_definition_digest() == goal_digest
+            && matches!(
+                plan.snapshot.state(),
+                PlanState::Running | PlanState::Suspended
+            )
+    });
+    let plan = authoritative
+        .next()
+        .ok_or(GoalPlanCoordinationError::AuthoritativePlanUnavailable)?;
+    if authoritative.next().is_some() {
+        return Err(GoalPlanCoordinationError::CorruptState);
+    }
+    let facts = ledger
+        .read_facts(session_id, 0, goal.through_position, None)
+        .map_err(|_| GoalPlanCoordinationError::CorruptState)?;
+    let suspensions = facts
+        .iter()
+        .filter(|fact| fact.kind.as_str() == "goal.suspended")
+        .filter_map(|fact| {
+            let value = serde_json::from_str::<Value>(fact.payload.as_json()).ok()?;
+            (value.get("goal_id")?.as_str()? == goal_id
+                && value.get("revision")?.as_u64()? == expected_goal_revision)
+                .then_some((fact, value))
+        })
+        .collect::<Vec<_>>();
+    let [(suspended_fact, suspended_payload)] = suspensions.as_slice() else {
+        return Err(GoalPlanCoordinationError::CorruptState);
+    };
+    let suspension_reference = suspended_payload
+        .get("suspension_reference")
+        .and_then(Value::as_str)
+        .ok_or(GoalPlanCoordinationError::CorruptState)?;
+    let owned = owned_turns(&facts, plan.snapshot.definition())?;
+    let mut continued = BTreeSet::new();
+    for fact in facts.iter().filter(|fact| {
+        fact.position > suspended_fact.position && fact.kind.as_str() == "turn.started"
+    }) {
+        let turn_id = fact
+            .turn_id
+            .as_ref()
+            .ok_or(GoalPlanCoordinationError::CorruptState)?;
+        if !owned.contains(turn_id) {
+            continue;
+        }
+        let value = serde_json::from_str::<Value>(fact.payload.as_json())
+            .map_err(|_| GoalPlanCoordinationError::CorruptState)?;
+        if value.get("kind").and_then(Value::as_str) == Some("continue")
+            && value.get("prior_suspension_id").and_then(Value::as_str)
+                == Some(suspension_reference)
+        {
+            continued.insert(turn_id.clone());
+        }
+    }
+    if continued.len() != 1 {
+        return Err(GoalPlanCoordinationError::ContinuationUnavailable);
+    }
+    let plan_reference = canonical_plan_reference(plan.snapshot.definition())?;
+    plan_goal_transition(
+        ledger,
+        session_id,
+        goal_id,
+        expected_goal_revision,
+        context,
+        GoalRuntimeTransition::Activate {
+            plan_reference: Some(plan_reference),
         },
     )
     .map_err(GoalPlanCoordinationError::Goal)
