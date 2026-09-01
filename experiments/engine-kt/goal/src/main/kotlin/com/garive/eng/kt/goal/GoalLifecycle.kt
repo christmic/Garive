@@ -31,7 +31,9 @@ public class GoalEvidenceV1 private constructor(
             evidenceDigest: String,
             observedAtCommitVersion: Long,
         ): GoalResult<GoalEvidenceV1> =
-            if (durableReference.isEmpty() || !validDigest(evidenceDigest) || observedAtCommitVersion <= 0) {
+            if (!validReference(durableReference) || !validDigest(evidenceDigest) ||
+                observedAtCommitVersion <= 0
+            ) {
                 failure(GoalErrorCode.GOAL_INVALID)
             } else {
                 GoalResult.Success(
@@ -102,7 +104,7 @@ public class GoalSnapshot private constructor(
             } else {
                 failure(GoalErrorCode.GOAL_TRANSITION_INVALID)
             }
-            is GoalTransition.Suspend -> if (state == GoalState.ACTIVE && transition.reason.isNotEmpty()) {
+            is GoalTransition.Suspend -> if (state == GoalState.ACTIVE && validReference(transition.reason)) {
                 GoalResult.Success(GoalSnapshot(definition, nextRevision, GoalState.SUSPENDED, emptyList()))
             } else {
                 failure(GoalErrorCode.GOAL_TRANSITION_INVALID)
@@ -117,13 +119,13 @@ public class GoalSnapshot private constructor(
                 )
             }
             is GoalTransition.Fail -> if (
-                state in setOf(GoalState.ACTIVE, GoalState.SUSPENDED) && transition.reason.isNotEmpty()
+                state in setOf(GoalState.ACTIVE, GoalState.SUSPENDED) && validReference(transition.reason)
             ) {
                 GoalResult.Success(GoalSnapshot(definition, nextRevision, GoalState.FAILED, emptyList()))
             } else {
                 failure(GoalErrorCode.GOAL_TRANSITION_INVALID)
             }
-            is GoalTransition.Cancel -> if (transition.reason.isNotEmpty()) {
+            is GoalTransition.Cancel -> if (validReference(transition.reason)) {
                 GoalResult.Success(GoalSnapshot(definition, nextRevision, GoalState.CANCELLED, emptyList()))
             } else {
                 failure(GoalErrorCode.GOAL_TRANSITION_INVALID)

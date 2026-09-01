@@ -5,8 +5,8 @@ use std::collections::BTreeMap;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    valid_digest, GoalCriterion, GoalCriterionId, GoalDefinitionV1, GoalError, GoalErrorCode,
-    GoalEvidenceId,
+    valid_digest, valid_reference, GoalCriterion, GoalCriterionId, GoalDefinitionV1, GoalError,
+    GoalErrorCode, GoalEvidenceId, MAX_COLLECTION_ITEMS,
 };
 
 /// Closed evidence family matching the four G1 criterion variants.
@@ -52,7 +52,7 @@ impl GoalEvidenceV1 {
             evidence_digest: evidence_digest.into(),
             observed_at_commit_version,
         };
-        if value.durable_reference.is_empty()
+        if !valid_reference(&value.durable_reference)
             || !valid_digest(&value.evidence_digest)
             || value.observed_at_commit_version == 0
         {
@@ -73,6 +73,9 @@ impl GoalEvidenceV1 {
 
     /// Serializes an ordered evidence set for one durable content binding.
     pub fn canonical_json(values: &[Self]) -> Result<String, GoalError> {
+        if values.len() > MAX_COLLECTION_ITEMS {
+            return Err(GoalError::new(GoalErrorCode::GoalInvalid));
+        }
         serde_jcs::to_string(values).map_err(|_| GoalError::new(GoalErrorCode::GoalInvalid))
     }
 
@@ -199,7 +202,7 @@ impl GoalSnapshot {
                 next.state = GoalState::Active;
             }
             GoalTransition::Suspend(reason)
-                if self.state == GoalState::Active && !reason.is_empty() =>
+                if self.state == GoalState::Active && valid_reference(&reason) =>
             {
                 next.state = GoalState::Suspended;
             }
@@ -210,11 +213,11 @@ impl GoalSnapshot {
             }
             GoalTransition::Fail(reason)
                 if matches!(self.state, GoalState::Active | GoalState::Suspended)
-                    && !reason.is_empty() =>
+                    && valid_reference(&reason) =>
             {
                 next.state = GoalState::Failed;
             }
-            GoalTransition::Cancel(reason) if !reason.is_empty() => {
+            GoalTransition::Cancel(reason) if valid_reference(&reason) => {
                 next.state = GoalState::Cancelled;
             }
             GoalTransition::Revise(definition)

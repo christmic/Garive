@@ -7,6 +7,11 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import org.erdtman.jcs.JsonCanonicalizer
 
+internal const val MAX_ID_BYTES: Int = 256
+internal const val MAX_REFERENCE_BYTES: Int = 512
+internal const val MAX_OBJECTIVE_BYTES: Int = 16 * 1024
+internal const val MAX_COLLECTION_ITEMS: Int = 256
+
 /** Stable portable Goal failure classification. */
 public enum class GoalErrorCode(public val wireName: String) {
     /** Definition, identity, bound, evidence, or digest is malformed. */
@@ -41,7 +46,7 @@ public data class GoalId private constructor(public val value: String) : Compara
     public companion object {
         /** Validates and constructs a Goal identity. */
         public fun create(value: String): GoalResult<GoalId> =
-            if (value.isEmpty()) failure(GoalErrorCode.GOAL_INVALID) else GoalResult.Success(GoalId(value))
+            if (!validId(value)) failure(GoalErrorCode.GOAL_INVALID) else GoalResult.Success(GoalId(value))
     }
 }
 
@@ -53,7 +58,7 @@ public data class GoalCriterionId private constructor(public val value: String) 
     public companion object {
         /** Validates and constructs a criterion identity. */
         public fun create(value: String): GoalResult<GoalCriterionId> =
-            if (value.isEmpty()) failure(GoalErrorCode.GOAL_INVALID)
+            if (!validId(value)) failure(GoalErrorCode.GOAL_INVALID)
             else GoalResult.Success(GoalCriterionId(value))
     }
 }
@@ -66,7 +71,7 @@ public data class GoalEvidenceId private constructor(public val value: String) :
     public companion object {
         /** Validates and constructs an evidence identity. */
         public fun create(value: String): GoalResult<GoalEvidenceId> =
-            if (value.isEmpty()) failure(GoalErrorCode.GOAL_INVALID) else GoalResult.Success(GoalEvidenceId(value))
+            if (!validId(value)) failure(GoalErrorCode.GOAL_INVALID) else GoalResult.Success(GoalEvidenceId(value))
     }
 }
 
@@ -82,7 +87,7 @@ public data class GoalCapabilityReference private constructor(
     public companion object {
         /** Validates one exact non-empty capability reference. */
         public fun create(name: String, exactRevision: String): GoalResult<GoalCapabilityReference> =
-            if (name.isEmpty() || exactRevision.isEmpty()) failure(GoalErrorCode.GOAL_INVALID)
+            if (!validReference(name) || !validReference(exactRevision)) failure(GoalErrorCode.GOAL_INVALID)
             else GoalResult.Success(GoalCapabilityReference(name, exactRevision))
     }
 }
@@ -99,7 +104,8 @@ public class GoalScopeV1 private constructor(
         /** Requires a Session or at least one unique non-empty workspace capability. */
         public fun create(sessionId: String?, workspaceCapabilityIds: List<String>): GoalResult<GoalScopeV1> {
             val sorted = workspaceCapabilityIds.sorted()
-            return if (sessionId == "" || sorted.any(String::isEmpty) || sorted.distinct().size != sorted.size ||
+            return if (sessionId != null && !validReference(sessionId) || sorted.size > MAX_COLLECTION_ITEMS ||
+                sorted.any { !validReference(it) } || sorted.distinct().size != sorted.size ||
                 sessionId == null && sorted.isEmpty()
             ) {
                 failure(GoalErrorCode.GOAL_INVALID)
@@ -261,9 +267,11 @@ public class GoalDefinitionV1 private constructor(
             capabilityReferences: List<GoalCapabilityReference>,
         ): GoalResult<GoalDefinitionV1> {
             val capabilities = capabilityReferences.sorted()
-            val valid = objective.isNotEmpty() && criteria.isNotEmpty() &&
+            val valid = objective.isNotEmpty() && objective.encodeToByteArray().size <= MAX_OBJECTIVE_BYTES &&
+                criteria.isNotEmpty() && criteria.size <= MAX_COLLECTION_ITEMS &&
                 criteria.map(GoalCriterion::criterionId).distinct().size == criteria.size &&
                 criteria.all(::validCriterion) && capabilities.distinct().size == capabilities.size &&
+                capabilities.size <= MAX_COLLECTION_ITEMS &&
                 parentGoalId != goalId
             return if (!valid) failure(GoalErrorCode.GOAL_INVALID)
             else GoalResult.Success(
@@ -275,9 +283,9 @@ public class GoalDefinitionV1 private constructor(
 
 private fun validCriterion(value: GoalCriterion): Boolean = when (value) {
     is GoalCriterion.UserAcceptance -> validDigest(value.responseSchemaDigest)
-    is GoalCriterion.Artifact -> value.artifactKind.isNotEmpty() &&
+    is GoalCriterion.Artifact -> validReference(value.artifactKind) &&
         (value.requiredDigest == null || validDigest(value.requiredDigest))
-    is GoalCriterion.DurableFact -> value.factKind.isNotEmpty() && validDigest(value.subjectDigest)
+    is GoalCriterion.DurableFact -> validReference(value.factKind) && validDigest(value.subjectDigest)
     is GoalCriterion.ChildGoals -> value.childGoalIds.isNotEmpty() &&
         value.childGoalIds.sorted().distinct().size == value.childGoalIds.size
 }
@@ -317,6 +325,12 @@ private fun criterionJson(value: GoalCriterion): JsonObject = when (value) {
 
 internal fun validDigest(value: String): Boolean =
     value.length == 64 && value.all { it in '0'..'9' || it in 'a'..'f' }
+
+internal fun validReference(value: String): Boolean =
+    value.isNotEmpty() && value.encodeToByteArray().size <= MAX_REFERENCE_BYTES
+
+private fun validId(value: String): Boolean =
+    value.isNotEmpty() && value.encodeToByteArray().size <= MAX_ID_BYTES
 
 private fun optionalBoundWithin(child: Long?, parent: Long?): Boolean = when {
     parent == null -> true

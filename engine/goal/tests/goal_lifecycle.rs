@@ -208,6 +208,40 @@ fn child_goal_can_only_narrow_its_parent_grant() {
     }
 }
 
+#[test]
+fn goal_text_references_and_collections_are_byte_bounded() {
+    assert!(GoalId::new("g".repeat(256)).is_ok());
+    assert_eq!(
+        GoalId::new("g".repeat(257)).unwrap_err().code(),
+        GoalErrorCode::GoalInvalid
+    );
+    assert!(GoalCapabilityReference::new("capability", "r".repeat(513)).is_err());
+    assert!(GoalEvidenceV1::new(
+        GoalEvidenceId::new("evidence").unwrap(),
+        GoalCriterionId::new("criterion").unwrap(),
+        GoalEvidenceKind::Artifact,
+        "r".repeat(513),
+        digest('b'),
+        1,
+    )
+    .is_err());
+    assert!(GoalDefinitionV1::new(
+        GoalId::new("large-objective").unwrap(),
+        "界".repeat(5_462),
+        criteria(),
+        scope(),
+        bounds(),
+        None,
+        capabilities(),
+    )
+    .is_err());
+    assert!(GoalScopeV1::new(
+        Some("session-1".into()),
+        (0..257).map(|index| format!("workspace-{index}")),
+    )
+    .is_err());
+}
+
 fn evidence() -> GoalEvidenceV1 {
     GoalEvidenceV1::new(
         GoalEvidenceId::new("evidence-1").unwrap(),

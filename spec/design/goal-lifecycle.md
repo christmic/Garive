@@ -53,6 +53,20 @@ Objective is user/product intent, never instructions that bypass Agent
 Definition precedence. At least one scope anchor is required: Session or
 workspace capability. A workspace reference is not a path or authority.
 
+Portable admission is byte-bounded before allocation into a durable value:
+
+- Goal, criterion and evidence identities are at most 256 UTF-8 bytes;
+- objective text is at most 16 KiB UTF-8;
+- Session, Workspace, capability, artifact/fact-kind, evidence and stable
+  reason references are at most 512 UTF-8 bytes;
+- criteria, Workspace references, capability references and evidence sets
+  contain at most 256 members.
+
+All limits count encoded UTF-8 bytes, not scalar values or grapheme clusters.
+Canonical decoding re-applies the same limits; an oversized historical value
+is corrupt rather than silently truncated. Public presentation may apply a
+stricter display bound but cannot weaken durable admission.
+
 Parent and child definitions are individually canonical. Runtime validates the
 complete parent graph is acyclic, the parent is non-terminal, and child scope,
 capabilities and remaining bounds do not exceed the parent grant.

@@ -14,6 +14,10 @@ pub use lifecycle::{GoalEvidenceKind, GoalEvidenceV1, GoalSnapshot, GoalState, G
 
 const DEFINITION_CONTRACT: &str = "garive.goal-definition";
 const CONTRACT_VERSION: u8 = 1;
+const MAX_ID_BYTES: usize = 256;
+const MAX_REFERENCE_BYTES: usize = 512;
+const MAX_OBJECTIVE_BYTES: usize = 16 * 1_024;
+const MAX_COLLECTION_ITEMS: usize = 256;
 
 macro_rules! identity {
     ($name:ident, $label:literal) => {
@@ -26,7 +30,7 @@ macro_rules! identity {
             #[doc = concat!("Validates and constructs a ", $label, " identity.")]
             pub fn new(value: impl Into<String>) -> Result<Self, GoalError> {
                 let value = value.into();
-                if value.is_empty() {
+                if value.is_empty() || value.len() > MAX_ID_BYTES {
                     Err(GoalError::new(GoalErrorCode::GoalInvalid))
                 } else {
                     Ok(Self(value))
@@ -95,7 +99,7 @@ impl GoalCapabilityReference {
             name: name.into(),
             exact_revision: exact_revision.into(),
         };
-        if value.name.is_empty() || value.exact_revision.is_empty() {
+        if !valid_reference(&value.name) || !valid_reference(&value.exact_revision) {
             Err(GoalError::new(GoalErrorCode::GoalInvalid))
         } else {
             Ok(value)
@@ -119,8 +123,11 @@ impl GoalScopeV1 {
     ) -> Result<Self, GoalError> {
         let values: Vec<_> = workspace_capability_ids.into_iter().collect();
         let unique: BTreeSet<_> = values.iter().cloned().collect();
-        if session_id.as_deref().is_some_and(str::is_empty)
-            || values.iter().any(String::is_empty)
+        if session_id
+            .as_deref()
+            .is_some_and(|value| !valid_reference(value))
+            || values.len() > MAX_COLLECTION_ITEMS
+            || values.iter().any(|value| !valid_reference(value))
             || values.len() != unique.len()
             || session_id.is_none() && unique.is_empty()
         {
@@ -259,7 +266,7 @@ impl GoalCriterion {
                 required_digest,
                 ..
             } => {
-                !artifact_kind.is_empty()
+                valid_reference(artifact_kind)
                     && required_digest
                         .as_ref()
                         .is_none_or(|value| valid_digest(value))
@@ -268,7 +275,7 @@ impl GoalCriterion {
                 fact_kind,
                 subject_digest,
                 ..
-            } => !fact_kind.is_empty() && valid_digest(subject_digest),
+            } => valid_reference(fact_kind) && valid_digest(subject_digest),
             Self::ChildGoals { child_goal_ids, .. } => {
                 !child_goal_ids.is_empty()
                     && child_goal_ids
@@ -311,10 +318,13 @@ impl GoalDefinitionV1 {
         let capabilities: BTreeSet<_> = capability_values.iter().cloned().collect();
         if goal_id.as_str().is_empty()
             || objective.is_empty()
+            || objective.len() > MAX_OBJECTIVE_BYTES
             || criteria.is_empty()
+            || criteria.len() > MAX_COLLECTION_ITEMS
             || ids.len() != criteria.len()
             || criteria.iter().any(|criterion| !criterion.validate())
             || capability_values.len() != capabilities.len()
+            || capability_values.len() > MAX_COLLECTION_ITEMS
             || capability_values
                 .iter()
                 .any(|value| value.name.is_empty() || value.exact_revision.is_empty())
@@ -341,6 +351,11 @@ impl GoalDefinitionV1 {
     /// Returns the exact Goal identity.
     pub const fn goal_id(&self) -> &GoalId {
         &self.goal_id
+    }
+
+    /// Returns the bounded user/product objective text.
+    pub fn objective(&self) -> &str {
+        &self.objective
     }
 
     /// Returns criteria in semantic declaration order.
@@ -435,6 +450,10 @@ fn valid_digest(value: &str) -> bool {
         && value
             .bytes()
             .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase())
+}
+
+fn valid_reference(value: &str) -> bool {
+    !value.is_empty() && value.len() <= MAX_REFERENCE_BYTES
 }
 
 const fn optional_bound_within(child: Option<u64>, parent: Option<u64>) -> bool {

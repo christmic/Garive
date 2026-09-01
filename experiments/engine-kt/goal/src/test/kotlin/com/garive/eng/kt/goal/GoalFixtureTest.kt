@@ -99,6 +99,40 @@ class GoalFixtureTest {
         )
     }
 
+    @Test
+    fun goalTextReferencesAndCollectionsAreByteBounded() {
+        assertIs<GoalResult.Success<GoalId>>(GoalId.create("g".repeat(256)))
+        assertEquals(
+            GoalErrorCode.GOAL_INVALID,
+            assertIs<GoalResult.Failure>(GoalId.create("g".repeat(257))).error.code,
+        )
+        assertIs<GoalResult.Failure>(GoalCapabilityReference.create("capability", "r".repeat(513)))
+        assertIs<GoalResult.Failure>(
+            GoalEvidenceV1.create(
+                GoalEvidenceId.create("evidence").value(),
+                GoalCriterionId.create("criterion").value(),
+                GoalEvidenceKind.ARTIFACT,
+                "r".repeat(513),
+                "b".repeat(64),
+                1,
+            ),
+        )
+        assertIs<GoalResult.Failure>(
+            GoalDefinitionV1.create(
+                GoalId.create("large-objective").value(),
+                "界".repeat(5_462),
+                definition.criteria,
+                definition.scope,
+                definition.bounds,
+                null,
+                definition.capabilityReferences,
+            ),
+        )
+        assertIs<GoalResult.Failure>(
+            GoalScopeV1.create("session-1", (0..256).map { "workspace-$it" }),
+        )
+    }
+
     private fun definition(value: JsonObject): GoalDefinitionV1 {
         val criterion = value.getValue("criteria").jsonArray.single().jsonObject
         val scope = value.getValue("scope").jsonObject
