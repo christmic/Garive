@@ -2,7 +2,6 @@
 source: tui/tests/view_snapshots.rs
 expression: "command_suggestion_frame_at(Theme::Mono, 40, 12)"
 ---
-› Summarize the release plan.
   ✓ Read file
 ## Release plan
 
@@ -13,4 +12,5 @@ expression: "command_suggestion_frame_at(Theme::Mono, 40, 12)"
   /theme mono  Use mono theme
 
 › /theme
+
   Tab complete command

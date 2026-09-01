@@ -10,8 +10,6 @@ expression: "frame(&sessions, Theme::Mono, 100, 24)"
 
 ## Release plan
 
-  • Verify the Runtime
-  • Ship with evidence
  Switch session ────────────────────────────────────────────────────────────────────────────────────
 Filter  type to search
   Session 5 · Agent   ● running
@@ -24,4 +22,5 @@ Filter  type to search
 › Session 12 · Agent   ● running
   ↑/↓ select   Enter open   Esc close
 • Working…
+
 › Ask a follow-up…

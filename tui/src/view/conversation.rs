@@ -17,6 +17,7 @@ use super::{markdown::render_markdown, palette, safe_text, MotionFrame};
 mod block;
 mod empty_state;
 mod follow_cue;
+mod launch_header;
 pub(super) mod live_cache;
 mod request_surface;
 mod scroll;
@@ -42,7 +43,7 @@ pub(super) fn render_conversation(
     let mut lines = Vec::new();
     let mut scroll = 0;
     if model.turn_blocks.is_empty() && model.live_answer.current().is_none() {
-        lines = empty_state::render(model.boot, inner.width, colors);
+        lines = empty_state::render(model, inner.width, colors);
     } else if let Some(window) = window {
         lines = window.lines;
         scroll = window.scroll;
@@ -51,6 +52,11 @@ pub(super) fn render_conversation(
         .wrap(Wrap { trim: false })
         .scroll((scroll.min(u16::MAX as usize) as u16, 0))
         .render(inner, buffer);
+}
+
+pub(super) fn empty_height(model: &AppModel, width: u16) -> Option<u16> {
+    (model.turn_blocks.is_empty() && model.live_answer.current().is_none())
+        .then(|| launch_header::desired_height(model, width))
 }
 
 fn follow_cue_visible(model: &AppModel) -> bool {

@@ -18,8 +18,8 @@ expression: matrix
 
 
 
-
 › Ask Garive anything
+
   Ctrl+P commands                                                               Session 1 · Turn 3
 
 ===== action wide =====
@@ -38,8 +38,8 @@ expression: matrix
 
 
 
-
 › Ask a follow-up…
+
   Esc interrupt                                                                 Session 1 · Turn 3
 
 ===== action compact =====
@@ -58,8 +58,8 @@ expression: matrix
 
 
 
-
 › Ask a follow-up…
+
   Esc interrupt                                                     Session 1
 
 ===== action linear =====
@@ -78,6 +78,6 @@ expression: matrix
 
 
 
-
 › Ask a follow-up…
+
   Esc interrupt

@@ -47,9 +47,13 @@ pub(super) fn render(model: &AppModel, theme: Theme, area: Rect, buffer: &mut Bu
     } else {
         "Garive"
     };
-    let mut identity = vec![Span::styled(session, colors.normal)];
-    if area.width >= 80 {
-        identity.push(Span::styled(format!("  ·  {agent}"), colors.muted));
+    let empty_workbench = model.turn_blocks.is_empty() && model.live_answer.current().is_none();
+    let mut identity = Vec::new();
+    if !empty_workbench {
+        identity.push(Span::styled(session, colors.normal));
+        if area.width >= 80 {
+            identity.push(Span::styled(format!("  ·  {agent}"), colors.muted));
+        }
     }
     Line::from(identity).render(cells[0], buffer);
 

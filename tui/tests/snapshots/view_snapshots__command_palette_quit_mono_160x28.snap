@@ -14,8 +14,6 @@ expression: "frame(&palette, Theme::Mono, 160, 28)"
   • Ship with evidence
 
   cargo test passes.
-
-
  Command palette · 14–21/21 ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 Search  type to search
   /mouse auto         Keep terminal selection and scrolling
@@ -28,4 +26,5 @@ Search  type to search
 › /quit               Exit safely
   ↑/↓ select   Home/End edge   Enter run   Esc close
 • Working…
+
 › Ask a follow-up…

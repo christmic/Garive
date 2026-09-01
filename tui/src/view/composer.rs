@@ -1,6 +1,6 @@
 use ratatui::{
     buffer::Buffer,
-    layout::Rect,
+    layout::{Margin, Rect},
     text::{Line, Span, Text},
     widgets::{Clear, Paragraph, Widget},
 };
@@ -34,14 +34,17 @@ pub(super) fn render(
     let dock = ComposerDock::resolve(area, status.is_some());
     dock.render_status(status, colors, buffer);
     Clear.render(dock.body, buffer);
+    Paragraph::new("")
+        .style(colors.request_surface)
+        .render(dock.body, buffer);
     let marker_style = match variant {
-        ComposerVariant::Focused => colors.accent,
-        ComposerVariant::Frozen => colors.warning,
-        ComposerVariant::ActionResponse => colors.notice,
-        ComposerVariant::Idle => colors.muted,
+        ComposerVariant::Focused => colors.request_marker,
+        ComposerVariant::Frozen => colors.request_surface.patch(colors.warning),
+        ComposerVariant::ActionResponse => colors.request_surface.patch(colors.notice),
+        ComposerVariant::Idle => colors.request_surface.patch(colors.muted),
     };
     Paragraph::new(Line::styled("› ", marker_style))
-        .render(Rect::new(dock.body.x, dock.body.y, 2, 1), buffer);
+        .render(Rect::new(dock.body.x, dock.content.y, 2, 1), buffer);
     let text = if model.composer.text().is_empty() {
         let placeholder = if variant == ComposerVariant::Frozen {
             "Draft retained · waiting for durable truth"
@@ -64,7 +67,7 @@ pub(super) fn render(
         cursor_scroll
     };
     Paragraph::new(text)
-        .style(colors.normal)
+        .style(colors.request_surface)
         .scroll((scroll, 0))
         .render(dock.content, buffer);
 }
@@ -78,13 +81,7 @@ struct ComposerDock {
 
 impl ComposerDock {
     fn resolve(area: Rect, has_status: bool) -> Self {
-        let status_height = if area.height <= 1 {
-            0
-        } else if has_status {
-            area.height.saturating_sub(1).min(3)
-        } else {
-            1
-        };
+        let status_height = u16::from(has_status && area.height >= 4);
         let status = Rect::new(area.x, area.y, area.width, status_height);
         let body = Rect::new(
             area.x,
@@ -92,12 +89,7 @@ impl ComposerDock {
             area.width,
             area.height.saturating_sub(status_height),
         );
-        let content = Rect::new(
-            body.x.saturating_add(2),
-            body.y,
-            body.width.saturating_sub(2),
-            body.height,
-        );
+        let content = body.inner(Margin::new(2, u16::from(body.height >= 3)));
         Self {
             status,
             body,
@@ -172,7 +164,7 @@ pub(super) fn cursor(model: &AppModel, area: Rect) -> Option<(u16, u16)> {
     Some((content.x + column, content.y + row.saturating_sub(scroll)))
 }
 
-pub(super) fn desired_height(model: &AppModel, area_width: u16, roomy: bool) -> u16 {
+pub(super) fn desired_height(model: &AppModel, area_width: u16, _roomy: bool) -> u16 {
     let inner_width = area_width.saturating_sub(2);
     if inner_width == 0 {
         return 2;
@@ -180,12 +172,9 @@ pub(super) fn desired_height(model: &AppModel, area_width: u16, roomy: bool) -> 
     let layout = EditorLayout::new(&model.composer, inner_width);
     let ((_, cursor_row), _) = layout.visible_cursor(u16::MAX);
     let rows = u16::try_from(layout.rows.len()).unwrap_or(u16::MAX);
-    let status_rows = if roomy && has_status(model, variant(model)) {
-        3
-    } else {
-        1
-    };
+    let status_rows = u16::from(has_status(model, variant(model)));
     rows.max(cursor_row.saturating_add(1))
+        .saturating_add(2)
         .saturating_add(status_rows)
 }
 

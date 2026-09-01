@@ -16,10 +16,10 @@ expression: compact
 
 
 
-
-
 • Preparing…  ·  esc to interrupt
+
 › A retained follow-up draft
+
 
 
 ===== first presented delta =====
@@ -38,8 +38,8 @@ expression: compact
 
 
 
-
 › A retained follow-up draft
+
   Esc interrupt
 
 ===== second delta with activity =====
@@ -58,14 +58,13 @@ expression: compact
 
 
 
-
 › A retained follow-up draft
+
   Esc interrupt
 
 ===== overlay while streaming =====
 › Show every verified streaming stage.
   ● Verifying streamed output
-• The first visible streaming frame
  Command palette · 1–8/21 ──────────────
 Search  type to search
 › /new              unavailable · no Ag…
@@ -80,6 +79,7 @@ Search  type to search
   Enter run   Esc close
 
 › A retained follow-up draft
+
 
 
 ===== stream restored after overlay =====
@@ -98,8 +98,8 @@ Search  type to search
 
 
 
-
 › A retained follow-up draft
+
   Esc interrupt
 
 ===== finalizing =====
@@ -118,8 +118,8 @@ Search  type to search
 
 
 
-
 › A retained follow-up draft
+
   Esc interrupt
 
 ===== ended awaiting durable =====
@@ -136,17 +136,16 @@ Search  type to search
 
 
 
-
-
 • Saving…  ·  esc to interrupt
+
 › A retained follow-up draft
+
 
 
 ===== durable takeover =====
 › Show every verified streaming stage.
   ● Verifying streamed output
 • Saved streaming answer.
-
 
 
 

@@ -398,15 +398,14 @@ mod tests {
                 width: 100,
                 height: 24,
             },
+            boot: crate::application::BootState::Ready,
+            connection: crate::application::ConnectionState::Online,
             ..Default::default()
         };
         model.composer.replace("a界b").unwrap();
 
         assert_eq!(
-            route(
-                &model,
-                mouse(MouseEventKind::Down(MouseButton::Left), 3, 22)
-            ),
+            route(&model, mouse(MouseEventKind::Down(MouseButton::Left), 3, 8)),
             Some(MouseAction::ComposerPlace(1))
         );
     }

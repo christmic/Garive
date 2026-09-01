@@ -17,7 +17,6 @@ expression: "command_suggestion_frame(Theme::Dark)"
 
 
 
-
  Commands ──────────────────────────────────────────────────────────────────────────────────────────
   /theme system  Follow terminal theme
 › /theme dark  Use dark theme
@@ -25,4 +24,5 @@ expression: "command_suggestion_frame(Theme::Dark)"
   /theme mono  Use mono theme
 
 › /theme
+
   Tab complete command                                                                   Session 1

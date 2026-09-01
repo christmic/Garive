@@ -17,11 +17,10 @@ expression: "frame(&recovery, Theme::Dark, 100, 24)"
 
 
 
-
-
  Command result unknown ────────────────────────────────────────────────────────────────────────────
 ×  A prior command has an unknown durable outcome. Review Host truth before retrying.
 
   Enter exact retry   A abandon local record
 • Working…
+
 › Ask a follow-up…

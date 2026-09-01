@@ -3,7 +3,7 @@ use crate::{view::style::palette, Theme};
 use ratatui::{buffer::Buffer, layout::Rect};
 
 #[test]
-fn idle_composer_is_an_open_terminal_surface() {
+fn idle_composer_uses_the_canonical_three_row_surface() {
     let model = AppModel::default();
     let colors = palette(Theme::Dark);
     let area = Rect::new(0, 0, 80, 3);
@@ -14,8 +14,10 @@ fn idle_composer_is_an_open_terminal_surface() {
     let marker = &buffer[(0, 1)];
     assert_eq!(marker.symbol(), "›");
     assert_eq!(marker.style().fg, colors.accent.fg);
-    assert_ne!(marker.style().bg, colors.request_surface.bg);
-    assert_ne!(buffer[(2, 1)].style().bg, colors.request_surface.bg);
+    assert_eq!(marker.style().bg, colors.request_surface.bg);
+    assert_eq!(buffer[(2, 1)].style().bg, colors.request_surface.bg);
+    assert!((0..area.height)
+        .all(|y| (0..area.width).all(|x| buffer[(x, y)].style().bg == colors.request_surface.bg)));
     let rule = colors.border_set().horizontal_top;
     assert!((0..area.width).all(|x| buffer[(x, 0)].symbol() != rule));
     assert!((0..area.height).all(|y| (0..area.width)
@@ -51,8 +53,8 @@ fn running_composer_names_the_retained_draft_and_keeps_cancel_nearby() {
     assert!(rendered.contains("Draft while current Turn runs"));
     assert!(!rendered.contains('─'));
     assert_eq!(buffer[(0, 1)].symbol(), " ");
-    assert_eq!(buffer[(0, 2)].symbol(), " ");
-    assert_eq!(buffer[(0, 3)].symbol(), "›");
+    assert_eq!(buffer[(0, 2)].symbol(), "›");
+    assert_eq!(buffer[(0, 3)].symbol(), " ");
 }
 
 #[test]
@@ -129,15 +131,15 @@ fn pointer_hit_testing_uses_wrapped_grapheme_boundaries() {
 #[test]
 fn desired_height_counts_visual_rows_and_exact_width_cursor() {
     let mut model = AppModel::default();
-    assert_eq!(desired_height(&model, 12, true), 2);
-    model.composer.replace("hello world").unwrap();
     assert_eq!(desired_height(&model, 12, true), 3);
+    model.composer.replace("hello world").unwrap();
+    assert_eq!(desired_height(&model, 12, true), 4);
     model.composer.replace("12345").unwrap();
-    assert_eq!(desired_height(&model, 7, true), 3);
+    assert_eq!(desired_height(&model, 7, true), 4);
 
     model.execution = ExecutionState::Following;
     assert_eq!(desired_height(&model, 7, true), 5);
-    assert_eq!(desired_height(&model, 7, false), 3);
+    assert_eq!(desired_height(&model, 7, false), 5);
 }
 
 #[test]

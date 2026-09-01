@@ -689,11 +689,11 @@ fn mouse_drag_selects_composer_graphemes_in_a_real_mono_pty() {
             expect "Garive"
             send "a界b"
             after 100
-            send "\033\[<0;4;23M"
-            send "\033\[<32;6;23M"
+            send "\033\[<0;4;9M"
+            send "\033\[<32;6;9M"
             send "\014"
             expect -exact "\033\[2J"
-            send "\033\[<0;6;23m"
+            send "\033\[<0;6;9m"
             after 100
             send "X"
             send "\014"
@@ -734,16 +734,16 @@ fn double_and_triple_click_replace_a_word_then_the_line_in_a_real_pty() {
             expect "Garive"
             send "alpha beta"
             after 100
-            send "\033\[<0;11;23M\033\[<0;11;23m"
-            send "\033\[<0;11;23M\033\[<0;11;23m"
+            send "\033\[<0;11;9M\033\[<0;11;9m"
+            send "\033\[<0;11;9M\033\[<0;11;9m"
             send "\014"
             expect -exact "\033\[2J"
             send "X"
             expect "alpha X"
             after 600
-            send "\033\[<0;6;23M\033\[<0;6;23m"
-            send "\033\[<0;6;23M\033\[<0;6;23m"
-            send "\033\[<0;6;23M\033\[<0;6;23m"
+            send "\033\[<0;6;9M\033\[<0;6;9m"
+            send "\033\[<0;6;9M\033\[<0;6;9m"
+            send "\033\[<0;6;9M\033\[<0;6;9m"
             after 100
             send "\014"
             expect -exact "\033\[2J"
@@ -1066,9 +1066,10 @@ fn turn_navigator_filters_commits_only_on_activation_and_shares_mouse_geometry()
             must_expect "Jump to a Turn" 76
             send "\033\[H"
             after 100
-            # The full-axis BottomPane starts at row 10 in this 100x24 frame;
-            # row 12 is the first visible Turn and shares render/hit geometry.
-            send "\033\[<0;50;12M"
+            # The three-row Composer moves the full-axis BottomPane two rows up;
+            # SGR mouse coordinates are one-based, so row 11 targets the
+            # first visible Turn at the component's zero-based row 10.
+            send "\033\[<0;50;11M"
             after 100
             send "\014"
             must_expect "\033\[2J" 77

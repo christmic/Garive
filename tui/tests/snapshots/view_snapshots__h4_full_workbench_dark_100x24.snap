@@ -24,8 +24,8 @@ expression: filmstrip
 
 • Preparing…  ·  esc to interrupt
 
-
 › A retained follow-up draft
+
 
 
 ===== first presented delta =====
@@ -50,8 +50,8 @@ expression: filmstrip
 
 
 
-
 › A retained follow-up draft
+
   Esc interrupt
 
 ===== second delta with activity =====
@@ -76,8 +76,8 @@ expression: filmstrip
 
 
 
-
 › A retained follow-up draft
+
   Esc interrupt
 
 ===== overlay while streaming =====
@@ -88,7 +88,6 @@ expression: filmstrip
   └ Verifying streamed output
 
 • The first visible streaming frame arrives.▍
-
 
 
  Command palette · 1–8/21 ──────────────────────────────────────────────────────────────────────────
@@ -104,6 +103,7 @@ Search  type to search
   ↑/↓ select   Home/End edge   Enter run   Esc close
 
 › A retained follow-up draft
+
 
 
 ===== stream restored after overlay =====
@@ -128,8 +128,8 @@ Search  type to search
 
 
 
-
 › A retained follow-up draft
+
   Esc interrupt
 
 ===== finalizing =====
@@ -154,8 +154,8 @@ Search  type to search
 
 
 
-
 › A retained follow-up draft
+
   Esc interrupt
 
 ===== ended awaiting durable =====
@@ -180,8 +180,8 @@ Search  type to search
 
 • Saving…  ·  esc to interrupt
 
-
 › A retained follow-up draft
+
 
 
 ===== durable takeover =====
@@ -192,7 +192,6 @@ Search  type to search
   └ Verifying streamed output
 
 • Saved streaming answer.
-
 
 
 

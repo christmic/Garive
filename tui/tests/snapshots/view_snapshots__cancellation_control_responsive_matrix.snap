@@ -4,13 +4,13 @@ expression: "format!(\"===== requesting · compact mono 40x8 =====\\n{requesting
 ---
 ===== requesting · compact mono 40x8 =====
 
-  • Verify the Runtime
-  • Ship with evidence
-
   cargo test passes.
 
 • Cancelling…
+
 › Retained draft while cancellation
+  settles
+
 
 ===== accepted · standard dark 100x24 =====
 
@@ -34,8 +34,8 @@ expression: "format!(\"===== requesting · compact mono 40x8 =====\\n{requesting
 
 • Stopping…
 
-
 › Retained draft while cancellation settles
+
 
 
 ===== unknown · wide light 160x28 =====
@@ -63,6 +63,5 @@ expression: "format!(\"===== requesting · compact mono 40x8 =====\\n{requesting
 
 
 • Cancel status unknown
-
 
 › Retained draft while cancellation settles

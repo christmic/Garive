@@ -11,8 +11,6 @@ expression: "frame(&action, Theme::Mono, 100, 24)"
 ## Release plan
 
   • Verify the Runtime
-  • Ship with evidence
-
  Approval required ─────────────────────────────────────────────────────────────────────────────────
 !  Review the public request before responding.
 Create one bounded local file.
@@ -24,4 +22,5 @@ Enter true or false.
 
   Enter submit response   Ctrl+Q leave safely
 • Working…
+
 › Ask a follow-up…

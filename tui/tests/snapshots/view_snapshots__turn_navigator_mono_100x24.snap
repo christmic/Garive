@@ -9,8 +9,6 @@ expression: "frame(&turns, Theme::Mono, 100, 24)"
   └ Read file
 
 ## Release plan
-
-  • Verify the Runtime
  Jump to a Turn ────────────────────────────────────────────────────────────────────────────────────
 Search  release
    1  release checkpoint 00 with verified evidence
@@ -24,4 +22,5 @@ Search  release
 
   ↑/↓ select   Home/End edge   Enter jump   Esc close
 • Working…
+
 › Ask a follow-up…

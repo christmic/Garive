@@ -4,7 +4,7 @@ use ratatui::layout::{Constraint, Layout, Rect};
 
 use crate::application::AppModel;
 
-use super::{composer, context_line, inspector};
+use super::{composer, context_line, conversation, inspector};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) struct FrameLayout {
@@ -42,7 +42,7 @@ impl FrameLayout {
             content.width,
             content.height.saturating_sub(context_height),
         );
-        let composer_height = if body.height < 11 {
+        let composer_height = if body.height < 11 && model.overlay.is_some() {
             2
         } else {
             composer::desired_height(
@@ -50,14 +50,35 @@ impl FrameLayout {
                 body.width,
                 body.width >= 52 && body.height >= 18 && model.overlay.is_none(),
             )
-            .clamp(2, 8)
+            .clamp(2, body.height.saturating_sub(1).clamp(2, 8))
         };
-        let rows = Layout::vertical([
-            Constraint::Min(1),
-            Constraint::Length(composer_height),
-            Constraint::Length(hint_height),
-        ])
-        .split(body);
+        let empty_height = model
+            .overlay
+            .is_none()
+            .then(|| conversation::empty_height(model, body.width))
+            .flatten();
+        let rows = if let Some(empty_height) = empty_height {
+            Layout::vertical([
+                Constraint::Length(
+                    empty_height.min(
+                        body.height
+                            .saturating_sub(composer_height)
+                            .saturating_sub(hint_height),
+                    ),
+                ),
+                Constraint::Length(composer_height),
+                Constraint::Length(hint_height),
+                Constraint::Min(0),
+            ])
+            .split(body)
+        } else {
+            Layout::vertical([
+                Constraint::Min(1),
+                Constraint::Length(composer_height),
+                Constraint::Length(hint_height),
+            ])
+            .split(body)
+        };
         Self {
             context: Rect::new(content.x, content.y, content.width, context_height),
             transcript: rows[0],

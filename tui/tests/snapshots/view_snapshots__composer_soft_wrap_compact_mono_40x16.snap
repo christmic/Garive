@@ -12,8 +12,7 @@ expression: "frame(&wrapped, Theme::Mono, 40, 16)"
   cargo test passes.
 
 
-
-
 • Working…  ·  esc to interrupt
 
-› keeps every visible row.
+› Composer grows with soft wrapping
+  and keeps every visible row.

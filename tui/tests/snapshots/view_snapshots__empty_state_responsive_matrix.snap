@@ -3,121 +3,118 @@ source: tui/tests/view_snapshots.rs
 expression: matrix
 ---
 ===== loading compact · Mono · 40x18 =====
-New conversation              connecting
-
-
-
-
-
-
-
-
-
-
-
-
-
+                              connecting
+>_ Garive
+Agent    Not installed
+Session  New conversation
 
 
 › Ask Garive anything
+
+
+
+
+
+
+
+
+
+
 
 
 ===== loading standard · Dark · 80x18 =====
-New conversation  ·  Garive                                           connecting
-
-
-
-
-
-
-
-
-
-
-
-
-
+                                                                      connecting
+╭────────────────────────────────────────────────────────╮
+│>_ Garive  (v0.1.0)                                     │
+│                                                        │
+│agent:    Not installed                                 │
+│session:  New conversation                              │
+╰────────────────────────────────────────────────────────╯
 
 
 › Ask Garive anything
+
+
+
+
+
+
+
 
 
 ===== loading wide · Light · 120x18 =====
-New conversation  ·  Garive                                                                                   connecting
-
-
-
-
-
-
-
-
-
-
-
-
-
+                                                                                                              connecting
+╭────────────────────────────────────────────────────────╮
+│>_ Garive  (v0.1.0)                                     │
+│                                                        │
+│agent:    Not installed                                 │
+│session:  New conversation                              │
+╰────────────────────────────────────────────────────────╯
 
 
 › Ask Garive anything
+
+
+
+
+
+
+
 
 
 ===== ready · Dark · 100x18 =====
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+╭────────────────────────────────────────────────────────╮
+│>_ Garive  (v0.1.0)                                     │
+│                                                        │
+│agent:    Not installed                                 │
+│session:  New conversation                              │
+╰────────────────────────────────────────────────────────╯
 
 
 › Ask Garive anything
+
   Ctrl+P commands
 
+
+
+
+
+
+
+
 ===== not configured · Mono · 100x18 =====
+╭────────────────────────────────────────────────────────╮
+│>_ Garive  (v0.1.0)                                     │
+│                                                        │
+│agent:    Not installed                                 │
+│session:  New conversation                              │
+╰────────────────────────────────────────────────────────╯
+
 
   No Agent is installed
   Install an Agent definition before starting a conversation.
 
-
-
-
-
-
-
-
-
-
-
-
-
 › Ask Garive anything
+
   Ctrl+P commands
 
+
+
+
+
 ===== degraded · Dark · 100x18 =====
-New conversation  ·  Garive                                                              unavailable
+                                                                                         unavailable
+╭────────────────────────────────────────────────────────╮
+│>_ Garive  (v0.1.0)                                     │
+│                                                        │
+│agent:    Not installed                                 │
+│session:  New conversation                              │
+╰────────────────────────────────────────────────────────╯
+
 
   Recovery details are available
   Open /status to inspect the safe failure and reconnect.
 
-
-
-
-
-
-
-
-
-
-
-
 › Ask Garive anything
+
   /reconnect try again safely  ·  Durable Session truth unavailable

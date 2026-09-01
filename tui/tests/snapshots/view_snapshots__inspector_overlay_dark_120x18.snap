@@ -11,11 +11,10 @@ expression: "inspector_frame(theme, 120)"
 ## Release plan
 
   • Verify the Runtime
-  • Ship with evidence
-
  Inspector · Activity ──────────────────────────────────────────────────────────────────────────────────────────────────
 › ✓ Read file
     Completed
 ↑↓ select · Enter jump · Esc close
 • Working…
+
 › Ask a follow-up…

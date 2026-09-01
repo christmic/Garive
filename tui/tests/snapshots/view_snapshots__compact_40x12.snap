@@ -2,8 +2,6 @@
 source: tui/tests/view_snapshots.rs
 expression: "frame(&model, Theme::Mono, 40, 12)"
 ---
-› Summarize the release plan.
-  ✓ Read file
 ## Release plan
 
   • Verify the Runtime
@@ -12,4 +10,5 @@ expression: "frame(&model, Theme::Mono, 40, 12)"
   cargo test passes.
 
 • Working…  ·  esc to interrupt
+
 › Ask a follow-up…
