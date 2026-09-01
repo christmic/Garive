@@ -576,6 +576,17 @@ state: center point for needs-input, open rotating ring for running, minus for
 failure and check for completion. The marker stays secondary to the accessible
 text state, and reduced motion freezes rather than removes the running shape.
 
+### XV. Goal continuity through suspension
+
+Codex keeps the current work identity attached to the bottom Composer rather
+than treating approval as an unrelated modal. Garive now binds its goal rail to
+the durable Turn lifecycle: it remains present across running, approval,
+partial-output and external-input suspension. Suspended work replaces the live
+pulse with a static attention marker and truthful `Needs input` state while
+preserving the exact goal and Activity drill-in. An empty suspended assistant
+record remains available to assistive technology but no longer creates a
+second visible `Needs input` message above the same Composer state.
+
 ## Gate 1 — Codex fidelity
 
 This gate passes only when both Desktop and Web show:

@@ -365,4 +365,12 @@ describe("Desktop product experience", () => {
     fireEvent.click(screen.getByRole("button", { name: "Open activity" }));
     expect(open).toHaveBeenCalledOnce();
   });
+
+  it("keeps the goal rail visible when durable work needs input", () => {
+    const view = render(<TurnProgress t={createTranslator("en")} onOpen={() => undefined}
+      goal="Prepare the launch decision memo" status="Needs input" activities={[]} />);
+    expect(view.container.querySelector(".turn-progress.attention")).not.toBeNull();
+    expect(view.container.querySelector(".progress-state")?.textContent).toBe("Needs input");
+    expect(screen.getByText("Prepare the launch decision memo")).toBeTruthy();
+  });
 });

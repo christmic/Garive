@@ -851,7 +851,8 @@ function WorkSurface({ state, composer, submit, startSuggestion, dispatch, conte
         aria-label={t("error.dismiss")}><Icon name="close" /></button>}</div>}
     <div className="composer-wrap">
       <div className={state.phase === "submitting" ? "composer busy" : "composer"}>
-        {state.phase === "submitting" && <TurnProgress goal={activeGoal} activities={state.activities}
+        {(state.phase === "submitting" || suspension) && <TurnProgress goal={activeGoal}
+          status={suspension ? t("status.needsInput") : undefined} activities={state.activities}
           onOpen={() => dispatch({ type: "inspector_selected", tab: "activity" })} t={t} />}
         {needsApproval && <div className="approval-card" role="alert" aria-live="assertive" aria-label={t("approval.aria")}>
           <span className="approval-icon"><Icon name="shield" /></span><div><strong>{approvalEffect
@@ -943,6 +944,8 @@ function Timeline({ state, dispatch, t }: { state: WorkState; dispatch: WorkDisp
     : latest?.role === "assistant" ? `${t("timeline.turn")} ${terminalCopy(latest.terminal, t)}。` : "";
   return <div className="timeline">{state.messages.map((message) => message.role === "user"
     ? <article className="message user-message" key={message.id}><div>{message.text}</div></article>
+    : !message.text && message.suspension
+      ? <p className="sr-only" role="status" key={message.id}>{terminalCopy(message.terminal, t)}</p>
     : <article className="message assistant-message" key={message.id}><div><div className="result-markdown"><Markdown skipHtml remarkPlugins={[remarkGfm]}
       components={{ a: ({ children }) => <span className="safe-link">{children}</span>,
         pre: ({ children }) => <MarkdownCodeBlock t={t}>{children}</MarkdownCodeBlock> }}>{message.text || terminalCopy(message.terminal, t)}</Markdown></div>
@@ -992,15 +995,16 @@ function livePhaseCopy(key: string | undefined, t: (key: MessageKey) => string):
   return t(labels[key ?? ""] ?? "timeline.working");
 }
 
-export function TurnProgress({ goal, activities, onOpen, t }: { goal?: string;
+export function TurnProgress({ goal, status, activities, onOpen, t }: { goal?: string; status?: string;
   activities: WorkState["activities"];
   onOpen: () => void; t: (key: MessageKey) => string }) {
   const recent = activities.slice(-3);
   const current = [...recent].reverse().find((activity) => !activity.terminal) ?? recent.at(-1);
-  return <article className="turn-progress" aria-label={t("timeline.progressTitle")}>
+  return <article className={status ? "turn-progress attention" : "turn-progress"}
+    aria-label={t("timeline.progressTitle")}>
     <div className="turn-progress-head"><span className="live-pulse"><span /></span><div className="progress-summary">
       <strong>{t("timeline.progressTitle")}</strong><p>{goal || t("timeline.progressBody")}</p></div>
-      {current && <span className="progress-state">{activityState(current.state, t)}</span>}
+      {(status || current) && <span className="progress-state">{status ?? activityState(current!.state, t)}</span>}
       <button type="button" onClick={onOpen} aria-label={t("timeline.openActivity")}
         title={t("timeline.openActivity")}><Icon name="activity" /></button></div>
     {recent.length > 0 && <div className="sr-only">{recent.map((activity) =>

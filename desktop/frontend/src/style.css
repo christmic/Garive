@@ -715,6 +715,9 @@ kbd { font-size: var(--text-2xs); }
 .turn-progress-head button svg { width: 13px; }
 .live-pulse { display: grid; place-items: center; width: 18px; height: 18px; border-radius: 50%; background: color-mix(in srgb, var(--action-primary) 13%, transparent); }
 .live-pulse > span { width: 6px; height: 6px; border-radius: 50%; background: var(--action-primary); animation: live-pulse 1.6s ease-in-out infinite; }
+.turn-progress.attention .live-pulse { background: color-mix(in srgb, var(--state-attention) 15%, transparent); }
+.turn-progress.attention .live-pulse > span { background: var(--state-attention); animation: none; }
+.turn-progress.attention .progress-state { color: var(--state-attention); }
 @keyframes live-pulse { 50% { opacity: .4; transform: scale(.72); } }
 @media (prefers-reduced-motion: reduce) { .live-pulse > span, .live-answer .result-markdown::after, .task-state-dot.active::after { animation: none; } }
 

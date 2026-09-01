@@ -134,6 +134,12 @@ workbench made from four persistent spatial layers:
    continuous canvas. Assistant output is document content, not a card stack.
    Environment may float above this layer; it does not permanently shrink an
    idle canvas.
+   The goal rail belongs to the durable Turn, not to a transient network request:
+   it remains attached to the Composer while work is running or suspended for
+   approval, partial output, or external input. Suspension changes the admitted
+   state to Needs input; it does not erase the goal or invent a new stage.
+   An empty suspended assistant record remains an accessible status notification
+   but is not painted as a duplicate pseudo-message above the same goal rail.
 4. **Output layer.** Files, diffs, terminals and governed artifacts open as a
    resizable sibling pane with their own tab, location/action toolbar and
    independent scroll. This layer may replace the work layer at narrow widths,
