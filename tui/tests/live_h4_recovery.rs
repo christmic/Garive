@@ -190,7 +190,7 @@ async fn shipping_tui_recovers_live_snapshot_then_converges_to_durable_truth() {
         move || run_expect(address, &session_id, &paths, &end_log)
     });
 
-    wait_for(&stage_one).await;
+    wait_for_with_log(&stage_one, &log).await;
     wait_for(&reader_ready).await;
     assert!(
         host.get_timeline(&session.session_id, 0, 1).unwrap().items[0]
@@ -205,7 +205,7 @@ async fn shipping_tui_recovers_live_snapshot_then_converges_to_durable_truth() {
         }),
     ))
     .unwrap();
-    wait_for(&stage_precommit).await;
+    wait_for_with_log(&stage_precommit, &log).await;
     let end_follow = fs::read_to_string(&end_log).unwrap();
     assert!(end_follow.contains("before-disconnect"));
     assert!(end_follow.contains("second-live-frame"));
@@ -616,8 +616,26 @@ async fn wait_for(path: &Path) {
     .unwrap_or_else(|_| panic!("timed out waiting for {}", path.display()));
 }
 
+async fn wait_for_with_log(path: &Path, log: &Path) {
+    let waited = tokio::time::timeout(Duration::from_secs(10), async {
+        while !path.exists() {
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    })
+    .await;
+    if waited.is_err() {
+        let transcript = fs::read(log).unwrap_or_default();
+        let tail = &transcript[transcript.len().saturating_sub(8_192)..];
+        panic!(
+            "timed out waiting for {}; terminal tail={:?}",
+            path.display(),
+            String::from_utf8_lossy(tail)
+        );
+    }
+}
+
 fn run_expect(address: SocketAddr, session: &str, paths: &[PathBuf; 10], end_log: &Path) -> bool {
-    Command::new("expect")
+    let status = Command::new("expect")
         .env("TERM", "xterm-256color")
         .env("GARIVE_TUI_BIN", env!("CARGO_BIN_EXE_garive-tui"))
         .env("GARIVE_TUI_HOST", format!("http://{address}/"))
@@ -635,8 +653,11 @@ fn run_expect(address: SocketAddr, session: &str, paths: &[PathBuf; 10], end_log
         .env("GARIVE_TUI_STATE", &paths[9])
         .args(["-c", EXPECT_SCRIPT])
         .status()
-        .unwrap()
-        .success()
+        .unwrap();
+    if !status.success() {
+        eprintln!("recovery expect script exited with {status}");
+    }
+    status.success()
 }
 
 fn run_fairness_expect(address: SocketAddr, session: &str, paths: &[PathBuf; 12]) -> i32 {
@@ -682,7 +703,10 @@ const EXPECT_SCRIPT: &str = r#"
     expect -exact "\033\[2J"
     must "before-disconnect" 21
     send "\033\[Z"
+    must "\033\[?25l" 22
     send "\033\[H"
+    must "Browsing" 24
+    must "history" 26
     mark $env(GARIVE_STAGE_ONE)
     must "1 newer" 23
     log_file
