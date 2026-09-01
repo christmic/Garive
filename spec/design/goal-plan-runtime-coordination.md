@@ -153,6 +153,12 @@ Plan completion does not imply Goal success. The Goal verifier independently
 resolves every declared criterion against the fixed ledger prefix. Conversely,
 a completed Turn does not imply a completed step, Plan or Goal.
 
+After `plan.completed` commits, the coordinator may propose Goal success only
+from that unique completed Plan. It reads the Plan's verified reduction set,
+re-observes the same durable references at the new current Session version and
+runs the Goal verifier again. The client cannot provide or replace this set;
+Plan completion evidence is not a boolean shortcut around Goal verification.
+
 ## Suspension and continuation
 
 - A C5 interaction, operator reconciliation or supported external-input Turn

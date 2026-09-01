@@ -2,7 +2,7 @@ use std::collections::BTreeSet;
 
 use garive_goal::{
     GoalBoundsV1, GoalCapabilityReference, GoalCriterion, GoalCriterionId, GoalDefinitionV1,
-    GoalEvidenceId, GoalEvidenceKind, GoalEvidenceV1, GoalId, GoalScopeV1,
+    GoalEvidenceId, GoalEvidenceKind, GoalEvidenceV1, GoalId, GoalScopeV1, GoalState,
 };
 use garive_ledger::{
     AgentDefinitionId, AgentDefinitionRevision, AgentInstanceId, CanonicalPayload, FactDraft,
@@ -13,12 +13,14 @@ use garive_plan::{
     PlanStepV1, StepState,
 };
 use garive_runtime::{
-    commit_plan_command, commit_plan_replacement, get_turn, plan_adopt_plan, plan_complete_plan,
-    plan_plan_replacement, plan_plan_transition, plan_propose_plan, plan_start_step_execution,
-    plan_start_turn, reconstruct_execution_work_binding, reconstruct_plan, reconstruct_plan_graph,
-    verify_plan_carry_forward, EffectiveRuntimeLimits, GetTurnQuery, PlanCommandContext,
-    PlanRetryPosture, PlanRuntimeError, PlanRuntimeState, PlanRuntimeTransition,
-    PlanStepExecutionStart, RuntimeCommandId, SqliteLedger, StartTurnCommand,
+    commit_goal_command, commit_plan_command, commit_plan_replacement, get_turn, plan_adopt_plan,
+    plan_complete_plan, plan_plan_replacement, plan_plan_transition, plan_propose_plan,
+    plan_start_step_execution, plan_start_turn, plan_succeed_goal_from_completed_plan,
+    reconstruct_execution_work_binding, reconstruct_goal, reconstruct_plan, reconstruct_plan_graph,
+    verify_plan_carry_forward, EffectiveRuntimeLimits, GetTurnQuery, GoalCommandContext,
+    PlanCommandContext, PlanRetryPosture, PlanRuntimeError, PlanRuntimeState,
+    PlanRuntimeTransition, PlanStepExecutionStart, RuntimeCommandId, SqliteLedger,
+    StartTurnCommand,
 };
 use serde_json::json;
 use sha2::{Digest, Sha256};
@@ -245,15 +247,37 @@ fn claims_expire_before_start_and_started_work_recovers_to_completion() {
         &terminal,
     )
     .unwrap();
-    assert_eq!(
-        recover(&ledger, &session).snapshot.state(),
-        PlanState::Completed
-    );
+    let completed = recover(&ledger, &session);
+    assert_eq!(completed.snapshot.state(), PlanState::Completed);
     let graph = reconstruct_plan_graph(&ledger, &session).unwrap();
     let projected = graph.get(&("plan-1".into(), 1)).unwrap();
     assert_eq!(graph.len(), 1);
     assert_eq!(projected.snapshot.state(), PlanState::Completed);
     assert_eq!(projected.state_version, 11);
+
+    let goal_terminal = plan_succeed_goal_from_completed_plan(
+        &ledger,
+        &session,
+        "goal-1",
+        completed.session_version,
+        2,
+        &goal_context("succeed-goal"),
+    )
+    .unwrap();
+    commit_goal_command(
+        &mut ledger,
+        session.clone(),
+        completed.session_version,
+        &goal_terminal,
+    )
+    .unwrap();
+    assert_eq!(
+        reconstruct_goal(&ledger, &session, "goal-1")
+            .unwrap()
+            .snapshot
+            .state(),
+        GoalState::Succeeded
+    );
 
     let stored: String = ledger
         .connection_for_test()
@@ -1199,6 +1223,13 @@ fn context(command_id: &str) -> PlanCommandContext {
     PlanCommandContext {
         command_id: command_id.into(),
         actor_reference: "user:fixture".into(),
+        recorded_at: timestamp().into(),
+    }
+}
+fn goal_context(command_id: &str) -> GoalCommandContext {
+    GoalCommandContext {
+        command_id: command_id.into(),
+        actor_reference: "runtime:goal-plan-coordinator".into(),
         recorded_at: timestamp().into(),
     }
 }
