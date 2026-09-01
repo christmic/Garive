@@ -8,12 +8,13 @@ use sha2::{Digest, Sha256};
 
 use crate::plan_runtime::{plan_resume_failed_plan, plan_suspend_failed_plan};
 use crate::{
-    commit_goal_command, commit_plan_command, dispatch_plan_step_once,
+    commit_goal_command, commit_plan_command, commit_plan_replacement, dispatch_plan_step_once,
     plan_activate_goal_from_authoritative_plan, plan_complete_authoritative_plan,
     plan_fail_goal_from_failed_plan, plan_succeed_goal_from_completed_plan, reconstruct_goal,
-    reconstruct_plan_graph, GoalCommandContext, GoalPlanCoordinationError, GoalRuntimeError,
-    GoalRuntimeTransition, PlanCommandContext, PlanDispatchError, PlanDispatchOutcome,
-    PlanDispatchTick, PlanRuntimeError, PlanStepDispatchFactory, SqliteLedger, TurnDispatcher,
+    reconstruct_plan_graph, verify_plan_carry_forward, GoalCommandContext,
+    GoalPlanCoordinationError, GoalRuntimeError, GoalRuntimeTransition, PlanCommandContext,
+    PlanDispatchError, PlanDispatchOutcome, PlanDispatchTick, PlanRuntimeError,
+    PlanStepDispatchFactory, SqliteLedger, TurnDispatcher,
 };
 
 /// One bounded Runtime coordination decision over a verified Session prefix.
@@ -129,6 +130,8 @@ pub struct PlanAdmissionInput {
     pub plan_revision: u64,
     /// Canonical immutable Plan definition digest.
     pub plan_definition_digest: String,
+    /// Exact authoritative revision replaced by this proposal, when any.
+    pub prior_plan_revision: Option<u64>,
 }
 
 /// Bounded result returned by a constructed Plan admission policy.
@@ -199,6 +202,11 @@ pub enum PlanFailureDecision {
         /// Same stable policy revision that granted suspension.
         policy_reference: String,
     },
+    /// Request a new immutable Plan revision under one stable policy revision.
+    Replan {
+        /// Stable policy revision granting replanning.
+        policy_reference: String,
+    },
     /// Terminalize the exact Plan under one stable policy revision.
     Fail {
         /// Stable policy revision granting terminal failure.
@@ -232,6 +240,13 @@ pub enum GoalPlanAdvanceOutcome {
     NoAction,
     /// A planning, admission, continuation or failure policy must decide next.
     AwaitingPolicy(GoalPlanDecision),
+    /// Failure policy admitted replanning without granting proposal authority.
+    ReplanRequested {
+        /// Fixed-prefix failed Plan decision.
+        decision: GoalPlanDecision,
+        /// Stable policy revision granting the proposal attempt.
+        policy_reference: String,
+    },
     /// One non-dispatch coordination command committed durably.
     Committed(GoalPlanDecision),
     /// The bounded Step dispatcher made its one allowed decision.
@@ -523,7 +538,17 @@ fn advance_goal_plan_internal(
                     )
                     .map_err(GoalPlanCoordinatorError::Plan)?
                 }
+                PlanFailureDecision::Replan { policy_reference }
+                    if input.suspension_reference.is_none() =>
+                {
+                    validate_failure_policy_metadata(&policy_reference, None)?;
+                    return Ok(GoalPlanAdvanceOutcome::ReplanRequested {
+                        decision,
+                        policy_reference,
+                    });
+                }
                 PlanFailureDecision::Suspend { .. }
+                | PlanFailureDecision::Replan { .. }
                 | PlanFailureDecision::Fail { .. }
                 | PlanFailureDecision::Defer { .. } => {
                     return Ok(GoalPlanAdvanceOutcome::AwaitingPolicy(decision));
@@ -564,6 +589,23 @@ fn advance_goal_plan_internal(
             let plan_definition_digest = proposal.snapshot.definition().digest().map_err(|_| {
                 GoalPlanCoordinatorError::Coordination(GoalPlanCoordinationError::CorruptState)
             })?;
+            let sources = plans
+                .values()
+                .filter(|plan| {
+                    let definition = plan.snapshot.definition();
+                    matches!(
+                        plan.snapshot.state(),
+                        PlanState::Adopted | PlanState::Running | PlanState::Suspended
+                    ) && definition.plan_id().as_str() == plan_id
+                        && definition.plan_revision().checked_add(1) == Some(*plan_revision)
+                })
+                .collect::<Vec<_>>();
+            if sources.len() > 1 {
+                return Err(GoalPlanCoordinatorError::Coordination(
+                    GoalPlanCoordinationError::CorruptState,
+                ));
+            }
+            let source = sources.first().copied();
             let policy_decision = policy.decide(&PlanAdmissionInput {
                 session_version: snapshot.session_version,
                 through_position: snapshot.through_position,
@@ -573,30 +615,55 @@ fn advance_goal_plan_internal(
                 plan_id: plan_id.clone(),
                 plan_revision: *plan_revision,
                 plan_definition_digest,
+                prior_plan_revision: source
+                    .map(|value| value.snapshot.definition().plan_revision()),
             });
             let context = plan_context(&snapshot, tick, "admit-plan");
             let planned = match policy_decision {
-                PlanAdmissionDecision::Adopt { policy_reference } => crate::plan_adopt_plan(
-                    ledger,
-                    session_id,
-                    proposal,
-                    proposal.state_version,
-                    &context,
-                    crate::PlanRuntimeTransition::Adopt {
-                        expected_goal_revision: snapshot.goal_revision,
-                        expected_prior_plan_revision: None,
-                        policy_reference,
-                        carry_forward_evidence: CanonicalPayload::from_value(
-                            &serde_json::json!([]),
+                PlanAdmissionDecision::Adopt { policy_reference } => {
+                    if let Some(source) = source {
+                        let verified =
+                            verify_plan_carry_forward(ledger, session_id, source, proposal)
+                                .map_err(GoalPlanCoordinatorError::Plan)?;
+                        let replacement = crate::plan_plan_replacement(
+                            source,
+                            proposal,
+                            &verified,
+                            &context,
+                            &policy_reference,
                         )
-                        .map_err(|_| {
-                            GoalPlanCoordinatorError::Coordination(
-                                GoalPlanCoordinationError::CorruptState,
+                        .map_err(GoalPlanCoordinatorError::Plan)?;
+                        commit_plan_replacement(
+                            ledger,
+                            session_id.clone(),
+                            snapshot.session_version,
+                            &replacement,
+                        )
+                        .map_err(GoalPlanCoordinatorError::Plan)?;
+                        return Ok(GoalPlanAdvanceOutcome::Committed(decision));
+                    }
+                    crate::plan_adopt_plan(
+                        ledger,
+                        session_id,
+                        proposal,
+                        proposal.state_version,
+                        &context,
+                        crate::PlanRuntimeTransition::Adopt {
+                            expected_goal_revision: snapshot.goal_revision,
+                            expected_prior_plan_revision: None,
+                            policy_reference,
+                            carry_forward_evidence: CanonicalPayload::from_value(
+                                &serde_json::json!([]),
                             )
-                        })?,
-                    },
-                )
-                .map_err(GoalPlanCoordinatorError::Plan)?,
+                            .map_err(|_| {
+                                GoalPlanCoordinatorError::Coordination(
+                                    GoalPlanCoordinationError::CorruptState,
+                                )
+                            })?,
+                        },
+                    )
+                    .map_err(GoalPlanCoordinatorError::Plan)?
+                }
                 PlanAdmissionDecision::Reject {
                     policy_reference,
                     reason,
@@ -896,7 +963,31 @@ fn decide(
     if authoritative.len() > 1 {
         return Err(GoalPlanCoordinationError::CorruptState);
     }
+    let proposed = plans
+        .iter()
+        .copied()
+        .filter(|plan| plan.snapshot.state() == PlanState::Proposed)
+        .collect::<Vec<_>>();
     if let Some(plan) = authoritative.first().copied() {
+        if proposed.len() > 1 {
+            return Ok(GoalPlanDecision::NeedsOperator {
+                reason: "ambiguous_plan_proposals",
+            });
+        }
+        if let Some(target) = proposed.first().copied() {
+            let source = plan.snapshot.definition();
+            let target = target.snapshot.definition();
+            if target.plan_id() != source.plan_id()
+                || source.plan_revision().checked_add(1) != Some(target.plan_revision())
+                || target.goal_revision() != goal.snapshot.revision()
+            {
+                return Err(GoalPlanCoordinationError::CorruptState);
+            }
+            return Ok(GoalPlanDecision::AdmitProposedPlan {
+                plan_id: target.plan_id().as_str().into(),
+                plan_revision: target.plan_revision(),
+            });
+        }
         return decide_authoritative(goal, plan);
     }
     let terminals = plans
@@ -930,11 +1021,6 @@ fn decide(
             _ => GoalPlanDecision::NoAction,
         });
     }
-    let proposed = plans
-        .iter()
-        .copied()
-        .filter(|plan| plan.snapshot.state() == PlanState::Proposed)
-        .collect::<Vec<_>>();
     Ok(
         if proposed.is_empty() && goal.snapshot.state() == GoalState::Draft {
             GoalPlanDecision::ProposePlan

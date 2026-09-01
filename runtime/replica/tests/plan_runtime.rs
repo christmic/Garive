@@ -1014,8 +1014,111 @@ fn coordinator_admission_is_explicit_read_only_and_fixed_prefix() {
     assert_eq!(seen[0].goal_revision, 2);
     assert_eq!(seen[0].plan_id, "plan-1");
     assert_eq!(seen[0].plan_revision, 1);
+    assert_eq!(seen[0].prior_plan_revision, None);
     assert_eq!(
         recover(&ledger, &session).snapshot.state(),
+        PlanState::Adopted
+    );
+}
+
+#[test]
+fn coordinator_admits_replacement_through_verified_atomic_carry_forward() {
+    let directory = tempdir().unwrap();
+    let path = directory
+        .path()
+        .join("goal-plan-replacement-admission.sqlite3");
+    let session = SessionId::try_from("session-1").unwrap();
+    let mut ledger = SqliteLedger::open(&path).unwrap();
+    open_session(&mut ledger, &session);
+    let proposed = plan_propose_plan(
+        &ledger,
+        &session,
+        &context("replacement-propose-1"),
+        definition_revision(1),
+    )
+    .unwrap();
+    commit_plan_command(&mut ledger, session.clone(), 1, &proposed).unwrap();
+    let source = recover_revision(&ledger, &session, 1);
+    let adopted = plan_adopt_plan(
+        &ledger,
+        &session,
+        &source,
+        source.state_version,
+        &context("replacement-adopt-1"),
+        PlanRuntimeTransition::Adopt {
+            expected_goal_revision: 2,
+            expected_prior_plan_revision: None,
+            policy_reference: "admission-policy-v1".into(),
+            carry_forward_evidence: evidence(),
+        },
+    )
+    .unwrap();
+    commit_plan_command(
+        &mut ledger,
+        session.clone(),
+        source.session_version,
+        &adopted,
+    )
+    .unwrap();
+    let source = recover_revision(&ledger, &session, 1);
+    let target = plan_propose_plan(
+        &ledger,
+        &session,
+        &context("replacement-propose-2"),
+        definition_revision(2),
+    )
+    .unwrap();
+    commit_plan_command(
+        &mut ledger,
+        session.clone(),
+        source.session_version,
+        &target,
+    )
+    .unwrap();
+    assert_eq!(
+        evaluate_goal_plan_once(&ledger, &session, "goal-1")
+            .unwrap()
+            .decision,
+        GoalPlanDecision::AdmitProposedPlan {
+            plan_id: "plan-1".into(),
+            plan_revision: 2,
+        }
+    );
+    let admission = StaticAdmissionPolicy::new(PlanAdmissionDecision::Adopt {
+        policy_reference: "admission-policy-v2".into(),
+    });
+    let dispatcher = RecordingTurnDispatcher::default();
+    let mut factory = DispatchFactory {
+        unavailable: false,
+        policy_mismatch: false,
+    };
+    assert!(matches!(
+        advance_goal_plan_with_admission_once(
+            &mut ledger,
+            &session,
+            "goal-1",
+            &GoalPlanCoordinationTick {
+                actor_reference: "coordinator:local".into(),
+                recorded_at: timestamp().into(),
+                dispatch: None,
+            },
+            &mut factory,
+            &dispatcher,
+            &admission,
+        )
+        .unwrap(),
+        GoalPlanAdvanceOutcome::Committed(GoalPlanDecision::AdmitProposedPlan { .. })
+    ));
+    assert_eq!(
+        admission.seen.lock().unwrap()[0].prior_plan_revision,
+        Some(1)
+    );
+    assert_eq!(
+        recover_revision(&ledger, &session, 1).snapshot.state(),
+        PlanState::Superseded
+    );
+    assert_eq!(
+        recover_revision(&ledger, &session, 2).snapshot.state(),
         PlanState::Adopted
     );
 }
@@ -1502,6 +1605,33 @@ async fn retry_posture_reopens_within_bounds_and_stops_at_failure_policy_after_e
             .snapshot
             .state(),
         GoalState::Active
+    );
+    let replan = StaticFailurePolicy::new(PlanFailureDecision::Replan {
+        policy_reference: "failure-policy-v1".into(),
+    });
+    assert!(matches!(
+        advance_goal_plan_with_failure_once(
+            &mut ledger,
+            &session,
+            "goal-1",
+            &GoalPlanCoordinationTick {
+                actor_reference: "coordinator:local".into(),
+                recorded_at: timestamp().into(),
+                dispatch: None,
+            },
+            &mut factory,
+            &dispatcher,
+            &replan,
+        )
+        .unwrap(),
+        GoalPlanAdvanceOutcome::ReplanRequested {
+            policy_reference,
+            ..
+        } if policy_reference == "failure-policy-v1"
+    ));
+    assert_eq!(
+        recover(&ledger, &session).snapshot.state(),
+        PlanState::Running
     );
     let failure = StaticFailurePolicy::new(PlanFailureDecision::Fail {
         policy_reference: "failure-policy-v1".into(),
