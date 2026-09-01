@@ -42,6 +42,7 @@ and bundled-module inspection of the installed package established these facts:
 | sidebar | `clamp(240px, 275px preferred, min(520px, 100vw - 320px))` |
 | thread measure | 40 rem default, with 42/48 rem and 480/500 px variants |
 | composer | thread measure plus 24 px inline overhang; 4 px base spacing |
+| conversation rhythm | 16 px between conversation items; 4 px inside grouped items |
 | motion | 150 ms basic, 300 ms relaxed; `.19,1,.22,1` enter, `.8,0,.4,1` exit, `.23,1,.32,1` snappy |
 | neutral ramp | `#fff`, `#f9f9f9`, `#ededed`, `#cdcdcd`, `#afafaf`, `#414141`, `#303030`, `#212121`, `#181818`, `#0d0d0d` |
 
@@ -51,6 +52,13 @@ rail, composer utility bar, task suggestions, terminal panel, worktree
 environment, text-file tabs and artifact tabs. This confirms that Codex is a
 desktop workbench, not one chat column plus a generic inspector. These values
 and module boundaries are evidence, not a license to import code or assets.
+
+Its executable root tokens expose `--conversation-item-gap: 16px` and
+`--conversation-grouped-item-gap: 4px`. Before this audit, Garive's final CSS
+override used a 30 px bottom margin on every message, including the last item,
+which made long work read like a sparse web feed. The shared Desktop/Web shell
+now applies 16 px only between durable Turns and reuses 4 px for state/actions
+that belong to one Turn.
 
 The supplied Environment reference uses its trailing header slot for `+`, not
 for a second close button. Garive maps that visual hierarchy to the existing

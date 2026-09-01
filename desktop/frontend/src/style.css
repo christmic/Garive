@@ -363,8 +363,8 @@ kbd { color: var(--subtle); font: 11px -apple-system, sans-serif; }
 .preference-options label.selected { background: var(--paper-strong); color: var(--text); box-shadow: 0 1px 4px rgba(42,39,28,.1); }
 .preference-options label:focus-within { outline: 2px solid var(--accent); outline-offset: 1px; }
 
-.density-compact .timeline { gap: 19px; padding-top: 27px; }
-.density-compact .message { gap: 8px; }
+.density-compact .timeline { padding-top: 27px; }
+.density-compact .message:not(:first-child) { margin-top: var(--conversation-grouped-item-gap); }
 .density-compact .assistant-message > div, .density-compact .user-message > div { padding-block: 8px; }
 .density-compact .settings-card { padding-block: 13px; }
 .density-compact .workspace-auth-row { min-height: 46px; }
@@ -694,7 +694,8 @@ kbd { font-size: var(--text-2xs); }
 .suggestion-grid svg { position: static; justify-self: end; width: 13px; }
 
 .timeline { width: min(39rem, calc(100% - 48px)); padding: 40px 0 174px; }
-.message { margin-bottom: 30px; }
+.message { margin: 0; }
+.message:not(:first-child) { margin-top: var(--conversation-item-gap); }
 .user-message > div { max-width: 70%; padding: 10px 14px; border: 0; border-radius: 22px; corner-shape: round; background: var(--surface-subtle); font-size: var(--text-md); line-height: 1.55; }
 .assistant-message { display: block; }
 .result-markdown { font-size: var(--document-font-size); line-height: var(--document-leading); }
@@ -717,7 +718,7 @@ kbd { font-size: var(--text-2xs); }
 .code-block > header button:hover { color: var(--text-primary); background: var(--surface-hover); }
 .code-block > header button svg { width: 13px; }
 .result-markdown .code-block pre { margin: 0; padding: 14px 16px; border: 0; border-radius: 0; background: transparent; }
-.result-meta { justify-content: flex-start; gap: 2px; min-height: 34px; margin-top: 4px; padding-top: 4px; border-top-color: transparent; color: var(--text-tertiary); font-size: var(--text-xs); opacity: .5; transition: opacity var(--motion-fast); }
+.result-meta { justify-content: flex-start; gap: 2px; min-height: 34px; margin-top: var(--conversation-grouped-item-gap); padding-top: var(--conversation-grouped-item-gap); border-top-color: transparent; color: var(--text-tertiary); font-size: var(--text-xs); opacity: .5; transition: opacity var(--motion-fast); }
 .assistant-message:hover .result-meta, .result-meta:focus-within { opacity: 1; }
 .result-terminal { margin-right: 3px; }
 .result-actions { gap: 0; }

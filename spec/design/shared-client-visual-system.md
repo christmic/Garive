@@ -74,6 +74,7 @@ essential label is clipped or replaced by an icon.
 | depth | `--shadow-raised`, `--shadow-overlay`; no other shadow families |
 | motion | `--motion-basic` 150 ms, `--motion-relaxed` 300 ms; exact basic, enter, exit and snappy curves |
 | desktop chrome | `--height-window-bar` 34, `--height-file-toolbar` 30 px |
+| conversation rhythm | `--conversation-item-gap` 16, `--conversation-grouped-item-gap` 4 px |
 
 Desktop controls are at least 32 px high; primary actions and touch-capable
 surfaces provide 44×44 px targets. Reduced-motion makes nonessential animation
@@ -171,6 +172,13 @@ window rhythm and structural 1 px separators. Depth is used only for surfaces
 that actually float: Composer, Environment, menus and modal selectors. Docked
 rails, title rows and file panes use surface contrast and separators, not
 shadows or rounded outer cards.
+
+Conversation is a compact desktop document, not a feed of independent web
+cards. Durable Turns are separated by 16 px; actions, terminal state and other
+content that belongs to the same Turn use the 4 px grouped rhythm. Assistant
+output remains flush with the reading axis, while a user request alone may use
+the bounded neutral bubble. Compact density may reduce inter-Turn rhythm to the
+grouped token, but it must not change document typography or hide state.
 
 ### Desktop material and window behavior
 

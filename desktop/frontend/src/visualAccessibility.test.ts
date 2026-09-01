@@ -39,6 +39,8 @@ describe("Desktop visual accessibility contract", () => {
     }
     expect(TOKENS).toContain("--document-font-size: 13px");
     expect(TOKENS).toContain("--document-leading: 1.625");
+    expect(TOKENS).toContain("--conversation-item-gap: 16px");
+    expect(TOKENS).toContain("--conversation-grouped-item-gap: 4px");
     expect(TOKENS).toContain("--height-window-bar: 34px");
     expect(TOKENS).toContain("--height-file-toolbar: 30px");
     expect(TOKENS).toContain("--radius-composer: 20px");
@@ -67,6 +69,8 @@ describe("Desktop visual accessibility contract", () => {
     expect(CSS).toContain(".artifact-preview-content pre { max-height: none;");
     expect(CSS).toContain(".artifact-preview-content .document-code-block");
     expect(CSS).toContain(".result-markdown { font-size: var(--document-font-size); line-height: var(--document-leading); }");
+    expect(CSS).toContain(".message:not(:first-child) { margin-top: var(--conversation-item-gap); }");
+    expect(CSS).toContain("margin-top: var(--conversation-grouped-item-gap); padding-top: var(--conversation-grouped-item-gap)");
     expect(CSS).toContain(".result-markdown h1 { margin: 0 0 calc(var(--document-space) * 2);");
     expect(CSS).toContain(".assistant-message .result-markdown p { font-size: inherit; line-height: inherit; white-space: normal; }");
     expect(CSS).toContain(".artifact-workbench-toolbar { display: flex;");
