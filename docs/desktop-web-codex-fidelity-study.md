@@ -1653,6 +1653,25 @@ only after a real away-scroll, has no visible label, remains named for assistive
 technology, and returns to hidden, pointer-inert, keyboard-inert state after
 activation.
 
+### LVIII. Thread summary is a section system, not a status card stack
+
+Installed Codex `26.825.51511` constructs the right summary from reusable
+`Z.Section`, `Z.Item`, `Z.ItemMeta`, `Z.SectionCount` and `Z.SectionActions`
+primitives in `local-conversation-thread-CQimdxEP.js`. The Environment section
+composes admitted diff, branch and Git-operation rows; Sources independently
+composes admitted files, external resources, tools and Web search. Each section
+has a stable key and collapse state. Missing capability data becomes absent,
+muted, unavailable or loading UI rather than invented content.
+
+Garive now uses the same section contract for its real Runtime, Workspace and
+committed Activity projections. Section buttons are keyboard-native, expose
+`aria-expanded`/`aria-controls`, persist the user's disclosure choice and carry
+quiet counts. Activity state moved from a second line to trailing metadata,
+reducing the live 1280×720 Environment panel while retaining every admitted
+fact. This is shared Desktop/Web infrastructure; future Git or Source adapters
+must supply real Runtime facts to these primitives rather than adding fixture
+rows to the client.
+
 ## Gate 1 — Codex fidelity
 
 This gate passes only when both Desktop and Web show:

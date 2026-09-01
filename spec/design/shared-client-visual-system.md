@@ -732,6 +732,13 @@ product admits those actions.
   highlights its bubble, exits tail following and leaves return-to-latest
   reachable. Native button semantics own Enter/Space; focus exposes the same
   aligned preview as pointer hover.
+- Thread summary content is composed from shared keyed sections and compact
+  item rows. A section heading is a native button with `aria-expanded` and
+  `aria-controls`; its open/closed preference is client-local presentation
+  state. Counts use trailing tabular metadata. Runtime, Workspace, Activity,
+  Git and Source rows render only admitted facts; unavailable adapters may be
+  muted or omitted but must never be replaced by illustrative rows. Activity
+  lifecycle state is trailing metadata so long-running work remains scannable.
 
 ## Content rules
 

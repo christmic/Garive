@@ -26,6 +26,7 @@ import { TurnActionControls } from "./ui/TurnActionControls";
 import { ThreadUserNavigationRail } from "./ui/ThreadUserNavigationRail";
 import { ThreadFindBar } from "./ui/ThreadFindBar";
 import { ScrollToTailButton } from "./ui/ScrollToTailButton";
+import { ThreadSummarySection } from "./ui/ThreadSummarySection";
 import { UsageBudgetCard, UsageBudgetTrigger, type UsageBudgetSnapshot } from "./ui/UsageBudget";
 import { WindowZoomBanner } from "./ui/WindowZoomBanner";
 import { SetupFlow } from "./features/setup/SetupFlow";
@@ -1830,23 +1831,21 @@ export function CommittedActivity({ state, t }: { state: WorkState; t: (key: Mes
       || left.source_position - right.source_position) : [];
   const turns = state.messages.filter((message) => message.role === "assistant");
   return <div className="environment-content">
-    <section className="environment-section" aria-labelledby="environment-runtime-label">
-      <h2 id="environment-runtime-label">{t("environment.runtime")}</h2>
+    <ThreadSummarySection sectionKey="runtime" title={t("environment.runtime")}>
       <div className="environment-row"><span className="environment-row-icon"><Icon name="desktop" /></span>
         <div><strong>{t("shell.local")}</strong><small>{t(state.capabilities?.configured
           ? "shell.runtimeReadyShort" : "shell.setupRequired")}</small></div>
         <span className={`environment-row-state ${state.capabilities?.configured ? "ready" : "unavailable"}`}>
           <Icon name={state.capabilities?.configured ? "check" : "warning"} /></span></div>
-    </section>
-    {state.workspaces.length > 0 && <section className="environment-section" aria-labelledby="environment-workspaces-label">
-      <h2 id="environment-workspaces-label">{t("environment.workspaces")}</h2>
+    </ThreadSummarySection>
+    {state.workspaces.length > 0 && <ThreadSummarySection sectionKey="workspaces"
+      title={t("environment.workspaces")} count={state.workspaces.length}>
       {state.workspaces.map((workspace) => <div className="environment-row" key={workspace.workspace_id}>
         <span className="environment-row-icon"><Icon name="work" /></span><div><strong dir="auto">{workspace.display_name}</strong>
           <small>{t(workspace.access === "read_write" ? "context.readOutput" : "context.readOnly")} · {t("context.attachedState")}</small></div>
         <span className="environment-row-state ready"><Icon name="check" /></span></div>)}
-    </section>}
-    <section className="environment-section" aria-labelledby="environment-activity-label">
-      <h2 id="environment-activity-label">{t("inspector.activity")}</h2>
+    </ThreadSummarySection>}
+    <ThreadSummarySection sectionKey="activity" title={t("inspector.activity")} count={activities.length || turns.length}>
       <p className="sr-only">{t(activities.length ? "activity.committedBody" : "activity.turnBody")}</p>
       {activities.length > 0 ? activities.map((activity) => <div className="activity-row" key={`${activity.kind}-${activity.activity_id}`}>
         <span className={`activity-status ${activity.state}`}><Icon name={activityIcon(activity.state)} /></span>
@@ -1857,7 +1856,7 @@ export function CommittedActivity({ state, t }: { state: WorkState; t: (key: Mes
         {state.phase === "submitting" && <div className="activity-row"><span className="activity-status running"><span className="spinner" /></span><div><strong>{t("activity.currentTurn")}</strong><small>{t("status.working")}</small></div></div>}</>
         : <p className="environment-empty">{t("activity.emptyBody")}</p>}
       {!state.capabilities?.activity && <p className="activity-gate"><Icon name="shield" />{t("activity.gated")}</p>}
-    </section>
+    </ThreadSummarySection>
   </div>;
 }
 
