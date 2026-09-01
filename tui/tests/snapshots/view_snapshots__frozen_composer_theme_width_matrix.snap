@@ -5,11 +5,11 @@ expression: frozen_composer_matrix()
 theme=Dark width=40 marker=Style::new().yellow().bg(Color::Reset).underline_color(Color::Reset) cursor=None
 Session 1
 
-    ✓ Agent action · completed
-  ◆ Garive
     ## Release plan
+
     • Verify the Runtime
     • Ship with evidence
+
     cargo test passes.
 
  ! Draft locked · read only
@@ -19,11 +19,11 @@ Session 1
 theme=Dark width=100 marker=Style::new().yellow().bg(Color::Reset).underline_color(Color::Reset) cursor=None
   Session 1  ·  Agent
 
-      ✓  Agent action · completed
-    ◆ Garive
       ## Release plan
+
       • Verify the Runtime
       • Ship with evidence
+
       cargo test passes.
 
    ! Draft locked · read only
@@ -33,11 +33,11 @@ theme=Dark width=100 marker=Style::new().yellow().bg(Color::Reset).underline_col
 theme=Light width=40 marker=Style::new().yellow().bg(Color::Reset).underline_color(Color::Reset) cursor=None
 Session 1
 
-    ✓ Agent action · completed
-  ◆ Garive
     ## Release plan
+
     • Verify the Runtime
     • Ship with evidence
+
     cargo test passes.
 
  ! Draft locked · read only
@@ -47,11 +47,11 @@ Session 1
 theme=Light width=100 marker=Style::new().yellow().bg(Color::Reset).underline_color(Color::Reset) cursor=None
   Session 1  ·  Agent
 
-      ✓  Agent action · completed
-    ◆ Garive
       ## Release plan
+
       • Verify the Runtime
       • Ship with evidence
+
       cargo test passes.
 
    ! Draft locked · read only
@@ -61,11 +61,11 @@ theme=Light width=100 marker=Style::new().yellow().bg(Color::Reset).underline_co
 theme=Mono width=40 marker=Style::new().fg(Color::Reset).bg(Color::Reset).underline_color(Color::Reset) cursor=None
 Session 1
 
-    ✓ Agent action · completed
-  ◆ Garive
     ## Release plan
+
     • Verify the Runtime
     • Ship with evidence
+
     cargo test passes.
 
  ! Draft locked · read only
@@ -75,11 +75,11 @@ Session 1
 theme=Mono width=100 marker=Style::new().fg(Color::Reset).bg(Color::Reset).underline_color(Color::Reset) cursor=None
   Session 1  ·  Agent
 
-      ✓  Agent action · completed
-    ◆ Garive
       ## Release plan
+
       • Verify the Runtime
       • Ship with evidence
+
       cargo test passes.
 
    ! Draft locked · read only

@@ -8,11 +8,11 @@ expression: "frame(&action, Theme::Light, 100, 24)"
       ✓  Agent action · completed
     ◆ Garive       ╭ Approval required ─────────────────────────────────────────╮
       ## Release   │                                                            │
-      • Verify th  │  !  Review the public request before responding.           │
-      • Ship with  │  Create one bounded local file.                            │
-      cargo test   │                                                            │
+                   │  !  Review the public request before responding.           │
+      • Verify th  │  Create one bounded local file.                            │
+      • Ship with  │                                                            │
                    │  Choose                                                    │
-                   │  › true                                                    │
+      cargo test   │  › true                                                    │
                    │    false                                                   │
                    │  Enter true or false.                                      │
                    │                                                            │

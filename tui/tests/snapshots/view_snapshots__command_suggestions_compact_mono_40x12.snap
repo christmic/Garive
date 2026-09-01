@@ -4,7 +4,7 @@ expression: "command_suggestion_frame_at(Theme::Mono, 40, 12)"
 ---
 Session 1
 
-    ✓ Agent action · completed
+    ## Release plan
 ╭ Commands ────────────────────────────╮
 │   /theme system  Follow terminal th… │
 │ › /theme dark  Use dark theme        │
