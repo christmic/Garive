@@ -209,6 +209,13 @@ attempt, command or Session. It may only resolve the installed Agent/C6 and
 execution-posture values that are not owned by the portable Plan. Configuration
 is constructor input; no environment discovery occurs.
 
+The local catalogue-backed implementation opens the explicitly constructed
+Ledger path, reads the Session's first `session.opened` fact and resolves that
+exact definition revision and snapshot in the immutable Runtime Agent
+catalogue. It does not fall back to the default Agent, scan configuration or
+consult process environment. A missing, ambiguous or mismatched installation
+fails closed before C6 start.
+
 Runtime compares the installed Tool catalogue digest and Safety policy revision
 returned by preparation with the immutable values frozen in the Plan. Matching
 the Session's Agent snapshot digest alone is insufficient; any one of these

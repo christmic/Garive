@@ -1,3 +1,5 @@
+use std::{path::PathBuf, sync::Arc};
+
 use garive_goal::GoalState;
 use garive_ledger::{
     AgentDefinitionId, AgentDefinitionRevision, AgentInstanceId, CommitDisposition, SessionId,
@@ -8,8 +10,24 @@ use crate::{
     commit_plan_command, plan_plan_transition, plan_start_step_execution, plan_start_turn,
     reconstruct_goal, reconstruct_plan_graph, CommittedTurn, EffectiveRuntimeLimits,
     PlanCommandContext, PlanRuntimeError, PlanRuntimeTransition, PlanStepExecutionStart,
-    RuntimeCommandId, SqliteLedger, StartTurnCommand, TurnDispatcher,
+    RuntimeAgentCatalogue, RuntimeCommandId, SqliteLedger, StartTurnCommand, TurnDispatcher,
 };
+
+/// Catalogue-backed installed posture resolver for local Plan dispatch.
+pub struct CataloguePlanStepDispatchFactory {
+    database_path: PathBuf,
+    catalogue: Arc<RuntimeAgentCatalogue>,
+}
+
+impl CataloguePlanStepDispatchFactory {
+    /// Constructs a resolver from explicit Runtime storage and installation values.
+    pub fn new(database_path: PathBuf, catalogue: Arc<RuntimeAgentCatalogue>) -> Self {
+        Self {
+            database_path,
+            catalogue,
+        }
+    }
+}
 
 /// Explicit identities, lease readings and commands for one bounded dispatch tick.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -89,6 +107,57 @@ pub trait PlanStepDispatchFactory {
         &mut self,
         input: PlanStepDispatchInput<'_>,
     ) -> Result<PreparedPlanStepDispatch, PlanDispatchError>;
+}
+
+impl PlanStepDispatchFactory for CataloguePlanStepDispatchFactory {
+    fn prepare(
+        &mut self,
+        input: PlanStepDispatchInput<'_>,
+    ) -> Result<PreparedPlanStepDispatch, PlanDispatchError> {
+        let ledger = SqliteLedger::open(&self.database_path)
+            .map_err(|_| PlanDispatchError::PreparationFailed)?;
+        let facts = ledger
+            .read_facts(input.session_id, 0, 1, None)
+            .map_err(|_| PlanDispatchError::PreparationFailed)?;
+        let [opened] = facts.as_slice() else {
+            return Err(PlanDispatchError::PreparationFailed);
+        };
+        if opened.kind.as_str() != "session.opened" {
+            return Err(PlanDispatchError::PreparationFailed);
+        }
+        let value = serde_json::from_str::<serde_json::Value>(opened.payload.as_json())
+            .map_err(|_| PlanDispatchError::PreparationFailed)?;
+        let definition_id = text(&value, "definition_id")?;
+        let definition_revision = text(&value, "definition_revision")?;
+        let snapshot_digest = text(&value, "snapshot_digest")?;
+        let agent_instance_id = text(&value, "agent_instance_id")?;
+        let installation = self
+            .catalogue
+            .resolve(definition_id, definition_revision, snapshot_digest)
+            .map_err(|_| PlanDispatchError::PreparationFailed)?;
+        if snapshot_digest != input.agent_snapshot_digest
+            || installation.tool_catalogue_digest() != input.tool_catalogue_digest
+            || installation.snapshot().governance().exact_revision != input.safety_policy_revision
+        {
+            return Err(PlanDispatchError::PreparationFailed);
+        }
+        let installed = installation.installed_agent();
+        Ok(PreparedPlanStepDispatch {
+            agent_instance_id: AgentInstanceId::try_from(agent_instance_id)
+                .map_err(|_| PlanDispatchError::PreparationFailed)?,
+            definition_id: AgentDefinitionId::try_from(definition_id)
+                .map_err(|_| PlanDispatchError::PreparationFailed)?,
+            definition_revision: AgentDefinitionRevision::try_from(definition_revision)
+                .map_err(|_| PlanDispatchError::PreparationFailed)?,
+            limits: installed.runtime_limits,
+            installed_tool_catalogue_digest: installation.tool_catalogue_digest().into(),
+            installed_safety_policy_revision: installation
+                .snapshot()
+                .governance()
+                .exact_revision
+                .clone(),
+        })
+    }
 }
 
 /// One bounded Plan dispatch result.
@@ -366,4 +435,12 @@ fn context(command_id: &str, tick: &PlanDispatchTick) -> PlanCommandContext {
         actor_reference: tick.worker_reference.clone(),
         recorded_at: tick.recorded_at.clone(),
     }
+}
+
+fn text<'a>(value: &'a serde_json::Value, key: &str) -> Result<&'a str, PlanDispatchError> {
+    value
+        .get(key)
+        .and_then(serde_json::Value::as_str)
+        .filter(|value| !value.is_empty())
+        .ok_or(PlanDispatchError::PreparationFailed)
 }

@@ -52,4 +52,5 @@ keyring = { version = "3.6.3", default-features = false, features = ["windows-na
 keyring = { version = "3.6.3", default-features = false, features = ["sync-secret-service"] }
 
 [dev-dependencies]
+garive-plan = { path = "../../engine/plan" }
 tempfile = "3.27.0"

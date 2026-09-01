@@ -223,8 +223,9 @@ pub use plan_carry_forward::{
     PlannedPlanReplacement, VerifiedPlanCarryForward,
 };
 pub use plan_dispatch_runtime::{
-    dispatch_plan_step_once, PlanDispatchError, PlanDispatchOutcome, PlanDispatchTick,
-    PlanStepDispatchFactory, PlanStepDispatchInput, PreparedPlanStepDispatch,
+    dispatch_plan_step_once, CataloguePlanStepDispatchFactory, PlanDispatchError,
+    PlanDispatchOutcome, PlanDispatchTick, PlanStepDispatchFactory, PlanStepDispatchInput,
+    PreparedPlanStepDispatch,
 };
 pub use plan_recovery::{reconstruct_plan, reconstruct_plan_graph};
 pub use plan_runtime::{

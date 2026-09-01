@@ -1574,6 +1574,7 @@ dependencies = [
  "garive-llm",
  "garive-macos-bookmark",
  "garive-memory",
+ "garive-plan",
  "garive-provider-anthropic",
  "garive-provider-compatible",
  "garive-provider-openai",

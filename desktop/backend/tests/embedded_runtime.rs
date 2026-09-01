@@ -24,11 +24,14 @@ use garive_llm::{
     ModelRequest, ModelStopReason, ModelStreamEvent, ModelUsage, ObserverDecision, TextMode,
     TokenCount, UsageSource,
 };
+use garive_plan::PlanStepId;
 use garive_runtime::{
-    CommittedTurn, HostClock, LiveHostLimits, LiveOutputEventKind, LocalExecutionAttempt,
-    LocalExecutionPolicy, LocalGovernedExecution, LocalGovernedExecutionFactory, LocalWorkerError,
-    ProcessBackendHostConfig, ProcessExecutable, ProcessLane, ProcessLaneRegistry,
-    RuntimeAgentCatalogue, SafetyFuture, SafetyPort, SqliteLedger, T1HostSystemConfig,
+    CataloguePlanStepDispatchFactory, CommittedTurn, HostClock, LiveHostLimits,
+    LiveOutputEventKind, LocalExecutionAttempt, LocalExecutionPolicy, LocalGovernedExecution,
+    LocalGovernedExecutionFactory, LocalWorkerError, PlanStepDispatchFactory,
+    PlanStepDispatchInput, ProcessBackendHostConfig, ProcessExecutable, ProcessLane,
+    ProcessLaneRegistry, RuntimeAgentCatalogue, SafetyFuture, SafetyPort, SqliteLedger,
+    T1HostSystemConfig,
 };
 use garive_tools::{T1_APPLY_PATCH, T1_READ_TEXT};
 use sha2::{Digest, Sha256};
@@ -106,6 +109,69 @@ impl ModelPort for CompletingModel {
             })
         })
     }
+}
+
+#[test]
+fn catalogue_plan_preparation_resolves_only_the_session_installation() {
+    let directory = tempdir().unwrap();
+    let database = directory.path().join("plan-preparation.sqlite3");
+    let config = desktop_host_config(&database, Arc::new(CompletingModel));
+    let catalogue = config.agent_catalogue.clone();
+    let governed = DesktopWorkspaceExecutionFactory::new(
+        database.clone(),
+        DesktopWorkspaceService::default(),
+        "main",
+    )
+    .unwrap();
+    let host = DesktopHost::new_governed(config, Arc::new(governed)).unwrap();
+    let session = host.create_session("definition-main").unwrap();
+    let session = SessionId::try_from(session.as_str()).unwrap();
+    let installation = catalogue.get("definition-main").unwrap();
+    let snapshot = installation.snapshot();
+    let step_id = PlanStepId::new("prepare").unwrap();
+    let mut factory = CataloguePlanStepDispatchFactory::new(database, catalogue.clone());
+    let prepared = factory
+        .prepare(PlanStepDispatchInput {
+            session_id: &session,
+            goal_id: "goal-1",
+            plan_id: "plan-1",
+            plan_revision: 1,
+            step_id: &step_id,
+            objective: "Prepare",
+            agent_snapshot_digest: snapshot.snapshot_digest(),
+            tool_catalogue_digest: installation.tool_catalogue_digest(),
+            safety_policy_revision: &snapshot.governance().exact_revision,
+            through_position: 1,
+            start_command_id: "start-1",
+            recorded_at: "2026-08-29T00:00:01Z",
+        })
+        .unwrap();
+    assert_eq!(prepared.definition_id.as_str(), "definition-main");
+    assert_eq!(
+        prepared.installed_tool_catalogue_digest,
+        installation.tool_catalogue_digest()
+    );
+    assert_eq!(
+        prepared.installed_safety_policy_revision,
+        snapshot.governance().exact_revision
+    );
+
+    assert!(factory
+        .prepare(PlanStepDispatchInput {
+            session_id: &session,
+            goal_id: "goal-1",
+            plan_id: "plan-1",
+            plan_revision: 1,
+            step_id: &step_id,
+            objective: "Prepare",
+            agent_snapshot_digest: snapshot.snapshot_digest(),
+            tool_catalogue_digest: &"f".repeat(64),
+            safety_policy_revision: &snapshot.governance().exact_revision,
+            through_position: 1,
+            start_command_id: "start-2",
+            recorded_at: "2026-08-29T00:00:02Z",
+        })
+        .is_err());
 }
 
 struct UnavailableSafety;
