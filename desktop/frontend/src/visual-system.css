@@ -57,6 +57,7 @@
   --surface-composer: var(--surface-raised);
   --surface-user-message: color-mix(in oklab, var(--text-primary) 5%, transparent);
   --surface-sidebar: #f7f7f7;
+  --surface-native-sidebar: color-mix(in srgb, #ededed 28%, transparent);
   --surface-subtle: #f1f1f1;
   --surface-hover: #ececec;
   --surface-selected: #e8e8e8;
@@ -107,6 +108,7 @@
   --surface-overlay: #2d2d2d;
   --surface-composer: #2a2a2a;
   --surface-sidebar: #2b2527;
+  --surface-native-sidebar: color-mix(in srgb, #212121 70%, transparent);
   --surface-subtle: #242424;
   --surface-hover: #2c2a2b;
   --surface-selected: #3c3638;

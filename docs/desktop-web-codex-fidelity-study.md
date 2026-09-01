@@ -783,6 +783,32 @@ closed thread at 1005px, an intermediate opening frame at 367.81px and the
 proves pointer drag adds/removes `panel-dragging`, making the same transition
 duration zero only during direct manipulation.
 
+### XXVII. Native macOS window material
+
+The supplied references show more than React layout: the navigation rail is a
+native window material beneath content, while the document canvas remains an
+opaque reading surface. Inspection of installed Codex
+`/Applications/ChatGPT.app` version `26.825.51511` (bundle `7377`) confirms the
+main window uses a transparent background, macOS `menu` vibrancy, a hidden
+inset titlebar, first-mouse acceptance and traffic lights at `(16, 16)`. Its
+source default is 1280×820 px with a 480×600 px minimum.
+
+The installed renderer keeps Electron's body transparent and composites the
+left panel from 70% surface-tertiary material. The nested source tokens resolve
+to 28% `#ededed` in light mode and 70% `#212121` in dark mode; the primary canvas
+remains opaque `#fff`/`#181818`. This explains why an opaque tinted Garive rail
+could match a screenshot color but still fail to feel like the desktop app as
+the window focus and wallpaper changed.
+
+Garive now maps the same contract onto Tauri: the native window and WebView are
+transparent, Tauri applies semantic `menu` material that follows window active
+state, and Desktop-only CSS exposes it through the rail while preserving an
+opaque main surface. Reduced transparency restores the solid sidebar token.
+The Web client retains the same DOM and panel geometry but stays fully opaque.
+Browser evidence at 1280×720 resolves Desktop root/shell to transparent, its
+rail to 70% `#212121`, its canvas to `#181818`, and Web rail/canvas to their
+solid tokens; both remain at zero horizontal overflow.
+
 ## Gate 1 — Codex fidelity
 
 This gate passes only when both Desktop and Web show:

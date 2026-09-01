@@ -585,6 +585,12 @@ kbd { color: var(--subtle); font: 11px -apple-system, sans-serif; }
 
 /* Codex-fidelity shell. Keep Desktop and Web on this single shared layer. */
 .desktop-root { font-size: var(--text-md); }
+html[data-client="desktop"], html[data-client="desktop"] body, html[data-client="desktop"] #root { background: transparent; }
+html[data-client="desktop"] .desktop-root, html[data-client="desktop"] .app-shell { background: transparent; }
+html[data-client="desktop"] .sidebar { background: var(--surface-native-sidebar); }
+@media (prefers-reduced-transparency: reduce) {
+  html[data-client="desktop"] .sidebar { background: var(--surface-sidebar); }
+}
 .app-shell { --sidebar-width: clamp(240px, var(--sidebar-preferred-width), min(520px, calc(100vw - 320px))); --conversation-split: 352px; position: relative; display: flex; background: var(--surface-canvas); }
 .panel-animated > [data-panel] { transition: flex-grow var(--motion-relaxed) var(--ease-basic), max-width var(--motion-relaxed) var(--ease-basic); }
 .panel-animated.panel-dragging > [data-panel] { transition: none; }

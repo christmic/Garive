@@ -14,14 +14,30 @@ const manifest = readFileSync(fileURLToPath(
 
 describe("native macOS window composition", () => {
   it("keeps content under an overlay titlebar with correctly reserved traffic lights", () => {
+    expect(config.app.macOSPrivateApi).toBe(true);
+    expect(manifest).toContain('tauri = { version = "2.11.5", features = ["macos-private-api"] }');
     expect(config.app.windows[0]).toMatchObject({
       decorations: true,
       hiddenTitle: true,
       titleBarStyle: "Overlay",
       trafficLightPosition: { x: 16, y: 16 },
       acceptFirstMouse: true,
+      width: 1280,
+      height: 820,
+      minWidth: 480,
+      minHeight: 600,
+      transparent: true,
+      windowEffects: {
+        effects: ["menu"],
+        state: "followsWindowActiveState",
+      },
       visible: false,
     });
+    expect(css).toContain('html[data-client="desktop"], html[data-client="desktop"] body, html[data-client="desktop"] #root { background: transparent; }');
+    expect(css).toContain('html[data-client="desktop"] .desktop-root, html[data-client="desktop"] .app-shell { background: transparent; }');
+    expect(css).toContain('html[data-client="desktop"] .sidebar { background: var(--surface-native-sidebar); }');
+    expect(css).toContain('@media (prefers-reduced-transparency: reduce)');
+    expect(css).toContain('html[data-client="desktop"] .sidebar { background: var(--surface-sidebar); }');
     expect(css).toContain('html[data-client="desktop"] .sidebar-window-row { padding-left: 58px; }');
     expect(css).toContain('html[data-client="desktop"] .navigation-collapsed .topbar { padding-left: 70px; }');
     expect(css).toContain('html[data-client="desktop"] .topbar { padding-left: 70px; }');

@@ -211,6 +211,17 @@ grouped token, but it must not change document typography or hide state.
 
 ### Desktop material and window behavior
 
+- The production macOS window is a transparent native surface backed by the
+  semantic `menu` material. Its material follows the active-window state; the
+  HTML root and shell remain transparent, the canvas stays opaque, and only
+  the navigation rail exposes the native material. Web keeps an opaque shell
+  and never simulates macOS vibrancy with a full-window blur.
+- The native rail uses the installed shell's 70% surface-tertiary mix. This
+  resolves to 28% `#ededed` in light mode and 70% `#212121` in dark mode before
+  native compositing. Reduced transparency replaces the mix with the existing
+  opaque sidebar token without changing geometry or state hierarchy.
+- The first-run native frame is 1280×820 px with a 480×600 px minimum. Restored
+  monitor-valid bounds still outrank these defaults after the first launch.
 - The canvas is opaque and stable while content scrolls. The title row may use
   a restrained translucent mix only when its text contrast remains unchanged;
   reduced-transparency resolves it to the opaque canvas token.
@@ -558,9 +569,10 @@ an exact task price from prompt length, selected model, or prior averages.
   accessible meter text.
 - Visual evidence covers light/dark at 1440 px and a 720 px narrow window.
 - Native macOS uses the real decorated window with an overlay/hidden titlebar,
-  traffic lights at `(16, 16)`, first-mouse acceptance, and a 58 px protected
-  leading zone before sidebar history controls. Web uses the same content and
-  interaction geometry without reserving that native chrome zone.
+  traffic lights at `(16, 16)`, first-mouse acceptance, transparent WebView,
+  active-state `menu` material and a 58 px protected leading zone before
+  sidebar history controls. Web uses the same content and interaction geometry
+  without reserving that native chrome zone or applying native material.
 - Review evidence records Gate 1 fidelity and Gate 2 advantage; “looks modern”
   is not an acceptance result.
 - Keyboard-only, reduced-motion, increased-contrast and 200% text matrices stay
