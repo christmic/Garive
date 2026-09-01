@@ -4,14 +4,14 @@ expression: "inspector_frame(theme, 120)"
 ---
 Session 1  ·  Agent                                                       Agent running ╭ Inspector · Activity ────────╮
                                                                                         │ › ✓ Agent action · completed │
-  You                                                                                   │                              │
-    Summarize the release plan.                                                         │                              │
+  › Summarize the release plan.                                                         │                              │
     ✓  Agent action · completed                                                         │                              │
   ◆ Garive                                                                              │                              │
     ## Release plan                                                                     │                              │
     • Verify the Runtime                                                                │                              │
     • Ship with evidence                                                                │                              │
     cargo test passes.                                                                  │                              │
+                                                                                        │                              │
                                                                                         │                              │
                                                                                         │                              │
                                                                                         │                              │

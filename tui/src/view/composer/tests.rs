@@ -1,5 +1,30 @@
 use super::*;
 use crate::{view::style::palette, Theme};
+use ratatui::{buffer::Buffer, layout::Rect};
+
+#[test]
+fn focused_frame_reserves_accent_for_one_input_marker() {
+    let model = AppModel::default();
+    let colors = palette(Theme::Dark);
+    let area = Rect::new(0, 0, 24, 3);
+    let mut buffer = Buffer::empty(area);
+
+    render(&model, colors, area, &mut buffer);
+
+    let border_cells = (0..area.width)
+        .flat_map(|x| [(x, 0), (x, area.height - 1)])
+        .chain((1..area.height - 1).flat_map(|y| [(0, y), (area.width - 1, y)]))
+        .collect::<Vec<_>>();
+    let accent_cells = border_cells
+        .iter()
+        .filter(|(x, y)| buffer[(*x, *y)].style().fg == colors.accent.fg)
+        .count();
+
+    assert!((1..=3).contains(&accent_cells));
+    assert!(border_cells
+        .iter()
+        .any(|(x, y)| { buffer[(*x, *y)].style().fg == colors.border.fg }));
+}
 
 #[test]
 fn word_wrap_and_cursor_share_the_same_rows() {

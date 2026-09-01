@@ -1,11 +1,37 @@
 use ratatui::{
     layout::Rect,
     text::{Line, Span},
+    widgets::{Block, BorderType, Borders, Padding},
 };
 use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::UnicodeWidthStr;
 
 use super::style::Palette;
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) enum FocusFrameTone {
+    Neutral,
+    Warning,
+}
+
+pub(super) fn focus_frame(
+    colors: Palette,
+    tone: FocusFrameTone,
+    marker: Option<Line<'static>>,
+) -> Block<'static> {
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_type(BorderType::Rounded)
+        .border_style(match tone {
+            FocusFrameTone::Neutral => colors.border,
+            FocusFrameTone::Warning => colors.warning,
+        })
+        .padding(Padding::horizontal(1));
+    match marker {
+        Some(marker) => block.title(marker),
+        None => block,
+    }
+}
 
 pub(super) fn key_hints(items: &[(&str, &str)], colors: Palette) -> Line<'static> {
     let mut spans = vec![Span::raw(" ")];

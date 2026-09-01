@@ -4,14 +4,14 @@ expression: "frame(&palette, Theme::Light, 160, 28)"
 ---
                                 Session 1  ·  Agent                                                                Agent running
 
-                                  You      ╭ Command palette ───────────────────────────────────────────────────────╮
-                                    Summa  │  Search  type to search                                                │
-                                    ✓  Ag  │  21 commands · showing 7–21 · ↑ 6 earlier                              │
-                                  ◆ Gariv  │    /retry              unavailable · no unknown command                │
-                                    ## Re  │    /reconnect          Resume event stream                             │
-                                    • Ver  │    /cancel             Cancel running turn                             │
-                                    • Shi  │    /theme system       Follow terminal theme                           │
-                                    cargo  │    /theme dark         Use dark theme                                  │
+                                  › Summa  ╭ Command palette ───────────────────────────────────────────────────────╮
+                                    ✓  Ag  │  Search  type to search                                                │
+                                  ◆ Gariv  │  21 commands · showing 7–21 · ↑ 6 earlier                              │
+                                    ## Re  │    /retry              unavailable · no unknown command                │
+                                    • Ver  │    /reconnect          Resume event stream                             │
+                                    • Shi  │    /cancel             Cancel running turn                             │
+                                    cargo  │    /theme system       Follow terminal theme                           │
+                                           │    /theme dark         Use dark theme                                  │
                                            │    /theme light        Use light theme                                 │
                                            │    /theme mono         Use mono theme                                  │
                                            │    /mouse auto         Use automatic mouse capture now                 │
@@ -26,7 +26,7 @@ expression: "frame(&palette, Theme::Light, 160, 28)"
                                            │    ↑/↓ select   Home/End edge   Enter run   Esc close                  │
                                            ╰────────────────────────────────────────────────────────────────────────╯
 
-                                ╭──────────────────────────────────────────────────────────────────────────────────────────────╮
+                                ╭ › ───────────────────────────────────────────────────────────────────────────────────────────╮
                                 │ Ask a follow-up…                                                                             │
                                 ╰──────────────────────────────────────────────────────────────────────────────────────────────╯
                                   Esc cancel run

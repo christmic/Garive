@@ -276,9 +276,12 @@ fn inspector_geometry_and_themes_match_reviewed_snapshots() {
     ] {
         insta::assert_snapshot!(name, inspector_frame(theme, 120));
     }
-    for (width, title_column) in [(119, 32), (120, 93), (128, 101), (129, 102)] {
+    for (width, title_column) in [(119, 30), (120, 90), (128, 98), (129, 99)] {
         let rendered = inspector_frame(Theme::Mono, width);
-        let actual = rendered.lines().find_map(|line| line.find("Inspector"));
+        let actual = rendered.lines().find_map(|line| {
+            line.find("Inspector")
+                .map(|byte| UnicodeWidthStr::width(&line[..byte]))
+        });
         assert_eq!(actual, Some(title_column), "width {width}");
     }
 }

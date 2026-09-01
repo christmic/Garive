@@ -35,6 +35,15 @@ not depend on the terminal default being light or dark.
 | `RoleMarker` | restrained non-color User or Agent identity; never a full-width card border |
 | `LiveCaret` | single-cell active-output cue; hidden for reduced motion, unavailable preview, and terminal state |
 
+`FocusFrame` keeps one neutral rounded boundary in idle and focused states. A
+focused Composer adds only the accent `›` input marker to that boundary; it does
+not recolor the complete frame. Warning and action variants may replace the
+marker and border tone with their admitted semantic state without changing the
+inner rectangle. `RequestSurface` renders User input as an unbordered,
+low-contrast terminal-width row with the same non-color `›` identity and a
+two-cell hanging indent. Its wrapper measures sanitized grapheme display width,
+so CJK and combining sequences cannot split or shift later components.
+
 Implementations live in `tui/src/view/primitives.rs` and `style.rs`.
 Higher-level renderers must reuse these primitives for equivalent behavior.
 The shared Session identity/state presentation lives in `view/session.rs`;
@@ -165,9 +174,10 @@ marker, ordinal, preview, and available actions in semantic order. No variant
 shows a Turn ID, stable key, hidden activity, or full prompt in popup chrome.
 
 `TurnBlock` uses spacing as its primary separator: one blank row between Turns
-and none between tightly related activity and answer rows. User content has a
-left role marker and restrained emphasis without a surrounding full-width
-card. Agent prose remains on the terminal background. Public positions,
+and none between tightly related activity and answer rows. User content uses
+the compact `RequestSurface`: one low-contrast fill, a left role marker, and no
+separate `You` header or surrounding border. Agent prose remains on the
+terminal background. Public positions,
 stable keys, opaque IDs, and repeated `Conversation` titles do not appear in
 ordinary transcript chrome.
 

@@ -4,14 +4,14 @@ expression: "frame(&turns, Theme::Light, 100, 24)"
 ---
   Session 1  ·  Agent                                                                Agent running
               ╭ Jump to a Turn ──────────────────────────────────────────────────────╮
-    You       │                                                                      │
-      Summar  │  Search  release                                                     │
-      ✓  Age  │     1  release checkpoint 00 with verified evidence                  │
-    ◆ Garive  │     2  release checkpoint 01 with verified evidence                  │
-      ## Rel  │  ›  3  release checkpoint 02 with verified evidence                  │
-      • Veri  │     4  release checkpoint 03 with verified evidence                  │
-      • Ship  │     5  release checkpoint 04 with verified evidence                  │
-      cargo   │     6  release 界 面  keeps a display-width bounded preview across …   │
+    › Summar  │                                                                      │
+      ✓  Age  │  Search  release                                                     │
+    ◆ Garive  │     1  release checkpoint 00 with verified evidence                  │
+      ## Rel  │     2  release checkpoint 01 with verified evidence                  │
+      • Veri  │  ›  3  release checkpoint 02 with verified evidence                  │
+      • Ship  │     4  release checkpoint 03 with verified evidence                  │
+      cargo   │     5  release checkpoint 04 with verified evidence                  │
+              │     6  release 界 面  keeps a display-width bounded preview across …   │
               │     7  release checkpoint 06 with verified evidence                  │
               │     8  release checkpoint 07 with verified evidence                  │
               │     9  release checkpoint 08 with verified evidence                  │
@@ -22,7 +22,7 @@ expression: "frame(&turns, Theme::Light, 100, 24)"
               │                                                                      │
               ╰──────────────────────────────────────────────────────────────────────╯
 
-  ╭──────────────────────────────────────────────────────────────────────────────────────────────╮
+  ╭ › ───────────────────────────────────────────────────────────────────────────────────────────╮
   │ Ask a follow-up…                                                                             │
   ╰──────────────────────────────────────────────────────────────────────────────────────────────╯
     Esc cancel run

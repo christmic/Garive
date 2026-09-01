@@ -4,8 +4,7 @@ expression: "frame(&activities, Theme::Mono, 40, 18)"
 ---
 Session 1                  Agent running
 
-  You
-    Verify the release candidate.
+  › Verify the release candidate.
     ● Running strict valida… · 2 done
 
 
@@ -16,7 +15,8 @@ Session 1                  Agent running
 
 
 
-╭──────────────────────────────────────╮
+
+╭ › ───────────────────────────────────╮
 │ Ask a follow-up…                     │
 ╰──────────────────────────────────────╯
   Esc cancel run

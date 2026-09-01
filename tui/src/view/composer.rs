@@ -2,7 +2,7 @@ use ratatui::{
     buffer::Buffer,
     layout::Rect,
     text::{Line, Span, Text},
-    widgets::{Block, BorderType, Borders, Padding, Paragraph, Widget},
+    widgets::{Paragraph, Widget},
 };
 use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::UnicodeWidthStr;
@@ -12,7 +12,11 @@ use crate::{
     input::EditorState,
 };
 
-use super::{safe_text, style::Palette};
+use super::{
+    primitives::{focus_frame, FocusFrameTone},
+    safe_text,
+    style::Palette,
+};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum ComposerVariant {
@@ -24,15 +28,13 @@ enum ComposerVariant {
 
 pub(super) fn render(model: &AppModel, colors: Palette, area: Rect, buffer: &mut Buffer) {
     let variant = variant(model);
-    let mut block = Block::default()
-        .borders(Borders::ALL)
-        .border_type(BorderType::Rounded)
-        .border_style(match variant {
-            ComposerVariant::Focused => colors.composer_border,
-            ComposerVariant::Frozen => colors.warning,
-            ComposerVariant::Idle | ComposerVariant::ActionResponse => colors.border,
-        })
-        .padding(Padding::horizontal(1));
+    let marker = (variant == ComposerVariant::Focused).then(|| Line::styled(" › ", colors.accent));
+    let tone = if variant == ComposerVariant::Frozen {
+        FocusFrameTone::Warning
+    } else {
+        FocusFrameTone::Neutral
+    };
+    let mut block = focus_frame(colors, tone, marker);
     block = match variant {
         ComposerVariant::Frozen => block
             .title(Line::styled(" Draft locked ", colors.warning))
