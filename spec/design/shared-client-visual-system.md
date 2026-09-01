@@ -126,6 +126,10 @@ workbench made from four persistent spatial layers:
    truthful needs-input, running and failed Sessions form a bounded Priority
    group ahead of completed/idle Recents. A Session appears once, empty groups
    disappear, and no pin/project hierarchy is fabricated without durable data.
+   Each row ends in a 10 px lifecycle ring rather than a generic color dot:
+   needs-input has a center point, running an open rotating ring, failure a
+   minus, and completion a check. Accessible state copy remains authoritative;
+   reduced motion freezes the running ring without hiding its open shape.
 3. **Work layer.** Conversation and Composer form one bounded work column on a
    continuous canvas. Assistant output is document content, not a card stack.
    Environment may float above this layer; it does not permanently shrink an

@@ -567,6 +567,15 @@ after a native reveal command and its failure contract exist. Browser evidence
 at 1280, 1120, 720 and 480 px records zero horizontal overflow; both dark and
 light themes complete the export and expose the receipt through `role=status`.
 
+### XIV. Durable task-state rings
+
+The supplied desktop references end task rows with a quiet outlined circle,
+not a bright generic status badge. Garive already owns stronger durable facts,
+so its shared rail uses the same 10 px ring grammar while retaining truthful
+state: center point for needs-input, open rotating ring for running, minus for
+failure and check for completion. The marker stays secondary to the accessible
+text state, and reduced motion freezes rather than removes the running shape.
+
 ## Gate 1 — Codex fidelity
 
 This gate passes only when both Desktop and Web show:
