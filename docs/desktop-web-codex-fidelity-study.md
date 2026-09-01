@@ -1150,6 +1150,28 @@ return. Live 1280×720 split-Workbench evidence measures a transparent 332px
 Turn wrapper and a 232.4px bubble (70%) with 10×16px padding, 22px radius and
 zero horizontal overflow.
 
+### XXXVII. Runtime state color is a semantic contract
+
+Installed `app-initial-NNCUNt29.css` defines success, warning and danger as
+theme-resolved foreground/surface variables and consumes them through utility
+classes such as `bg-success-solid`, `bg-warning-surface` and
+`bg-danger-surface`. This is source evidence for semantic indirection; it does
+not authorize copying Codex's product-specific status wording into Garive.
+
+Garive already owned equivalent state tokens, but recovery errors, update
+failures, capacity warnings and artifact export receipts still carried separate
+light/dark literals. These paths now consume the shared success, attention and
+danger foreground/surface pairs. The obsolete setup-logo CSS is also removed;
+the component contract and visual test already established that routine setup
+has no logo-led heading. A CSS regression gate prevents theme-specific status
+literals from returning.
+
+Live Web settings evidence verifies that the same capacity-attention chip
+resolves to `rgb(230,184,111)` on `rgb(71,53,29)` in dark mode and
+`rgb(153,96,12)` on `rgb(255,243,220)` in light mode, with zero horizontal
+overflow at 1280×720. Desktop and Web receive the change from the same visual
+system rather than maintaining client-specific theme patches.
+
 ## Gate 1 — Codex fidelity
 
 This gate passes only when both Desktop and Web show:

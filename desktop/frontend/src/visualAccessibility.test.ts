@@ -72,6 +72,11 @@ describe("Desktop visual accessibility contract", () => {
     expect(TOKENS).toContain("--surface-user-message: color-mix(in oklab, var(--text-primary) 5%, transparent)");
     expect(TOKENS).toContain("--surface-overlay: #2d2d2d");
     expect(TOKENS).toContain("--surface-selected: #3c3638");
+    expect(CSS).toContain(".state-chip.ready { color: var(--state-success); background: var(--state-success-surface); }");
+    expect(CSS).toContain(".state-chip.attention { color: var(--state-attention); background: var(--state-attention-surface); }");
+    expect(CSS).toContain("color: var(--state-danger); background: var(--state-danger-surface)");
+    expect(CSS).not.toMatch(/\.theme-dark \.\S*(?:error|warning|attention|success|ready)[^{]*\{[^}]*(?:#[\da-f]{3,8}|rgba?\()/i);
+    expect(CSS).not.toContain(".setup-logo");
     expect(TOKENS).toContain("--scrollbar-thumb-hover: var(--border-strong)");
     expect(TOKENS).toContain("--motion-basic: 150ms");
     expect(TOKENS).toContain("--motion-relaxed: 300ms");
