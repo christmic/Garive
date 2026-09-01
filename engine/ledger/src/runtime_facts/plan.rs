@@ -256,7 +256,7 @@ pub(super) fn continuation(value: &Map<String, Value>) -> Result<(), LedgerError
     super::values::enumeration(
         value,
         "continuation_kind",
-        &["interaction", "reconciliation"],
+        &["interaction", "policy", "reconciliation"],
     )?;
     non_empty(value, "continuation_reference")
 }

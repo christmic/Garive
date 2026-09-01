@@ -3,15 +3,17 @@
 use garive_goal::GoalState;
 use garive_ledger::{CanonicalPayload, SessionId};
 use garive_plan::{PlanState, PlanStepId, StepState};
+use serde_json::Value;
 use sha2::{Digest, Sha256};
 
+use crate::plan_runtime::{plan_resume_failed_plan, plan_suspend_failed_plan};
 use crate::{
     commit_goal_command, commit_plan_command, dispatch_plan_step_once,
     plan_activate_goal_from_authoritative_plan, plan_complete_authoritative_plan,
     plan_fail_goal_from_failed_plan, plan_succeed_goal_from_completed_plan, reconstruct_goal,
     reconstruct_plan_graph, GoalCommandContext, GoalPlanCoordinationError, GoalRuntimeError,
-    PlanCommandContext, PlanDispatchError, PlanDispatchOutcome, PlanDispatchTick, PlanRuntimeError,
-    PlanStepDispatchFactory, SqliteLedger, TurnDispatcher,
+    GoalRuntimeTransition, PlanCommandContext, PlanDispatchError, PlanDispatchOutcome,
+    PlanDispatchTick, PlanRuntimeError, PlanStepDispatchFactory, SqliteLedger, TurnDispatcher,
 };
 
 /// One bounded Runtime coordination decision over a verified Session prefix.
@@ -178,11 +180,25 @@ pub struct PlanFailureInput {
     pub plan_definition_digest: String,
     /// Failed Step identities in declaration order.
     pub failed_step_ids: Vec<String>,
+    /// Exact policy continuation when this failed Plan is suspended.
+    pub suspension_reference: Option<String>,
 }
 
 /// Bounded result returned by a constructed Plan failure policy.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum PlanFailureDecision {
+    /// Suspend the exact failed Plan under one stable policy revision.
+    Suspend {
+        /// Stable policy revision granting suspension.
+        policy_reference: String,
+        /// Stable secret-free suspension reason code.
+        reason: String,
+    },
+    /// Resume the exact policy-suspended failed Plan.
+    Resume {
+        /// Same stable policy revision that granted suspension.
+        policy_reference: String,
+    },
     /// Terminalize the exact Plan under one stable policy revision.
     Fail {
         /// Stable policy revision granting terminal failure.
@@ -394,6 +410,14 @@ fn advance_goal_plan_internal(
             let plan_definition_digest = plan.snapshot.definition().digest().map_err(|_| {
                 GoalPlanCoordinatorError::Coordination(GoalPlanCoordinationError::CorruptState)
             })?;
+            let suspension_reference = policy_suspension_reference(
+                ledger,
+                session_id,
+                plan_id,
+                *plan_revision,
+                plan.snapshot.state(),
+                snapshot.through_position,
+            )?;
             let input = PlanFailureInput {
                 session_version: snapshot.session_version,
                 through_position: snapshot.through_position,
@@ -404,44 +428,107 @@ fn advance_goal_plan_internal(
                 plan_revision: *plan_revision,
                 plan_definition_digest,
                 failed_step_ids: failed_step_ids.clone(),
+                suspension_reference,
             };
-            let PlanFailureDecision::Fail {
-                policy_reference,
-                reason,
-            } = policy.decide(&input)
-            else {
-                return Ok(GoalPlanAdvanceOutcome::AwaitingPolicy(decision));
+            let planned = match policy.decide(&input) {
+                PlanFailureDecision::Suspend {
+                    policy_reference,
+                    reason,
+                } if input.suspension_reference.is_none() => {
+                    validate_failure_policy_metadata(&policy_reference, Some(&reason))?;
+                    let evidence = failure_policy_evidence(
+                        &input,
+                        &policy_reference,
+                        "suspend",
+                        Some(&reason),
+                    )?;
+                    let continuation_reference =
+                        format!("{policy_reference}:{}", evidence.sha256());
+                    let mut planned = plan_suspend_failed_plan(
+                        ledger,
+                        session_id,
+                        plan,
+                        plan.state_version,
+                        &plan_context(&snapshot, tick, "suspend-failed-plan"),
+                        continuation_reference.clone(),
+                    )
+                    .map_err(GoalPlanCoordinatorError::Plan)?;
+                    let mut goal = crate::plan_goal_transition(
+                        ledger,
+                        session_id,
+                        goal_id,
+                        snapshot.goal_revision,
+                        &goal_context(&snapshot, tick, "suspend-failed-goal"),
+                        GoalRuntimeTransition::Suspend {
+                            reason,
+                            suspension_reference: Some(continuation_reference),
+                        },
+                    )
+                    .map_err(GoalPlanCoordinatorError::Goal)?;
+                    planned.facts.append(&mut goal.facts);
+                    planned
+                }
+                PlanFailureDecision::Resume { policy_reference } => {
+                    validate_failure_policy_metadata(&policy_reference, None)?;
+                    let Some(continuation_reference) = input.suspension_reference.as_deref() else {
+                        return Ok(GoalPlanAdvanceOutcome::AwaitingPolicy(decision));
+                    };
+                    if continuation_policy_reference(continuation_reference)
+                        != Some(policy_reference.as_str())
+                    {
+                        return Err(GoalPlanCoordinatorError::InvalidTick);
+                    }
+                    let mut planned = plan_resume_failed_plan(
+                        ledger,
+                        session_id,
+                        plan,
+                        plan.state_version,
+                        &plan_context(&snapshot, tick, "resume-failed-plan"),
+                        continuation_reference.into(),
+                    )
+                    .map_err(GoalPlanCoordinatorError::Plan)?;
+                    let plan_reference = crate::goal_plan_coordination::canonical_plan_reference(
+                        plan.snapshot.definition(),
+                    )
+                    .map_err(GoalPlanCoordinatorError::Coordination)?;
+                    let mut goal = crate::plan_goal_transition(
+                        ledger,
+                        session_id,
+                        goal_id,
+                        snapshot.goal_revision,
+                        &goal_context(&snapshot, tick, "resume-failed-goal"),
+                        GoalRuntimeTransition::Activate {
+                            plan_reference: Some(plan_reference),
+                        },
+                    )
+                    .map_err(GoalPlanCoordinatorError::Goal)?;
+                    planned.facts.append(&mut goal.facts);
+                    planned
+                }
+                PlanFailureDecision::Fail {
+                    policy_reference,
+                    reason,
+                } if input.suspension_reference.is_none() => {
+                    validate_failure_policy_metadata(&policy_reference, Some(&reason))?;
+                    let evidence =
+                        failure_policy_evidence(&input, &policy_reference, "fail", Some(&reason))?;
+                    crate::plan_fail_plan(
+                        ledger,
+                        session_id,
+                        plan,
+                        plan.state_version,
+                        &plan_context(&snapshot, tick, "fail-plan-policy"),
+                        reason,
+                        Some(evidence),
+                    )
+                    .map_err(GoalPlanCoordinatorError::Plan)?
+                }
+                PlanFailureDecision::Suspend { .. }
+                | PlanFailureDecision::Fail { .. }
+                | PlanFailureDecision::Defer { .. } => {
+                    return Ok(GoalPlanAdvanceOutcome::AwaitingPolicy(decision));
+                }
             };
-            if !valid_policy_reference(&policy_reference) || !valid_safe_code(&reason) {
-                return Err(GoalPlanCoordinatorError::InvalidTick);
-            }
-            let evidence = CanonicalPayload::from_value(&serde_json::json!({
-                "contract":"garive.plan-failure-policy-decision",
-                "version":1,
-                "policy_reference":policy_reference,
-                "input":{
-                    "session_version":input.session_version,
-                    "through_position":input.through_position,
-                    "goal_id":input.goal_id,
-                    "goal_revision":input.goal_revision,
-                    "goal_definition_digest":input.goal_definition_digest,
-                    "plan_id":input.plan_id,
-                    "plan_revision":input.plan_revision,
-                    "plan_definition_digest":input.plan_definition_digest,
-                    "failed_step_ids":input.failed_step_ids,
-                },
-            }))
-            .map_err(|_| GoalPlanCoordinatorError::InvalidTick)?;
-            let planned = crate::plan_fail_plan(
-                ledger,
-                session_id,
-                plan,
-                plan.state_version,
-                &plan_context(&snapshot, tick, "fail-plan-policy"),
-                reason,
-                Some(evidence),
-            )
-            .map_err(GoalPlanCoordinatorError::Plan)?;
             commit_plan_command(
                 ledger,
                 session_id.clone(),
@@ -682,6 +769,110 @@ fn valid_safe_code(value: &str) -> bool {
         && bytes.all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'_')
 }
 
+fn validate_failure_policy_metadata(
+    policy_reference: &str,
+    reason: Option<&str>,
+) -> Result<(), GoalPlanCoordinatorError> {
+    if !valid_policy_reference(policy_reference)
+        || reason.is_some_and(|value| !valid_safe_code(value))
+    {
+        Err(GoalPlanCoordinatorError::InvalidTick)
+    } else {
+        Ok(())
+    }
+}
+
+fn failure_policy_evidence(
+    input: &PlanFailureInput,
+    policy_reference: &str,
+    decision: &str,
+    reason: Option<&str>,
+) -> Result<CanonicalPayload, GoalPlanCoordinatorError> {
+    CanonicalPayload::from_value(&serde_json::json!({
+        "contract":"garive.plan-failure-policy-decision",
+        "version":1,
+        "decision":decision,
+        "policy_reference":policy_reference,
+        "reason":reason,
+        "input":{
+            "session_version":input.session_version,
+            "through_position":input.through_position,
+            "goal_id":input.goal_id,
+            "goal_revision":input.goal_revision,
+            "goal_definition_digest":input.goal_definition_digest,
+            "plan_id":input.plan_id,
+            "plan_revision":input.plan_revision,
+            "plan_definition_digest":input.plan_definition_digest,
+            "failed_step_ids":input.failed_step_ids,
+            "suspension_reference":input.suspension_reference,
+        },
+    }))
+    .map_err(|_| GoalPlanCoordinatorError::InvalidTick)
+}
+
+fn policy_suspension_reference(
+    ledger: &SqliteLedger,
+    session_id: &SessionId,
+    plan_id: &str,
+    plan_revision: u64,
+    state: PlanState,
+    through_position: u64,
+) -> Result<Option<String>, GoalPlanCoordinatorError> {
+    if state == PlanState::Running {
+        return Ok(None);
+    }
+    if state != PlanState::Suspended {
+        return Err(GoalPlanCoordinatorError::Coordination(
+            GoalPlanCoordinationError::ConcurrentModification,
+        ));
+    }
+    let facts = ledger
+        .read_facts(session_id, 0, through_position, None)
+        .map_err(|_| {
+            GoalPlanCoordinatorError::Coordination(GoalPlanCoordinationError::CorruptState)
+        })?;
+    let candidates = facts
+        .iter()
+        .filter(|fact| fact.kind.as_str() == "plan.suspended")
+        .filter_map(|fact| {
+            let value = serde_json::from_str::<Value>(fact.payload.as_json()).ok()?;
+            (value.get("plan_id")?.as_str()? == plan_id
+                && value.get("plan_revision")?.as_u64()? == plan_revision)
+                .then_some(value)
+        })
+        .collect::<Vec<_>>();
+    let value = candidates
+        .last()
+        .ok_or(GoalPlanCoordinatorError::Coordination(
+            GoalPlanCoordinationError::CorruptState,
+        ))?;
+    if value.get("continuation_kind").and_then(Value::as_str) != Some("policy") {
+        return Err(GoalPlanCoordinatorError::Coordination(
+            GoalPlanCoordinationError::ContinuationUnavailable,
+        ));
+    }
+    let reference = value
+        .get("continuation_reference")
+        .and_then(Value::as_str)
+        .ok_or(GoalPlanCoordinatorError::Coordination(
+            GoalPlanCoordinationError::CorruptState,
+        ))?;
+    continuation_policy_reference(reference).ok_or(GoalPlanCoordinatorError::Coordination(
+        GoalPlanCoordinationError::CorruptState,
+    ))?;
+    Ok(Some(reference.into()))
+}
+
+fn continuation_policy_reference(value: &str) -> Option<&str> {
+    let (reference, digest) = value.rsplit_once(':')?;
+    (valid_policy_reference(reference)
+        && digest.len() == 64
+        && digest
+            .bytes()
+            .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase()))
+    .then_some(reference)
+}
+
 fn decide(
     goal: &crate::GoalRuntimeState,
     plans: &[&crate::PlanRuntimeState],
@@ -779,7 +970,11 @@ fn decide_authoritative(
         });
     }
     if goal.snapshot.state() == GoalState::Suspended {
-        return Ok(GoalPlanDecision::NoAction);
+        return Ok(if plan.snapshot.state() == PlanState::Suspended {
+            failed_plan_decision(plan).unwrap_or(GoalPlanDecision::NoAction)
+        } else {
+            GoalPlanDecision::NoAction
+        });
     }
     if plan.snapshot.state() == PlanState::Suspended {
         return Ok(GoalPlanDecision::NeedsOperator {
@@ -826,34 +1021,28 @@ fn decide_authoritative(
             step_id,
         });
     }
-    Ok(
-        if plan.snapshot.definition().steps().iter().any(|step| {
+    Ok(failed_plan_decision(plan).unwrap_or(GoalPlanDecision::NoAction))
+}
+
+fn failed_plan_decision(plan: &crate::PlanRuntimeState) -> Option<GoalPlanDecision> {
+    let failed_step_ids = plan
+        .snapshot
+        .definition()
+        .steps()
+        .iter()
+        .filter(|step| {
             plan.snapshot
                 .step(step.step_id())
                 .map(|value| value.state())
                 == Some(StepState::Failed)
-        }) {
-            GoalPlanDecision::ResolveFailedPlan {
-                plan_id,
-                plan_revision,
-                failed_step_ids: plan
-                    .snapshot
-                    .definition()
-                    .steps()
-                    .iter()
-                    .filter(|step| {
-                        plan.snapshot
-                            .step(step.step_id())
-                            .map(|value| value.state())
-                            == Some(StepState::Failed)
-                    })
-                    .map(|step| step.step_id().as_str().to_owned())
-                    .collect(),
-            }
-        } else {
-            GoalPlanDecision::NoAction
-        },
-    )
+        })
+        .map(|step| step.step_id().as_str().to_owned())
+        .collect::<Vec<_>>();
+    (!failed_step_ids.is_empty()).then(|| GoalPlanDecision::ResolveFailedPlan {
+        plan_id: plan.snapshot.definition().plan_id().as_str().into(),
+        plan_revision: plan.snapshot.definition().plan_revision(),
+        failed_step_ids,
+    })
 }
 
 #[cfg(test)]

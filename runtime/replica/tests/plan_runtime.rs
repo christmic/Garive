@@ -1387,15 +1387,126 @@ async fn retry_posture_reopens_within_bounds_and_stops_at_failure_policy_after_e
             failed_step_ids: vec!["prepare".into()],
         }
     );
-    let failure = StaticFailurePolicy::new(PlanFailureDecision::Fail {
+    let suspend = StaticFailurePolicy::new(PlanFailureDecision::Suspend {
         policy_reference: "failure-policy-v1".into(),
-        reason: "attempts_exhausted".into(),
+        reason: "operator_review_required".into(),
     });
     let dispatcher = RecordingTurnDispatcher::default();
     let mut factory = DispatchFactory {
         unavailable: false,
         policy_mismatch: false,
     };
+    assert!(matches!(
+        advance_goal_plan_with_failure_once(
+            &mut ledger,
+            &session,
+            "goal-1",
+            &GoalPlanCoordinationTick {
+                actor_reference: "coordinator:local".into(),
+                recorded_at: timestamp().into(),
+                dispatch: None,
+            },
+            &mut factory,
+            &dispatcher,
+            &suspend,
+        )
+        .unwrap(),
+        GoalPlanAdvanceOutcome::Committed(GoalPlanDecision::ResolveFailedPlan { .. })
+    ));
+    let suspended_plan = recover(&ledger, &session);
+    let suspended_goal = reconstruct_goal(&ledger, &session, "goal-1").unwrap();
+    assert_eq!(suspended_plan.snapshot.state(), PlanState::Suspended);
+    assert_eq!(suspended_goal.snapshot.state(), GoalState::Suspended);
+    assert_eq!(
+        suspended_plan.session_version,
+        suspended_goal.session_version
+    );
+    let suspension_facts = ledger
+        .read_facts(&session, 0, u64::MAX, None)
+        .unwrap()
+        .into_iter()
+        .filter(|fact| matches!(fact.kind.as_str(), "plan.suspended" | "goal.suspended"))
+        .collect::<Vec<_>>();
+    assert_eq!(suspension_facts.len(), 2);
+    assert_eq!(
+        suspension_facts[1].position,
+        suspension_facts[0].position + 1
+    );
+    let suspension_reference =
+        serde_json::from_str::<serde_json::Value>(suspension_facts[0].payload.as_json()).unwrap()
+            ["continuation_reference"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+    assert!(suspension_reference.starts_with("failure-policy-v1:"));
+    assert!(suspension_facts[1]
+        .payload
+        .as_json()
+        .contains(&suspension_reference));
+    assert!(matches!(
+        evaluate_goal_plan_once(&ledger, &session, "goal-1")
+            .unwrap()
+            .decision,
+        GoalPlanDecision::ResolveFailedPlan { .. }
+    ));
+    let mismatched_resume = StaticFailurePolicy::new(PlanFailureDecision::Resume {
+        policy_reference: "failure-policy-v2".into(),
+    });
+    assert_eq!(
+        advance_goal_plan_with_failure_once(
+            &mut ledger,
+            &session,
+            "goal-1",
+            &GoalPlanCoordinationTick {
+                actor_reference: "coordinator:local".into(),
+                recorded_at: timestamp().into(),
+                dispatch: None,
+            },
+            &mut factory,
+            &dispatcher,
+            &mismatched_resume,
+        ),
+        Err(garive_runtime::GoalPlanCoordinatorError::InvalidTick)
+    );
+    assert_eq!(
+        recover(&ledger, &session).snapshot.state(),
+        PlanState::Suspended
+    );
+    let resume = StaticFailurePolicy::new(PlanFailureDecision::Resume {
+        policy_reference: "failure-policy-v1".into(),
+    });
+    assert!(matches!(
+        advance_goal_plan_with_failure_once(
+            &mut ledger,
+            &session,
+            "goal-1",
+            &GoalPlanCoordinationTick {
+                actor_reference: "coordinator:local".into(),
+                recorded_at: timestamp().into(),
+                dispatch: None,
+            },
+            &mut factory,
+            &dispatcher,
+            &resume,
+        )
+        .unwrap(),
+        GoalPlanAdvanceOutcome::Committed(GoalPlanDecision::ResolveFailedPlan { .. })
+    ));
+    assert_eq!(
+        recover(&ledger, &session).snapshot.state(),
+        PlanState::Running
+    );
+    assert_eq!(
+        reconstruct_goal(&ledger, &session, "goal-1")
+            .unwrap()
+            .snapshot
+            .state(),
+        GoalState::Active
+    );
+    let failure = StaticFailurePolicy::new(PlanFailureDecision::Fail {
+        policy_reference: "failure-policy-v1".into(),
+        reason: "attempts_exhausted".into(),
+    });
     assert!(matches!(
         advance_goal_plan_with_failure_once(
             &mut ledger,

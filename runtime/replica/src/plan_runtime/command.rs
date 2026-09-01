@@ -1,4 +1,4 @@
-use garive_goal::GoalEvidenceV1;
+use garive_goal::{GoalEvidenceV1, GoalState};
 use garive_ledger::{
     CanonicalPayload, CommitResult, FactDraft, FactId, FactKind, LedgerError, SessionId,
 };
@@ -222,6 +222,77 @@ pub fn plan_fail_plan(
         context,
         PlanRuntimeTransition::FailPlan { reason, evidence },
     )
+}
+
+/// Suspends failed Plan work under an exact durable policy continuation.
+pub(crate) fn plan_suspend_failed_plan(
+    ledger: &SqliteLedger,
+    session_id: &SessionId,
+    current: &PlanRuntimeState,
+    expected_state_version: u64,
+    context: &PlanCommandContext,
+    continuation_reference: String,
+) -> Result<PlannedPlanCommand, PlanRuntimeError> {
+    validate_failed_plan_policy_state(ledger, session_id, current, GoalState::Active)?;
+    plan_transition(
+        current,
+        expected_state_version,
+        context,
+        PlanRuntimeTransition::SuspendPlan {
+            continuation_kind: "policy".into(),
+            continuation_reference,
+        },
+    )
+}
+
+/// Resumes failed Plan work under its exact durable policy continuation.
+pub(crate) fn plan_resume_failed_plan(
+    ledger: &SqliteLedger,
+    session_id: &SessionId,
+    current: &PlanRuntimeState,
+    expected_state_version: u64,
+    context: &PlanCommandContext,
+    continuation_reference: String,
+) -> Result<PlannedPlanCommand, PlanRuntimeError> {
+    validate_failed_plan_policy_state(ledger, session_id, current, GoalState::Suspended)?;
+    plan_transition(
+        current,
+        expected_state_version,
+        context,
+        PlanRuntimeTransition::ResumePlan {
+            resolved_continuation_reference: continuation_reference,
+        },
+    )
+}
+
+fn validate_failed_plan_policy_state(
+    ledger: &SqliteLedger,
+    session_id: &SessionId,
+    current: &PlanRuntimeState,
+    goal_state: GoalState,
+) -> Result<(), PlanRuntimeError> {
+    let prefix = goal_prefix(ledger, session_id)?;
+    if current.session_version != prefix.session_version
+        || current.through_position != prefix.through_position
+        || !current.active_claims.is_empty()
+        || !current.snapshot.definition().steps().iter().any(|step| {
+            current
+                .snapshot
+                .step(step.step_id())
+                .map(|value| value.state())
+                == Some(garive_plan::StepState::Failed)
+        })
+    {
+        return Err(PlanRuntimeError::TransitionInvalid);
+    }
+    let goal = goal(&prefix, current.snapshot.definition().goal_id())?;
+    match goal_state {
+        GoalState::Active => validate_active_goal_binding(current.snapshot.definition(), goal),
+        GoalState::Suspended => {
+            validate_suspended_goal_binding(current.snapshot.definition(), goal)
+        }
+        _ => Err(PlanRuntimeError::TransitionInvalid),
+    }
 }
 
 /// Completes one Plan only after Runtime verifies complete Goal evidence at the fixed prefix.
@@ -1006,7 +1077,7 @@ fn require_digest(value: &str) -> Result<(), PlanRuntimeError> {
 }
 
 fn continuation(kind: &str, reference: &str) -> Result<(), PlanRuntimeError> {
-    if !matches!(kind, "interaction" | "reconciliation") {
+    if !matches!(kind, "interaction" | "policy" | "reconciliation") {
         return Err(PlanRuntimeError::Invalid);
     }
     require_non_empty(reference)
