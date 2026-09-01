@@ -8,11 +8,11 @@ expression: "frame(&palette, Theme::Light, 160, 28)"
                                     ✓  Ag  │    /sessions           Switch session                                  │
                                   ◆ Gariv  │    /jump               unavailable · fewer than two Turns are loaded   │
                                     ## Re  │    /inspect            Open Inspector                                  │
-                                    • Ver  │    /status             Connection details                              │
-                                    • Shi  │    /edit-prompt        Edit draft externally                           │
-                                    cargo  │    /retry              unavailable · no unknown command                │
+                                           │    /status             Connection details                              │
+                                    • Ver  │    /edit-prompt        Edit draft externally                           │
+                                    • Shi  │    /retry              unavailable · no unknown command                │
                                            │    /reconnect          Resume event stream                             │
-                                           │    /cancel             Cancel running turn                             │
+                                    cargo  │    /cancel             Cancel running turn                             │
                                            │    /theme system       Follow terminal theme                           │
                                            │    /theme dark         Use dark theme                                  │
                                            │    /theme light        Use light theme                                 │
