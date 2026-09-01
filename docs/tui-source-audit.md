@@ -583,8 +583,12 @@ The locally installed Claude Code 2.1.231 runtime was also observed at 80
 columns on 2026-09-01: its idle Composer uses full-axis horizontal boundaries
 with prompt and context/effort metadata in separate rows. This is product
 evidence only because the shipping TUI source is unavailable. Garive does not
-adopt the double rule in this batch; Composer boundary ownership remains a
-separate decision from transcript User-message grouping.
+adopt the double rule. It combines Codex's single prompt-adjacent status voice
+with one Claude-corroborated full-axis separator: at widths `>=52`, one
+component-owned top rule anchors the Composer and embeds any phase/cancel state
+as its left-aligned title. Widths 40–51 retain plain status text. No variant
+adds side or bottom rules, and BottomPane/Modal components retain their own
+independent boundaries.
 
 ### Markdown presentation
 

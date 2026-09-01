@@ -148,6 +148,10 @@ owns the work signal; the rail drops phase copy and retains only the muted
 When an overlay owns input, that background action is absent. Ended preview
 and unavailable preview restore `Saving…` or `Live feedback unavailable`
 because neither state may masquerade as active output.
+At widths `>=52`, `ComposerBoundary` renders that voice as the left-aligned
+title of one muted top rule; an idle Composer keeps the rule without a title.
+At 40–51 columns the same projection remains plain text with no decorative
+rule. The boundary has no side or bottom edges and is not a cursor hit target.
 After cancellation is admitted, the same Turn-control component is the only
 status voice adjacent to the retained draft. It replaces generic
 frozen/running copy with `Cancelling…`; exact Host acceptance changes it to
@@ -242,7 +246,7 @@ before terminal-cell measurement, so a visible safety marker and its width
 cannot disagree. A cursor exactly after a full-width row advances to column
 zero of a continuation row and is scrolled into view by the same layout.
 The ComposerDock requests height from that visual result: content plus one
-status/separator row, clamped to `2..=6`. Terminals whose content area is below
+top-boundary/status row, clamped to `2..=6`. Terminals whose content area is below
 12 rows hold the dock at two rows and scroll internally. Thus a long single-line
 draft expands like an explicit multiline draft when space exists, without
 stealing the highest-priority hint or minimum conversation surface.
@@ -331,7 +335,8 @@ draft editor, not a submit or queue affordance. Its placeholder names that
 state. `Enter` keeps the exact draft and emits a visible `Current Turn is
 running · draft retained` notice; it never fails silently and does not claim a
 durable queue. With no overlay and no visible work owner, the Composer status
-row owns one left-aligned `• phase · esc to interrupt` line. A non-terminal
+row owns one left-aligned `• phase · esc to interrupt` boundary title at widths
+`>=52`, or the same plain line at compact width. A non-terminal
 live answer or selected active Activity replaces the generic phase with its
 own visible work cue while the rail retains only `esc to interrupt`. With an
 overlay, the rail follows the input-ownership rule above. Cancellation

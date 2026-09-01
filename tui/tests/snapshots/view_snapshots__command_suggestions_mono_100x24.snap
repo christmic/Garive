@@ -23,6 +23,6 @@ expression: "command_suggestion_frame(Theme::Mono)"
 › /theme dark  Use dark theme
   /theme light  Use light theme
   /theme mono  Use mono theme
-
+────────────────────────────────────────────────────────────────────────────────────────────────────
 › /theme
   Tab complete command

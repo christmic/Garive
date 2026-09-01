@@ -3,10 +3,10 @@ use crate::{view::style::palette, Theme};
 use ratatui::{buffer::Buffer, layout::Rect};
 
 #[test]
-fn composer_dock_uses_one_accent_marker_without_a_persistent_frame() {
+fn composer_dock_uses_one_top_boundary_without_a_surrounding_frame() {
     let model = AppModel::default();
     let colors = palette(Theme::Dark);
-    let area = Rect::new(0, 0, 24, 3);
+    let area = Rect::new(0, 0, 80, 3);
     let mut buffer = Buffer::empty(area);
 
     render(&model, colors, MotionFrame::reduced(), area, &mut buffer);
@@ -16,9 +16,10 @@ fn composer_dock_uses_one_accent_marker_without_a_persistent_frame() {
     assert_eq!(marker.style().fg, colors.accent.fg);
     assert_eq!(marker.style().bg, colors.request_surface.bg);
     assert_eq!(buffer[(2, 1)].style().bg, colors.request_surface.bg);
-    assert!((0..area.height).all(|y| (0..area.width).all(|x| {
-        !matches!(buffer[(x, y)].symbol(), "╭" | "╮" | "╰" | "╯" | "│" | "─")
-    })));
+    let rule = colors.border_set().horizontal_top;
+    assert!((0..area.width).any(|x| buffer[(x, 0)].symbol() == rule));
+    assert!((0..area.height).all(|y| (0..area.width)
+        .all(|x| { !matches!(buffer[(x, y)].symbol(), "╭" | "╮" | "╰" | "╯" | "│") })));
 }
 
 #[test]
@@ -48,6 +49,7 @@ fn running_composer_names_the_retained_draft_and_keeps_cancel_nearby() {
         .join("\n");
     assert!(rendered.contains("• Working…  ·  esc to interrupt"));
     assert!(rendered.contains("Draft while current Turn runs"));
+    assert!(!rendered.contains('─'));
 }
 
 #[test]

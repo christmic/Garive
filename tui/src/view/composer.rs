@@ -12,7 +12,9 @@ use crate::{
     input::EditorState,
 };
 
-use super::{composer_run_rail, safe_text, style::Palette, MotionFrame};
+use super::{
+    composer_run_rail, primitives::ComposerBoundary, safe_text, style::Palette, MotionFrame,
+};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum ComposerVariant {
@@ -110,27 +112,24 @@ impl ComposerDock {
         motion: MotionFrame,
         buffer: &mut Buffer,
     ) {
-        if composer_run_rail::has_cancel_request(model) {
-            composer_run_rail::render(model, colors, motion, self.status, buffer);
-            return;
-        }
-        let line = match variant {
-            ComposerVariant::Frozen => Some(Line::from(vec![
-                Span::styled(" ! ", colors.warning),
-                Span::styled("Draft locked", colors.title),
-                Span::styled(" · read only", colors.muted),
-            ])),
-            ComposerVariant::ActionResponse => Some(Line::from(vec![
-                Span::styled(" ! ", colors.notice),
-                Span::styled("Action response", colors.title),
-            ])),
-            ComposerVariant::Idle | ComposerVariant::Focused => None,
-        };
-        if let Some(line) = line {
-            Paragraph::new(line).render(self.status, buffer);
+        let line = if composer_run_rail::has_cancel_request(model) {
+            composer_run_rail::line(model, colors, motion)
         } else {
-            composer_run_rail::render(model, colors, motion, self.status, buffer);
-        }
+            match variant {
+                ComposerVariant::Frozen => Some(Line::from(vec![
+                    Span::styled(" ! ", colors.warning),
+                    Span::styled("Draft locked", colors.title),
+                    Span::styled(" · read only", colors.muted),
+                ])),
+                ComposerVariant::ActionResponse => Some(Line::from(vec![
+                    Span::styled(" ! ", colors.notice),
+                    Span::styled("Action response", colors.title),
+                ])),
+                ComposerVariant::Idle | ComposerVariant::Focused => None,
+            }
+        };
+        let line = line.or_else(|| composer_run_rail::line(model, colors, motion));
+        ComposerBoundary::resolve(self.status).render(line, colors, buffer);
     }
 }
 

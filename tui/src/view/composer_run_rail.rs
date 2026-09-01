@@ -1,11 +1,6 @@
 //! Running-Turn state and control adjacent to the retained Composer draft.
 
-use ratatui::{
-    buffer::Buffer,
-    layout::Rect,
-    text::{Line, Span},
-    widgets::{Paragraph, Widget},
-};
+use ratatui::text::{Line, Span};
 
 use crate::application::{
     AppModel, CancelRequestPhase, ExecutionState, LiveAnswerAvailability, LiveAnswerPhase,
@@ -32,21 +27,6 @@ fn project(model: &AppModel) -> Option<TurnControlState> {
             cancel_available: model.overlay.is_none(),
         }),
         None => None,
-    }
-}
-
-pub(super) fn render(
-    model: &AppModel,
-    colors: Palette,
-    motion: MotionFrame,
-    area: Rect,
-    buffer: &mut Buffer,
-) {
-    if area.is_empty() {
-        return;
-    }
-    if let Some(line) = line(model, colors, motion) {
-        Paragraph::new(line).render(area, buffer);
     }
 }
 
@@ -93,7 +73,11 @@ pub(super) fn minimum_status(model: &AppModel) -> Option<&'static str> {
     }
 }
 
-fn line(model: &AppModel, colors: Palette, motion: MotionFrame) -> Option<Line<'static>> {
+pub(super) fn line(
+    model: &AppModel,
+    colors: Palette,
+    motion: MotionFrame,
+) -> Option<Line<'static>> {
     let state = project(model)?;
     if !matches!(state, TurnControlState::Running { .. }) {
         let (label, tone) = match state {

@@ -118,6 +118,41 @@ pub(super) struct BottomPaneFrame {
     inner: Rect,
 }
 
+/// Stable top boundary for the Composer, with compact-width text fallback.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) struct ComposerBoundary {
+    area: Rect,
+}
+
+impl ComposerBoundary {
+    pub(super) const fn resolve(area: Rect) -> Self {
+        Self { area }
+    }
+
+    pub(super) fn render(self, label: Option<Line<'static>>, colors: Palette, buffer: &mut Buffer) {
+        if self.area.is_empty() {
+            return;
+        }
+        if self.area.width < 52 {
+            if let Some(label) = label {
+                ratatui::widgets::Paragraph::new(label).render(self.area, buffer);
+            }
+            return;
+        }
+        let mut block = Block::default()
+            .borders(Borders::TOP)
+            .border_set(colors.border_set())
+            .border_style(colors.border);
+        if let Some(label) = label {
+            let mut spans = Vec::with_capacity(label.spans.len() + 1);
+            spans.extend(label.spans);
+            spans.push(Span::raw(" "));
+            block = block.title(Line::from(spans));
+        }
+        block.render(self.area, buffer);
+    }
+}
+
 impl BottomPaneFrame {
     pub(super) fn resolve(pane: Rect) -> Self {
         let inner = Block::default().borders(Borders::TOP).inner(pane);
@@ -300,6 +335,34 @@ mod tests {
         assert!((0..20).any(|column| buffer[(column, 1)].symbol() == rule));
         assert!((2..6).all(|row| buffer[(0, row)].symbol() != "│"));
         assert!((2..6).all(|row| buffer[(19, row)].symbol() != "│"));
+    }
+
+    #[test]
+    fn composer_boundary_embeds_status_and_has_a_compact_text_fallback() {
+        let colors = super::super::palette(crate::Theme::Mono);
+        let mut standard = Buffer::empty(Rect::new(0, 0, 60, 1));
+        ComposerBoundary::resolve(standard.area).render(
+            Some(Line::raw("• Working…  ·  esc to interrupt")),
+            colors,
+            &mut standard,
+        );
+        let standard_text = (0..60)
+            .map(|x| standard[(x, 0)].symbol())
+            .collect::<String>();
+        assert!(standard_text.contains("Working…"));
+        assert!(standard_text.contains(colors.border_set().horizontal_top));
+
+        let mut compact = Buffer::empty(Rect::new(0, 0, 40, 1));
+        ComposerBoundary::resolve(compact.area).render(
+            Some(Line::raw("• Working…  ·  esc to interrupt")),
+            colors,
+            &mut compact,
+        );
+        let compact_text = (0..40)
+            .map(|x| compact[(x, 0)].symbol())
+            .collect::<String>();
+        assert!(compact_text.starts_with("• Working…"));
+        assert!(!compact_text.contains(colors.border_set().horizontal_top));
     }
 
     #[test]

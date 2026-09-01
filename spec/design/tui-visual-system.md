@@ -28,7 +28,8 @@ not depend on the terminal default being light or dark.
 | `StatusChip` | padded icon/text span; semantic state style; never color-only |
 | `KeyHint` | visually distinct keycap plus verb; ordered by current action priority |
 | `SelectionRow` | explicit marker-only or full-area policy plus stable cursor; reverse video in mono |
-| `ComposerDock` | open low-contrast input body, semantic status row, shared cursor/hit geometry |
+| `ComposerDock` | low-contrast input body, responsive top boundary/status row, shared cursor/hit geometry |
+| `ComposerBoundary` | one top rule at `>=52`; optional left-aligned status title; compact text fallback; no sides/bottom |
 | `AmbientFooter` | one muted identity row below the Composer; displaced by actionable feedback |
 | `CenteredColumn` | caps readable transcript width without changing model state |
 | `BottomPane` | one Composer-aligned top rule; content-driven height; no backdrop dimming or side/bottom border |
@@ -40,15 +41,16 @@ not depend on the terminal default being light or dark.
 `ComposerDock` reuses the submitted-request visual grammar without copying its
 identity: dark/light use the low-contrast `request_surface`, mono uses the
 terminal background, and focus changes only the non-color `›` lead and terminal
-caret. Its reserved row is blank during ordinary editing and carries `Draft
-locked`, `Action response`, or the running Turn rail only when that state is
-true. Before transcript work is visible, the running rail combines the nearby
+caret. At widths `>=52`, its reserved row is one muted top rule and carries
+`Draft locked`, `Action response`, or the running Turn rail as a left-aligned
+title only when that state is true. Widths `40..=51` omit the rule and render
+only real status text. Before transcript work is visible, the running rail combines the nearby
 work state and cancel control and starts on the shared left axis as
 `• phase · esc to interrupt`. Once a non-terminal live answer or selected active
 Activity owns that signal, the rail reduces to the muted `esc to interrupt`
 control; an overlay suppresses even that background action. It never strands
-the primary state at the terminal's right edge. No Composer variant adds a
-persistent surrounding border. `RequestSurface` renders User input as an
+the primary state at the terminal's right edge. No Composer variant adds side
+or bottom borders. `RequestSurface` renders User input as an
 unbordered, low-contrast terminal-width group with the same non-color `›`
 identity and a two-cell hanging indent. At widths `>=80`, one same-surface blank
 row above and below the content makes the authored Turn read as one calm block
@@ -213,9 +215,10 @@ Only blocking empty states render body copy: missing configuration names the
 Agent-install path and degraded Host access names `/status` as the recovery
 path.
 
-Spacing is the transcript's primary structure. Borders are reserved for modal
-boundaries and an explicitly opened Inspector. The ComposerDock is an open
-surface; focus changes its lead/caret styling without moving content. Accent is
+Spacing is the transcript's primary structure. Enclosing borders are reserved
+for modal boundaries and an explicitly opened Inspector. `ComposerBoundary`
+owns one top rule without sides or a bottom; focus changes the Composer lead/
+caret styling without moving content. Accent is
 limited to the insertion caret, current selection, active work cue, and primary
 decision. Large accent fills and repeated nested boxes are prohibited.
 
