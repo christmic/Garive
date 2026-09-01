@@ -56,6 +56,8 @@ describe("Desktop visual accessibility contract", () => {
     expect(TOKENS).toContain("--height-window-bar: var(--height-toolbar)");
     expect(TOKENS).toContain("--height-thread-toolbar: var(--height-window-bar)");
     expect(TOKENS).toContain("--height-file-toolbar: var(--height-toolbar-pane)");
+    expect(TOKENS).toContain("--command-menu-width: 520px");
+    expect(TOKENS).toContain("--command-menu-list-max-height: min(440px, max(120px, calc(90vh - 64px)))");
     expect(TOKENS).toContain("--radius-composer: 24px");
     expect(TOKENS).toContain("--size-composer-action: 28px");
     expect(TOKENS).toContain("--radius-composer-single-line: 22px");
@@ -173,6 +175,9 @@ describe("Desktop visual accessibility contract", () => {
     expect(CSS).toContain(".ui-tooltip-anchor:focus-within > .ui-tooltip { transition-delay: 0ms; }");
     expect(CSS).toContain(".work-menu-trigger { display: grid; place-items: center; width: 24px; height: 24px;");
     expect(CSS).toContain(".desktop-action-menu { position: absolute; z-index: 12; top: 27px; left: 0; width: 220px;");
+    expect(CSS).toContain(".command-center { grid-template-rows: auto minmax(0, 1fr); width: min(var(--command-menu-width), calc(100vw - 32px));");
+    expect(CSS).toContain(".command-group > button { grid-template-columns: 20px minmax(0, 1fr) auto; gap: 8px; min-height: 32px;");
+    expect(CSS).toContain(".command-scroll::-webkit-scrollbar { display: none; }");
     expect(CSS).toContain(".work-menu .desktop-action-menu { left: -4px; width: 204px; }");
     expect(CSS).toContain(".product-menu-status { display: grid; grid-template-columns: 18px minmax(0, 1fr) 8px;");
     expect(CSS).toContain("grid-template-columns: 18px minmax(0, 1fr) auto");

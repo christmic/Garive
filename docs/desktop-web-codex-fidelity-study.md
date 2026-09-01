@@ -1091,6 +1091,29 @@ Live Web evidence at 1280×720 verifies immediate keyboard disclosure in 20ms,
 the separate `⌘⇧A` hint, removal of the native title, in-viewport placement for
 thread, Composer and file-tab edges, and zero document/main/workspace overflow.
 
+### XXXIV. Global command menu is a palette, not a modal card
+
+The installed `app-initial-NNCUNt29.css` defines `.command-menu-dialog` at
+`min(520px, 92vw)`, derives its vertical position from the available menu
+height and gives the global list a 440px cap. Its root uses a 4px inset and
+elevated surface; items have a 24px minimum before content padding, 75% resting
+opacity, neutral hover/focus material and no visible list scrollbar. Input
+padding is 6px by 10px. These are direct stylesheet facts from Codex
+26.825.51511, not measurements inferred from a screenshot.
+
+Garive's former 620px palette used 50px rows, 31px colored icon tiles, a 60px
+search bar and a permanent footer. It read as a generic Web modal and exposed
+only one ArrowDown transition from the input. Desktop and Web now share a
+520px/4px command surface, 44px search chrome, neutral 20px icon lane, 32px
+commands, 40px factual Work rows and the same source-backed adaptive list cap.
+The duplicate footer and decorative chevrons are removed. Arrow Up/Down wrap
+through real actions, Home/End move to boundaries, Tab remains trapped and
+Escape closes without losing the underlying Work and restores its prior focus.
+Live 1280×720 evidence measures a 520px palette at y=108, 44px search chrome,
+32px action rows, 20px icons, 75% resting opacity and zero overflow. The same
+run proves Down, wrapping Up, Home and End order plus Escape returning focus to
+the running thread's next-instruction draft.
+
 ## Gate 1 — Codex fidelity
 
 This gate passes only when both Desktop and Web show:

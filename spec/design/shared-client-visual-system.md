@@ -646,6 +646,14 @@ product admits those actions.
 
 - `Command-K` opens the global command center; `Command-F` opens durable work
   search; `Command-,` opens Settings.
+- The global command center is a 520px desktop palette, not a generic modal.
+  Its list is capped by `min(440px, max(120px, 90vh - 64px))`, leaving one
+  64px chrome budget. The root owns a 4px inset, compact 32px action rows and
+  40px two-line Work rows. Icons occupy one neutral 20px lane without colored
+  tiles; items rest at 75% opacity and become fully legible on hover/focus.
+  Arrow Up/Down wrap through commands, Home/End jump to boundaries, Escape
+  closes, returns focus to the invoker and Tab remains trapped. Shortcuts stay on their owning command;
+  there is no persistent instructional footer.
 - Enter activates the focused action; Space toggles controls; arrow keys move
   within menus, tabs and segmented controls according to platform convention.
 - Background events do not steal focus. Required approval focuses its first

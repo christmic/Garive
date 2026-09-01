@@ -232,16 +232,34 @@ describe("Desktop product experience", () => {
   it("opens a keyboard-first command center and routes actions without losing work", async () => {
     render(<App />);
     await screen.findByText("What should we accomplish?");
+    const composer = screen.getByRole("textbox", { name: "Describe the outcome you want" });
+    composer.focus();
     fireEvent.keyDown(window, { key: "k", metaKey: true });
     const dialog = await screen.findByRole("dialog", { name: "Garive command center" });
     const commandSearch = screen.getByRole("textbox", { name: "Search commands and durable work" });
     expect(commandSearch).toBeTruthy();
     fireEvent.keyDown(commandSearch, { key: "ArrowDown" });
-    expect(screen.getByRole("button", { name: "New work" })).toBe(document.activeElement);
+    const newWork = within(dialog).getByRole("button", { name: "New work" });
+    const searchAll = within(dialog).getByRole("button", { name: "Open full work search" });
+    expect(newWork).toBe(document.activeElement);
+    fireEvent.keyDown(newWork, { key: "ArrowDown" });
+    expect(searchAll).toBe(document.activeElement);
+    fireEvent.keyDown(searchAll, { key: "ArrowUp" });
+    expect(newWork).toBe(document.activeElement);
+    fireEvent.keyDown(newWork, { key: "End" });
+    expect(within(dialog).getAllByRole("button").at(-1)).toBe(document.activeElement);
+    fireEvent.keyDown(document.activeElement!, { key: "Home" });
+    expect(newWork).toBe(document.activeElement);
+    fireEvent.keyDown(dialog, { key: "Escape" });
+    await waitFor(() => expect(composer).toBe(document.activeElement));
+    expect(screen.queryByRole("dialog", { name: "Garive command center" })).toBeNull();
+
+    fireEvent.keyDown(window, { key: "k", metaKey: true });
+    const routedDialog = await screen.findByRole("dialog", { name: "Garive command center" });
     fireEvent.click(screen.getByRole("button", { name: "Settings" }));
     expect(await screen.findByRole("heading", { name: "Settings" })).toBeTruthy();
     expect(screen.queryByText("Desktop", { exact: true })).toBeNull();
-    expect(dialog.isConnected).toBe(false);
+    expect(routedDialog.isConnected).toBe(false);
 
     fireEvent.keyDown(window, { key: "k", metaKey: true });
     expect(await screen.findByRole("dialog", { name: "Garive command center" })).toBeTruthy();

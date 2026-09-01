@@ -52,6 +52,9 @@
   --height-window-bar: var(--height-toolbar);
   --height-thread-toolbar: var(--height-window-bar);
   --height-file-toolbar: var(--height-toolbar-pane);
+  --command-menu-width: 520px;
+  --command-menu-list-max-height: min(440px, max(120px, calc(90vh - 64px)));
+  --command-menu-max-height: calc(var(--command-menu-list-max-height) + 64px);
   --motion-basic: 150ms;
   --motion-relaxed: 300ms;
   --blur-lg: 16px;

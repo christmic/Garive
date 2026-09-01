@@ -189,6 +189,7 @@ export function App({ client = "desktop", webCapabilities, createProductPort,
   const [recents, setRecents] = useState<readonly RecentTask[]>([]);
   const [recentTitles, setRecentTitles] = useState<Readonly<Record<string, string>>>({});
   const [commandOpen, setCommandOpen] = useState(false);
+  const commandReturnFocus = useRef<HTMLElement | null>(null);
   const [selectedContext, setSelectedContext] = useState<SelectedContext>();
   const [pickerGrant, setPickerGrant] = useState<WorkspaceGrant>();
   const [detachingWorkspaceId, setDetachingWorkspaceId] = useState<string>();
@@ -201,6 +202,18 @@ export function App({ client = "desktop", webCapabilities, createProductPort,
   const t = useMemo(() => createTranslator(locale), [locale]);
   const orderedRecents = useMemo(() => filterAndOrderTasks(recents, "all", "", recentTitles),
     [recentTitles, recents]);
+  const openCommandCenter = useCallback(() => {
+    commandReturnFocus.current = document.activeElement instanceof HTMLElement
+      && document.activeElement !== document.body ? document.activeElement : null;
+    setCommandOpen(true);
+  }, []);
+  const closeCommandCenter = useCallback(() => {
+    setCommandOpen(false);
+    requestAnimationFrame(() => {
+      if (commandReturnFocus.current?.isConnected) commandReturnFocus.current.focus();
+      commandReturnFocus.current = null;
+    });
+  }, []);
   const sidebarTaskGroups = useMemo(() => groupSidebarTasks(orderedRecents), [orderedRecents]);
   const sidebarTasks = useRef<HTMLDivElement>(null);
   const [sidebarScrollEdges, setSidebarScrollEdges] = useState({ top: false, bottom: false });
@@ -512,7 +525,7 @@ export function App({ client = "desktop", webCapabilities, createProductPort,
         event.preventDefault(); beginNewWork();
       }
       if (event.key === ",") { event.preventDefault(); setSettingsSection("general"); setScreen("settings"); }
-      if (event.key.toLowerCase() === "k") { event.preventDefault(); setCommandOpen(true); }
+      if (event.key.toLowerCase() === "k") { event.preventDefault(); openCommandCenter(); }
       if (event.key.toLowerCase() === "f") { event.preventDefault(); setScreen("search"); }
       if (event.shiftKey && event.key.toLowerCase() === "a") {
         event.preventDefault(); dispatch({ type: "inspector_toggled" });
@@ -520,7 +533,7 @@ export function App({ client = "desktop", webCapabilities, createProductPort,
     };
     window.addEventListener("keydown", shortcuts);
     return () => window.removeEventListener("keydown", shortcuts);
-  }, [beginNewWork, navigationOpen]);
+  }, [beginNewWork, navigationOpen, openCommandCenter]);
 
   const title = useMemo(() => {
     const first = state.messages.find((message) => message.role === "user")?.text;
@@ -889,7 +902,7 @@ export function App({ client = "desktop", webCapabilities, createProductPort,
         requestAnimationFrame(() => composer.current?.focus());
       }} />}
     {commandOpen && <CommandCenter recents={orderedRecents} titles={recentTitles}
-      onClose={() => setCommandOpen(false)} onNewWork={() => { setCommandOpen(false); beginNewWork(); }}
+      onClose={closeCommandCenter} onNewWork={() => { setCommandOpen(false); beginNewWork(); }}
       onSearch={() => { setCommandOpen(false); setScreen("search"); }}
       onSettings={() => { setCommandOpen(false); setSettingsSection("general"); setScreen("settings"); }}
       onToggleInspector={() => { setCommandOpen(false); setScreen("work");
@@ -1682,11 +1695,19 @@ function CommandCenter({ recents, titles, onClose, onNewWork, onSearch, onSettin
   ];
   const handleKeys = (event: React.KeyboardEvent<HTMLElement>) => {
     if (event.key === "Escape") { event.preventDefault(); onClose(); return; }
-    const focusable = [...(dialog.current?.querySelectorAll<HTMLElement>("input, button") ?? [])]
+    const items = [...(dialog.current?.querySelectorAll<HTMLElement>("[data-command-item]") ?? [])]
       .filter((element) => !element.hasAttribute("disabled"));
-    if (event.key === "ArrowDown" && event.target instanceof HTMLInputElement && focusable[1]) {
-      event.preventDefault(); focusable[1].focus(); return;
+    if ((event.key === "ArrowDown" || event.key === "ArrowUp") && items.length) {
+      event.preventDefault();
+      if (event.target instanceof HTMLInputElement) items[event.key === "ArrowDown" ? 0 : items.length - 1]?.focus();
+      else { const index = items.indexOf(document.activeElement as HTMLElement);
+        items[(index + (event.key === "ArrowDown" ? 1 : -1) + items.length) % items.length]?.focus(); }
+      return;
     }
+    if ((event.key === "Home" || event.key === "End") && items.includes(document.activeElement as HTMLElement)) {
+      event.preventDefault(); items[event.key === "Home" ? 0 : items.length - 1]?.focus(); return;
+    }
+    const focusable = [...(dialog.current?.querySelectorAll<HTMLElement>("input, [data-command-item]") ?? [])];
     if (event.key !== "Tab" || !focusable.length) return;
     const first = focusable[0]!; const last = focusable.at(-1)!;
     if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
@@ -1701,17 +1722,15 @@ function CommandCenter({ recents, titles, onClose, onNewWork, onSearch, onSettin
         onChange={(event) => setQuery(event.target.value)} /><kbd>esc</kbd></div>
       <div className="command-scroll">
         {actions.length > 0 && <div className="command-group"><p>{t("command.actions")}</p>{actions.map((action) =>
-          <button type="button" aria-label={action.label} onClick={action.run} key={action.label}><span className="command-icon"><Icon name={action.icon} /></span>
+          <button type="button" data-command-item aria-label={action.label} onClick={action.run} key={action.label}><span className="command-icon"><Icon name={action.icon} /></span>
             <strong>{action.label}</strong><kbd>{action.hint}</kbd></button>)}</div>}
         <div className="command-group"><p>{query ? t("command.matches") : t("command.work")}</p>
-          {matches.map((task) => <button type="button" onClick={() => onOpen(task.session_id)} key={task.session_id}>
+          {matches.map((task) => <button type="button" data-command-item onClick={() => onOpen(task.session_id)} key={task.session_id}>
             <span className={`command-icon task-${classifyTask(task)}`}><TaskStateDot task={task} /></span>
-            <span><strong>{titles[task.session_id] || recentLabel(task)}</strong><small>{taskStateCopy(task, t)}</small></span>
-            <Icon name="chevron" /></button>)}
+            <span><strong>{titles[task.session_id] || recentLabel(task)}</strong><small>{taskStateCopy(task, t)}</small></span></button>)}
           {!matches.length && <div className="command-empty">{t("command.empty")}</div>}
         </div>
       </div>
-      <footer><span>{t("command.keyboardHint")}</span><span>{recents.length} {t("command.durable")}</span></footer>
     </section></div>;
 }
 
