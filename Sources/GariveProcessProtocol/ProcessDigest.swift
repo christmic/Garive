@@ -21,7 +21,7 @@ public func processWorkloadDigest(
     identity: GRVProcessIdentityV1,
     workload: GRVProcessWorkloadV1
 ) throws -> Data {
-    guard validIdentity(identity) else { throw ProcessDigestFailure.invalidIdentity }
+    guard processIdentityIsValid(identity) else { throw ProcessDigestFailure.invalidIdentity }
     let mode = try validate(workload)
     var input = DigestInput(label: "garive.macos-process-workload.v1")
     [
@@ -51,7 +51,7 @@ public func processWorkloadDigest(
 
 /// Validates and computes the canonical V0-B terminal-receipt digest.
 public func processReceiptDigest(_ receipt: GRVProcessTerminalReceiptV1) throws -> Data {
-    guard receipt.hasIdentity, validIdentity(receipt.identity),
+    guard receipt.hasIdentity, processIdentityIsValid(receipt.identity),
           receipt.identity.workloadDigest.count == 32,
           receipt.processTreeTerminated,
           receipt.stderr.count <= maximumOutputBytes,
@@ -81,7 +81,7 @@ public func processReceiptDigest(_ receipt: GRVProcessTerminalReceiptV1) throws 
     return digest
 }
 
-private func validIdentity(_ value: GRVProcessIdentityV1) -> Bool {
+func processIdentityIsValid(_ value: GRVProcessIdentityV1) -> Bool {
     validProtocolRevision(value.protocolRevision)
         && [value.invocationID, value.dispatchAttemptID, value.executorRevision]
             .allSatisfy { validIdentityText($0, maximum: 256) }
