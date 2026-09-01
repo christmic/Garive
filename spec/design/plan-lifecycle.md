@@ -285,6 +285,13 @@ through the common Session watermark. Duplicate proposals, orphan Plan facts,
 unknown revisions, malformed coordinates or a changed Goal binding make the
 entire graph corrupt. Host projections consume only this verified graph.
 
+`GET /v1/sessions/{session_id}/plans` returns that graph in stable Plan-ID and
+revision order at the same Session watermark. It exposes only lifecycle state,
+definition digest, Goal binding, state version and aggregate step/attempt
+counts. Step objectives, capability references, input bindings, evidence,
+claims, worker references and policy internals are never public fields. Plan
+count, scanned facts, safe integers and encoded response bytes fail closed.
+
 ## Stable failures
 
 `plan_invalid`, `plan_cycle`, `plan_command_conflict`,

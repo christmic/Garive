@@ -1,4 +1,5 @@
 use std::{
+    collections::BTreeSet,
     fs,
     net::{IpAddr, Ipv4Addr, SocketAddr},
     path::PathBuf,
@@ -15,11 +16,15 @@ use garive_goal::{
 };
 use garive_ledger::{CanonicalPayload, FactDraft, FactId, FactKind, SessionId, ToolInvocationId};
 use garive_llm::{ModelItem, TokenCount};
+use garive_plan::{
+    PlanBoundsV1, PlanCapabilityReference, PlanDefinitionV1, PlanId, PlanStepId, PlanStepV1,
+};
 use garive_runtime::{
-    commit_goal_command, plan_core_terminal, plan_create_goal, ActivityProjectionLimits,
-    CommittedTurn, CoreTerminalContext, EffectiveRuntimeLimits, GoalCommandContext, HostClock,
-    HostContinuationInput, HostReadLimits, InstalledActivityCatalogue, InstalledActivityDescriptor,
-    InstalledAgent, LiveHost, LiveHostError, LiveHostLimits, LiveHostServer, SqliteLedger,
+    commit_goal_command, commit_plan_command, plan_core_terminal, plan_create_goal,
+    plan_propose_plan, ActivityProjectionLimits, CommittedTurn, CoreTerminalContext,
+    EffectiveRuntimeLimits, GoalCommandContext, HostClock, HostContinuationInput, HostReadLimits,
+    InstalledActivityCatalogue, InstalledActivityDescriptor, InstalledAgent, LiveHost,
+    LiveHostError, LiveHostLimits, LiveHostServer, PlanCommandContext, SqliteLedger,
     TurnDispatchError, TurnDispatcher,
 };
 use serde_json::Value;
@@ -222,6 +227,69 @@ fn h2_goal_projection_is_bounded_ordered_and_redacted() {
         "user:fixture",
         "actor_reference",
     ] {
+        assert!(!encoded.contains(private));
+    }
+}
+
+#[test]
+fn h2_plan_projection_is_verified_bounded_and_redacted() {
+    let harness = Harness::new(64);
+    let created = harness
+        .host
+        .create_session("create-plan-session", "definition-main")
+        .unwrap();
+    let session = SessionId::try_from(created.session_id.as_str()).unwrap();
+    let mut ledger = SqliteLedger::open(&harness.database).unwrap();
+    let goal = goal_definition("goal-plan", "private objective", None, session.as_str());
+    let goal_digest = goal.digest().unwrap();
+    let created_goal =
+        plan_create_goal(&ledger, &session, &goal_context("create-plan-goal"), goal).unwrap();
+    commit_goal_command(&mut ledger, session.clone(), 1, &created_goal).unwrap();
+    let plan = PlanDefinitionV1::new(
+        PlanId::new("plan-main").unwrap(),
+        1,
+        "goal-plan",
+        1,
+        goal_digest,
+        "b".repeat(64),
+        "c".repeat(64),
+        "safety-v1",
+        vec![PlanStepV1::new(
+            PlanStepId::new("deliver").unwrap(),
+            "private step objective",
+            [],
+            ["accepted".into()],
+            [PlanCapabilityReference::new("tools", "catalogue-v1").unwrap()],
+            [],
+            1,
+        )
+        .unwrap()],
+        PlanBoundsV1::new(1, 1, 1, None, None).unwrap(),
+        &BTreeSet::from(["accepted".into()]),
+        &BTreeSet::new(),
+        &BTreeSet::from([PlanCapabilityReference::new("tools", "catalogue-v1").unwrap()]),
+    )
+    .unwrap();
+    let proposed = plan_propose_plan(
+        &ledger,
+        &session,
+        &PlanCommandContext {
+            command_id: "propose-plan".into(),
+            actor_reference: "private:planner".into(),
+            recorded_at: NOW.into(),
+        },
+        plan,
+    )
+    .unwrap();
+    commit_plan_command(&mut ledger, session.clone(), 2, &proposed).unwrap();
+
+    let page = harness.host.get_plans(session.as_str()).unwrap();
+    assert_eq!(page.session_version, 3);
+    assert_eq!(page.plans.len(), 1);
+    assert_eq!(page.plans[0].state, "proposed");
+    assert_eq!(page.plans[0].steps_total, 1);
+    let encoded = serde_json::to_string(&page).unwrap();
+    for private in ["private step objective", "catalogue-v1", "private:planner"] {
         assert!(!encoded.contains(private));
     }
 }

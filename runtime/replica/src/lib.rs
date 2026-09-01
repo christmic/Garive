@@ -140,10 +140,10 @@ pub use live_host::{
     HostActivity, HostArtifact, HostArtifactPage, HostClock, HostContinuationInput, HostEventPage,
     HostReadLimits, HostWorkspaceAttachment, HostWorkspaceContextEntry, HostWorkspaceDetachment,
     InstalledActivityCatalogue, InstalledActivityDescriptor, InstalledAgent, LiveHost,
-    LiveHostError, LiveHostEvent, LiveHostLimits, LiveHostServer, LiveHostServerError,
-    SessionPageV1, SessionSummary, SessionSummaryV1, SessionViewV1, SuspensionViewV1,
-    TurnCommandResponse, TurnDispatchError, TurnDispatcher, TurnSuspensionView, TurnTimelineItem,
-    TurnTimelineItemV1, TurnTimelinePage, TurnTimelinePageV1,
+    LiveHostError, LiveHostEvent, LiveHostLimits, LiveHostServer, LiveHostServerError, PlanPageV1,
+    PlanSummaryV1, SessionPageV1, SessionSummary, SessionSummaryV1, SessionViewV1,
+    SuspensionViewV1, TurnCommandResponse, TurnDispatchError, TurnDispatcher, TurnSuspensionView,
+    TurnTimelineItem, TurnTimelineItemV1, TurnTimelinePage, TurnTimelinePageV1,
 };
 pub use live_output::{
     LiveOutputEndReason, LiveOutputError, LiveOutputEvent, LiveOutputEventKind, LiveOutputHub,

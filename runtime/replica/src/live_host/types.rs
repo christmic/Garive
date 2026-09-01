@@ -85,6 +85,8 @@ pub struct HostReadLimits {
     pub max_timeline_items: usize,
     /// Maximum Goals in one Session projection.
     pub max_goals: usize,
+    /// Maximum Plan revisions in one Session projection.
+    pub max_plans: usize,
     /// Maximum durable facts scanned for one projection.
     pub max_facts: usize,
     /// Maximum encoded JSON response bytes.
@@ -108,6 +110,7 @@ impl HostReadLimits {
         max_sessions: 100,
         max_timeline_items: 100,
         max_goals: 256,
+        max_plans: 256,
         max_facts: 8_192,
         max_response_bytes: 2 * 1_024 * 1_024,
         max_user_text_bytes: 64 * 1_024,
@@ -122,6 +125,7 @@ impl HostReadLimits {
             && self.max_sessions > 0
             && self.max_timeline_items > 0
             && self.max_goals > 0
+            && self.max_plans > 0
             && self.max_facts > 0
             && self.max_response_bytes > 0
             && self.max_user_text_bytes > 0
@@ -241,6 +245,54 @@ pub struct GoalPageV1 {
     pub session_id: String,
     /// Goals in stable identity order.
     pub goals: Vec<GoalSummaryV1>,
+    /// Session version used for optimistic commands.
+    pub session_version: u64,
+    /// Highest durable position included in this response.
+    pub observed_max_position: u64,
+}
+
+/// One bounded redacted durable Plan revision projection.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct PlanSummaryV1 {
+    /// Exact Host API version.
+    pub api_version: &'static str,
+    /// Stable Plan identity.
+    pub plan_id: String,
+    /// Immutable Plan revision.
+    pub revision: u64,
+    /// Stable public lifecycle state.
+    pub state: &'static str,
+    /// Lowercase SHA-256 of the private Plan definition.
+    pub definition_digest: String,
+    /// Bound Goal identity.
+    pub goal_id: String,
+    /// Bound Goal revision.
+    pub goal_revision: u64,
+    /// Contiguous mutable Plan state version.
+    pub state_version: u64,
+    /// Total declared steps.
+    pub steps_total: u32,
+    /// Steps currently ready to claim.
+    pub steps_ready: u32,
+    /// Claimed, running or suspended steps.
+    pub steps_active: u32,
+    /// Verified completed steps.
+    pub steps_completed: u32,
+    /// Steps whose latest attempt failed.
+    pub steps_failed: u32,
+    /// Total attempts started across the revision.
+    pub total_attempts: u32,
+}
+
+/// Complete bounded Plan revision page at one Session watermark.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct PlanPageV1 {
+    /// Exact Host API version.
+    pub api_version: &'static str,
+    /// Owning Session identity.
+    pub session_id: String,
+    /// Plan revisions in stable identity then revision order.
+    pub plans: Vec<PlanSummaryV1>,
     /// Session version used for optimistic commands.
     pub session_version: u64,
     /// Highest durable position included in this response.

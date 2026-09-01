@@ -11,17 +11,18 @@ use garive_ledger::{
     CommitDisposition, DurableFact, ExecutionId, FactDraft, FactId, FactKind, LedgerError,
     SessionId, TurnId,
 };
+use garive_plan::{PlanState, StepState};
 use serde::Deserialize;
 use serde_json::json;
 use sha2::{Digest, Sha256};
 
 use crate::{
     commit_planned_turn, get_turn, goal_recovery::reconstruct_goal_graph_from_facts,
-    plan_cancel_turn, plan_continue_turn, plan_start_turn, reconstruct_suspended_turn,
-    CancelReason, CancelTurnCommand, ContinuationInput, ContinueTurnCommand, GetTurnQuery,
-    InteractionInputRepresentation, LiveOutputHub, LiveOutputSubscriber, RuntimeCommandError,
-    RuntimeCommandId, RuntimeSuspensionKind, RuntimeTurnStatus, SqliteLedger, SqliteLedgerError,
-    StartTurnCommand,
+    plan_cancel_turn, plan_continue_turn, plan_start_turn, reconstruct_plan_graph,
+    reconstruct_suspended_turn, CancelReason, CancelTurnCommand, ContinuationInput,
+    ContinueTurnCommand, GetTurnQuery, InteractionInputRepresentation, LiveOutputHub,
+    LiveOutputSubscriber, RuntimeCommandError, RuntimeCommandId, RuntimeSuspensionKind,
+    RuntimeTurnStatus, SqliteLedger, SqliteLedgerError, StartTurnCommand,
 };
 
 use super::{
@@ -30,8 +31,9 @@ use super::{
     GoalPageV1, GoalSummaryV1, HostArtifact, HostArtifactPage, HostClock, HostContinuationInput,
     HostEventPage, HostReadLimits, HostWorkspaceAttachment, HostWorkspaceContextEntry,
     HostWorkspaceDetachment, InstalledAgent, LiveHostError, LiveHostEvent, LiveHostLimits,
-    LiveHostState, SessionPageV1, SessionSummary, SessionViewV1, TurnCommandResponse,
-    TurnDispatcher, TurnSuspensionView, TurnTimelineItem, TurnTimelinePage, TurnTimelinePageV1,
+    LiveHostState, PlanPageV1, PlanSummaryV1, SessionPageV1, SessionSummary, SessionViewV1,
+    TurnCommandResponse, TurnDispatcher, TurnSuspensionView, TurnTimelineItem, TurnTimelinePage,
+    TurnTimelinePageV1,
 };
 use super::{read_cursor, read_model, timeline_projection};
 
@@ -355,6 +357,94 @@ impl LiveHost {
             api_version: "v1",
             session_id: session.into(),
             goals,
+            session_version: watermark.session_version,
+            observed_max_position: watermark.max_position,
+        };
+        ensure_response_bound(&page, self.state.read_limits.max_response_bytes)?;
+        Ok(page)
+    }
+
+    /// Reads all current Plan revisions from one verified fixed Session prefix.
+    pub fn get_plans(&self, session: &str) -> Result<PlanPageV1, LiveHostError> {
+        let session_id = identity::<SessionId>(session)?;
+        let ledger = self.ledger()?;
+        let watermark = ledger
+            .session_watermark(&session_id)
+            .map_err(map_sqlite)?
+            .ok_or(LiveHostError::NotFound)?;
+        if watermark.max_position > MAX_SAFE_JSON_INTEGER
+            || watermark.session_version > MAX_SAFE_JSON_INTEGER
+        {
+            return Err(LiveHostError::ReadBoundExceeded);
+        }
+        let facts = ledger
+            .read_facts(&session_id, 0, watermark.max_position, None)
+            .map_err(map_sqlite)?;
+        if facts.len() > self.state.read_limits.max_facts {
+            return Err(LiveHostError::ReadBoundExceeded);
+        }
+        let installed = self.installed_for_facts(&facts)?;
+        read_model::project_session(
+            &session_id,
+            watermark.max_position,
+            &facts,
+            installed,
+            self.state.read_limits,
+        )?;
+        let graph = reconstruct_plan_graph(&ledger, &session_id)
+            .map_err(|_| LiveHostError::CorruptState)?;
+        if graph.len() > self.state.read_limits.max_plans {
+            return Err(LiveHostError::ReadBoundExceeded);
+        }
+        let plans = graph
+            .into_iter()
+            .map(|((plan_id, revision), state)| {
+                let definition = state.snapshot.definition();
+                let mut ready = 0u32;
+                let mut active = 0u32;
+                let mut completed = 0u32;
+                let mut failed = 0u32;
+                for step in definition.steps() {
+                    match state
+                        .snapshot
+                        .step(step.step_id())
+                        .ok_or(LiveHostError::CorruptState)?
+                        .state()
+                    {
+                        StepState::Ready => ready += 1,
+                        StepState::Claimed | StepState::Running | StepState::Suspended => {
+                            active += 1
+                        }
+                        StepState::Completed => completed += 1,
+                        StepState::Failed => failed += 1,
+                        StepState::Pending => {}
+                    }
+                }
+                Ok(PlanSummaryV1 {
+                    api_version: "v1",
+                    plan_id,
+                    revision,
+                    state: plan_state(state.snapshot.state()),
+                    definition_digest: definition
+                        .digest()
+                        .map_err(|_| LiveHostError::CorruptState)?,
+                    goal_id: definition.goal_id().into(),
+                    goal_revision: definition.goal_revision(),
+                    state_version: state.state_version,
+                    steps_total: u32::try_from(definition.steps().len())
+                        .map_err(|_| LiveHostError::ReadBoundExceeded)?,
+                    steps_ready: ready,
+                    steps_active: active,
+                    steps_completed: completed,
+                    steps_failed: failed,
+                    total_attempts: state.snapshot.total_attempts(),
+                })
+            })
+            .collect::<Result<Vec<_>, LiveHostError>>()?;
+        let page = PlanPageV1 {
+            api_version: "v1",
+            session_id: session.into(),
+            plans,
             session_version: watermark.session_version,
             observed_max_position: watermark.max_position,
         };
@@ -1825,6 +1915,19 @@ const fn goal_state(state: GoalState) -> &'static str {
         GoalState::Succeeded => "succeeded",
         GoalState::Failed => "failed",
         GoalState::Cancelled => "cancelled",
+    }
+}
+
+const fn plan_state(state: PlanState) -> &'static str {
+    match state {
+        PlanState::Proposed => "proposed",
+        PlanState::Adopted => "adopted",
+        PlanState::Running => "running",
+        PlanState::Suspended => "suspended",
+        PlanState::Completed => "completed",
+        PlanState::Failed => "failed",
+        PlanState::Superseded => "superseded",
+        PlanState::Rejected => "rejected",
     }
 }
 
