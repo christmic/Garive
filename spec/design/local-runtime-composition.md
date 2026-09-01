@@ -33,14 +33,21 @@ LocalReplicaConfig {
 ```
 
 Every text value is non-empty, every count/duration is non-zero and the address
-is loopback. The model port, Host clock and monotonic lease clock are injected
-constructed values. Each lease reading carries a non-empty boot-scoped clock
-revision; audit RFC 3339 time is never reused as a lease tick. Provider endpoint, credential, headers and protocol
+is loopback. The model port, Host clock and OS monotonic source are injected
+constructed values. Runtime maps boot-scoped OS readings into one
+SQLite-persisted logical clock revision. Every observation durably reserves its
+complete lease horizon; the first reading from a new boot starts beyond that
+horizon, so old claims expire through normal PL1 semantics. Audit RFC 3339 time
+is never reused as a lease tick. Provider endpoint, credential, headers and protocol
 configuration enter only through the constructed model port. R1 reads no
 process environment and performs no implicit config-file or credential-store
 lookup. Debug/error output contains stable codes and non-secret identities only.
 An absent Plan admission policy denies automatic proposal adoption.
 An absent Plan proposal port leaves a Goal at the explicit planning boundary.
+An implementation that invokes a model for proposal content must use the
+durable C6/model prepared-started-terminal lifecycle. Direct ModelPort
+invocation from a proposal adapter would create an unrecoverable dispatch cut
+and is forbidden.
 
 ## Commit and dispatch ordering
 

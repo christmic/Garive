@@ -342,6 +342,11 @@ then reopens and rechecks the complete Session/Goal watermark before proposal
 commit. Missing proposal configuration remains `AwaitingPolicy`; a stale Goal
 or concurrent Plan lineage invalidates the result.
 
+A future model-backed proposal composition is not permitted to call ModelPort
+as an unrecorded helper. Planning dispatch must first gain its own durable
+C6/model lifecycle and recoverable result binding; only that committed result
+may feed the topology-only proposal port.
+
 Plan admission may Adopt, Reject or Defer one exact proposal. Adopt records the
 policy revision in `plan.adopted`; Reject records the same revision plus the
 authenticated Runtime actor and a stable reason in `plan.rejected`. Both

@@ -727,6 +727,93 @@ fn bounded_dispatch_resumes_claim_and_starts_exactly_one_execution() {
 }
 
 #[test]
+fn prior_boot_plan_claim_expires_through_the_persistent_clock() {
+    let directory = tempdir().unwrap();
+    let path = directory.path().join("plan-boot-clock.sqlite3");
+    let session = SessionId::try_from("session-1").unwrap();
+    let mut ledger = SqliteLedger::open(&path).unwrap();
+    open_session(&mut ledger, &session);
+    let proposed =
+        plan_propose_plan(&ledger, &session, &context("boot-propose"), definition()).unwrap();
+    commit_plan_command(&mut ledger, session.clone(), 1, &proposed).unwrap();
+    let draft = recover(&ledger, &session);
+    let adopted = plan_adopt_plan(
+        &ledger,
+        &session,
+        &draft,
+        draft.state_version,
+        &context("boot-adopt"),
+        PlanRuntimeTransition::Adopt {
+            expected_goal_revision: 2,
+            expected_prior_plan_revision: None,
+            policy_reference: "boot-policy-v1".into(),
+            carry_forward_evidence: evidence(),
+        },
+    )
+    .unwrap();
+    commit_plan_command(
+        &mut ledger,
+        session.clone(),
+        draft.session_version,
+        &adopted,
+    )
+    .unwrap();
+    let first = ledger.reserve_monotonic_lease("boot-a", 1_000, 10).unwrap();
+    let mut claim_tick = dispatch_tick();
+    claim_tick.clock_revision = first.clock_revision;
+    claim_tick.claimed_at_tick = first.now_ms;
+    claim_tick.observed_at_tick = first.now_ms;
+    claim_tick.expires_at_tick = first.now_ms + 10;
+    let dispatcher = RecordingTurnDispatcher::default();
+    let mut unavailable = DispatchFactory {
+        unavailable: true,
+        policy_mismatch: false,
+    };
+    assert_eq!(
+        dispatch_plan_step_once(
+            &mut ledger,
+            &session,
+            "goal-1",
+            &claim_tick,
+            &mut unavailable,
+            &dispatcher,
+        ),
+        Err(PlanDispatchError::PreparationFailed)
+    );
+    drop(ledger);
+
+    let mut restarted = SqliteLedger::open(&path).unwrap();
+    let next_boot = restarted.reserve_monotonic_lease("boot-b", 5, 10).unwrap();
+    assert!(next_boot.now_ms >= claim_tick.expires_at_tick);
+    let mut expiry_tick = dispatch_tick();
+    expiry_tick.clock_revision = next_boot.clock_revision;
+    expiry_tick.claimed_at_tick = next_boot.now_ms;
+    expiry_tick.observed_at_tick = next_boot.now_ms;
+    expiry_tick.expires_at_tick = next_boot.now_ms + 10;
+    expiry_tick.claim_command_id = "boot-expire-command".into();
+    assert_eq!(
+        dispatch_plan_step_once(
+            &mut restarted,
+            &session,
+            "goal-1",
+            &expiry_tick,
+            &mut unavailable,
+            &dispatcher,
+        )
+        .unwrap(),
+        PlanDispatchOutcome::ClaimExpired
+    );
+    assert_eq!(
+        recover(&restarted, &session)
+            .snapshot
+            .step(&step_id("prepare"))
+            .unwrap()
+            .state(),
+        StepState::Ready
+    );
+}
+
+#[test]
 fn coordinator_selects_one_action_from_one_ledger_prefix() {
     let directory = tempdir().unwrap();
     let path = directory.path().join("goal-plan-coordinator.sqlite3");

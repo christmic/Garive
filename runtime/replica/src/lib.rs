@@ -280,8 +280,9 @@ pub use scheduler_runtime::{
 };
 pub use sqlite_ledger::{
     ExecutionLease, ExecutionLeaseError, ExecutionLeaseRequest, MemoryContextRepositorySnapshot,
-    MemoryRepositoryCommitError, MemoryRepositoryImportCommitError, ScheduleLease,
-    ScheduleLeaseError, ScheduleLeaseRequest, SessionWatermark, SqliteLedger, SqliteLedgerError,
+    MemoryRepositoryCommitError, MemoryRepositoryImportCommitError, PersistentMonotonicReading,
+    ScheduleLease, ScheduleLeaseError, ScheduleLeaseRequest, SessionWatermark, SqliteLedger,
+    SqliteLedgerError, PERSISTENT_MONOTONIC_CLOCK_REVISION,
 };
 pub use static_knowledge::{
     KnowledgeConnectorClock, StaticKnowledgeConnector, StaticKnowledgeDocument,

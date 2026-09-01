@@ -17,10 +17,12 @@ mod memory_export;
 mod memory_repository;
 mod memory_repository_import;
 mod migrations;
+mod monotonic_clock;
 mod schedule_lease;
 mod storage;
 
 pub use lease::{ExecutionLease, ExecutionLeaseError, ExecutionLeaseRequest};
+pub use monotonic_clock::{PersistentMonotonicReading, PERSISTENT_MONOTONIC_CLOCK_REVISION};
 pub use schedule_lease::{ScheduleLease, ScheduleLeaseError, ScheduleLeaseRequest};
 
 /// SQLite-backed durable Ledger adapter with restart-safe append semantics.

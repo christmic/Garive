@@ -240,6 +240,13 @@ expiry, a compatible monotonic observation first commits
 claim. A tick never silently steals a different worker's live claim or starts a
 second Execution for an already-started attempt.
 
+The production local clock uses one SQLite-persisted logical revision. Within
+a boot it advances from OS monotonic elapsed time. Each reading reserves its
+complete lease horizon durably; after a reboot the next logical reading fences
+past every prior reservation. Therefore a never-started prior-boot claim uses
+the ordinary same-revision `claim_expired` transition instead of a special
+wall-time or clock-retirement escape hatch.
+
 ## Replanning and carry-forward
 
 Replanning proposes revision `N + 1` with the same Plan ID and current Goal

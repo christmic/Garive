@@ -200,6 +200,17 @@ DROP TABLE memory_repository_transitions;
 ALTER TABLE memory_repository_transitions_v7 RENAME TO memory_repository_transitions;
 "#;
 
+const MIGRATION_8: &str = r#"
+CREATE TABLE runtime_monotonic_clock (
+    singleton INTEGER PRIMARY KEY NOT NULL CHECK(singleton = 1),
+    boot_revision TEXT NOT NULL CHECK(length(boot_revision) > 0),
+    boot_origin_tick BLOB NOT NULL CHECK(length(boot_origin_tick) = 8),
+    logical_origin_tick BLOB NOT NULL CHECK(length(logical_origin_tick) = 8),
+    last_tick BLOB NOT NULL CHECK(length(last_tick) = 8),
+    reserved_until_tick BLOB NOT NULL CHECK(length(reserved_until_tick) = 8)
+) STRICT;
+"#;
+
 pub(super) fn migrate(connection: &mut Connection) -> Result<(), SqliteLedgerError> {
     connection.execute_batch(
         "CREATE TABLE IF NOT EXISTS schema_migrations (\
@@ -211,7 +222,7 @@ pub(super) fn migrate(connection: &mut Connection) -> Result<(), SqliteLedgerErr
         [],
         |row| row.get(0),
     )?;
-    if version > 7 {
+    if version > 8 {
         return Err(SqliteLedgerError::UnsupportedSchema(version));
     }
     if version == 0 {
@@ -286,6 +297,17 @@ pub(super) fn migrate(connection: &mut Connection) -> Result<(), SqliteLedgerErr
         transaction.execute(
             "INSERT INTO schema_migrations(version, applied_at) \
              VALUES (7, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))",
+            [],
+        )?;
+        transaction.commit()?;
+        version = 7;
+    }
+    if version == 7 {
+        let transaction = connection.transaction()?;
+        transaction.execute_batch(MIGRATION_8)?;
+        transaction.execute(
+            "INSERT INTO schema_migrations(version, applied_at) \
+             VALUES (8, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))",
             [],
         )?;
         transaction.commit()?;

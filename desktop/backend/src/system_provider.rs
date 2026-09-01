@@ -20,7 +20,7 @@ use garive_runtime::{
     ActivityProjectionLimits, CatalogueCapabilityPreparationFactory, HostClock, LiveHostLimits,
     LocalExecutionAttempt, LocalExecutionPolicy, LocalMemorySystemBinding, MemoryControlAction,
     MemoryControlGrant, RuntimeAgentCatalogue, RuntimeAgentInstallation, RuntimeHttpLimits,
-    RuntimeModelHttpTransport, T1HostSystemConfig,
+    RuntimeModelHttpTransport, SqliteLedger, T1HostSystemConfig,
 };
 use uuid::Uuid;
 
@@ -284,6 +284,8 @@ impl<R: DesktopSecretResolver, P: DesktopProfileRegistry> DesktopConfigurationPr
         if boot_time == 0 {
             return Err(DesktopConfigurationError::ConstructionFailure);
         }
+        let operations_database_path = config.database_path.clone();
+        let boot_revision = format!("os-boot-v1:{boot_time}");
         Ok(Some(DesktopHostConfig {
             database_path: config.database_path,
             agent_catalogue: agent_catalogue.clone(),
@@ -311,7 +313,8 @@ impl<R: DesktopSecretResolver, P: DesktopProfileRegistry> DesktopConfigurationPr
             operations: Arc::new(SystemDesktopOperations {
                 worker_owner_id: format!("desktop-worker-{}", Uuid::new_v4()),
                 lease_duration_ms,
-                clock_revision: format!("os-monotonic-boot-v1:{boot_time}"),
+                database_path: operations_database_path,
+                boot_revision,
             }),
         }))
     }
@@ -490,7 +493,8 @@ impl HostClock for SystemHostClock {
 struct SystemDesktopOperations {
     worker_owner_id: String,
     lease_duration_ms: u64,
-    clock_revision: String,
+    database_path: PathBuf,
+    boot_revision: String,
 }
 impl DesktopOperations for SystemDesktopOperations {
     fn command_id(&self, purpose: &'static str) -> Result<String, crate::DesktopHostError> {
@@ -499,12 +503,21 @@ impl DesktopOperations for SystemDesktopOperations {
 
     fn execution_attempt(&self) -> Result<LocalExecutionAttempt, crate::DesktopHostError> {
         let now = SystemTime::now();
-        let now_ms = system_monotonic_ms()?;
+        let boot_tick_ms = system_monotonic_ms()?;
+        let reading = SqliteLedger::open(&self.database_path)
+            .and_then(|mut ledger| {
+                ledger.reserve_monotonic_lease(
+                    &self.boot_revision,
+                    boot_tick_ms,
+                    self.lease_duration_ms,
+                )
+            })
+            .map_err(|_| crate::DesktopHostError::InvalidConfiguration)?;
         Ok(LocalExecutionAttempt {
             worker_owner_id: self.worker_owner_id.clone(),
             lease_token: Uuid::new_v4().to_string(),
-            now_ms,
-            clock_revision: self.clock_revision.clone(),
+            now_ms: reading.now_ms,
+            clock_revision: reading.clock_revision,
             lease_duration_ms: self.lease_duration_ms,
             recorded_at: timestamp(now),
         })
