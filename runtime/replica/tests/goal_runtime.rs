@@ -437,6 +437,103 @@ fn success_resolves_evidence_against_the_fixed_ledger_prefix() {
     );
 }
 
+#[test]
+fn recovery_rejects_success_that_references_a_later_fact() {
+    let directory = tempdir().unwrap();
+    let path = directory.path().join("future-evidence.sqlite3");
+    let session = SessionId::try_from("session-1").unwrap();
+    let mut ledger = SqliteLedger::open(&path).unwrap();
+    open_session(&mut ledger, &session);
+    let future_payload = CanonicalPayload::from_value(&json!({"proof":"later"})).unwrap();
+    let definition = GoalDefinitionV1::new(
+        GoalId::new("goal-corrupt").unwrap(),
+        "Reject evidence from the future",
+        vec![GoalCriterion::DurableFact {
+            criterion_id: GoalCriterionId::new("future").unwrap(),
+            fact_kind: "evidence.future".into(),
+            subject_digest: future_payload.sha256().into(),
+        }],
+        scope(),
+        bounds(),
+        None,
+        capabilities(),
+    )
+    .unwrap();
+    let created =
+        plan_create_goal(&ledger, &session, &context("create-corrupt"), definition).unwrap();
+    commit_goal_command(&mut ledger, session.clone(), 1, &created).unwrap();
+    let active = plan_goal_transition(
+        &ledger,
+        &session,
+        "goal-corrupt",
+        1,
+        &context("activate-corrupt"),
+        GoalRuntimeTransition::Activate {
+            plan_reference: None,
+        },
+    )
+    .unwrap();
+    commit_goal_command(&mut ledger, session.clone(), 2, &active).unwrap();
+
+    let evidence = GoalEvidenceV1::new(
+        GoalEvidenceId::new("future-evidence").unwrap(),
+        GoalCriterionId::new("future").unwrap(),
+        GoalEvidenceKind::DurableFact,
+        "future-fact",
+        future_payload.sha256(),
+        3,
+    )
+    .unwrap();
+    let evidence_json = GoalEvidenceV1::canonical_json(&[evidence]).unwrap();
+    ledger
+        .commit(
+            session.clone(),
+            3,
+            vec![FactDraft {
+                fact_id: FactId::try_from("succeed-corrupt").unwrap(),
+                turn_id: None,
+                execution_id: None,
+                model_request_id: None,
+                tool_invocation_id: None,
+                kind: FactKind::new("goal.succeeded").unwrap(),
+                schema_version: 1,
+                payload: CanonicalPayload::from_value(&json!({
+                    "command_id":"succeed-corrupt",
+                    "goal_id":"goal-corrupt",
+                    "revision":3,
+                    "evidence":{
+                        "digest":format!("{:x}", Sha256::digest(evidence_json.as_bytes())),
+                        "inline_utf8":evidence_json,
+                    },
+                }))
+                .unwrap(),
+                recorded_at: timestamp().into(),
+            }],
+        )
+        .unwrap();
+    ledger
+        .commit(
+            session.clone(),
+            4,
+            vec![FactDraft {
+                fact_id: FactId::try_from("future-fact").unwrap(),
+                turn_id: None,
+                execution_id: None,
+                model_request_id: None,
+                tool_invocation_id: None,
+                kind: FactKind::new("evidence.future").unwrap(),
+                schema_version: 1,
+                payload: future_payload,
+                recorded_at: timestamp().into(),
+            }],
+        )
+        .unwrap();
+    assert_eq!(
+        reconstruct_goal(&ledger, &session, "goal-corrupt"),
+        Err(GoalRuntimeError::RecoveryCorrupt)
+    );
+}
+
 fn open_session(ledger: &mut SqliteLedger, session: &SessionId) {
     let fact = FactDraft {
         fact_id: FactId::try_from("session-open").unwrap(),
