@@ -72,12 +72,19 @@ essential label is clipped or replaced by an icon.
 | space | `--space-1` 4, `--space-2` 8, `--space-3` 12, `--space-4` 16, `--space-5` 24, `--space-6` 32 px |
 | radius | `--radius-control` 8, `--radius-card` 12, `--radius-panel` 14, `--radius-composer` 20/25, `--radius-pill` 999 px |
 | depth | `--shadow-raised`, `--shadow-overlay`; no other shadow families |
-| motion | `--motion-fast` 120 ms, `--motion-base` 180 ms, standard enter/exit easing |
+| motion | `--motion-basic` 150 ms, `--motion-relaxed` 300 ms; exact basic, enter, exit and snappy curves |
 | desktop chrome | `--height-window-bar` 34, `--height-file-toolbar` 30 px |
 
 Desktop controls are at least 32 px high; primary actions and touch-capable
 surfaces provide 44×44 px targets. Reduced-motion makes nonessential animation
 instant. Reduced-transparency removes backdrop blur without losing separation.
+
+Motion follows the installed Codex desktop vocabulary: ordinary fades,
+scrollbar disclosure and floating overlays use 150 ms; structural panel and
+drawer movement may use 300 ms. Enter is `cubic-bezier(.19, 1, .22, 1)`, exit
+is `cubic-bezier(.8, 0, .4, 1)`, and compact floating surfaces use the snappy
+`cubic-bezier(.23, 1, .32, 1)`. Reduced motion sets both duration sources to
+zero, so compatibility aliases cannot accidentally retain animation.
 
 ### Color and surface aliases
 

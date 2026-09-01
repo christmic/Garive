@@ -48,8 +48,13 @@ describe("Desktop visual accessibility contract", () => {
     expect(TOKENS).toContain("--surface-overlay: #2d2d2d");
     expect(TOKENS).toContain("--surface-selected: #3c3638");
     expect(TOKENS).toContain("--scrollbar-thumb-hover: var(--border-strong)");
+    expect(TOKENS).toContain("--motion-basic: 150ms");
+    expect(TOKENS).toContain("--motion-relaxed: 300ms");
+    expect(TOKENS).toContain("--ease-enter: cubic-bezier(.19, 1, .22, 1)");
+    expect(TOKENS).toContain("--ease-exit: cubic-bezier(.8, 0, .4, 1)");
+    expect(TOKENS).toContain("--ease-enter-snappy: cubic-bezier(.23, 1, .32, 1)");
     expect(TOKENS).toContain("@supports (corner-shape: superellipse(1.5))");
-    expect(CSS).toContain("--sidebar-width: clamp(206px, 16.1vw, 240px)");
+    expect(CSS).toContain("--sidebar-width: clamp(204px, 16vw, 240px)");
     expect(CSS).toContain("--conversation-split: 352px");
     expect(CSS).toContain(".app-shell:has(.workspace-panel)");
     expect(CSS).toContain("var(--conversation-split) minmax(500px, 1fr)");

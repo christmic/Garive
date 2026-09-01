@@ -30,9 +30,14 @@
   --radius-pill: 999px;
   --height-window-bar: 34px;
   --height-file-toolbar: 30px;
-  --motion-fast: 120ms;
-  --motion-base: 180ms;
-  --ease-enter: cubic-bezier(.2, .8, .2, 1);
+  --motion-basic: 150ms;
+  --motion-relaxed: 300ms;
+  --motion-fast: var(--motion-basic);
+  --motion-base: var(--motion-relaxed);
+  --ease-basic: ease;
+  --ease-enter: cubic-bezier(.19, 1, .22, 1);
+  --ease-exit: cubic-bezier(.8, 0, .4, 1);
+  --ease-enter-snappy: cubic-bezier(.23, 1, .32, 1);
 
   --surface-canvas: #ffffff;
   --surface-raised: #f7f7f7;
@@ -132,7 +137,7 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  :root { --motion-fast: 0ms; --motion-base: 0ms; }
+  :root { --motion-basic: 0ms; --motion-relaxed: 0ms; }
 }
 
 @media (prefers-contrast: more) {

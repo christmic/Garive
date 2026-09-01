@@ -42,6 +42,7 @@ and bundled-module inspection of the installed package established these facts:
 | sidebar | `clamp(240px, 275px preferred, min(520px, 100vw - 320px))` |
 | thread measure | 40 rem default, with 42/48 rem and 480/500 px variants |
 | composer | thread measure plus 24 px inline overhang; 4 px base spacing |
+| motion | 150 ms basic, 300 ms relaxed; `.19,1,.22,1` enter, `.8,0,.4,1` exit, `.23,1,.32,1` snappy |
 | neutral ramp | `#fff`, `#f9f9f9`, `#ededed`, `#cdcdcd`, `#afafaf`, `#414141`, `#303030`, `#212121`, `#181818`, `#0d0d0d` |
 
 The bundle also separates modules for the local conversation thread and turn
