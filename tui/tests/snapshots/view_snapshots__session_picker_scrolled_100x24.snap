@@ -4,13 +4,14 @@ expression: "frame(&sessions, Theme::Mono, 100, 24)"
 ---
   Session 12  ·  Agent                                                               Agent running
 
-    › Summarize t  ╭ Switch session ────────────────────────────────────────────╮
-      ✓  Agent ac  │                                                            │
-    ◆ Garive       │  Filter  type to search                                    │
-      ## Release   │    Session 4 · Agent   ● running                           │
-      • Verify th  │    Session 5 · Agent   ● running                           │
-      • Ship with  │    Session 6 · Agent   ● running                           │
-      cargo test   │    Session 7 · Agent   ● running                           │
+    › Summarize the release plan.
+      ✓  Agent ac  ╭ Switch session ────────────────────────────────────────────╮
+    ◆ Garive       │                                                            │
+      ## Release   │  Filter  type to search                                    │
+      • Verify th  │    Session 4 · Agent   ● running                           │
+      • Ship with  │    Session 5 · Agent   ● running                           │
+      cargo test   │    Session 6 · Agent   ● running                           │
+                   │    Session 7 · Agent   ● running                           │
                    │    Session 8 · Agent   ● running                           │
                    │    Session 9 · Agent   ● running                           │
                    │    Session 10 · Agent   ● running                          │
@@ -22,7 +23,6 @@ expression: "frame(&sessions, Theme::Mono, 100, 24)"
                    ╰────────────────────────────────────────────────────────────╯
 
 
-  ╭ › ───────────────────────────────────────────────────────────────────────────────────────────╮
-  │ Ask a follow-up…                                                                             │
-  ╰──────────────────────────────────────────────────────────────────────────────────────────────╯
+
+  › Ask a follow-up…
     Esc cancel run

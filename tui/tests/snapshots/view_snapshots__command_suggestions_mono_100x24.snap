@@ -16,13 +16,13 @@ expression: "command_suggestion_frame(Theme::Mono)"
 
 
 
+
   ╭ Commands ────────────────────────────────────────────────────────────────╮
   │   /theme system  Follow terminal theme                                   │
   │ › /theme dark  Use dark theme                                            │
   │   /theme light  Use light theme                                          │
   │   /theme mono  Use mono theme                                            │
   ╰──────────────────────────────────────────────────────────────────────────╯
-  ╭ › ───────────────────────────────────────────────────────────────────────────────────────────╮
-  │ /theme                                                                                       │
-  ╰──────────────────────────────────────────────────────────────────────────────────────────────╯
+
+  › /theme
     Tab complete command
