@@ -9,7 +9,8 @@ use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::{
-    goal_recovery::{reconstruct_goal_graph, validate_goal_graph, GoalGraphError},
+    goal_evidence::verify_goal_success_evidence,
+    goal_recovery::{reconstruct_goal_graph_from_facts, validate_goal_graph, GoalGraphError},
     SqliteLedger, SqliteLedgerError,
 };
 
@@ -102,6 +103,8 @@ pub enum GoalRuntimeError {
     TransitionInvalid,
     /// Success lacks exact complete criterion evidence.
     EvidenceInsufficient,
+    /// Success evidence does not resolve to the fixed durable Session prefix.
+    EvidenceInvalid,
     /// Child scope, capability, parent identity, or bound exceeds its parent.
     ScopeExceeded,
     /// Proposed parent graph contains a cycle.
@@ -155,7 +158,11 @@ pub fn plan_create_goal(
             return Err(GoalRuntimeError::RecoveryCorrupt);
         }
     }
-    let graph = reconstruct_goal_graph(ledger, session_id)?;
+    let graph = reconstruct_goal_graph_from_facts(
+        &facts,
+        watermark.session_version,
+        watermark.max_position,
+    )?;
     if let Some(command_id) = creation_commands.get(definition.goal_id().as_str()) {
         if command_id != &context.command_id {
             return Err(GoalRuntimeError::CommandConflict);
@@ -223,11 +230,33 @@ pub fn plan_goal_transition(
     if goal_id.is_empty() {
         return Err(GoalRuntimeError::Invalid);
     }
-    let mut graph = reconstruct_goal_graph(ledger, session_id)?;
+    let watermark = ledger
+        .session_watermark(session_id)
+        .map_err(map_ledger)?
+        .ok_or(GoalRuntimeError::NotFound)?;
+    let facts = ledger
+        .read_facts(session_id, 0, watermark.max_position, None)
+        .map_err(map_ledger)?;
+    let mut graph = reconstruct_goal_graph_from_facts(
+        &facts,
+        watermark.session_version,
+        watermark.max_position,
+    )?;
     let current = graph
         .get(goal_id)
         .ok_or(GoalRuntimeError::NotFound)?
         .clone();
+    if let GoalRuntimeTransition::Succeed { evidence } = &request {
+        verify_goal_success_evidence(
+            goal_id,
+            current.snapshot.definition().criteria(),
+            evidence,
+            &graph,
+            &facts,
+            watermark.session_version,
+            None,
+        )?;
+    }
     let planned = plan_goal_transition_from_state(&current, expected_revision, context, request)?;
     graph.insert(goal_id.into(), planned.next.clone());
     validate_goal_graph(&graph).map_err(|error| match error {

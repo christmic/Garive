@@ -19,6 +19,7 @@ mod effect_batch_recovery;
 mod effect_batch_runtime;
 mod effect_batch_sqlite;
 mod executor_router;
+mod goal_evidence;
 mod goal_recovery;
 mod goal_runtime;
 mod live_host;

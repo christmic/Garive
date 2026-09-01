@@ -3,7 +3,10 @@ use garive_ledger::{DurableFact, SessionId};
 use serde_json::{Map, Value};
 use std::collections::{BTreeMap, BTreeSet};
 
-use crate::{GoalRuntimeError, GoalRuntimeState, SqliteLedger, SqliteLedgerError};
+use crate::{
+    goal_evidence::verify_goal_success_evidence, GoalRuntimeError, GoalRuntimeState, SqliteLedger,
+    SqliteLedgerError,
+};
 
 /// Reconstructs one Goal from a verified fixed Session prefix.
 pub fn reconstruct_goal(
@@ -66,7 +69,38 @@ pub(crate) fn reconstruct_goal_graph_from_facts(
         );
     }
     validate_goal_graph(&graph).map_err(|_| GoalRuntimeError::RecoveryCorrupt)?;
+    for (goal_id, state) in &graph {
+        if state.snapshot.state() != GoalState::Succeeded {
+            continue;
+        }
+        let success_position = succeeded_position(facts, goal_id)?;
+        verify_goal_success_evidence(
+            goal_id,
+            state.snapshot.definition().criteria(),
+            state.snapshot.terminal_evidence(),
+            &graph,
+            facts,
+            session_version,
+            Some(success_position),
+        )
+        .map_err(|_| GoalRuntimeError::RecoveryCorrupt)?;
+    }
     Ok(graph)
+}
+
+fn succeeded_position(facts: &[DurableFact], goal_id: &str) -> Result<u64, GoalRuntimeError> {
+    let mut positions = facts.iter().filter_map(|fact| {
+        if fact.kind.as_str() != "goal.succeeded" {
+            return None;
+        }
+        let payload: Value = serde_json::from_str(fact.payload.as_json()).ok()?;
+        (payload.get("goal_id").and_then(Value::as_str) == Some(goal_id)).then_some(fact.position)
+    });
+    let position = positions.next().ok_or(GoalRuntimeError::RecoveryCorrupt)?;
+    if positions.next().is_some() {
+        return Err(GoalRuntimeError::RecoveryCorrupt);
+    }
+    Ok(position)
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
