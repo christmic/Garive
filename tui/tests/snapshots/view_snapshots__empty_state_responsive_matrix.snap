@@ -17,9 +17,9 @@ New conversation              connecting
 
 
 
-╭ › ───────────────────────────────────╮
-│ Message Garive  ·  / for commands    │
-╰──────────────────────────────────────╯
+
+
+› Ask Garive anything  ·  / commands
 
 
 ===== loading standard · Dark · 80x18 =====
@@ -37,9 +37,9 @@ New conversation  ·  Garive                                           connectin
 
 
 
-╭ › ───────────────────────────────────────────────────────────────────────────╮
-│ Message Garive  ·  / for commands                                            │
-╰──────────────────────────────────────────────────────────────────────────────╯
+
+
+› Ask Garive anything  ·  / commands
 
 
 ===== loading wide · Light · 120x18 =====
@@ -57,9 +57,9 @@ New conversation  ·  Garive                                           connectin
 
 
 
-            ╭ › ───────────────────────────────────────────────────────────────────────────────────────────╮
-            │ Message Garive  ·  / for commands                                                            │
-            ╰──────────────────────────────────────────────────────────────────────────────────────────────╯
+
+
+            › Ask Garive anything  ·  / commands
 
 
 ===== ready · Dark · 100x18 =====
@@ -77,9 +77,9 @@ New conversation  ·  Garive                                           connectin
 
 
 
-  ╭ › ───────────────────────────────────────────────────────────────────────────────────────────╮
-  │ Message Garive  ·  / for commands                                                            │
-  ╰──────────────────────────────────────────────────────────────────────────────────────────────╯
+
+
+  › Ask Garive anything  ·  / commands
 
 
 ===== not configured · Mono · 100x18 =====
@@ -97,9 +97,9 @@ New conversation  ·  Garive                                           connectin
 
 
 
-  ╭ › ───────────────────────────────────────────────────────────────────────────────────────────╮
-  │ Message Garive  ·  / for commands                                                            │
-  ╰──────────────────────────────────────────────────────────────────────────────────────────────╯
+
+
+  › Ask Garive anything  ·  / commands
 
 
 ===== degraded · Dark · 100x18 =====
@@ -117,7 +117,7 @@ New conversation  ·  Garive                                           connectin
 
 
 
-  ╭ › ───────────────────────────────────────────────────────────────────────────────────────────╮
-  │ Message Garive  ·  / for commands                                                            │
-  ╰──────────────────────────────────────────────────────────────────────────────────────────────╯
+
+
+  › Ask Garive anything  ·  / commands
     /reconnect try again safely  ·  Durable Session truth unavailable

@@ -4,13 +4,13 @@ expression: "frame(&model, Theme::Mono, 40, 12)"
 ---
 Session 1                  Agent running
 
+    ✓ Agent action · completed
   ◆ Garive
     ## Release plan
     • Verify the Runtime
     • Ship with evidence
     cargo test passes.
 
-╭ › ───────────────────────────────────╮
-│ Ask a follow-up…                     │
-╰──────────────────────────────────────╯
+
+› Ask a follow-up…
   Esc cancel run
