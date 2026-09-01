@@ -2,20 +2,20 @@
 source: tui/tests/view_snapshots.rs
 expression: rendered
 ---
-                                Session 1  ·  Agent
 
-                                  › Summarize the release plan.
-                                    ✓  Agent action · completed
-                                  ◆ Garive
-                                    ## Release plan
+  › Summarize the release plan.
+    ✓  Agent action · completed
+  • ## Release plan
 
-                                    • Verify the Runtime
-                                    • Ship with evidence
+    • Verify the Runtime
+    • Ship with evidence
 
-                                    cargo test passes.
+    cargo test passes.
 
 
 
 
-                                Agent running ·  Esc cancel Turn
-                                › Ask a follow-up…
+
+
+• Working… ·  Esc interrupt
+› Ask a follow-up…

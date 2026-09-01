@@ -2,12 +2,10 @@
 source: tui/tests/view_snapshots.rs
 expression: rendered
 ---
-Session 1
 
   › Summarize the release plan.
     ✓  Agent action · completed
-  ◆ Garive
-    ## Release plan
+  • ## Release plan
 
     • Verify the Runtime
     • Ship with evidence
@@ -17,5 +15,7 @@ Session 1
 
 
 
-Agent running ·  Esc cancel Turn
+
+
+• Working… ·  Esc interrupt
 › Ask a follow-up…
