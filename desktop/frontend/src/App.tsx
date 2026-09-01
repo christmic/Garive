@@ -741,6 +741,7 @@ function WorkSurface({ state, composer, submit, startSuggestion, dispatch, conte
   const conversation = useRef<HTMLDivElement>(null);
   const [followingTail, setFollowingTail] = useState(true);
   const [newOutputBelow, setNewOutputBelow] = useState(false);
+  const [scrolledFromTop, setScrolledFromTop] = useState(false);
   const pendingTailFrame = useRef<number | undefined>(undefined);
   const tailRevision = `${state.messages.length}:${state.messages.at(-1)?.text.length ?? 0}:${state.livePreview?.sequence ?? -1}:${state.phase}`;
   const previousTailRevision = useRef(tailRevision);
@@ -769,6 +770,7 @@ function WorkSurface({ state, composer, submit, startSuggestion, dispatch, conte
     const element = conversation.current;
     if (!element) return;
     const attached = isNearConversationTail(element);
+    setScrolledFromTop(element.scrollTop > 1);
     if (!attached && pendingTailFrame.current !== undefined) {
       cancelAnimationFrame(pendingTailFrame.current);
       pendingTailFrame.current = undefined;
@@ -808,6 +810,7 @@ function WorkSurface({ state, composer, submit, startSuggestion, dispatch, conte
         onSelect={startSuggestion} t={t} />
         : <Timeline state={state} dispatch={dispatch} t={t} />}
     </div>
+    <div className="conversation-top-fade" data-visible={scrolledFromTop} aria-hidden="true" />
     {!followingTail && <button className={newOutputBelow
       ? "conversation-tail-button unread" : "conversation-tail-button"} type="button"
       aria-label={t(newOutputBelow ? "timeline.newOutput" : "timeline.jumpLatest")}

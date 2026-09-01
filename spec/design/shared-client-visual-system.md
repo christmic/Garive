@@ -81,14 +81,20 @@ instant. Reduced-transparency removes backdrop blur without losing separation.
 
 ### Color and surface aliases
 
-Required tokens are `--surface-canvas`, `--surface-raised`, `--surface-sidebar`,
-`--surface-subtle`, `--border-subtle`, `--border-strong`, `--text-primary`,
+Required tokens are `--surface-canvas`, `--surface-raised`, `--surface-overlay`,
+`--surface-sidebar`, `--surface-subtle`, `--border-subtle`, `--border-strong`, `--text-primary`,
 `--text-secondary`, `--text-tertiary`, `--action-primary`,
 `--action-primary-hover`, `--state-info`, `--state-success`,
 `--state-attention`, `--state-danger`, and matching state surfaces.
 
 Light, dark, increased-contrast and forced-color modes provide all aliases.
 Components do not test theme names or encode their own dark palette.
+
+The dark Desktop reference freezes effective rendered surfaces, not merely
+source-layer alpha: canvas `#181818`, native sidebar `#2b2527`, selected sidebar
+row `#3c3638`, Composer `#2a2a2a` and Environment/command overlay `#2d2d2d`.
+A translucent source token is insufficient evidence when its actual composite
+differs from these pixels.
 
 ## Layout contract
 
@@ -195,6 +201,12 @@ surface. These two code treatments must not be conflated.
 The persistent hierarchy is rail → top bar → work canvas → composer/action
 area. Blocking approval appears immediately above the action area. Connection
 and capacity warnings never cover a blocking approval.
+
+Conversation content has no permanent top shadow. Once its scroll owner moves
+more than 1 px from the top, a pointer-transparent 16 px surface-to-transparent
+fade appears directly beneath the title row; it disappears again at the top.
+The state is shared by Desktop and Web, carries no accessibility semantics and
+respects the global reduced-motion contract.
 
 A blocking approval is a compact permission rail attached to the Composer, not
 a saturated warning card or a second dialog. It uses a neutral raised surface,

@@ -34,7 +34,7 @@ describe("Desktop visual accessibility contract", () => {
   it("freezes the shared Codex-fidelity scale and wide shell geometry", () => {
     for (const token of ["--text-2xs: 11px", "--text-xs: 12px", "--text-sm: 13px",
       "--surface-canvas: #ffffff", "--surface-sidebar: #f7f7f7",
-      "--surface-canvas: #181818", "--surface-sidebar: #211f20"]) {
+      "--surface-canvas: #181818", "--surface-sidebar: #2b2527"]) {
       expect(TOKENS).toContain(token);
     }
     expect(TOKENS).toContain("--document-font-size: 13px");
@@ -44,7 +44,9 @@ describe("Desktop visual accessibility contract", () => {
     expect(TOKENS).toContain("--radius-composer: 20px");
     expect(TOKENS).toContain("--shadow-composer: 0 0 0 1px rgba(0, 0, 0, .04)");
     expect(TOKENS).toContain("--shadow-composer: inset 0 0 1px rgba(255, 255, 255, .2)");
-    expect(TOKENS).toContain("--surface-composer: rgba(255, 255, 255, .03)");
+    expect(TOKENS).toContain("--surface-composer: #2a2a2a");
+    expect(TOKENS).toContain("--surface-overlay: #2d2d2d");
+    expect(TOKENS).toContain("--surface-selected: #3c3638");
     expect(TOKENS).toContain("--scrollbar-thumb-hover: var(--border-strong)");
     expect(TOKENS).toContain("@supports (corner-shape: superellipse(1.5))");
     expect(CSS).toContain("--sidebar-width: clamp(206px, 16.1vw, 240px)");
@@ -100,6 +102,9 @@ describe("Desktop visual accessibility contract", () => {
     expect(CSS).toContain(".user-message > div { max-width: 70%; padding: 10px 14px; border: 0; border-radius: 22px; corner-shape: round;");
     expect(CSS).toContain(".composer { width: min(39rem, 100%); border: 0; border-radius: var(--radius-composer);");
     expect(CSS).toContain("background: var(--surface-composer)");
+    expect(CSS).toContain(".theme-dark .environment-panel, .theme-dark .environment-panel header");
+    expect(CSS).toContain('.conversation-top-fade[data-visible="true"] { opacity: 1; }');
+    expect(CSS).toContain("height: 16px; background: linear-gradient(to bottom, var(--surface-canvas), transparent)");
     expect(CSS).toContain("padding-left: 10px; padding-right: 0;");
     expect(CSS).toContain("box-shadow: var(--shadow-composer)");
     expect(CSS).toContain("scrollbar-color: var(--scrollbar-thumb) transparent");
