@@ -44,7 +44,8 @@ pub struct ProcessExecutionRequest {
     pub working_directory: String,
     /// Exact workspace authority granted by Safety.
     pub workspace_mode: ProcessWorkspaceMode,
-    /// Complete environment installed after clearing inherited values.
+    /// Authorized environment installed after clearing image values; a backend
+    /// may add only its documented deterministic isolation baseline.
     pub environment: BTreeMap<String, String>,
     /// Aggregate stdout/stderr byte bound.
     pub max_output_bytes: u64,

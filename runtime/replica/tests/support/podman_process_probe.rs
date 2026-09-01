@@ -85,8 +85,30 @@ fn main() {
     );
     assert_eq!(environment.exit, ProcessExit::Code(0));
     let output = String::from_utf8(environment.stdout).unwrap();
-    assert!(output.lines().any(|line| line == "GARIVE_PROBE=exact"));
+    let lines = output.lines().collect::<Vec<_>>();
+    assert_eq!(lines.len(), 3);
+    assert!(lines.contains(&"GARIVE_PROBE=exact"));
+    assert!(lines.contains(&"HOME=/tmp"));
+    assert!(lines
+        .iter()
+        .any(|line| line.starts_with("HOSTNAME=garive-process-")));
     acknowledge(&backend, "environment");
+
+    let reserved_environment = ProcessExecutionRequest {
+        invocation_id: invocation("reserved-environment"),
+        dispatch_attempt_id: "attempt-reserved-environment".into(),
+        lane: "probe".into(),
+        executable: PathBuf::from("/usr/bin/env"),
+        argv: vec!["env".into()],
+        working_directory: ".".into(),
+        workspace_mode: ProcessWorkspaceMode::Read,
+        environment: BTreeMap::from([("HOME".into(), "/root".into())]),
+        max_output_bytes: 4096,
+        timeout_ms: 5000,
+        max_processes: 4,
+        max_open_files: 32,
+    };
+    assert!(backend.preflight(&reserved_environment).is_err());
 
     let network = execute(
         &backend,
@@ -136,6 +158,21 @@ fn main() {
     assert_eq!(timeout.exit, ProcessExit::Timeout);
     acknowledge(&backend, "timeout");
     recover_twice(&backend, "timeout");
+
+    let process_tree = execute(
+        &backend,
+        "process-tree",
+        "/bin/sh",
+        ["sh", "-c", "/bin/sleep 30 & wait"],
+        ProcessWorkspaceMode::Read,
+        4096,
+        100,
+        BTreeMap::new(),
+    );
+    assert_eq!(process_tree.exit, ProcessExit::Timeout);
+    assert!(process_tree.process_tree_terminated);
+    acknowledge(&backend, "process-tree");
+    recover_twice(&backend, "process-tree");
 
     println!("podman process probe passed");
 }

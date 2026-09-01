@@ -424,7 +424,7 @@ fn podman_executor_revision(
         &control_timeout,
     ];
     let mut digest = Sha256::new();
-    digest.update(b"garive.t1.process-executor.podman.v1");
+    digest.update(b"garive.t1.process-executor.podman.v2");
     for field in fields {
         let bytes = field.as_bytes();
         digest.update(

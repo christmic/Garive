@@ -201,10 +201,15 @@ semantics fail before start.
 
 `process.run` receives a non-empty executable lane plus a bounded argv vector.
 No argument string is re-parsed by a shell. Runtime resolves the lane to a
-configured executable capability and constructs the environment only from an
-explicit allowlist. It supplies a fixed working-directory capability with an
-explicit `read` or `write` mode plus process-count, open-file, duration and
-output bounds. A backend may not infer write access from the command or lane.
+configured executable capability and constructs the authorized environment
+only from an explicit allowlist. A concrete backend first removes every image
+or host-provided environment value, then may add only a documented,
+deterministic isolation baseline that is part of the executor revision. The
+Podman baseline is exactly `HOME=/tmp` plus the deterministic owned-container
+`HOSTNAME`; those keys are reserved and cannot be supplied by a Process lane.
+It supplies a fixed working-directory capability with an explicit `read` or
+`write` mode plus process-count, open-file, duration and output bounds. A
+backend may not infer write access from the command or lane.
 
 Network is denied unless a Network access and origin scope were independently
 authorized and the selected executor proves enforcement. Timeout, cancellation

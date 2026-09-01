@@ -1,6 +1,7 @@
 //! Podman-owned process-tree isolation configured entirely by Runtime.
 
 use std::{
+    collections::BTreeMap,
     fs,
     path::{Component, Path, PathBuf},
     time::Duration,
@@ -19,6 +20,9 @@ use crate::{
 
 const CONTAINER_WORKSPACE: &str = "/workspace";
 const IMAGE_DIGEST_PREFIX: &str = "sha256:";
+const BACKEND_HOME_KEY: &str = "HOME";
+const BACKEND_HOME_VALUE: &str = "/tmp";
+const BACKEND_HOSTNAME_KEY: &str = "HOSTNAME";
 
 /// Immutable Podman boundary supplied explicitly by Runtime construction.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -205,9 +209,9 @@ impl ProcessIsolationBackend for PodmanProcessBackend {
         if self.exists(&name)? {
             return Err(ProcessBackendError::StateUnknown);
         }
-        let artifact =
-            EnvironmentArtifact::create(&self.config.recovery_root, &name, &request.environment)
-                .map_err(|()| ProcessBackendError::StateUnknown)?;
+        let environment = complete_environment(&request, &name)?;
+        let artifact = EnvironmentArtifact::create(&self.config.recovery_root, &name, &environment)
+            .map_err(|()| ProcessBackendError::StateUnknown)?;
         let create = create_arguments(&self.config, &request, &name, artifact.path())?;
         let created = self
             .cli()
@@ -295,12 +299,32 @@ fn validate_request(request: &ProcessExecutionRequest) -> Result<(), String> {
             .iter()
             .any(|value| value.is_empty() || has_nul(value))
         || request.environment.iter().any(|(key, value)| {
-            !valid_environment_key(key) || has_nul(value) || value.contains(['\n', '\r'])
+            !valid_environment_key(key)
+                || matches!(key.as_str(), BACKEND_HOME_KEY | BACKEND_HOSTNAME_KEY)
+                || has_nul(value)
+                || value.contains(['\n', '\r'])
         })
     {
         return Err("invalid Podman process request".into());
     }
     container_working_directory(&request.working_directory).map(|_| ())
+}
+
+fn complete_environment(
+    request: &ProcessExecutionRequest,
+    name: &str,
+) -> Result<BTreeMap<String, String>, ProcessBackendError> {
+    let mut environment = request.environment.clone();
+    if environment
+        .insert(BACKEND_HOME_KEY.into(), BACKEND_HOME_VALUE.into())
+        .is_some()
+        || environment
+            .insert(BACKEND_HOSTNAME_KEY.into(), name.into())
+            .is_some()
+    {
+        return Err(ProcessBackendError::Unavailable);
+    }
+    Ok(environment)
 }
 
 fn create_arguments(
@@ -323,7 +347,10 @@ fn create_arguments(
         name.into(),
         "--label".into(),
         format!("io.garive.runtime.owner={name}"),
+        "--hostname".into(),
+        name.into(),
         "--pull=never".into(),
+        "--unsetenv-all".into(),
         "--network=none".into(),
         "--read-only".into(),
         "--cap-drop=all".into(),
