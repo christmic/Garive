@@ -1,5 +1,5 @@
 import type { DesktopCapabilities, HostActivity, HostArtifact, HostArtifactPage, HostResult, HostSuspension, HostTimelinePage, WorkspaceAttachment } from "../ipc/host";
-import type { AppViewState } from "./controller";
+import type { ActivityItem, AppViewState } from "./controller";
 
 export type BootState = "loading" | "ready" | "unavailable";
 export type WorkPhase = "idle" | "submitting";
@@ -11,6 +11,7 @@ export interface WorkMessage {
   readonly text: string;
   readonly terminal?: HostResult["terminal"];
   readonly suspension?: HostSuspension;
+  readonly activities?: readonly HostActivity[];
 }
 
 export interface WorkState {
@@ -147,10 +148,7 @@ function projectProduct(state: WorkState, view: AppViewState): WorkState {
       .includes(view.execution) ? "submitting" : "idle",
     execution: view.execution,
     sessionId, draft, messages: productMessages(view), livePreview: view.livePreview,
-    activities: view.activities.map((activity) => ({ api_version: "v1",
-      activity_id: activity.activityId, kind: activity.kind, label_key: activity.labelKey ?? "agent.activity.updated",
-      state: activity.state, source_position: activity.position, terminal: activity.terminal ?? false,
-      safe_code: activity.safeCode })),
+    activities: projectActivities(view.activities),
     artifacts: sameSession ? state.artifacts : [], workspaces: sameSession ? state.workspaces : [],
     error: view.notice?.code };
 }
@@ -164,7 +162,8 @@ function productMessages(view: AppViewState): readonly WorkMessage[] {
       prompt_digest: item.suspension.promptDigest,
       response_schema_digest: item.suspension.responseSchemaDigest };
     return [user, { id: item.turnId, role: "assistant", text: item.completionText ?? "",
-      terminal: item.state as HostResult["terminal"], suspension } satisfies WorkMessage];
+      terminal: item.state as HostResult["terminal"], suspension,
+      activities: projectActivities(item.activities ?? []) } satisfies WorkMessage];
   });
 }
 
@@ -182,8 +181,17 @@ function timelineMessages(timeline: HostTimelinePage): readonly WorkMessage[] {
       text: item.completion_text ?? "",
       terminal: item.state,
       suspension: item.suspension,
+      activities: item.activities,
     } satisfies WorkMessage];
   });
+}
+
+function projectActivities(activities: readonly ActivityItem[]): readonly HostActivity[] {
+  return activities.map((activity) => ({ api_version: "v1",
+    activity_id: activity.activityId, kind: activity.kind,
+    label_key: activity.labelKey ?? "agent.activity.updated", state: activity.state,
+    source_position: activity.position, terminal: activity.terminal ?? false,
+    safe_code: activity.safeCode }));
 }
 
 export function canSubmit(state: WorkState): boolean {

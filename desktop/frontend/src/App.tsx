@@ -11,7 +11,7 @@ import {
   listWorkspaceAuthorizations, reauthorizeWorkspace,
   revokeWorkspace, setDesktopMenuLocale, commitArtifactExport,
   prepareArtifactExport, type ArtifactExportReceipt, type ArtifactPreview,
-  type HostArtifact, type HostArtifactPage, type HostTimelinePage,
+  type HostActivity, type HostArtifact, type HostArtifactPage, type HostTimelinePage,
   type WorkspaceAuthorization,
   type WorkspaceAttachment, type WorkspaceEntry, type WorkspaceGrant, type WorkspaceRecoveryStatus,
 } from "./ipc/host";
@@ -430,7 +430,11 @@ export function App({ client = "desktop", webCapabilities, createProductPort,
             started_position: 1, latest_position: 5, state: "completed",
             user_text: "Audit the Runtime boundary before implementation",
             completion_text: "## Runtime boundary\n\nThe client owns the work surface; the Runtime owns durable execution.\n\n```text\nSession → Turn → admitted Activity → committed result\n```\n\n### Execution path\n\n1. The Host admits one exact Session and Turn.\n2. Runtime freezes model, authority, safety, and sandbox inputs.\n3. Activity is published from the durable ledger rather than inferred by the client.\n4. Only committed output becomes the final assistant result.\n\n### Verified constraints\n\n- Workspace authority is explicit and scoped to the selected Session.\n- Live output never replaces the committed result.\n- Recovery preserves the next safe action after restart.\n- Unknown outcomes remain visible until Runtime resolves them.\n\n### Client boundary\n\nDesktop and Web may create a Session, submit work, follow events, and render admitted facts. They do not manufacture tools, model identity, capacity, or execution state. The same contract keeps progressive UI useful without making presentation the source of truth.\n\n### Operational consequence\n\nA reconnect can restore the exact Turn cursor, while an approval resumes only the prepared call bound to that suspension. This keeps the interface calm because the durable ledger—not transient component state—owns continuity.",
-            content_truncated: false, activities: [] }, { turn_id: "running-turn",
+            content_truncated: false, activities: [{ api_version: "v1",
+              activity_id: "completed-read", kind: "tool", label_key: "agent.activity.read_file",
+              state: "completed", source_position: 3, terminal: true }, { api_version: "v1",
+              activity_id: "completed-write", kind: "tool", label_key: "agent.activity.write_file",
+              state: "completed", source_position: 4, terminal: true }] }, { turn_id: "running-turn",
             started_position: 6, latest_position: 9, state: "running",
             user_text: "Compare the launch research and prepare a decision memo",
             content_truncated: false, activities: [{ api_version: "v1",
@@ -1120,10 +1124,15 @@ function Timeline({ state, dispatch, t }: { state: WorkState; dispatch: WorkDisp
     ? <article className="message user-message" key={message.id}><div>{message.text}</div></article>
     : !message.text && message.suspension
       ? <p className="sr-only" role="status" key={message.id}>{terminalCopy(message.terminal, t)}</p>
-    : <article className="message assistant-message" key={message.id}><div><div className="result-markdown"><Markdown skipHtml remarkPlugins={[remarkGfm]}
+    : <article className="message assistant-message" key={message.id}><div>
+      {message.activities?.length ? <TurnActivityDisclosure activities={message.activities} t={t} /> : null}
+      <div className="result-markdown"><Markdown skipHtml remarkPlugins={[remarkGfm]}
       components={{ a: ({ children }) => <span className="safe-link">{children}</span>,
         pre: ({ children }) => <MarkdownCodeBlock t={t}>{children}</MarkdownCodeBlock> }}>{message.text || terminalCopy(message.terminal, t)}</Markdown></div>
-      <div className="result-meta"><span className="result-terminal"><Icon name={message.terminal === "completed" ? "check" : "warning"} />{terminalCopy(message.terminal, t)}</span><div className="result-actions"><button type="button" disabled={!message.text} aria-label={t("timeline.export")} title={t("timeline.export")} onClick={() => downloadMarkdown(message.id, message.text)}><Icon name="download" /></button><button type="button" aria-label={t(copiedId === message.id ? "timeline.copied" : "timeline.copy")} title={t(copiedId === message.id ? "timeline.copied" : "timeline.copy")} onClick={() => void copyResult(message.id, message.text)}><Icon name={copiedId === message.id ? "check" : "copy"} /></button>{state.artifacts.some((artifact) => artifact.turn_id === message.id) && <button type="button" aria-label={t("timeline.openArtifacts")} title={t("timeline.openArtifacts")} onClick={() => dispatch({ type: "inspector_selected", tab: "artifacts" })}><Icon name="file" /></button>}</div></div></div></article>)}
+      <div className={message.terminal === "completed" ? "result-meta" : "result-meta attention"}
+        data-terminal={message.terminal}><span className={message.terminal === "completed"
+          ? "result-terminal sr-only" : "result-terminal"}><Icon name={message.terminal === "completed"
+            ? "check" : "warning"} />{terminalCopy(message.terminal, t)}</span><div className="result-actions"><button type="button" disabled={!message.text} aria-label={t("timeline.export")} title={t("timeline.export")} onClick={() => downloadMarkdown(message.id, message.text)}><Icon name="download" /></button><button type="button" aria-label={t(copiedId === message.id ? "timeline.copied" : "timeline.copy")} title={t(copiedId === message.id ? "timeline.copied" : "timeline.copy")} onClick={() => void copyResult(message.id, message.text)}><Icon name={copiedId === message.id ? "check" : "copy"} /></button>{state.artifacts.some((artifact) => artifact.turn_id === message.id) && <button type="button" aria-label={t("timeline.openArtifacts")} title={t("timeline.openArtifacts")} onClick={() => dispatch({ type: "inspector_selected", tab: "artifacts" })}><Icon name="file" /></button>}</div></div></div></article>)}
     {state.livePreview && <article className="message assistant-message live-answer" aria-label={t("timeline.liveAnswer")}>
       {state.livePreview.available && state.livePreview.text
         ? <div className="result-markdown"><Markdown skipHtml remarkPlugins={[remarkGfm]}
@@ -1132,6 +1141,29 @@ function Timeline({ state, dispatch, t }: { state: WorkState; dispatch: WorkDisp
     </article>}
     <p className="sr-only" aria-live="polite" aria-atomic="true">{announcement}</p>
   </div>;
+}
+
+export function TurnActivityDisclosure({ activities, t }: {
+  activities: readonly HostActivity[];
+  t: (key: MessageKey) => string;
+}) {
+  const active = activities.some((activity) => !activity.terminal);
+  const [open, setOpen] = useState(active);
+  if (!activities.length) return null;
+  const labels = [...new Set(activities.map((activity) => activityLabel(activity.label_key, t)))];
+  const summary = labels.length > 2
+    ? `${labels.slice(0, 2).join(" · ")} · +${labels.length - 2}` : labels.join(" · ");
+  return <details className="turn-activity" open={open}
+    data-activity-count={activities.length}>
+    <summary onClick={(event) => { event.preventDefault(); setOpen((current) => !current); }}>
+      <Icon name="chevron" /><span>{summary}</span></summary>
+    <div className="turn-activity-body">{activities.map((activity) => <div
+      className="turn-activity-row" key={`${activity.kind}-${activity.activity_id}`}>
+      <span className={`activity-status ${activity.state}`}><Icon name={activityIcon(activity.state)} /></span>
+      <strong>{activityLabel(activity.label_key, t)}</strong>
+      <small>{activityState(activity.state, t)}</small>
+    </div>)}</div>
+  </details>;
 }
 
 function MarkdownCodeBlock({ children, t, variant = "result" }: { children?: ReactNode;

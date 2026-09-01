@@ -52,7 +52,7 @@ vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn(async (command: string, a
   }
 }) }));
 
-import { App, CommittedActivity, TurnProgress } from "./App";
+import { App, CommittedActivity, TurnActivityDisclosure, TurnProgress } from "./App";
 import { createTranslator } from "./i18n";
 import type { WorkState } from "./state/workspace";
 
@@ -84,6 +84,9 @@ describe("Desktop product experience", () => {
 
     await waitFor(() => expect(commands, JSON.stringify(commands)).toContain("start_product_turn"));
     expect(await screen.findByText("Durable product answer")).toBeTruthy();
+    const completedMeta = view.container.querySelector(".result-meta[data-terminal='completed']");
+    expect(completedMeta?.classList.contains("attention")).toBe(false);
+    expect(completedMeta?.querySelector(".result-terminal")?.classList.contains("sr-only")).toBe(true);
     expect(screen.getByRole("button", { name: "Export conversation as Markdown" })).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Work actions" }));
     expect(screen.getByRole("menu", { name: "Work actions" })).toBeTruthy();
@@ -411,6 +414,24 @@ describe("Desktop product experience", () => {
     expect(view.container.querySelector(".progress-state")?.textContent).toBe("Running");
     fireEvent.click(screen.getByRole("button", { name: "Open activity" }));
     expect(open).toHaveBeenCalledOnce();
+  });
+
+  it("collapses completed per-Turn activity and discloses only admitted facts", () => {
+    const view = render(<TurnActivityDisclosure t={createTranslator("en")} activities={[{
+      api_version: "v1", activity_id: "read-1", kind: "tool",
+      label_key: "agent.activity.read_file", state: "completed", source_position: 4,
+      terminal: true,
+    }, { api_version: "v1", activity_id: "write-1", kind: "tool",
+      label_key: "agent.activity.write_file", state: "completed", source_position: 7,
+      terminal: true,
+    }]} />);
+    const disclosure = view.container.querySelector<HTMLDetailsElement>(".turn-activity");
+    expect(disclosure?.open).toBe(false);
+    expect(disclosure?.getAttribute("data-activity-count")).toBe("2");
+    expect(screen.getByText("Read scoped file · Write scoped file")).toBeTruthy();
+    expect(view.container.querySelectorAll(".turn-activity-row")).toHaveLength(2);
+    fireEvent.click(view.container.querySelector("summary")!);
+    expect(disclosure?.open).toBe(true);
   });
 
   it("keeps the goal rail visible when durable work needs input", () => {

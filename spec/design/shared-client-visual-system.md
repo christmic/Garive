@@ -564,6 +564,8 @@ space. The same rule applies in light and dark themes and at narrow widths.
 | Workspace tab | opening, active, background, changed, unavailable | stable title, close action, independent scroll and focus restoration |
 | Environment overlay | closed, open, attention, unavailable | compact summary only; never reserves an empty permanent column |
 | Capacity | unavailable, normal, watch, critical, exhausted | scope, period, attribution, remaining/reset and continuation policy travel together |
+| Turn activity | active, completed, attention | uses only admitted per-Turn Activity; active starts expanded, completed starts collapsed |
+| Result actions | hidden, hover, focus, attention | 20 px row, 6 px top gap, 2 px action gap; ordinary actions disclose on turn hover/focus |
 
 ## Capacity view contract
 
@@ -610,6 +612,12 @@ product admits those actions.
   submission while keeping cancellation/reconnection actions reachable.
 - Empty, loading, error, offline, partial and permission-denied states use the
   same component geometry to prevent layout jumps.
+- A completed Turn compresses Activity into a turn-local label summary. Its
+  completion label is visually hidden but announced; failure, interruption and
+  required-input labels remain visible. Expanded Activity enters from −8 px at
+  220 ms and respects reduced motion.
+- Collapse state may be local to the mounted Turn. Clients must not claim
+  cross-session persistence until Runtime or preferences admit that contract.
 
 ## Content rules
 

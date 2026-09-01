@@ -85,6 +85,8 @@ describe("Desktop work state", () => {
     } });
     expect(state.activities).toHaveLength(1);
     expect(state.activities[0]?.state).toBe("completed");
+    expect(state.messages[1]?.activities?.map((activity) => activity.activity_id))
+      .toEqual(["activity-1"]);
   });
 
   it("admits Artifact projections only for the currently loaded Session", () => {

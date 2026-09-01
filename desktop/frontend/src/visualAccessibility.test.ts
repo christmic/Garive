@@ -94,7 +94,6 @@ describe("Desktop visual accessibility contract", () => {
     expect(CSS).toContain(".artifact-preview-content .document-code-block");
     expect(CSS).toContain(".result-markdown { font-size: var(--document-font-size); line-height: var(--document-leading); }");
     expect(CSS).toContain(".message:not(:first-child) { margin-top: var(--conversation-item-gap); }");
-    expect(CSS).toContain("margin-top: var(--conversation-grouped-item-gap); padding-top: var(--conversation-grouped-item-gap)");
     expect(CSS).toContain(".result-markdown h1 { margin: 0 0 calc(var(--document-space) * 2);");
     expect(CSS).toContain(".assistant-message .result-markdown p { font-size: inherit; line-height: inherit; white-space: normal; }");
     expect(CSS).toContain(".artifact-workbench-toolbar { display: flex;");
@@ -161,6 +160,11 @@ describe("Desktop visual accessibility contract", () => {
     expect(CSS).toContain("grid-template-columns: 18px minmax(0, 1fr) auto");
     expect(CSS).toContain(".user-message > div { max-width: var(--user-chat-width); padding: 10px var(--thread-content-margin); border: 0; border-radius: var(--radius-user-message); corner-shape: round;");
     expect(CSS).toContain("background: var(--surface-user-message)");
+    expect(CSS).toContain(".result-meta { justify-content: flex-start; gap: 2px; min-height: 20px; margin-top: 6px;");
+    expect(CSS).toContain("opacity: 0; transition: opacity var(--motion-basic) var(--ease-basic)");
+    expect(CSS).toContain(".result-meta.attention { opacity: 1; }");
+    expect(CSS).toContain(".turn-activity > summary { display: flex; align-items: center; gap: 6px;");
+    expect(CSS).toContain(".turn-activity-body { display: grid; gap: 2px; margin-top: 4px; animation: turn-activity-enter 220ms");
     expect(CSS).toContain(".composer-stack { width: min(var(--thread-content-max-width), 100%); margin: 0 auto;");
     expect(CSS).toContain("margin: 0 var(--composer-rail-inline-inset) calc(var(--composer-rail-tuck) * -1)");
     expect(CSS).toContain("border-radius: var(--radius-composer-rail) var(--radius-composer-rail) 0 0");

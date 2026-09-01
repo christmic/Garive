@@ -893,6 +893,26 @@ the surrounding desktop shell, while export remains a distinct action. Garive
 uses a 40 rem document measure because it reproduces the supplied reference's
 line wrapping at the audited viewport; this is not asserted as Codex source.
 
+### XXVI. Turn-local progressive disclosure and result actions
+
+Installed source evidence is explicit. `local-conversation-turn-BPH7L6Kk.js`
+places a completion Activity collapsible before the assistant item and passes
+persisted/forced/disabled collapse inputs. `conversation-blocks-Bqf2uxPH.js`
+gives its disclosure body a `translateY(-8px)`/opacity entrance over 220 ms and
+150 ms exit. The same module gives Electron assistant actions a 20 px row,
+6 px top margin, 2 px gap and −4 px horizontal offset. Ordinary actions and
+timestamps are fully transparent until the enclosing turn is hovered or
+focus enters it.
+
+Garive maps those facts only onto admitted product data. Each completed Turn's
+real Activity list is collapsed to an exact label summary before its committed
+result; an active list starts expanded. Copy, export and real artifact actions
+use the compact hover/focus row. Completed state remains available to assistive
+technology but is not repeated visually; failed, stopped or suspended terminal
+states stay visible. Garive does not fabricate reasoning prose, elapsed time,
+model choice or tool calls. Collapse state is component-local until a durable
+product preference is admitted, so it is not described as persisted behavior.
+
 ## Gate 1 — Codex fidelity
 
 This gate passes only when both Desktop and Web show:
