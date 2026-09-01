@@ -228,6 +228,14 @@ message GoalCommandResponseV1 {
   uint64 committed_position = 7;
 }
 
+// Exact authority-admitted Goal cancellation proposal.
+message CancelGoalRequestV1 {
+  string session_id = 1;
+  uint64 expected_session_version = 2;
+  uint64 expected_revision = 3;
+  string reason = 4;
+}
+
 // One bounded redacted durable Plan revision projection.
 message PlanSummaryV1 {
   string api_version = 1;

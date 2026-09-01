@@ -4,7 +4,7 @@ use garive_goal::GoalDefinitionV1;
 use garive_ledger::{ExecutionId, SessionId, TurnId};
 use serde::{Deserialize, Serialize};
 
-use crate::EffectiveRuntimeLimits;
+use crate::{EffectiveRuntimeLimits, GoalRuntimeState, GoalRuntimeTransition};
 
 /// Immutable installed Agent values admitted by one local Host.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -317,6 +317,16 @@ pub trait GoalCommandAuthority: Send + Sync {
         session_id: &str,
         definition: &GoalDefinitionV1,
     ) -> Result<String, GoalCommandAuthorityError>;
+
+    /// Authorizes one transition proposal and returns its private actor reference.
+    fn authorize_transition(
+        &self,
+        _session_id: &str,
+        _current: &GoalRuntimeState,
+        _transition: &GoalRuntimeTransition,
+    ) -> Result<String, GoalCommandAuthorityError> {
+        Err(GoalCommandAuthorityError::Denied)
+    }
 }
 
 /// Durable receipt for one public Goal mutation.
@@ -837,6 +847,15 @@ pub(crate) struct ContinueTurnBody {
 pub(crate) struct CreateGoalBody {
     pub expected_session_version: u64,
     pub definition_json: String,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct CancelGoalBody {
+    pub session_id: String,
+    pub expected_session_version: u64,
+    pub expected_revision: u64,
+    pub reason: String,
 }
 
 #[derive(Serialize)]

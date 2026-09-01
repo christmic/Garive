@@ -77,44 +77,72 @@ fn revised(value: &Map<String, Value>) -> Result<(), LedgerError> {
 fn activated(value: &Map<String, Value>) -> Result<(), LedgerError> {
     fields(
         value,
-        &["command_id", "goal_id", "revision", "attempt_number"],
+        &[
+            "command_id",
+            "goal_id",
+            "revision",
+            "attempt_number",
+            "actor_reference",
+        ],
         &["plan_reference"],
     )?;
     common(value)?;
     unsigned(value, "attempt_number", true)?;
-    optional_non_empty(value, "plan_reference")
+    optional_non_empty(value, "plan_reference")?;
+    non_empty(value, "actor_reference")
 }
 
 fn suspended(value: &Map<String, Value>) -> Result<(), LedgerError> {
     fields(
         value,
-        &["command_id", "goal_id", "revision", "reason"],
+        &[
+            "command_id",
+            "goal_id",
+            "revision",
+            "reason",
+            "actor_reference",
+        ],
         &["suspension_reference"],
     )?;
     common(value)?;
     non_empty(value, "reason")?;
-    optional_non_empty(value, "suspension_reference")
+    optional_non_empty(value, "suspension_reference")?;
+    non_empty(value, "actor_reference")
 }
 
 fn succeeded(value: &Map<String, Value>) -> Result<(), LedgerError> {
     fields(
         value,
-        &["command_id", "goal_id", "revision", "evidence"],
+        &[
+            "command_id",
+            "goal_id",
+            "revision",
+            "evidence",
+            "actor_reference",
+        ],
         EMPTY,
     )?;
     common(value)?;
-    content(value, "evidence")
+    content(value, "evidence")?;
+    non_empty(value, "actor_reference")
 }
 
 fn failed(value: &Map<String, Value>) -> Result<(), LedgerError> {
     fields(
         value,
-        &["command_id", "goal_id", "revision", "code"],
+        &[
+            "command_id",
+            "goal_id",
+            "revision",
+            "code",
+            "actor_reference",
+        ],
         &["evidence"],
     )?;
     common(value)?;
     non_empty(value, "code")?;
-    optional_content(value, "evidence")
+    optional_content(value, "evidence")?;
+    non_empty(value, "actor_reference")
 }
 
 fn cancelled(value: &Map<String, Value>) -> Result<(), LedgerError> {

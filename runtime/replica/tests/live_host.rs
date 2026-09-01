@@ -43,7 +43,8 @@ impl HostClock for FixedClock {
 
 #[derive(Default)]
 struct AllowGoalAuthority {
-    calls: Mutex<u32>,
+    create_calls: Mutex<u32>,
+    transition_calls: Mutex<u32>,
 }
 
 impl GoalCommandAuthority for AllowGoalAuthority {
@@ -52,7 +53,17 @@ impl GoalCommandAuthority for AllowGoalAuthority {
         _session_id: &str,
         _definition: &GoalDefinitionV1,
     ) -> Result<String, GoalCommandAuthorityError> {
-        *self.calls.lock().unwrap() += 1;
+        *self.create_calls.lock().unwrap() += 1;
+        Ok("actor:local-user".into())
+    }
+
+    fn authorize_transition(
+        &self,
+        _session_id: &str,
+        _current: &garive_runtime::GoalRuntimeState,
+        _transition: &garive_runtime::GoalRuntimeTransition,
+    ) -> Result<String, GoalCommandAuthorityError> {
+        *self.transition_calls.lock().unwrap() += 1;
         Ok("actor:local-user".into())
     }
 }
@@ -272,7 +283,7 @@ fn public_goal_create_requires_authority_and_exactly_replays_without_reauthoriza
         .create_goal("create-public-goal", &session.session_id, 1, &definition)
         .unwrap();
     assert_eq!(first, replay);
-    assert_eq!(*authority.calls.lock().unwrap(), 1);
+    assert_eq!(*authority.create_calls.lock().unwrap(), 1);
     let changed = goal_definition(
         "goal-public",
         "changed objective",
@@ -283,6 +294,42 @@ fn public_goal_create_requires_authority_and_exactly_replays_without_reauthoriza
     .unwrap();
     assert_eq!(
         host.create_goal("create-public-goal", &session.session_id, 1, &changed,),
+        Err(LiveHostError::CommandConflict)
+    );
+    let cancelled = host
+        .cancel_goal(
+            "cancel-public-goal",
+            &session.session_id,
+            "goal-public",
+            2,
+            1,
+            "operator_cancelled",
+        )
+        .unwrap();
+    assert_eq!(cancelled.revision, 2);
+    assert_eq!(cancelled.state, "cancelled");
+    assert_eq!(
+        cancelled,
+        host.cancel_goal(
+            "cancel-public-goal",
+            &session.session_id,
+            "goal-public",
+            2,
+            1,
+            "operator_cancelled",
+        )
+        .unwrap()
+    );
+    assert_eq!(*authority.transition_calls.lock().unwrap(), 1);
+    assert_eq!(
+        host.cancel_goal(
+            "cancel-public-goal",
+            &session.session_id,
+            "goal-public",
+            2,
+            1,
+            "changed_reason",
+        ),
         Err(LiveHostError::CommandConflict)
     );
     assert!(

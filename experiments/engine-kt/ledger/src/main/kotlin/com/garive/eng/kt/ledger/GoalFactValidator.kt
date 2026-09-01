@@ -37,30 +37,34 @@ private fun JsonObject.revised() {
 }
 
 private fun JsonObject.activated() {
-    exact(setOf("command_id", "goal_id", "revision", "attempt_number"), setOf("plan_reference"))
+    exact(setOf("command_id", "goal_id", "revision", "attempt_number", "actor_reference"), setOf("plan_reference"))
     common()
     ulong("attempt_number", true)
     optionalNonEmpty("plan_reference")
+    nonEmpty("actor_reference")
 }
 
 private fun JsonObject.suspended() {
-    exact(setOf("command_id", "goal_id", "revision", "reason"), setOf("suspension_reference"))
+    exact(setOf("command_id", "goal_id", "revision", "reason", "actor_reference"), setOf("suspension_reference"))
     common()
     nonEmpty("reason")
     optionalNonEmpty("suspension_reference")
+    nonEmpty("actor_reference")
 }
 
 private fun JsonObject.succeeded() {
-    exact(setOf("command_id", "goal_id", "revision", "evidence"))
+    exact(setOf("command_id", "goal_id", "revision", "evidence", "actor_reference"))
     common()
     content("evidence")
+    nonEmpty("actor_reference")
 }
 
 private fun JsonObject.failed() {
-    exact(setOf("command_id", "goal_id", "revision", "code"), setOf("evidence"))
+    exact(setOf("command_id", "goal_id", "revision", "code", "actor_reference"), setOf("evidence"))
     common()
     nonEmpty("code")
     optionalContent("evidence")
+    nonEmpty("actor_reference")
 }
 
 private fun JsonObject.cancelled() {

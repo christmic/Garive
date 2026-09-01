@@ -501,6 +501,7 @@ fn recovery_rejects_success_that_references_a_later_fact() {
                     "command_id":"succeed-corrupt",
                     "goal_id":"goal-corrupt",
                     "revision":3,
+                    "actor_reference":"agent:fixture",
                     "evidence":{
                         "digest":format!("{:x}", Sha256::digest(evidence_json.as_bytes())),
                         "inline_utf8":evidence_json,

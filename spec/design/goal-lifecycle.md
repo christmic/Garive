@@ -191,10 +191,10 @@ Runtime atomically commits one command receipt with the corresponding fact:
 |---|---|
 | `goal.created` | identity, revision 1, definition digest/content binding, actor reference |
 | `goal.revised` | old/new revisions and digests, replacement reason |
-| `goal.activated` | revision, attempt number, plan reference? |
-| `goal.suspended` | revision, stable reason, interaction/reconciliation reference |
-| `goal.succeeded` | revision, ordered criterion/evidence bindings |
-| `goal.failed` | revision, safe terminal code, evidence references |
+| `goal.activated` | revision, attempt number, plan reference?, actor reference |
+| `goal.suspended` | revision, stable reason, interaction/reconciliation reference, actor reference |
+| `goal.succeeded` | revision, ordered criterion/evidence bindings, actor reference |
+| `goal.failed` | revision, safe terminal code, evidence references, actor reference |
 | `goal.cancelled` | revision, actor reference, safe reason |
 
 Payloads use L0 canonical content bindings. Objective text and evidence bodies
@@ -261,6 +261,13 @@ ledger fact and actor without calling the authority again; changed definition
 content under the same key is a command conflict. The receipt exposes only
 Session/Goal identity, resulting revision/state, Session version and committed
 position. Later transition routes must use the same authority boundary.
+
+`POST /v1/goals/{goal_id}:cancel` requires exact Goal and Session revisions and
+a bounded safe reason. Runtime reconstructs the current Goal before asking the
+same authority to admit the transition. Every Goal command fact carries its
+private actor reference; Rust and Kotlin L0 validators reject missing actors.
+Exact cancellation replay returns its original fact-bound receipt without
+reauthorization, while changed reason, identity or expected revision conflicts.
 
 ## Stable failures
 

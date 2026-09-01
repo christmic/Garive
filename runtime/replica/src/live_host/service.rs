@@ -8,8 +8,8 @@ use std::{
 use garive_goal::{GoalDefinitionV1, GoalState};
 use garive_ledger::{
     AgentDefinitionId, AgentDefinitionRevision, AgentInstanceId, CanonicalPayload,
-    CommitDisposition, DurableFact, ExecutionId, FactDraft, FactId, FactKind, LedgerError,
-    SessionId, TurnId,
+    CommitDisposition, CommitResult, DurableFact, ExecutionId, FactDraft, FactId, FactKind,
+    LedgerError, SessionId, TurnId,
 };
 use garive_plan::{PlanState, StepState};
 use serde::Deserialize;
@@ -19,11 +19,12 @@ use sha2::{Digest, Sha256};
 use crate::{
     commit_goal_command, commit_planned_turn, get_turn,
     goal_recovery::reconstruct_goal_graph_from_facts, plan_cancel_turn, plan_continue_turn,
-    plan_create_goal, plan_start_turn, reconstruct_plan_graph, reconstruct_suspended_turn,
-    CancelReason, CancelTurnCommand, ContinuationInput, ContinueTurnCommand, GetTurnQuery,
-    GoalCommandContext, GoalRuntimeError, InteractionInputRepresentation, LiveOutputHub,
-    LiveOutputSubscriber, RuntimeCommandError, RuntimeCommandId, RuntimeSuspensionKind,
-    RuntimeTurnStatus, SqliteLedger, SqliteLedgerError, StartTurnCommand,
+    plan_create_goal, plan_goal_transition, plan_start_turn, reconstruct_goal,
+    reconstruct_plan_graph, reconstruct_suspended_turn, CancelReason, CancelTurnCommand,
+    ContinuationInput, ContinueTurnCommand, GetTurnQuery, GoalCommandContext, GoalRuntimeError,
+    GoalRuntimeTransition, InteractionInputRepresentation, LiveOutputHub, LiveOutputSubscriber,
+    RuntimeCommandError, RuntimeCommandId, RuntimeSuspensionKind, RuntimeTurnStatus, SqliteLedger,
+    SqliteLedgerError, StartTurnCommand,
 };
 
 use super::{
@@ -365,6 +366,68 @@ impl LiveHost {
             session_version: committed.session_version,
             committed_position: position,
         })
+    }
+
+    /// Cancels or exactly replays one authority-admitted non-terminal Goal.
+    pub fn cancel_goal(
+        &self,
+        idempotency_key: &str,
+        session: &str,
+        goal_id: &str,
+        expected_session_version: u64,
+        expected_revision: u64,
+        reason: &str,
+    ) -> Result<GoalCommandResponseV1, LiveHostError> {
+        validate_key(idempotency_key)?;
+        validate_text(reason, 512)?;
+        if expected_session_version == 0 || expected_revision == 0 {
+            return Err(LiveHostError::InvalidRequest);
+        }
+        let session_id = identity::<SessionId>(session)?;
+        let ledger = self.ledger()?;
+        if let Some(response) = replayed_cancel_response(
+            &ledger,
+            &session_id,
+            idempotency_key,
+            goal_id,
+            expected_revision,
+            reason,
+        )? {
+            return Ok(response);
+        }
+        let current = reconstruct_goal(&ledger, &session_id, goal_id).map_err(map_goal_runtime)?;
+        if current.session_version != expected_session_version {
+            return Err(LiveHostError::ConcurrentModification);
+        }
+        let transition = GoalRuntimeTransition::Cancel {
+            reason: reason.into(),
+        };
+        let actor_reference = self
+            .state
+            .goal_authority
+            .as_ref()
+            .ok_or(LiveHostError::PreconditionFailed)?
+            .authorize_transition(session, &current, &transition)
+            .map_err(map_goal_authority)?;
+        validate_text(&actor_reference, 512)?;
+        let planned = plan_goal_transition(
+            &ledger,
+            &session_id,
+            goal_id,
+            expected_revision,
+            &GoalCommandContext {
+                command_id: idempotency_key.into(),
+                actor_reference,
+                recorded_at: self.recorded_at()?,
+            },
+            transition,
+        )
+        .map_err(map_goal_runtime)?;
+        let mut ledger = self.ledger()?;
+        let committed =
+            commit_goal_command(&mut ledger, session_id, expected_session_version, &planned)
+                .map_err(map_goal_runtime)?;
+        goal_command_response(session, &planned.next, &committed)
     }
 
     /// Reads all current Goals from one verified fixed Session prefix.
@@ -2034,6 +2097,85 @@ fn replayed_goal_actor(
             .ok_or(LiveHostError::CorruptState);
     };
     Ok(None)
+}
+
+fn replayed_cancel_response(
+    ledger: &SqliteLedger,
+    session_id: &SessionId,
+    command_id: &str,
+    goal_id: &str,
+    expected_revision: u64,
+    reason: &str,
+) -> Result<Option<GoalCommandResponseV1>, LiveHostError> {
+    let Some(watermark) = ledger.session_watermark(session_id).map_err(map_sqlite)? else {
+        return Ok(None);
+    };
+    let facts = ledger
+        .read_facts(session_id, 0, watermark.max_position, None)
+        .map_err(map_sqlite)?;
+    let matching = facts
+        .iter()
+        .filter(|fact| fact.fact_id.as_str() == command_id)
+        .collect::<Vec<_>>();
+    let [] = matching.as_slice() else {
+        let [fact] = matching.as_slice() else {
+            return Err(LiveHostError::CorruptState);
+        };
+        let value = serde_json::from_str::<serde_json::Value>(fact.payload.as_json())
+            .ok()
+            .and_then(|value| value.as_object().cloned())
+            .ok_or(LiveHostError::CorruptState)?;
+        let revision = expected_revision
+            .checked_add(1)
+            .ok_or(LiveHostError::InvalidRequest)?;
+        if fact.kind.as_str() != "goal.cancelled"
+            || value.get("command_id").and_then(serde_json::Value::as_str) != Some(command_id)
+            || value.get("goal_id").and_then(serde_json::Value::as_str) != Some(goal_id)
+            || value.get("revision").and_then(serde_json::Value::as_u64) != Some(revision)
+            || value.get("reason").and_then(serde_json::Value::as_str) != Some(reason)
+        {
+            return Err(LiveHostError::CommandConflict);
+        }
+        value
+            .get("actor_reference")
+            .and_then(serde_json::Value::as_str)
+            .filter(|actor| !actor.is_empty())
+            .ok_or(LiveHostError::CorruptState)?;
+        let session_version = ledger
+            .fact_commit_version(&fact.fact_id)
+            .map_err(map_sqlite)?
+            .ok_or(LiveHostError::CorruptState)?;
+        return Ok(Some(GoalCommandResponseV1 {
+            api_version: "v1",
+            session_id: session_id.as_str().into(),
+            goal_id: goal_id.into(),
+            revision,
+            state: "cancelled",
+            session_version,
+            committed_position: fact.position,
+        }));
+    };
+    Ok(None)
+}
+
+fn goal_command_response(
+    session: &str,
+    state: &crate::GoalRuntimeState,
+    committed: &CommitResult,
+) -> Result<GoalCommandResponseV1, LiveHostError> {
+    let position = only_position(&committed.positions)?;
+    if committed.session_version > MAX_SAFE_JSON_INTEGER || position > MAX_SAFE_JSON_INTEGER {
+        return Err(LiveHostError::CorruptState);
+    }
+    Ok(GoalCommandResponseV1 {
+        api_version: "v1",
+        session_id: session.into(),
+        goal_id: state.snapshot.definition().goal_id().as_str().into(),
+        revision: state.snapshot.revision(),
+        state: goal_state(state.snapshot.state()),
+        session_version: committed.session_version,
+        committed_position: position,
+    })
 }
 
 const fn goal_state(state: GoalState) -> &'static str {

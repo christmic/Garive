@@ -16,8 +16,8 @@ use serde::de::DeserializeOwned;
 use tokio::net::TcpListener;
 
 use super::{
-    validate_key, CancelTurnBody, ContinueTurnBody, CreateGoalBody, CreateSessionBody, ErrorBody,
-    LiveHost, LiveHostError, LiveHostEvent, StartTurnBody,
+    validate_key, CancelGoalBody, CancelTurnBody, ContinueTurnBody, CreateGoalBody,
+    CreateSessionBody, ErrorBody, LiveHost, LiveHostError, LiveHostEvent, StartTurnBody,
 };
 use crate::{LiveOutputReceiveError, LiveOutputSubscriber};
 
@@ -51,6 +51,7 @@ impl LiveHostServer {
             .route("/v1/sessions/:session_id/plans", get(plan_page))
             .route("/v1/sessions/:session_id/timeline", get(turn_timeline))
             .route("/v1/sessions/:session_id/turns", post(start_turn))
+            .route("/v1/goals/:operation", post(mutate_goal))
             .route("/v1/turns/:operation", post(mutate_turn))
             .route("/v1/sessions/:session_id/events", get(events))
             .route("/internal/mobile/wake-snapshot", get(mobile_wake_snapshot));
@@ -288,6 +289,31 @@ async fn mutate_turn(
         } else {
             Err(LiveHostError::InvalidRequest)
         }
+    }
+    .await;
+    command_response(result)
+}
+
+async fn mutate_goal(
+    State(host): State<LiveHost>,
+    Path(operation): Path<String>,
+    headers: HeaderMap,
+    body: Body,
+) -> Response {
+    let result = async {
+        let key = idempotency_key(&headers)?;
+        let Some(goal_id) = operation.strip_suffix(":cancel") else {
+            return Err(LiveHostError::InvalidRequest);
+        };
+        let body: CancelGoalBody = decode_body(&host, body).await?;
+        host.cancel_goal(
+            key,
+            &body.session_id,
+            goal_id,
+            body.expected_session_version,
+            body.expected_revision,
+            &body.reason,
+        )
     }
     .await;
     command_response(result)

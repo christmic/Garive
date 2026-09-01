@@ -373,7 +373,6 @@ fn plan_goal_transition_from_state(
             require_non_empty(&reason)?;
             let mut payload = common_payload(context, goal_id, next_revision);
             payload.insert("reason".into(), json!(reason.clone()));
-            payload.insert("actor_reference".into(), json!(context.actor_reference));
             (
                 "goal.cancelled",
                 Value::Object(payload),
@@ -394,7 +393,6 @@ fn plan_goal_transition_from_state(
             payload.insert("definition_digest".into(), json!(definition_digest));
             payload.insert("definition".into(), content(&definition_json));
             payload.insert("replacement_reason".into(), json!(replacement_reason));
-            payload.insert("actor_reference".into(), json!(context.actor_reference));
             (
                 "goal.revised",
                 Value::Object(payload),
@@ -447,6 +445,7 @@ fn common_payload(
         ("command_id".into(), json!(context.command_id)),
         ("goal_id".into(), json!(goal_id)),
         ("revision".into(), json!(revision)),
+        ("actor_reference".into(), json!(context.actor_reference)),
     ])
 }
 
