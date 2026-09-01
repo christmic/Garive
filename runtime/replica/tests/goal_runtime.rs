@@ -1,6 +1,6 @@
 use garive_goal::{
     GoalBoundsV1, GoalCapabilityReference, GoalCriterion, GoalCriterionId, GoalDefinitionV1,
-    GoalId, GoalScopeV1, GoalState,
+    GoalEvidenceId, GoalEvidenceKind, GoalEvidenceV1, GoalId, GoalScopeV1, GoalState,
 };
 use garive_ledger::{CanonicalPayload, CommitDisposition, FactDraft, FactId, FactKind, SessionId};
 use garive_runtime::{
@@ -353,6 +353,90 @@ fn creation_rejects_foreign_session_scope_and_terminal_parent() {
     );
 }
 
+#[test]
+fn success_resolves_evidence_against_the_fixed_ledger_prefix() {
+    let directory = tempdir().unwrap();
+    let path = directory.path().join("evidence.sqlite3");
+    let session = SessionId::try_from("session-1").unwrap();
+    let mut ledger = SqliteLedger::open(&path).unwrap();
+    open_session(&mut ledger, &session);
+    let subject_digest = CanonicalPayload::from_value(&json!({}))
+        .unwrap()
+        .sha256()
+        .to_owned();
+    let created = plan_create_goal(
+        &ledger,
+        &session,
+        &context("create-evidence"),
+        durable_fact_definition(&subject_digest),
+    )
+    .unwrap();
+    commit_goal_command(&mut ledger, session.clone(), 1, &created).unwrap();
+    let active = plan_goal_transition(
+        &ledger,
+        &session,
+        "goal-evidence",
+        1,
+        &context("activate-evidence"),
+        GoalRuntimeTransition::Activate {
+            plan_reference: None,
+        },
+    )
+    .unwrap();
+    commit_goal_command(&mut ledger, session.clone(), 2, &active).unwrap();
+
+    let evidence = GoalEvidenceV1::new(
+        GoalEvidenceId::new("evidence-1").unwrap(),
+        GoalCriterionId::new("durable").unwrap(),
+        GoalEvidenceKind::DurableFact,
+        "session-open",
+        &subject_digest,
+        3,
+    )
+    .unwrap();
+    let stale = GoalEvidenceV1::new(
+        GoalEvidenceId::new("evidence-stale").unwrap(),
+        GoalCriterionId::new("durable").unwrap(),
+        GoalEvidenceKind::DurableFact,
+        "session-open",
+        &subject_digest,
+        2,
+    )
+    .unwrap();
+    assert_eq!(
+        plan_goal_transition(
+            &ledger,
+            &session,
+            "goal-evidence",
+            2,
+            &context("stale-evidence"),
+            GoalRuntimeTransition::Succeed {
+                evidence: vec![stale],
+            },
+        ),
+        Err(GoalRuntimeError::EvidenceInvalid)
+    );
+    let succeeded = plan_goal_transition(
+        &ledger,
+        &session,
+        "goal-evidence",
+        2,
+        &context("succeed-evidence"),
+        GoalRuntimeTransition::Succeed {
+            evidence: vec![evidence],
+        },
+    )
+    .unwrap();
+    commit_goal_command(&mut ledger, session.clone(), 3, &succeeded).unwrap();
+    assert_eq!(
+        reconstruct_goal(&ledger, &session, "goal-evidence")
+            .unwrap()
+            .snapshot
+            .state(),
+        GoalState::Succeeded
+    );
+}
+
 fn open_session(ledger: &mut SqliteLedger, session: &SessionId) {
     let fact = FactDraft {
         fact_id: FactId::try_from("session-open").unwrap(),
@@ -373,6 +457,23 @@ fn definition() -> GoalDefinitionV1 {
         GoalId::new("goal-1").unwrap(),
         "Ship the durable slice",
         criteria(),
+        scope(),
+        bounds(),
+        None,
+        capabilities(),
+    )
+    .unwrap()
+}
+
+fn durable_fact_definition(subject_digest: &str) -> GoalDefinitionV1 {
+    GoalDefinitionV1::new(
+        GoalId::new("goal-evidence").unwrap(),
+        "Prove one exact durable fact",
+        vec![GoalCriterion::DurableFact {
+            criterion_id: GoalCriterionId::new("durable").unwrap(),
+            fact_kind: "session.opened".into(),
+            subject_digest: subject_digest.into(),
+        }],
         scope(),
         bounds(),
         None,
