@@ -78,7 +78,9 @@ separate measurements and cross-invocation erasure evidence exist.
 |---|---|---|
 | V0-A | Explicit immutable VM configuration and executor-binding digest | Swift structure tests over official SDK types; no environment reads |
 | V0-B | Versioned host/XPC and guest-agent protocol | strict decoder, identity, bounds, malformed-input, digest, and lifecycle tests |
-| V0-C | Packaged VM service and guest image | code-signing admission, no-network, read/write scope, argv/environment/resource, forced-stop, and receipt tests |
+| V0-C1 | Packaged closed XPC service | exact signed package/caller admission and canonical unavailable/error round trips |
+| V0-C2 | Digest-pinned guest execution | no-network, read/write scope, direct argv/environment and resource/output bounds |
+| V0-C3 | Forced stop and recovery | independent service kill/restart, retained receipt, terminate and acknowledgement tests |
 | V0-D | Runtime `ProcessIsolationBackend` composition | real SQLite Started/receipt/acknowledgement and independent-process recovery matrix |
 
 V0-A does not claim process execution or close F0. Each later slice consumes

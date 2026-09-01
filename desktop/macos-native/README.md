@@ -4,12 +4,12 @@ This independent Swift package contains only macOS integration that the Tauri
 backend cannot implement faithfully. It never embeds Engine, opens the Ledger,
 decides authority, or reads Runtime configuration from the environment.
 
-`GariveComputerUse` implements side-effect-free Accessibility and Screen
-Recording permission preflight plus the XPC listener's caller-admission
-primitive. The latter validates an explicit bounded Security requirement,
-installs it into `NSXPCListener` before activation, and requires the exact
-effective user and login audit session after system signature admission. It
-does not read configuration from the environment.
+`GariveNativeXPC` is the sole caller-admission implementation shared by native
+services. It validates an explicit bounded Security requirement, installs it
+into `NSXPCListener` before activation, and requires the exact effective user
+and login audit session after system signature admission. It does not read
+configuration from the environment. `GariveComputerUse` owns the separate
+prompt-free Accessibility and Screen Recording permission preflight.
 
 Application targets use a separate verifier. It binds a running PID to process
 start time, a validated signing identifier and CodeDirectory hash, validates
@@ -35,10 +35,18 @@ session event tap. Revoked permission, changed focus, stale semantics, replaced
 nodes and protected values fail before dispatch; missing post-dispatch evidence
 is uncertain rather than replayable.
 
-The package does not yet capture pixels, inject scroll/pointer input, expose the
-production XPC IDL, or claim a packaged XPC service. Real permission-granted
-keyboard injection remains a packaged-app evidence gate. Those capabilities
-land only with their accepted wire, broker and packaged-app tests.
+`GariveProcessService` exposes the one-method canonical-frame XPC interface and
+the executable target validates signed bundle metadata before activating its
+listener. Its V0-C1 endpoint classifies malformed and oversized frames, while
+every valid request returns `SERVICE_UNAVAILABLE`. It cannot construct a VM,
+open a workload path, read environment configuration, or start a process. The
+release tool assembles and validates a signed `.xpc` bundle, but a production
+identity run remains required before V0-C1 can close.
+
+The package does not yet capture pixels, inject scroll/pointer input, or
+dispatch a native process. Real permission-granted keyboard injection and the
+process service remain packaged-app evidence gates. Those capabilities land
+only with their accepted broker, guest and packaged-app tests.
 
 Build and test with the stable toolchain pinned by `Package.swift`:
 

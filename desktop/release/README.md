@@ -4,6 +4,32 @@ Garive has two deliberately different packaging lanes. Neither lane reads
 credentials from source files, tracked configuration, command arguments, or
 frontend state.
 
+## Process-isolation XPC service
+
+Build the service executable, then assemble it with explicit signed metadata:
+
+```sh
+swift build --package-path desktop/macos-native \
+  --configuration release --product GariveProcessIsolationService
+python3 desktop/release/build_process_xpc.py \
+  --executable desktop/macos-native/.build/release/GariveProcessIsolationService \
+  --output target/GariveProcessIsolationService.xpc \
+  --bundle-identifier com.garive.desktop.process-isolation-service \
+  --bundle-version 1 \
+  --short-version 0.1.0 \
+  --backend-requirement 'identifier "com.garive.desktop" and anchor apple generic' \
+  --signing-identity 'Developer ID Application: Garive' \
+  --codesign-tool /usr/bin/codesign
+```
+
+The builder rejects overwrites, ambient configuration and an inexact bundle
+identifier. It signs with the supplied identity, verifies the signature and
+executable identifier, and admits only the exact plist, executable and signing
+seal layout. An ad-hoc run validates assembly mechanics but is not V0-C1
+production-signing evidence. The verified service belongs at
+`Garive.app/Contents/XPCServices/GariveProcessIsolationService.xpc`; embedding
+and parent-app signature verification remain part of the release gate.
+
 ## Local runnable evidence
 
 From the repository root:
