@@ -344,6 +344,7 @@ mod tests {
             client,
             host_sender,
             action_sender,
+            crate::runtime::TerminalTheme::default(),
             RestoredState {
                 store,
                 preferences: Preferences::default(),

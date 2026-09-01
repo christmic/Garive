@@ -22,7 +22,7 @@ use super::super::{
     external_editor::EditorRequest,
     host::{self, HostMessage, LiveSubscriptionId, SubscriptionId},
     host_effects::HostEffectRunner,
-    TerminalReconfiguration,
+    TerminalReconfiguration, TerminalTheme,
 };
 
 mod mutations;
@@ -77,6 +77,7 @@ pub(in crate::runtime) struct RuntimeState {
     pub(in crate::runtime) composer_clicks: ComposerClickTracker,
     pub(in crate::runtime) external_editor_request: Option<EditorRequest>,
     terminal_reconfiguration: Option<TerminalReconfiguration>,
+    terminal_theme: TerminalTheme,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -115,6 +116,7 @@ impl RuntimeState {
         client: LiveHostClient,
         sender: mpsc::Sender<HostMessage>,
         action_sender: mpsc::Sender<AppAction>,
+        terminal_theme: TerminalTheme,
         restored: RestoredState,
     ) -> Self {
         let mut model = AppModel {
@@ -198,7 +200,12 @@ impl RuntimeState {
             composer_clicks: ComposerClickTracker::default(),
             external_editor_request: None,
             terminal_reconfiguration: None,
+            terminal_theme,
         }
+    }
+
+    pub(in crate::runtime) fn theme(&self) -> crate::Theme {
+        self.terminal_theme.resolve(self.config.theme)
     }
 
     pub(in crate::runtime) fn set_mouse_mode(&mut self, mode: crate::MouseMode) {
