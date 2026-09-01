@@ -72,8 +72,11 @@ fn representative_render_and_editor_latency_stay_interactive() {
 #[test]
 fn bounded_syntax_highlighting_stays_interactive() {
     const BLOCKS: usize = 64;
-    const LINES_PER_BLOCK: usize = 6;
-    let expected_lines = BLOCKS * LINES_PER_BLOCK + BLOCKS.saturating_sub(1);
+    const LANGUAGE_ROWS_PER_BLOCK: usize = 1;
+    const CODE_ROWS_PER_BLOCK: usize = 4;
+    const GAP_ROWS_BETWEEN_BLOCKS: usize = 1;
+    let expected_lines = BLOCKS * (LANGUAGE_ROWS_PER_BLOCK + CODE_ROWS_PER_BLOCK)
+        + BLOCKS.saturating_sub(1) * GAP_ROWS_BETWEEN_BLOCKS;
     let source = (0..BLOCKS)
         .map(|index| {
             format!(
