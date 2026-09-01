@@ -56,9 +56,13 @@ func closedFrameFailures() async throws {
 func closedSourcePolicy() throws {
     let package = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
         .deletingLastPathComponent().deletingLastPathComponent()
-    let source = package.appendingPathComponent("Sources/GariveProcessService")
-    let entries = FileManager.default.enumerator(at: source, includingPropertiesForKeys: nil)
-    let files = (entries?.allObjects as? [URL]) ?? []
+    let sources = ["GariveProcessService", "GariveProcessIsolationService"].map {
+        package.appendingPathComponent("Sources/\($0)")
+    }
+    let files = sources.flatMap {
+        (FileManager.default.enumerator(at: $0, includingPropertiesForKeys: nil)?
+            .allObjects as? [URL]) ?? []
+    }
     let text = try files.filter { $0.pathExtension == "swift" }
         .map { try String(contentsOf: $0, encoding: .utf8) }.joined()
     for forbidden in [
@@ -66,6 +70,34 @@ func closedSourcePolicy() throws {
         "FileHandle", "FileManager", "/bin/sh", "os_log", "Logger(", "print(",
     ] {
         #expect(!text.contains(forbidden), "forbidden source: \(forbidden)")
+    }
+}
+
+@Test("service bootstrap accepts only the exact signed package metadata")
+func exactBootstrapMetadata() throws {
+    let requirement = #"identifier "com.garive.desktop" and anchor apple generic"#
+    let value = try ProcessServiceBootstrapConfiguration(
+        bundleIdentifier: ProcessServiceBootstrapConfiguration.bundleIdentifier,
+        backendCodeSigningRequirement: requirement,
+        effectiveUserIdentifier: 501,
+        auditSessionIdentifier: 77
+    )
+    #expect(value.admissionPolicy.codeSigningRequirement == requirement)
+    #expect(throws: ProcessServiceBootstrapFailure.invalidBundleIdentifier) {
+        try ProcessServiceBootstrapConfiguration(
+            bundleIdentifier: "com.garive.wrong",
+            backendCodeSigningRequirement: requirement,
+            effectiveUserIdentifier: 501,
+            auditSessionIdentifier: 77
+        )
+    }
+    #expect(throws: ProcessServiceBootstrapFailure.missingCodeSigningRequirement) {
+        try ProcessServiceBootstrapConfiguration(
+            bundleIdentifier: ProcessServiceBootstrapConfiguration.bundleIdentifier,
+            backendCodeSigningRequirement: nil,
+            effectiveUserIdentifier: 501,
+            auditSessionIdentifier: 77
+        )
     }
 }
 
