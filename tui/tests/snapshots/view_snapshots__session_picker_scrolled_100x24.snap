@@ -4,24 +4,24 @@ expression: "frame(&sessions, Theme::Mono, 100, 24)"
 ---
 
 › Summarize the release plan.
-                   ╭ Switch session ────────────────────────────────────────────╮
-                   │                                                            │
-                   │  Filter  type to search                                    │
-                   │    Session 4 · Agent   ● running                           │
-                   │    Session 5 · Agent   ● running                           │
-                   │    Session 6 · Agent   ● running                           │
-                   │    Session 7 · Agent   ● running                           │
-                   │    Session 8 · Agent   ● running                           │
-                   │    Session 9 · Agent   ● running                           │
-                   │    Session 10 · Agent   ● running                          │
-                   │    Session 11 · Agent   ● running                          │
-                   │  › Session 12 · Agent   ● running                          │
-                   │                                                            │
-                   │    ↑/↓ select   Enter open   Esc close                     │
-                   │                                                            │
-                   ╰────────────────────────────────────────────────────────────╯
+  ✓  Agent action · completed
+• ## Release plan
 
+  • Verify the Runtime
+  • Ship with evidence
 
+  cargo test passes.
 
+ Switch session ────────────────────────────────────────────────────────────────────────────────────
+Filter  type to search
+  Session 5 · Agent   ● running
+  Session 6 · Agent   ● running
+  Session 7 · Agent   ● running
+  Session 8 · Agent   ● running
+  Session 9 · Agent   ● running
+  Session 10 · Agent   ● running
+  Session 11 · Agent   ● running
+› Session 12 · Agent   ● running
+  ↑/↓ select   Enter open   Esc close
                                                                                             Working…
 › Ask a follow-up…

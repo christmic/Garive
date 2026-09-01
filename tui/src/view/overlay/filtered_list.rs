@@ -13,7 +13,9 @@ impl FilteredListGeometry {
     pub(super) fn resolve(inner: Rect, count: usize, selected: usize) -> Self {
         let first_item_row = inner.y.saturating_add(1);
         let action_row = inner.bottom().saturating_sub(1);
-        let capacity = usize::from(inner.height.saturating_sub(3)).max(1);
+        // Search owns the first row and actions the last. BottomPane has only
+        // a top rule, so every row between them is a real result row.
+        let capacity = usize::from(inner.height.saturating_sub(2)).max(1);
         Self {
             window: selection_window(count, selected, capacity),
             first_item_row,

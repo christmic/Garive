@@ -3,14 +3,14 @@ source: tui/tests/overlay_accessibility.rs
 expression: "surfaces.iter().map(|(name, model, _)|\nformat!(\"{name}\\n{}\",\nframe(model, Theme::Mono))).collect::<Vec<_>>().join(\"\\n\\n\")"
 ---
 TURN NAVIGATOR
-  ╭ Jump to a Turn ──────────────────╮
-  │                                  │
-  │  Search  type to search          │
-  │  › 12  release checkpoint 11     │
-  │    ↑/↓ select   Home/End edge    │
-  │    Enter jump   Esc close        │
-  │                                  │
-  ╰──────────────────────────────────╯
+ Jump to a Turn ────────────────────────
+Search  type to search
+   9  release checkpoint 08
+  10  release checkpoint 09
+  11  release checkpoint 10
+› 12  release checkpoint 11
+  ↑/↓ select   Home/End edge
+  Enter jump   Esc close
 
 RECOVERY INSPECTOR
   ╭ Inspector · Recovery ────────────╮

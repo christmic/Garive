@@ -193,16 +193,18 @@ draws left, right, or bottom borders. CommandPalette and CommandSuggestions
 consume this same primitive so mouse, keyboard, visual, and compact geometry
 cannot drift.
 
-`TurnNavigator` reuses `ModalFrame`, `SelectionRow`, and the shared filtered
-list geometry rather than inventing a second picker surface. Its title is
+`SessionSwitcher`, `TurnNavigator`, and `PromptHistory` reuse `BottomPane`,
+`SelectionRow`, and the shared filtered-list geometry rather than inventing a
+second picker surface. They stay on the Composer axis and never dim retained
+conversation context. `TurnNavigator`'s title is
 `Jump to a Turn`; the search row remains visible above the results; each row
 uses a right-aligned ordinal gutter and one sanitized prompt line. The selected
 row is always visible and remains identifiable in mono through reverse video
 and a marker. Empty search results retain the title and filter and render
 `No matching Turns` in the normal muted text role.
 
-Wide and compact layouts bound the modal to readable conversation width and
-terminal height; previews truncate on grapheme/display-cell boundaries with a
+Wide and compact layouts bound the pane to available terminal height; previews
+truncate on grapheme/display-cell boundaries with a
 visible ellipsis. Tiny layout uses the full safe content rectangle. Linear
 screen-reader presentation emits the title, filter, result count, selected
 marker, ordinal, preview, and available actions in semantic order. No variant

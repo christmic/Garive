@@ -15,7 +15,7 @@ use crate::{
 use super::{
     decision_sheet, inspector, palette,
     presentation::HELP_NOTES,
-    primitives::{key_hints, truncate_display, ModalFrame, SelectionRow},
+    primitives::{key_hints, truncate_display, BottomPaneFrame, ModalFrame, SelectionRow},
     safe_text,
     session::picker_line,
     style::Palette,
@@ -30,6 +30,13 @@ use geometry::{overlay_geometry, overlay_padding};
 struct OverlaySpec {
     title: String,
     content: Text<'static>,
+}
+
+pub(super) const fn is_composition_selector(overlay: Overlay) -> bool {
+    matches!(
+        overlay,
+        Overlay::SessionPicker | Overlay::TurnNavigator | Overlay::PromptHistory
+    )
 }
 
 pub(super) fn render_overlay(
@@ -65,12 +72,20 @@ pub(super) fn render_overlay(
         geometry.inner.height,
     );
     let inner = geometry.inner;
-    ModalFrame::resolve(popup, overlay_padding(overlay)).render(
-        area,
-        Line::styled(spec.title, colors.title),
-        colors,
-        buffer,
-    );
+    if is_composition_selector(overlay) {
+        BottomPaneFrame::resolve(popup).render(
+            Line::styled(spec.title, colors.title),
+            colors,
+            buffer,
+        );
+    } else {
+        ModalFrame::resolve(popup, overlay_padding(overlay)).render(
+            area,
+            Line::styled(spec.title, colors.title),
+            colors,
+            buffer,
+        );
+    }
     let paragraph = Paragraph::new(spec.content).style(colors.normal);
     if matches!(overlay, Overlay::SessionPicker | Overlay::PromptHistory) {
         paragraph.render(inner, buffer);

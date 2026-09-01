@@ -3,25 +3,25 @@ source: tui/tests/view_snapshots.rs
 expression: "frame(&turns, Theme::Mono, 100, 24)"
 ---
 
-              ╭ Jump to a Turn ──────────────────────────────────────────────────────╮
-              │                                                                      │
-              │  Search  release                                                     │
-              │     1  release checkpoint 00 with verified evidence                  │
-              │     2  release checkpoint 01 with verified evidence                  │
-              │  ›  3  release checkpoint 02 with verified evidence                  │
-              │     4  release checkpoint 03 with verified evidence                  │
-              │     5  release checkpoint 04 with verified evidence                  │
-              │     6  release 界 面  keeps a display-width bounded preview across …   │
-              │     7  release checkpoint 06 with verified evidence                  │
-              │     8  release checkpoint 07 with verified evidence                  │
-              │     9  release checkpoint 08 with verified evidence                  │
-              │    10  release checkpoint 09 with verified evidence                  │
-              │    11  release checkpoint 10 with verified evidence                  │
-              │                                                                      │
-              │    ↑/↓ select   Home/End edge   Enter jump   Esc close               │
-              │                                                                      │
-              ╰──────────────────────────────────────────────────────────────────────╯
+› Summarize the release plan.
+  ✓  Agent action · completed
+• ## Release plan
 
+  • Verify the Runtime
+  • Ship with evidence
 
+  cargo test passes.
+ Jump to a Turn ────────────────────────────────────────────────────────────────────────────────────
+Search  release
+   1  release checkpoint 00 with verified evidence
+   2  release checkpoint 01 with verified evidence
+›  3  release checkpoint 02 with verified evidence
+   4  release checkpoint 03 with verified evidence
+   5  release checkpoint 04 with verified evidence
+   6  release 界 面  keeps a display-width bounded preview across terminals
+   7  release checkpoint 06 with verified evidence
+   8  release checkpoint 07 with verified evidence
+
+  ↑/↓ select   Home/End edge   Enter jump   Esc close
                                                                                             Working…
 › Ask a follow-up…

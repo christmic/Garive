@@ -3,21 +3,21 @@ source: tui/tests/view_snapshots.rs
 expression: "format!(\"PROMPT HISTORY\\n{}\\n\\nSESSION PICKER\\n{}\",\nframe(&history, Theme::Mono, 40, 8), frame(&sessions, Theme::Mono, 40, 8))"
 ---
 PROMPT HISTORY
-  ╭ Prompt history ──────────────────╮
-  │                                  │
-  │  Search  type to search          │
-  │  › 👨‍👩‍👧‍👦 界 👨‍👩‍👧‍👦 界 👨‍👩‍👧‍👦 界 👨‍👩‍👧‍👦 界 👨‍👩‍👧‍👦 界 👨‍👩‍👧‍👦 界 👨‍👩‍👧‍👦 …   │
-  │                                  │
-  │    Enter restore   Esc close     │
-  │                                  │
-  ╰──────────────────────────────────╯
+
+  • Verify the Runtime
+ Prompt history ────────────────────────
+Search  type to search
+  first
+› 👨‍👩‍👧‍👦 界 👨‍👩‍👧‍👦 界 👨‍👩‍👧‍👦 界 👨‍👩‍👧‍👦 界 👨‍👩‍👧‍👦 界 👨‍👩‍👧‍👦 界 👨‍👩‍👧‍👦 界 👨‍👩‍👧‍👦 界 👨‍👩‍👧‍👦 界 …
+  third
+  Enter restore   Esc close
 
 SESSION PICKER
-  ╭ Switch session ──────────────────╮
-  │                                  │
-  │  Filter  type to search          │
-  │  › Session 2 · Agent   ● runni…  │
-  │                                  │
-  │    Enter open   Esc close        │
-  │                                  │
-  ╰──────────────────────────────────╯
+
+  • Verify the Runtime
+  • Ship with evidence
+ Switch session ────────────────────────
+Filter  type to search
+  Session 1 · Agent   ● running
+› Session 2 · Agent   ● running
+  Enter open   Esc close

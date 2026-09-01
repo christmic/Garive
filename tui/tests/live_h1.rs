@@ -1059,12 +1059,20 @@ fn turn_navigator_filters_commits_only_on_activation_and_shares_mouse_geometry()
             send "/jump question-11\r"
             must_expect "12  question-11" 74
             send "\r"
+            after 100
+            send "\014"
+            must_expect "\033\[2J" 75
             must_expect "answer-11" 75
             send "/jump \r"
             must_expect "Jump to a Turn" 76
             send "\033\[H"
             after 100
-            send "\033\[<0;50;6M"
+            # The full-axis BottomPane starts at row 10 in this 100x24 frame;
+            # row 12 is the first visible Turn and shares render/hit geometry.
+            send "\033\[<0;50;12M"
+            after 100
+            send "\014"
+            must_expect "\033\[2J" 77
             must_expect "answer-0" 77
             send "\021"
             must_expect "Garive?" 78

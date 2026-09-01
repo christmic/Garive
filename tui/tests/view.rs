@@ -343,26 +343,53 @@ fn resolved_suspension_cannot_return_from_quit_to_a_stale_sheet() {
 }
 
 #[test]
-fn bottom_pane_preserves_the_workspace_and_highlights_selection() {
-    let model = AppModel {
-        overlay: Some(Overlay::CommandPalette),
-        ..Default::default()
-    };
+fn composition_bottom_panes_preserve_workspace_axis_and_selection() {
     let area = Rect::new(0, 0, 100, 24);
-    let mut buffer = Buffer::empty(area);
-    let _ = view::render_cached(
-        &model,
-        Theme::Dark,
-        area,
-        &mut buffer,
-        &mut view::RenderCache::default(),
-    );
-    assert!(!buffer[(0, 0)].modifier.contains(Modifier::DIM));
-    let selected = (0..area.height)
-        .flat_map(|y| (0..area.width).map(move |x| (x, y)))
-        .find(|&(x, y)| buffer[(x, y)].symbol() == "›")
-        .expect("selected command marker");
-    assert_ne!(buffer[selected].bg, buffer[(selected.0, selected.1 + 1)].bg);
+    for (overlay, title) in [
+        (Overlay::CommandPalette, "Command palette"),
+        (Overlay::SessionPicker, "Switch session"),
+        (Overlay::TurnNavigator, "Jump to a Turn"),
+        (Overlay::PromptHistory, "Prompt history"),
+    ] {
+        let mut model = AppModel {
+            overlay: Some(overlay),
+            prompt_history: vec!["review the release".into()],
+            conversation_landmarks: vec![ConversationLandmark {
+                ordinal: 1,
+                started_position: 1,
+                prompt_preview: "review the release".into(),
+            }],
+            sessions: vec![session("session-visible-000001", "agent")],
+            ..Default::default()
+        };
+        model.terminal_size = application::TerminalSize {
+            width: area.width,
+            height: area.height,
+        };
+        let mut buffer = Buffer::empty(area);
+        let _ = view::render_cached(
+            &model,
+            Theme::Dark,
+            area,
+            &mut buffer,
+            &mut view::RenderCache::default(),
+        );
+        assert!(!buffer[(0, 0)].modifier.contains(Modifier::DIM));
+        let rendered = frame(&model, area.width, area.height);
+        let title_column = rendered
+            .lines()
+            .find_map(|line| line.find(title))
+            .expect("bottom pane title");
+        assert!(
+            title_column <= 1,
+            "{title} drifted to column {title_column}"
+        );
+        let selected = (0..area.height)
+            .flat_map(|y| (0..area.width).map(move |x| (x, y)))
+            .find(|&(x, y)| buffer[(x, y)].symbol() == "›")
+            .expect("selected row marker");
+        assert_eq!(selected.0, 0, "{title} selection marker drifted");
+    }
 }
 
 #[test]

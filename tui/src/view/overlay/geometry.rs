@@ -7,7 +7,7 @@ use crate::application::{AppModel, Overlay};
 use super::super::{
     decision_sheet,
     layout::FrameLayout,
-    primitives::{centered_popup, selection_window, ModalFrame},
+    primitives::{centered_popup, selection_window, BottomPaneFrame, ModalFrame},
 };
 
 use super::filtered_list::FilteredListGeometry;
@@ -28,12 +28,22 @@ pub(super) fn overlay_geometry(model: &AppModel, overlay: Overlay, area: Rect) -
     let popup_width = desired_width.min(area.width.saturating_sub(4));
     let desired_height = desired_height(model, overlay, popup_width);
     let modal_area = modal_area(model, overlay, area);
-    let popup = centered_popup(
-        modal_area,
-        popup_width,
-        desired_height.min(modal_area.height),
-    );
-    let inner = ModalFrame::resolve(popup, overlay_padding(overlay)).inner();
+    let popup_height = desired_height.min(modal_area.height);
+    let popup = if super::is_composition_selector(overlay) {
+        Rect::new(
+            modal_area.x,
+            modal_area.bottom().saturating_sub(popup_height),
+            modal_area.width,
+            popup_height,
+        )
+    } else {
+        centered_popup(modal_area, popup_width, popup_height)
+    };
+    let inner = if super::is_composition_selector(overlay) {
+        BottomPaneFrame::resolve(popup).inner()
+    } else {
+        ModalFrame::resolve(popup, overlay_padding(overlay)).inner()
+    };
     let window = list_count_and_selection(model, overlay).map(|(count, selected)| {
         if matches!(overlay, Overlay::SessionPicker | Overlay::PromptHistory) {
             FilteredListGeometry::resolve(inner, count, selected).window
@@ -103,18 +113,9 @@ fn desired_height(model: &AppModel, overlay: Overlay, popup_width: u16) -> u16 {
     match overlay {
         Overlay::CommandPalette => unreachable!("CommandPalette owns its height"),
         Overlay::Help => 14,
-        Overlay::SessionPicker => u16::try_from(model.matching_sessions().count())
-            .unwrap_or(u16::MAX)
-            .saturating_add(7)
-            .clamp(8, 16),
-        Overlay::PromptHistory => u16::try_from(model.matching_history().count())
-            .unwrap_or(u16::MAX)
-            .saturating_add(7)
-            .clamp(8, 16),
-        Overlay::TurnNavigator => u16::try_from(model.matching_landmark_indices().len())
-            .unwrap_or(u16::MAX)
-            .saturating_add(7)
-            .clamp(8, 18),
+        Overlay::SessionPicker => selector_height(model.matching_sessions().count(), 3),
+        Overlay::PromptHistory => selector_height(model.matching_history().count(), 3),
+        Overlay::TurnNavigator => selector_height(model.matching_landmark_indices().len(), 4),
         Overlay::Inspector => super::super::inspector::desired_height(model),
         Overlay::Suspension => decision_height(model, overlay, popup_width),
         Overlay::UnknownCommand
@@ -123,6 +124,12 @@ fn desired_height(model: &AppModel, overlay: Overlay, popup_width: u16) -> u16 {
         | Overlay::EphemeralConfirmation
         | Overlay::QuitConfirmation => decision_height(model, overlay, popup_width),
     }
+}
+
+fn selector_height(count: usize, chrome_rows: u16) -> u16 {
+    u16::try_from(count.clamp(1, 8))
+        .unwrap_or(u16::MAX)
+        .saturating_add(chrome_rows)
 }
 
 fn decision_height(model: &AppModel, overlay: Overlay, popup_width: u16) -> u16 {

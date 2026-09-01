@@ -2,14 +2,14 @@
 source: tui/tests/view_snapshots.rs
 expression: "frame(&turns, Theme::Mono, 40, 12)"
 ---
-  ╭ Jump to a Turn ──────────────────╮
-  │                                  │
-  │  Search  release                 │
-  │     2  release checkpoint 01 …   │
-  │  ›  3  release checkpoint 02 …   │
-  │    ↑/↓ select   Home/End edge    │
-  │    Enter jump   Esc close        │
-  │                                  │
-  ╰──────────────────────────────────╯
+ Jump to a Turn ────────────────────────
+Search  release
+   1  release checkpoint 00 with verif…
+   2  release checkpoint 01 with verif…
+›  3  release checkpoint 02 with verif…
+   4  release checkpoint 03 with verif…
+   5  release checkpoint 04 with verif…
+  ↑/↓ select   Home/End edge
+  Enter jump   Esc close
                                 Working…
 › Ask a follow-up…
