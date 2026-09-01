@@ -34,11 +34,13 @@ struct Environment {
     garive_commit: String,
     terminal_backend: &'static str,
     host_backend: &'static str,
+    terminal_theme: &'static str,
     samples_per_run: usize,
 }
 
 #[derive(Serialize)]
 struct Distribution {
+    samples_us: Vec<u64>,
     p50_us: u64,
     p95_us: u64,
     p99_us: u64,
@@ -66,21 +68,8 @@ fn main() {
         .collect::<Vec<_>>();
     server.kill().unwrap();
     server.wait().unwrap();
-    for run in &runs {
-        assert!(
-            run.p95_us < 150_000,
-            "first interactive frame exceeded 150 ms"
-        );
-    }
-    for run in &idle_cpu_runs {
-        assert_eq!(run.duration_ms, 60_000);
-        assert!(
-            run.average_one_core_milli_percent < 500,
-            "idle CPU exceeded 0.5% of one logical core"
-        );
-    }
     let report = Report {
-        schema_version: 2,
+        schema_version: 3,
         status: "candidate-outer-process",
         build_profile: if cfg!(debug_assertions) {
             "debug"
@@ -103,6 +92,7 @@ fn main() {
             ),
             terminal_backend: "shipping binary under expect PTY",
             host_backend: "production LiveHost with file SQLite",
+            terminal_theme: "explicit mono with reduced motion",
             samples_per_run: SAMPLES,
         },
         first_frame_runs: runs,
@@ -110,6 +100,19 @@ fn main() {
         not_measured: ["10-Session/5,000-cell peak resident memory"],
     };
     println!("{}", serde_json::to_string_pretty(&report).unwrap());
+    for run in &report.first_frame_runs {
+        assert!(
+            run.p95_us < 150_000,
+            "first interactive frame exceeded 150 ms"
+        );
+    }
+    for run in &report.idle_cpu_runs {
+        assert_eq!(run.duration_ms, 60_000);
+        assert!(
+            run.average_one_core_milli_percent < 500,
+            "idle CPU exceeded 0.5% of one logical core"
+        );
+    }
 }
 
 fn measure_idle(tui: &Path, host: SocketAddr, root: &Path, run: usize) -> IdleSample {
@@ -125,10 +128,8 @@ fn measure_idle(tui: &Path, host: SocketAddr, root: &Path, run: usize) -> IdleSa
             r#"
                 set timeout 10
                 spawn -noecho /bin/sh -c {stty rows 24 columns 100; exec "$GARIVE_TUI_BIN" --host "$GARIVE_TUI_HOST" --state-dir "$GARIVE_TUI_STATE" --theme mono --reduced-motion}
-                expect -exact "\033\[6n"
-                send "\033\[1;1R"
-                expect -exact "GARIVE"
-                expect -exact "A quiet place"
+                expect -exact "\033\[2J"
+                expect -exact "Garive"
                 set pid [exp_pid]
                 set before [string trim [exec ps -o time= -p $pid]]
                 set peak 0
@@ -203,6 +204,7 @@ fn measure_run(tui: &Path, host: SocketAddr, root: &Path, run: usize) -> Distrib
         p95_us: percentile(&samples, 95),
         p99_us: percentile(&samples, 99),
         max_us: *samples.last().unwrap(),
+        samples_us: samples,
     }
 }
 
@@ -219,9 +221,8 @@ fn measure_start(tui: &Path, host: SocketAddr, root: &Path, run: usize, sample: 
                 set timeout 5
                 set started [clock microseconds]
                 spawn -noecho /bin/sh -c {stty rows 24 columns 100; exec "$GARIVE_TUI_BIN" --host "$GARIVE_TUI_HOST" --state-dir "$GARIVE_TUI_STATE" --theme mono --reduced-motion}
-                expect -exact "\033\[6n"
-                send "\033\[1;1R"
-                expect -exact "GARIVE"
+                expect -exact "\033\[2J"
+                expect -exact "Garive"
                 puts "FRAME_US=[expr {[clock microseconds] - $started}]"
                 send "\021"
                 send "\r"
@@ -288,7 +289,8 @@ fn start_runtime_host(root: &Path) -> (SocketAddr, Child) {
 }
 
 fn percentile(samples: &[u64], percentile: usize) -> u64 {
-    samples[(samples.len() - 1) * percentile / 100]
+    let rank = (samples.len() * percentile).div_ceil(100);
+    samples[rank.saturating_sub(1)]
 }
 
 fn output(program: &str, arguments: &[&str]) -> String {

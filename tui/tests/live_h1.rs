@@ -118,6 +118,10 @@ fn shipping_tui_boots_and_restores_a_real_pty() {
         );
         assert!(text.contains("\x1b[?1049h"), "alternate screen entered");
         assert!(text.contains("\x1b[?1049l"), "alternate screen restored");
+        assert!(
+            !text.contains("\x1b]10;?\x1b\\") && !text.contains("\x1b]11;?\x1b\\"),
+            "explicit themes must not probe terminal colors or delay the first frame"
+        );
         assert!(text.contains("\x1b[?1000h"), "auto mouse capture entered");
         assert!(text.contains("\x1b[?1000l"), "auto mouse capture restored");
         assert!(text.contains("\x1b[?2004l"), "bracketed paste restored");
