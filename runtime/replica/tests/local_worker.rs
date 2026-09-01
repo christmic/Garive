@@ -449,10 +449,14 @@ async fn committed_turn_runs_to_durable_host_terminal_once() {
         .expect("subscriber");
     let model = Arc::new(CompletingModel(AtomicUsize::new(0)));
     let capability_preparation = Arc::new(EmptyCapabilityPreparation(AtomicUsize::new(0)));
-    let worker = LocalExecutionWorker::new(&database, policy(), model.clone())
-        .expect("worker")
-        .with_capability_preparation(capability_preparation.clone())
-        .with_live_output(live_output);
+    let worker = LocalExecutionWorker::new(
+        &database,
+        policy(),
+        model.clone(),
+        capability_preparation.clone(),
+    )
+    .expect("worker")
+    .with_live_output(live_output);
     let disposition = queue
         .try_run_next(&worker, &attempt())
         .await
@@ -580,6 +584,7 @@ async fn explicit_governed_factory_runs_the_complete_f0_effect_fact_chain() {
             goal_reference: Some("caller-invented-goal".into()),
             plan_reference: Some("caller-invented-plan".into()),
         }),
+        Arc::new(EmptyCapabilityPreparation(AtomicUsize::new(0))),
     )
     .unwrap();
     assert_eq!(
@@ -592,6 +597,7 @@ async fn explicit_governed_factory_runs_the_complete_f0_effect_fact_chain() {
         governed_policy,
         model.clone(),
         Arc::new(GovernedFactory::unbound()),
+        Arc::new(EmptyCapabilityPreparation(AtomicUsize::new(0))),
     )
     .expect("governed worker");
     assert!(matches!(
@@ -687,7 +693,13 @@ async fn restart_abandons_unproven_execution_before_dispatch() {
     drop(ledger);
 
     let model = Arc::new(CompletingModel(AtomicUsize::new(0)));
-    let worker = LocalExecutionWorker::new(&database, policy(), model.clone()).expect("worker");
+    let worker = LocalExecutionWorker::new(
+        &database,
+        policy(),
+        model.clone(),
+        Arc::new(EmptyCapabilityPreparation(AtomicUsize::new(0))),
+    )
+    .expect("worker");
     assert!(matches!(
         worker.execute(&recovered[0], &attempt()).await,
         Ok(LocalWorkerDisposition::TerminalCommitted { .. })
@@ -727,7 +739,13 @@ async fn shutdown_stops_admission_and_bounds_in_memory_drain() {
     };
     dispatcher.dispatch(&committed).expect("first admission");
     let model = Arc::new(CompletingModel(AtomicUsize::new(0)));
-    let worker = LocalExecutionWorker::new(&database, policy(), model).expect("worker");
+    let worker = LocalExecutionWorker::new(
+        &database,
+        policy(),
+        model,
+        Arc::new(EmptyCapabilityPreparation(AtomicUsize::new(0))),
+    )
+    .expect("worker");
     let report = queue.shutdown_drain(&worker, &[]).await;
     assert_eq!(report.attempted, 0);
     assert_eq!(report.abandoned, 1);

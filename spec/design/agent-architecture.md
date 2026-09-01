@@ -92,6 +92,9 @@ resolves references and freezes an effective execution input before Core runs.
 
 Capabilities are explicit inputs. A directory or installed implementation does
 not grant an Agent permission to use it.
+Conversely, a Worker cannot silently omit snapshot-declared capabilities. Its
+capability-preparation port is mandatory even for a no-capability snapshot and
+must fail before Core when the exact installation cannot be resolved.
 
 ## Kernel Execution contract
 

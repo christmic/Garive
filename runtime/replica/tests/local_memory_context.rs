@@ -209,9 +209,7 @@ async fn configured_empty_repository_commits_retrieval_before_model() {
         .start_turn("start", &session.session_id, "hello")
         .unwrap();
     let model = Arc::new(CompletingModel(AtomicUsize::new(0)));
-    let worker = LocalExecutionWorker::new(&database, policy(), model.clone())
-        .unwrap()
-        .with_capability_preparation(factory);
+    let worker = LocalExecutionWorker::new(&database, policy(), model.clone(), factory).unwrap();
     assert!(matches!(
         queue.try_run_next(&worker, &attempt()).await,
         Ok(LocalWorkerDisposition::TerminalCommitted { .. })
@@ -263,11 +261,15 @@ async fn required_binding_fails_closed_before_model_dispatch() {
         host.start_turn("start", &session.session_id, "hello")
             .unwrap();
         let model = Arc::new(CompletingModel(AtomicUsize::new(0)));
-        let worker = LocalExecutionWorker::new(&database, policy(), model.clone())
-            .unwrap()
-            .with_capability_preparation(Arc::new(CatalogueCapabilityPreparationFactory::new(
+        let worker = LocalExecutionWorker::new(
+            &database,
+            policy(),
+            model.clone(),
+            Arc::new(CatalogueCapabilityPreparationFactory::new(
                 catalogue, binding,
-            )));
+            )),
+        )
+        .unwrap();
         assert_eq!(queue.try_run_next(&worker, &attempt()).await, Err(expected));
         assert_eq!(model.0.load(Ordering::SeqCst), 0);
     }
@@ -294,12 +296,16 @@ async fn extra_binding_cannot_add_memory_to_snapshot() {
         .start_turn("start", &session.session_id, "hello")
         .unwrap();
     let model = Arc::new(CompletingModel(AtomicUsize::new(0)));
-    let worker = LocalExecutionWorker::new(&database, policy(), model)
-        .unwrap()
-        .with_capability_preparation(Arc::new(CatalogueCapabilityPreparationFactory::new(
+    let worker = LocalExecutionWorker::new(
+        &database,
+        policy(),
+        model,
+        Arc::new(CatalogueCapabilityPreparationFactory::new(
             catalogue,
             Some(binding(DESCRIPTOR_DIGEST)),
-        )));
+        )),
+    )
+    .unwrap();
     queue.try_run_next(&worker, &attempt()).await.unwrap();
     let ledger = SqliteLedger::open(&database).unwrap();
     assert!(ledger
@@ -417,9 +423,11 @@ async fn user_memory_written_in_one_session_reaches_another_sessions_model() {
     let target_turn = target_host
         .start_turn("target-start", &target.session_id, "what do I prefer?")
         .unwrap();
-    let worker = LocalExecutionWorker::new(&database, policy(), Arc::new(MemoryCheckingModel))
-        .unwrap()
-        .with_capability_preparation(Arc::new(CatalogueCapabilityPreparationFactory::new(
+    let worker = LocalExecutionWorker::new(
+        &database,
+        policy(),
+        Arc::new(MemoryCheckingModel),
+        Arc::new(CatalogueCapabilityPreparationFactory::new(
             catalogue,
             Some(binding_with_scope(
                 DESCRIPTOR_DIGEST,
@@ -427,7 +435,9 @@ async fn user_memory_written_in_one_session_reaches_another_sessions_model() {
                 MemoryScopeClass::User,
                 "user-local",
             )),
-        )));
+        )),
+    )
+    .unwrap();
     queue.try_run_next(&worker, &attempt()).await.unwrap();
     let ledger = SqliteLedger::open(&database).unwrap();
     let facts = ledger
@@ -471,10 +481,13 @@ async fn exact_knowledge_source_completes_before_model_and_missing_binding_fails
         let turn = host
             .start_turn("start", &session.session_id, "lookup")
             .unwrap();
-        let worker =
-            LocalExecutionWorker::new(&database, policy(), Arc::new(KnowledgeCheckingModel))
-                .unwrap()
-                .with_capability_preparation(Arc::new(factory));
+        let worker = LocalExecutionWorker::new(
+            &database,
+            policy(),
+            Arc::new(KnowledgeCheckingModel),
+            Arc::new(factory),
+        )
+        .unwrap();
         if !with_binding {
             assert_eq!(
                 queue.try_run_next(&worker, &attempt()).await,
@@ -619,9 +632,13 @@ async fn restart_after_knowledge_completed_reuses_evidence_without_connector_dis
         .expect("recover completed knowledge context");
     drop(ledger);
 
-    let worker = LocalExecutionWorker::new(&database, policy(), Arc::new(KnowledgeCheckingModel))
-        .unwrap()
-        .with_capability_preparation(factory);
+    let worker = LocalExecutionWorker::new(
+        &database,
+        policy(),
+        Arc::new(KnowledgeCheckingModel),
+        factory,
+    )
+    .unwrap();
     let disposition = worker.execute(&recovered[0], &attempt()).await;
     if !matches!(
         disposition,
@@ -719,9 +736,13 @@ async fn restart_after_knowledge_requested_redispatches_the_exact_request_once()
     assert_eq!(recovered[0].execution_id, old.execution_id);
     drop(restarted);
 
-    let worker = LocalExecutionWorker::new(&database, policy(), Arc::new(KnowledgeCheckingModel))
-        .unwrap()
-        .with_capability_preparation(factory);
+    let worker = LocalExecutionWorker::new(
+        &database,
+        policy(),
+        Arc::new(KnowledgeCheckingModel),
+        factory,
+    )
+    .unwrap();
     assert!(matches!(
         worker.execute(&recovered[0], &attempt()).await,
         Ok(LocalWorkerDisposition::TerminalCommitted { .. })
@@ -840,9 +861,9 @@ async fn restart_after_memory_fact_abandons_old_execution_before_new_model() {
         &database,
         policy(),
         Arc::new(CompletingModel(AtomicUsize::new(0))),
+        factory,
     )
-    .unwrap()
-    .with_capability_preparation(factory);
+    .unwrap();
     assert!(matches!(
         worker.execute(&recovered[0], &attempt()).await,
         Ok(LocalWorkerDisposition::TerminalCommitted { .. })

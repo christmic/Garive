@@ -15,10 +15,17 @@ use garive_desktop::{
     builtin_desktop_agent_installation, builtin_desktop_workspace_agent_installation, DesktopHost,
     DesktopHostConfig, DesktopOperations, DesktopState, DesktopTerminal,
     DesktopWorkspaceContextFile, DesktopWorkspaceExecutionFactory, DesktopWorkspaceGrant,
-    DesktopWorkspaceService,
+    DesktopWorkspaceService, DESKTOP_KNOWLEDGE_CAPABILITY_NAME,
+    DESKTOP_KNOWLEDGE_CAPABILITY_REVISION, DESKTOP_KNOWLEDGE_DESCRIPTOR_DIGEST,
+    DESKTOP_MEMORY_CAPABILITY_NAME, DESKTOP_MEMORY_CAPABILITY_REVISION,
+    DESKTOP_MEMORY_DESCRIPTOR_DIGEST,
 };
 use garive_goal::{
     GoalBoundsV1, GoalCriterion, GoalCriterionId, GoalDefinitionV1, GoalId, GoalScopeV1, GoalState,
+};
+use garive_knowledge::{
+    CitationScheme, KnowledgeQueryMode, KnowledgeSourceDescriptor, KnowledgeSourceKind,
+    KnowledgeTrustClass,
 };
 use garive_ledger::SessionId;
 use garive_llm::{
@@ -27,16 +34,20 @@ use garive_llm::{
     ModelRequest, ModelStopReason, ModelStreamEvent, ModelUsage, ObserverDecision, TextMode,
     TokenCount, UsageSource,
 };
+use garive_memory::{MemoryAuthorizedScope, MemoryDocumentLimits, MemoryScope, MemoryScopeClass};
 use garive_plan::{PlanBoundsV1, PlanStepId, PlanStepV1};
 use garive_runtime::{
-    commit_goal_command, plan_create_goal, reconstruct_goal, CataloguePlanStepDispatchFactory,
-    CommittedTurn, GoalCommandContext, HostClock, LiveHostLimits, LiveOutputEventKind,
-    LocalExecutionAttempt, LocalExecutionPolicy, LocalGovernedExecution,
-    LocalGovernedExecutionFactory, LocalWorkerError, PlanAdmissionDecision, PlanAdmissionInput,
-    PlanAdmissionPolicy, PlanProposalContent, PlanProposalFuture, PlanProposalPort,
-    PlanStepDispatchFactory, PlanStepDispatchInput, ProcessBackendHostConfig, ProcessExecutable,
-    ProcessLane, ProcessLaneRegistry, RuntimeAgentCatalogue, SafetyFuture, SafetyPort,
-    SqliteLedger, T1HostSystemConfig,
+    commit_goal_command, plan_create_goal, reconstruct_goal, CatalogueCapabilityPreparationFactory,
+    CataloguePlanStepDispatchFactory, CommittedTurn, GoalCommandContext, HostClock,
+    KnowledgeConnector, KnowledgeConnectorFuture, KnowledgeConnectorOutcome, LiveHostLimits,
+    LiveOutputEventKind, LocalCapabilityPreparationFactory, LocalExecutionAttempt,
+    LocalExecutionPolicy, LocalGovernedExecution, LocalGovernedExecutionFactory,
+    LocalKnowledgeSystemBinding, LocalMemorySystemBinding, LocalWorkerError, MemoryControlAction,
+    MemoryControlGrant, PlanAdmissionDecision, PlanAdmissionInput, PlanAdmissionPolicy,
+    PlanProposalContent, PlanProposalFuture, PlanProposalPort, PlanStepDispatchFactory,
+    PlanStepDispatchInput, ProcessBackendHostConfig, ProcessExecutable, ProcessLane,
+    ProcessLaneRegistry, RuntimeAgentCatalogue, SafetyFuture, SafetyPort, SqliteLedger,
+    T1HostSystemConfig, KEYWORD_CURRENT_INPUT_REVISION, USER_DECLARED_PUSH_REVISION,
 };
 use garive_tools::{T1_APPLY_PATCH, T1_READ_TEXT};
 use sha2::{Digest, Sha256};
@@ -47,6 +58,80 @@ impl HostClock for FixedHostClock {
     fn recorded_at(&self) -> String {
         "2026-08-29T00:00:00Z".into()
     }
+}
+
+struct EmptyKnowledgeConnector;
+impl KnowledgeConnector for EmptyKnowledgeConnector {
+    fn retrieve<'a>(
+        &'a self,
+        _: &'a KnowledgeSourceDescriptor,
+        _: &'a garive_knowledge::KnowledgeRequest,
+    ) -> KnowledgeConnectorFuture<'a> {
+        Box::pin(async {
+            KnowledgeConnectorOutcome::Completed {
+                evidence: Vec::new(),
+                connector_order_stable: true,
+            }
+        })
+    }
+}
+
+fn test_capability_preparation(
+    catalogue: Arc<RuntimeAgentCatalogue>,
+) -> Arc<dyn LocalCapabilityPreparationFactory> {
+    let namespace = "desktop-test-memory";
+    let memory = LocalMemorySystemBinding::new(
+        DESKTOP_MEMORY_CAPABILITY_NAME,
+        DESKTOP_MEMORY_CAPABILITY_REVISION,
+        DESKTOP_MEMORY_DESCRIPTOR_DIGEST,
+        namespace,
+        "desktop-test-retriever-v1",
+        USER_DECLARED_PUSH_REVISION,
+        MemoryControlGrant::new(
+            namespace,
+            [MemoryControlAction::Export],
+            [MemoryAuthorizedScope {
+                scope: MemoryScopeClass::User,
+                owner_id: "desktop-test-user".into(),
+            }],
+        )
+        .unwrap(),
+        vec![MemoryScope::Namespace],
+        MemoryDocumentLimits::new(16_384, 8_192, 128).unwrap(),
+        8,
+        16_384,
+        128,
+        2_048,
+    )
+    .unwrap();
+    let source = KnowledgeSourceDescriptor::new(
+        "desktop-test-knowledge",
+        "desktop-test-knowledge-v1",
+        KnowledgeSourceKind::Documentation,
+        "desktop.test.knowledge",
+        KnowledgeTrustClass::Curated,
+        vec![KnowledgeQueryMode::Keyword],
+        "a".repeat(64),
+        CitationScheme::RecordKey,
+        "b".repeat(64),
+    )
+    .unwrap();
+    let knowledge = LocalKnowledgeSystemBinding::new(
+        DESKTOP_KNOWLEDGE_CAPABILITY_NAME,
+        DESKTOP_KNOWLEDGE_CAPABILITY_REVISION,
+        DESKTOP_KNOWLEDGE_DESCRIPTOR_DIGEST,
+        source,
+        KEYWORD_CURRENT_INPUT_REVISION,
+        4,
+        16_384,
+        1_000,
+        Arc::new(EmptyKnowledgeConnector),
+    )
+    .unwrap();
+    Arc::new(
+        CatalogueCapabilityPreparationFactory::new(catalogue, Some(memory))
+            .with_knowledge(knowledge),
+    )
 }
 
 struct Operations(AtomicU64);
@@ -501,19 +586,20 @@ fn desktop_host_with_ordinal(
 }
 
 fn desktop_host_config(database: &Path, model: Arc<dyn ModelPort>) -> DesktopHostConfig {
+    let agent_catalogue = Arc::new(
+        RuntimeAgentCatalogue::new([builtin_desktop_agent_installation(
+            "definition-main",
+            "desktop-main",
+        )
+        .unwrap()])
+        .unwrap(),
+    );
     DesktopHostConfig {
         database_path: database.to_owned(),
-        agent_catalogue: Arc::new(
-            RuntimeAgentCatalogue::new([builtin_desktop_agent_installation(
-                "definition-main",
-                "desktop-main",
-            )
-            .unwrap()])
-            .unwrap(),
-        ),
+        capability_preparation: test_capability_preparation(agent_catalogue.clone()),
+        agent_catalogue,
         default_agent_definition_id: "definition-main".into(),
         t1_host_system_config: None,
-        capability_preparation: None,
         host_limits: LiveHostLimits {
             max_command_bytes: 4_096,
             event_batch_size: 64,
@@ -548,6 +634,12 @@ fn desktop_host_config(database: &Path, model: Arc<dyn ModelPort>) -> DesktopHos
         plan_proposal_port: None,
         operations: Arc::new(Operations(AtomicU64::new(1))),
     }
+}
+
+fn install_agent_catalogue(config: &mut DesktopHostConfig, catalogue: RuntimeAgentCatalogue) {
+    let catalogue = Arc::new(catalogue);
+    config.capability_preparation = test_capability_preparation(catalogue.clone());
+    config.agent_catalogue = catalogue;
 }
 
 #[tokio::test]
@@ -633,7 +725,8 @@ async fn desktop_restart_resumes_the_same_prepared_v3_workspace_invocation() {
         &database,
         Arc::new(WorkspaceReadingModel(AtomicU64::new(0))),
     );
-    config.agent_catalogue = Arc::new(
+    install_agent_catalogue(
+        &mut config,
         RuntimeAgentCatalogue::new([
             builtin_desktop_agent_installation("definition-main", "desktop-main").unwrap(),
             builtin_desktop_workspace_agent_installation(
@@ -674,7 +767,8 @@ async fn desktop_restart_resumes_the_same_prepared_v3_workspace_invocation() {
         &database,
         Arc::new(WorkspaceReadingModel(AtomicU64::new(1))),
     );
-    restart_config.agent_catalogue = Arc::new(
+    install_agent_catalogue(
+        &mut restart_config,
         RuntimeAgentCatalogue::new([
             builtin_desktop_agent_installation("definition-main", "desktop-main").unwrap(),
             builtin_desktop_workspace_agent_installation(
@@ -729,7 +823,8 @@ async fn desktop_routes_each_session_through_its_exact_installed_agent() {
     let directory = tempdir().unwrap();
     let database = directory.path().join("catalogue.db");
     let mut config = desktop_host_config(&database, Arc::new(CompletingModel));
-    config.agent_catalogue = Arc::new(
+    install_agent_catalogue(
+        &mut config,
         RuntimeAgentCatalogue::new([
             builtin_desktop_agent_installation("definition-main", "desktop-main").unwrap(),
             builtin_desktop_agent_installation("definition-work", "desktop-work").unwrap(),
@@ -1351,7 +1446,8 @@ async fn workspace_agent_runs_t1_read_through_the_complete_f0_chain() {
         &t1.tool_capabilities().unwrap(),
     )
     .unwrap();
-    config.agent_catalogue = Arc::new(
+    install_agent_catalogue(
+        &mut config,
         RuntimeAgentCatalogue::new([
             builtin_desktop_agent_installation("definition-main", "desktop-main").unwrap(),
             workspace_agent,
@@ -1440,7 +1536,8 @@ async fn workspace_agent_patch_requires_durable_approval_then_acknowledges_recei
             arguments,
         }),
     );
-    config.agent_catalogue = Arc::new(
+    install_agent_catalogue(
+        &mut config,
         RuntimeAgentCatalogue::new([
             builtin_desktop_agent_installation("definition-main", "desktop-main").unwrap(),
             builtin_desktop_workspace_agent_installation(
@@ -1536,7 +1633,8 @@ async fn workspace_agent_patch_requires_durable_approval_then_acknowledges_recei
         &database,
         Arc::new(WorkspaceReadingModel(AtomicU64::new(0))),
     );
-    restart_config.agent_catalogue = Arc::new(
+    install_agent_catalogue(
+        &mut restart_config,
         RuntimeAgentCatalogue::new([
             builtin_desktop_agent_installation("definition-main", "desktop-main").unwrap(),
             builtin_desktop_workspace_agent_installation(

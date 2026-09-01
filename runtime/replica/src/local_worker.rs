@@ -131,7 +131,7 @@ pub struct LocalExecutionWorker {
     policy: LocalExecutionPolicy,
     model: Arc<dyn ModelPort>,
     governed: Option<Arc<dyn LocalGovernedExecutionFactory>>,
-    capability_preparation: Option<Arc<dyn LocalCapabilityPreparationFactory>>,
+    capability_preparation: Arc<dyn LocalCapabilityPreparationFactory>,
     live_output: Option<LiveOutputHub>,
 }
 
@@ -195,6 +195,7 @@ impl LocalExecutionWorker {
         database_path: impl AsRef<Path>,
         policy: LocalExecutionPolicy,
         model: Arc<dyn ModelPort>,
+        capability_preparation: Arc<dyn LocalCapabilityPreparationFactory>,
     ) -> Result<Self, LocalWorkerError> {
         if database_path.as_ref().as_os_str().is_empty() {
             return Err(LocalWorkerError::InvalidComposition);
@@ -204,7 +205,7 @@ impl LocalExecutionWorker {
             policy,
             model,
             governed: None,
-            capability_preparation: None,
+            capability_preparation,
             live_output: None,
         })
     }
@@ -215,23 +216,15 @@ impl LocalExecutionWorker {
         self
     }
 
-    /// Installs exact Runtime preparation for snapshot-admitted capabilities.
-    pub fn with_capability_preparation(
-        mut self,
-        factory: Arc<dyn LocalCapabilityPreparationFactory>,
-    ) -> Self {
-        self.capability_preparation = Some(factory);
-        self
-    }
-
     /// Constructs a tool-capable worker with explicit governed port creation.
     pub fn new_governed(
         database_path: impl AsRef<Path>,
         policy: LocalExecutionPolicy,
         model: Arc<dyn ModelPort>,
         governed: Arc<dyn LocalGovernedExecutionFactory>,
+        capability_preparation: Arc<dyn LocalCapabilityPreparationFactory>,
     ) -> Result<Self, LocalWorkerError> {
-        let mut worker = Self::new(database_path, policy, model)?;
+        let mut worker = Self::new(database_path, policy, model, capability_preparation)?;
         worker.governed = Some(governed);
         Ok(worker)
     }
@@ -288,17 +281,14 @@ impl LocalExecutionWorker {
             None => WorkerEvents::Discard(DiscardEvents),
         };
         let mut publisher = DurableOnlyPublisher;
-        let prepared_capabilities = match &self.capability_preparation {
-            Some(factory) => factory.prepare(
-                &ledger,
-                LocalCapabilityPreparationInput {
-                    committed,
-                    request: &reconstructed.request,
-                    recorded_at: &attempt.recorded_at,
-                },
-            )?,
-            None => PreparedAgentCapabilities::default(),
-        };
+        let prepared_capabilities = self.capability_preparation.prepare(
+            &ledger,
+            LocalCapabilityPreparationInput {
+                committed,
+                request: &reconstructed.request,
+                recorded_at: &attempt.recorded_at,
+            },
+        )?;
         let execution = if let Some(factory) = &self.governed {
             let mut governed = factory.create(committed)?;
             if governed.capabilities.definitions.is_empty() {

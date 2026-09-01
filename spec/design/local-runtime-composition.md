@@ -18,6 +18,11 @@ Installing Tool, Memory, Knowledge, Skill, Scheduler or delegation modules
 neither grants authority nor advertises them to a model. Each capability enters
 through its accepted Runtime port; tool-capable composition additionally
 requires the complete F0 governance bundle.
+Every local Worker receives a capability-preparation port at construction,
+including Workers for snapshots that declare no Memory or Knowledge. Runtime
+has no optional or implicit empty preparation path: the constructed port must
+resolve the exact committed definition revision and snapshot digest, then
+either return admitted capability inputs or fail before model dispatch.
 
 ## Explicit configuration
 
@@ -64,6 +69,12 @@ concurrently. A replacement Execution may fence a non-expired lease only after
 the same recovery transaction has durably terminalized the old Execution as
 `execution.abandoned`; a second owner of the same active Execution cannot use
 this rule.
+
+Capability recovery does not override later Core progress. A completed
+Knowledge request resumes the same Execution directly only while that terminal
+is still the execution frontier. If a later iteration, model lifecycle or
+effect fact exists, C6/F0 recovery owns the next action so Prepared, uncertain
+or receipt-bearing work cannot be bypassed by an earlier capability terminal.
 
 ## Fixed-prefix reconstruction
 

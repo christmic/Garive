@@ -17,9 +17,10 @@ use garive_provider_openai::build_profile;
 use garive_provider_profile::{ConnectionInput, EndpointSelection, SecretValue};
 use garive_runtime::{
     local_dispatch_queue, EffectiveRuntimeLimits, HostClock, InstalledAgent, LiveHost,
-    LiveHostLimits, LiveHostServer, LocalExecutionAttempt, LocalExecutionPolicy,
-    LocalExecutionWorker, LocalWorkerDisposition, RuntimeHttpLimits, RuntimeModelHttpTransport,
-    SqliteLedger,
+    LiveHostLimits, LiveHostServer, LocalCapabilityPreparationFactory,
+    LocalCapabilityPreparationInput, LocalExecutionAttempt, LocalExecutionPolicy,
+    LocalExecutionWorker, LocalWorkerDisposition, LocalWorkerError, PreparedAgentCapabilities,
+    RuntimeHttpLimits, RuntimeModelHttpTransport, SqliteLedger,
 };
 use serde_json::Value;
 use tempfile::tempdir;
@@ -31,6 +32,17 @@ struct Clock;
 impl HostClock for Clock {
     fn recorded_at(&self) -> String {
         "2026-08-29T00:00:00Z".into()
+    }
+}
+
+struct NoCapabilities;
+impl LocalCapabilityPreparationFactory for NoCapabilities {
+    fn prepare(
+        &self,
+        _: &SqliteLedger,
+        _: LocalCapabilityPreparationInput<'_>,
+    ) -> Result<PreparedAgentCapabilities, LocalWorkerError> {
+        Ok(PreparedAgentCapabilities::default())
     }
 }
 
@@ -160,6 +172,7 @@ async fn loopback_host_to_protocol_flow_commits_terminal() {
             max_model_attempts: 1,
         },
         model,
+        Arc::new(NoCapabilities),
     )
     .expect("worker");
     let disposition = queue

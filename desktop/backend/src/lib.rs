@@ -54,7 +54,10 @@ pub use artifact_export::{
 };
 pub use desktop_agent::{
     builtin_desktop_agent_installation, builtin_desktop_workspace_agent_installation,
-    DesktopAgentCompositionError, DESKTOP_AGENT_REVISION, DESKTOP_WORKSPACE_AGENT_REVISION,
+    DesktopAgentCompositionError, DESKTOP_AGENT_REVISION, DESKTOP_KNOWLEDGE_CAPABILITY_NAME,
+    DESKTOP_KNOWLEDGE_CAPABILITY_REVISION, DESKTOP_KNOWLEDGE_DESCRIPTOR_DIGEST,
+    DESKTOP_MEMORY_CAPABILITY_NAME, DESKTOP_MEMORY_CAPABILITY_REVISION,
+    DESKTOP_MEMORY_DESCRIPTOR_DIGEST, DESKTOP_WORKSPACE_AGENT_REVISION,
 };
 pub use desktop_menu::{
     build_desktop_menu, build_desktop_menu_for_locale, DesktopMenuIntent, DesktopMenuLocale,
@@ -157,8 +160,8 @@ pub struct DesktopHostConfig {
     pub default_agent_definition_id: String,
     /// Exact optional machine T1 resources matching Workspace Agent snapshots.
     pub t1_host_system_config: Option<garive_runtime::T1HostSystemConfig>,
-    /// Exact backend-constructed Memory/Knowledge preparation, when installed.
-    pub capability_preparation: Option<Arc<dyn LocalCapabilityPreparationFactory>>,
+    /// Exact backend-constructed preparation for every snapshot capability set.
+    pub capability_preparation: Arc<dyn LocalCapabilityPreparationFactory>,
     /// Bounded Host command and projection policy.
     pub host_limits: LiveHostLimits,
     /// Bounded local Agent execution policy.
@@ -370,7 +373,7 @@ impl DesktopHost {
             live_output.clone(),
         )
         .map_err(|_| DesktopHostError::InvalidConfiguration)?;
-        let mut worker = match governed {
+        let worker = match governed {
             Some(factory) => LocalExecutionWorker::new_governed(
                 &config.database_path,
                 config.execution_policy,
@@ -379,17 +382,16 @@ impl DesktopHost {
                     config.agent_catalogue,
                     factory,
                 )),
+                config.capability_preparation,
             ),
             None => LocalExecutionWorker::new(
                 &config.database_path,
                 config.execution_policy,
                 config.model,
+                config.capability_preparation,
             ),
         }
         .map_err(|_| DesktopHostError::InvalidConfiguration)?;
-        if let Some(factory) = config.capability_preparation {
-            worker = worker.with_capability_preparation(factory);
-        }
         let worker = worker.with_live_output(live_output);
         Ok(Self {
             host,

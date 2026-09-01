@@ -287,7 +287,8 @@ fn recover_pending_knowledge(
         return Err(LocalRecoveryError::CorruptRecoveryState);
     }
     let mut facts = Vec::new();
-    let mut resume = false;
+    let mut redispatch = false;
+    let mut terminal_available = false;
     for request_id in request_ids {
         let context = KnowledgeRecoveryContext {
             session_id: session_id.clone(),
@@ -303,10 +304,10 @@ fn recover_pending_knowledge(
                 plan_knowledge_recovery_uncertain(ledger, &context, recorded_at)
                     .map_err(|_| LocalRecoveryError::CorruptRecoveryState)?,
             ),
-            KnowledgeRecoveryAction::RedispatchSameRequest { .. } => resume = true,
+            KnowledgeRecoveryAction::RedispatchSameRequest { .. } => redispatch = true,
             KnowledgeRecoveryAction::ReturnTerminal {
                 completed: true, ..
-            } => resume = true,
+            } => terminal_available = true,
             KnowledgeRecoveryAction::ReturnTerminal {
                 completed: false, ..
             } => {}
@@ -318,10 +319,39 @@ fn recover_pending_knowledge(
             .map_err(|_| LocalRecoveryError::DurabilityUnavailable)?;
         return Ok(PendingKnowledgeRecovery::CommittedUncertainty);
     }
-    Ok(if resume {
+    let terminal_is_execution_frontier =
+        terminal_available && !knowledge_has_later_execution_progress(snapshot, &execution_id);
+    Ok(if redispatch || terminal_is_execution_frontier {
         PendingKnowledgeRecovery::ResumeCurrentExecution
     } else {
         PendingKnowledgeRecovery::None
+    })
+}
+
+fn knowledge_has_later_execution_progress(
+    snapshot: &TurnSnapshot,
+    execution_id: &garive_ledger::ExecutionId,
+) -> bool {
+    let terminal_position = snapshot
+        .facts
+        .iter()
+        .filter(|fact| {
+            fact.execution_id.as_ref() == Some(execution_id)
+                && matches!(
+                    fact.kind.as_str(),
+                    "knowledge.completed" | "knowledge.failed" | "knowledge.recovery_uncertain"
+                )
+        })
+        .map(|fact| fact.position)
+        .max();
+    terminal_position.is_some_and(|position| {
+        snapshot.facts.iter().any(|fact| {
+            fact.execution_id.as_ref() == Some(execution_id)
+                && fact.position > position
+                && (fact.kind.as_str() == "execution.iteration_started"
+                    || fact.kind.as_str().starts_with("model.")
+                    || fact.kind.as_str().starts_with("effect."))
+        })
     })
 }
 

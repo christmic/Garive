@@ -39,17 +39,29 @@ use garive_runtime::{
     reconstruct_suspended_turn, verify_plan_carry_forward, ContinuationInput, ContinueTurnCommand,
     CoreTerminalContext, EffectiveRuntimeLimits, GetTurnQuery, GoalCommandContext,
     GoalPlanAdvanceOutcome, GoalPlanCoordinationError, GoalPlanCoordinationTick, GoalPlanDecision,
-    GoalRuntimeError, GoalRuntimeTransition, InteractionInputRepresentation, LocalExecutionAttempt,
-    LocalExecutionPolicy, LocalExecutionWorker, LocalWorkerDisposition, PlanAdmissionDecision,
-    PlanAdmissionInput, PlanAdmissionPolicy, PlanCommandContext, PlanDispatchError,
-    PlanDispatchOutcome, PlanDispatchTick, PlanRuntimeError, PlanRuntimeState,
+    GoalRuntimeError, GoalRuntimeTransition, InteractionInputRepresentation,
+    LocalCapabilityPreparationFactory, LocalCapabilityPreparationInput, LocalExecutionAttempt,
+    LocalExecutionPolicy, LocalExecutionWorker, LocalWorkerDisposition, LocalWorkerError,
+    PlanAdmissionDecision, PlanAdmissionInput, PlanAdmissionPolicy, PlanCommandContext,
+    PlanDispatchError, PlanDispatchOutcome, PlanDispatchTick, PlanRuntimeError, PlanRuntimeState,
     PlanRuntimeTransition, PlanStepDispatchFactory, PlanStepDispatchInput, PlanStepExecutionStart,
-    PreparedPlanStepDispatch, RuntimeCommandId, SqliteLedger, StartTurnCommand, TurnDispatchError,
-    TurnDispatcher,
+    PreparedAgentCapabilities, PreparedPlanStepDispatch, RuntimeCommandId, SqliteLedger,
+    StartTurnCommand, TurnDispatchError, TurnDispatcher,
 };
 use serde_json::json;
 use sha2::{Digest, Sha256};
 use tempfile::tempdir;
+
+struct NoCapabilities;
+impl LocalCapabilityPreparationFactory for NoCapabilities {
+    fn prepare(
+        &self,
+        _: &SqliteLedger,
+        _: LocalCapabilityPreparationInput<'_>,
+    ) -> Result<PreparedAgentCapabilities, LocalWorkerError> {
+        Ok(PreparedAgentCapabilities::default())
+    }
+}
 
 #[test]
 fn claims_expire_before_start_and_started_work_recovers_to_completion() {
@@ -1106,8 +1118,13 @@ async fn completed_owned_turn_reduces_to_step_with_observed_evidence_after_resta
         Err(GoalPlanCoordinationError::CompletedTurnUnavailable)
     );
     drop(ledger);
-    let worker =
-        LocalExecutionWorker::new(&path, worker_policy(), Arc::new(PlanCompletingModel)).unwrap();
+    let worker = LocalExecutionWorker::new(
+        &path,
+        worker_policy(),
+        Arc::new(PlanCompletingModel),
+        Arc::new(NoCapabilities),
+    )
+    .unwrap();
     let disposition = worker.execute(&committed, &worker_attempt()).await.unwrap();
     let LocalWorkerDisposition::TerminalCommitted { positions } = disposition else {
         panic!("first dispatch must commit terminal and Step reduction")
@@ -1321,8 +1338,13 @@ async fn retry_posture_reopens_within_bounds_and_stops_at_failure_policy_after_e
         committed_position: state.through_position,
     };
     drop(ledger);
-    let worker =
-        LocalExecutionWorker::new(&path, worker_policy(), Arc::new(PlanFailingModel)).unwrap();
+    let worker = LocalExecutionWorker::new(
+        &path,
+        worker_policy(),
+        Arc::new(PlanFailingModel),
+        Arc::new(NoCapabilities),
+    )
+    .unwrap();
     let LocalWorkerDisposition::TerminalCommitted { positions } =
         worker.execute(&committed, &worker_attempt()).await.unwrap()
     else {

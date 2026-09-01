@@ -291,7 +291,7 @@ impl<R: DesktopSecretResolver, P: DesktopProfileRegistry> DesktopConfigurationPr
             agent_catalogue: agent_catalogue.clone(),
             default_agent_definition_id,
             t1_host_system_config: self.t1_host_system_config.clone(),
-            capability_preparation: Some(Arc::new(capability_preparation)),
+            capability_preparation: Arc::new(capability_preparation),
             host_limits: LiveHostLimits {
                 max_command_bytes: config.host.max_command_bytes,
                 event_batch_size: config.host.event_batch_size,
