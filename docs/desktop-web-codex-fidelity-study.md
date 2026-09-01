@@ -1003,6 +1003,30 @@ visible at 672 px, visually clipped but present in the accessibility snapshot
 at a 342 px Artifact split, and clipped at a 432 px Composer in a 480 px Web
 viewport with zero document overflow.
 
+### XXXI. Routine recovery and Home suggestions stay work-like
+
+Installed Codex 26.825.51511 contains a dedicated `LoadingPage` implementation
+in `app-initial-B6Gk5KCN.js`. Its layout is a transparent, centered surface with
+an optional draggable toolbar region, and it explicitly accepts
+`showLogo=false`; the separate access-splash component owns permission-oriented
+headline, description and learn-more treatment. Routine loading therefore does
+not require reusing an access, onboarding or marketing card.
+
+The installed `home-suggestion-surface-B3IuURqZ.js` list variant uses 40 px
+Electron rows, one truncated task label, an optional semantic icon, rounded
+hover/focus treatment and a 0.99 active scale. It does not require a category
+column, separator table or trailing chevron. Garive now uses this list contract
+for its three admitted static outcome starters. Their existing prompt text is
+unchanged; category text remains in each button's accessible name and tooltip
+instead of consuming a permanent visual column.
+
+Garive's routine Host recovery now renders one muted live status and a 6 px
+pulse, with no SVG, product mark, large headline or card. The full title remains
+available to assistive technology. Wide browser evidence measures all three
+Home rows at 672x40 px with zero document overflow. Reduced motion freezes the
+pulse. This is a Garive product mapping of source-supported structure, not a
+claim that Codex exposes Garive's Runtime wording or starter prompts.
+
 ## Gate 1 — Codex fidelity
 
 This gate passes only when both Desktop and Web show:

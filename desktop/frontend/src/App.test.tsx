@@ -52,7 +52,8 @@ vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn(async (command: string, a
   }
 }) }));
 
-import { App, CommittedActivity, TurnActivityDisclosure, TurnProgress, UserMessage } from "./App";
+import { App, CommittedActivity, TurnActivityDisclosure, TurnProgress, UserMessage,
+  WorkspaceLoading } from "./App";
 import { createTranslator } from "./i18n";
 import type { WorkState } from "./state/workspace";
 
@@ -69,6 +70,17 @@ describe("Desktop product experience", () => {
     Object.defineProperty(window, "matchMedia", { configurable: true, value: vi.fn(() => ({
       matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn(),
     })) });
+  });
+
+  it("keeps routine workspace recovery quiet and logo-free", () => {
+    const view = render(<WorkspaceLoading title="Opening your workspace"
+      body="Recovering the local Runtime…" />);
+    const status = screen.getByRole("status");
+    expect(status.textContent).toContain("Recovering the local Runtime…");
+    expect(status.textContent).toContain("Opening your workspace");
+    expect(view.container.querySelector("svg, .orb, .setup-logo")).toBeNull();
+    expect(view.container.querySelector(".workspace-loading-dot")?.getAttribute("aria-hidden"))
+      .toBe("true");
   });
 
   it("creates, acknowledges, follows and completes a first durable Turn", async () => {
@@ -260,6 +272,10 @@ describe("Desktop product experience", () => {
     await screen.findByText("What should we accomplish?");
     expect(view.container.querySelector(".new-work-surface")).not.toBeNull();
     expect(view.container.querySelector(".brand-mark, .hero-mark, .message-mark")).toBeNull();
+    expect(view.container.querySelectorAll(".suggestion-grid .suggestion-icon")).toHaveLength(3);
+    expect(view.container.querySelector(".suggestion-grid .suggestion-copy")?.textContent)
+      .toBe("Turn notes into a clear decision memo");
+    expect(view.container.querySelector(".suggestion-grid button svg[aria-hidden='true']")).not.toBeNull();
     const composer = screen.getByRole("textbox", { name: "Describe the outcome you want" });
     expect(composer.getAttribute("rows")).toBe("1");
     expect(composer.closest(".composer")?.getAttribute("data-layout")).toBe("single-line");

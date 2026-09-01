@@ -1076,7 +1076,8 @@ function WorkSurface({ state, composer, submit, startSuggestion, dispatch, conte
     scrollConversationToTail(element, motionReduced);
   };
 
-  if (state.boot === "loading") return <div className="center-state"><span className="orb loading"><Icon name="sparkle" /></span><h1>{t("work.boot.title")}</h1><p>{t("work.boot.body")}</p></div>;
+  if (state.boot === "loading") return <WorkspaceLoading title={t("work.boot.title")}
+    body={t("work.boot.body")} />;
   if (state.boot === "unavailable") return <StatusCard icon="warning" title={t("work.unavailable.title")} body={t("error.desktopUnavailable")} />;
   if (!state.capabilities?.configured) {
     return state.capabilities?.setup ? <SetupFlow preview={visualTest} t={t} /> : <SetupRequired t={t} />;
@@ -1209,12 +1210,24 @@ function WorkSurface({ state, composer, submit, startSuggestion, dispatch, conte
 
 function Welcome({ draftActive, onSelect, t }: { draftActive: boolean;
   onSelect: (text: string) => void; t: (key: MessageKey) => string }) {
-  const suggestions = [[t("work.suggestion.synthesize"), t("work.suggestion.synthesizeBody")],
-    [t("work.suggestion.analyze"), t("work.suggestion.analyzeBody")],
-    [t("work.suggestion.create"), t("work.suggestion.createBody")]] as const;
+  const suggestions = [
+    { label: t("work.suggestion.synthesize"), text: t("work.suggestion.synthesizeBody"), icon: "file" },
+    { label: t("work.suggestion.analyze"), text: t("work.suggestion.analyzeBody"), icon: "search" },
+    { label: t("work.suggestion.create"), text: t("work.suggestion.createBody"), icon: "work" },
+  ] satisfies readonly { label: string; text: string; icon: IconName }[];
   return <div className="welcome"><h1>{t("work.welcome.title")}</h1>
     <p className="welcome-copy">{t("work.welcome.description")}</p>
-    {!draftActive && <div className="suggestion-grid">{suggestions.map(([label, text]) => <button type="button" key={label} onClick={() => onSelect(text)}><span>{label}</span><p>{text}</p><Icon name="chevron" /></button>)}</div>}
+    {!draftActive && <div className="suggestion-grid">{suggestions.map(({ label, text, icon }) =>
+      <button type="button" key={label} aria-label={`${label}: ${text}`} title={`${label}: ${text}`}
+        onClick={() => onSelect(text)}><span className="suggestion-icon"><Icon name={icon} /></span>
+        <span className="suggestion-copy">{text}</span></button>)}</div>}
+  </div>;
+}
+
+export function WorkspaceLoading({ title, body }: { title: string; body: string }) {
+  return <div className="workspace-loading" role="status" aria-live="polite">
+    <span className="workspace-loading-dot" aria-hidden="true" />
+    <span>{body}</span><span className="sr-only">{title}</span>
   </div>;
 }
 

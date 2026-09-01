@@ -631,6 +631,16 @@ product admits those actions.
   submission while keeping cancellation/reconnection actions reachable.
 - Empty, loading, error, offline, partial and permission-denied states use the
   same component geometry to prevent layout jumps.
+- Routine Host recovery is not an onboarding or access splash. It uses one
+  centered live-status line with a 6 px progress pulse, keeps the native drag
+  surface available, and renders no product mark, promotional headline or
+  card. The descriptive title remains in the accessibility tree. Reduced
+  motion disables the pulse animation.
+- Home outcome starters use the shared suggestion-list contract: 40 px rows,
+  20 px semantic-icon lane, one truncated 13 px task label, 6 px gap, rounded
+  hover/focus disclosure and 0.99 pressed scale. Category wording belongs in
+  the accessible name/tooltip when the visible task title is sufficient; rows
+  do not become a separator table or add a decorative trailing arrow.
 - A completed Turn compresses Activity into a turn-local label summary. Its
   completion label is visually hidden but announced; failure, interruption and
   required-input labels remain visible. Expanded Activity enters from −8 px at

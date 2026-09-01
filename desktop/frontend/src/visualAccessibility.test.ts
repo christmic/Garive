@@ -132,7 +132,12 @@ describe("Desktop visual accessibility contract", () => {
     expect(CSS).toContain(".settings-navigation { display: flex;");
     expect(CSS).toContain(".welcome { width: min(var(--thread-content-max-width), 100%);");
     expect(CSS).toContain(".new-work-surface .composer-wrap { top: clamp(210px, 27vh, 236px);");
-    expect(CSS).toContain("grid-template-columns: 78px minmax(0, 1fr) 16px");
+    expect(CSS).toContain(".suggestion-grid button { position: relative; display: flex; align-items: center; gap: 6px; min-height: 40px;");
+    expect(CSS).toContain(".suggestion-grid button:is(:hover, :focus-visible) { color: var(--text-primary); }");
+    expect(CSS).toContain(".suggestion-grid button:active { transform: scale(.99); }");
+    expect(CSS).toContain(".suggestion-grid .suggestion-icon svg { position: static;");
+    expect(CSS).toContain(".suggestion-grid .suggestion-copy { min-width: 0; overflow: hidden; color: inherit; font-size: var(--text-sm); font-weight: 400; letter-spacing: normal; text-overflow: ellipsis; text-transform: none; white-space: nowrap; }");
+    expect(CSS).not.toContain("grid-template-columns: 78px minmax(0, 1fr) 16px");
     expect(CSS).toContain(".new-work-surface .composer-wrap { top: 190px; }");
     expect(CSS).toContain(".setup-shell { position: relative; min-height: 100%; overflow: auto; padding: 46px 24px 64px; background: var(--surface-canvas);");
     expect(CSS).toContain(".setup-card { position: relative; width: min(39rem, 100%); margin: 0 auto;");
