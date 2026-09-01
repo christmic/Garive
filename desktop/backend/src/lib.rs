@@ -18,10 +18,11 @@ use garive_runtime::{
     advance_goal_plan_with_failure_once, commit_completed_plan_proposal_once,
     is_plan_proposal_execution, local_dispatch_queue, propose_initial_goal_plan_once,
     propose_replacement_goal_plan_once, start_initial_goal_plan_proposal_execution,
-    CatalogueBoundGovernedExecutionFactory, CataloguePlanStepDispatchFactory, CommittedTurn,
-    GoalPlanAdvanceOutcome, GoalPlanCoordinationTick, HostClock, HostContinuationInput,
-    HostEventPage, HostWorkspaceContextEntry, LiveHost, LiveHostEvent, LiveHostLimits,
-    LiveOutputHub, LiveOutputLimits, LiveOutputSubscriber, LocalCapabilityPreparationFactory,
+    start_replacement_goal_plan_proposal_execution, CatalogueBoundGovernedExecutionFactory,
+    CataloguePlanStepDispatchFactory, CommittedTurn, GoalPlanAdvanceOutcome,
+    GoalPlanCoordinationTick, HostClock, HostContinuationInput, HostEventPage,
+    HostWorkspaceContextEntry, LiveHost, LiveHostEvent, LiveHostLimits, LiveOutputHub,
+    LiveOutputLimits, LiveOutputSubscriber, LocalCapabilityPreparationFactory,
     LocalCapabilityPreparationInput, LocalDispatchQueue, LocalExecutionAttempt,
     LocalExecutionPolicy, LocalExecutionWorker, LocalGovernedExecutionFactory, LocalTurnDispatcher,
     LocalWorkerError, PlanAdmissionPolicy, PlanDispatchOutcome, PlanDispatchTick,
@@ -870,26 +871,58 @@ impl DesktopHost {
                 }
             }
 
-            if let GoalPlanAdvanceOutcome::ReplanRequested {
-                decision:
-                    garive_runtime::GoalPlanDecision::ResolveFailedPlan {
-                        plan_id,
-                        plan_revision,
-                        ..
+            let replacement = match &outcome {
+                GoalPlanAdvanceOutcome::ReplanRequested {
+                    decision:
+                        garive_runtime::GoalPlanDecision::ResolveFailedPlan {
+                            plan_id,
+                            plan_revision,
+                            ..
+                        },
+                    admission_fact_id,
+                    ..
+                }
+                | GoalPlanAdvanceOutcome::AwaitingPolicy(
+                    garive_runtime::GoalPlanDecision::ProposeReplacement {
+                        source_plan_id: plan_id,
+                        source_plan_revision: plan_revision,
+                        admission_fact_id,
                     },
-                admission_fact_id,
-                ..
-            } = &outcome
-            {
-                if self.model_plan_proposer_reference.is_none() {
+                ) => Some((plan_id.clone(), *plan_revision, admission_fact_id.clone())),
+                _ => None,
+            };
+            if let Some((plan_id, plan_revision, admission_fact_id)) = replacement {
+                if let Some(reference) = self.model_plan_proposer_reference.as_deref() {
+                    let committed = start_replacement_goal_plan_proposal_execution(
+                        &self.database_path,
+                        &session,
+                        goal_id,
+                        &plan_id,
+                        plan_revision,
+                        &admission_fact_id,
+                        reference,
+                        &attempt.recorded_at,
+                        self.agent_catalogue.clone(),
+                    )
+                    .map_err(|_| DesktopHostError::ExecutionFailure)?;
+                    self.execute_committed(&committed, &attempt).await?;
+                    executions += 1;
+                    outcome = GoalPlanAdvanceOutcome::Committed(
+                        garive_runtime::GoalPlanDecision::ProposeReplacement {
+                            source_plan_id: plan_id.clone(),
+                            source_plan_revision: plan_revision,
+                            admission_fact_id: admission_fact_id.clone(),
+                        },
+                    );
+                } else {
                     if let Some(port) = self.plan_proposal_port.as_deref() {
                         propose_replacement_goal_plan_once(
                             &self.database_path,
                             &session,
                             goal_id,
-                            plan_id,
-                            *plan_revision,
-                            admission_fact_id,
+                            &plan_id,
+                            plan_revision,
+                            &admission_fact_id,
                             &attempt.recorded_at,
                             self.agent_catalogue.clone(),
                             port,
@@ -899,7 +932,7 @@ impl DesktopHost {
                         outcome = GoalPlanAdvanceOutcome::Committed(
                             garive_runtime::GoalPlanDecision::ProposeReplacement {
                                 source_plan_id: plan_id.clone(),
-                                source_plan_revision: *plan_revision,
+                                source_plan_revision: plan_revision,
                                 admission_fact_id: admission_fact_id.clone(),
                             },
                         );
