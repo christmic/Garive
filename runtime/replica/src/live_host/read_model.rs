@@ -3,7 +3,10 @@ use std::collections::BTreeMap;
 use garive_ledger::{AgentInstanceId, DurableFact, SessionId};
 use serde::Deserialize;
 
-use super::{HostReadLimits, InstalledAgent, LiveHostError, SessionSummaryV1, SessionViewV1};
+use super::{
+    internal_turn::InternalPlannerTurns, HostReadLimits, InstalledAgent, LiveHostError,
+    SessionSummaryV1, SessionViewV1,
+};
 
 const MAX_SAFE_JSON_INTEGER: u64 = 9_007_199_254_740_991;
 
@@ -39,8 +42,12 @@ pub(super) fn project_session(
         return Err(LiveHostError::CorruptState);
     }
 
+    let internal = InternalPlannerTurns::from_facts(facts)?;
     let mut turns: BTreeMap<String, TurnProjection> = BTreeMap::new();
     for fact in &facts[1..] {
+        if internal.contains_fact(fact) {
+            continue;
+        }
         let kind = fact.kind.as_str();
         if !matches!(
             kind,

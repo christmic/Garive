@@ -14,18 +14,23 @@ use garive_goal::{
     GoalBoundsV1, GoalCapabilityReference, GoalCriterion, GoalCriterionId, GoalDefinitionV1,
     GoalId, GoalScopeV1,
 };
-use garive_ledger::{CanonicalPayload, FactDraft, FactId, FactKind, SessionId, ToolInvocationId};
+use garive_ledger::{
+    AgentDefinitionId, AgentDefinitionRevision, AgentInstanceId, CanonicalPayload, FactDraft,
+    FactId, FactKind, SessionId, ToolInvocationId,
+};
 use garive_llm::{ModelItem, TokenCount};
 use garive_plan::{
     PlanBoundsV1, PlanCapabilityReference, PlanDefinitionV1, PlanId, PlanStepId, PlanStepV1,
 };
 use garive_runtime::{
-    commit_goal_command, commit_plan_command, plan_core_terminal, plan_create_goal,
-    plan_propose_plan, ActivityProjectionLimits, CommittedTurn, CoreTerminalContext,
-    EffectiveRuntimeLimits, GoalCommandAuthority, GoalCommandAuthorityError, GoalCommandContext,
-    HostClock, HostContinuationInput, HostReadLimits, InstalledActivityCatalogue,
-    InstalledActivityDescriptor, InstalledAgent, LiveHost, LiveHostError, LiveHostLimits,
-    LiveHostServer, PlanCommandContext, SqliteLedger, TurnDispatchError, TurnDispatcher,
+    commit_goal_command, commit_plan_command, commit_planned_turn, plan_core_terminal,
+    plan_create_goal, plan_propose_plan, plan_start_plan_proposal_execution,
+    ActivityProjectionLimits, CommittedTurn, CoreTerminalContext, EffectiveRuntimeLimits,
+    GoalCommandAuthority, GoalCommandAuthorityError, GoalCommandContext, HostClock,
+    HostContinuationInput, HostReadLimits, InstalledActivityCatalogue, InstalledActivityDescriptor,
+    InstalledAgent, LiveHost, LiveHostError, LiveHostLimits, LiveHostServer, PlanCommandContext,
+    RuntimeCommandId, SqliteLedger, StartPlanProposalExecutionCommand, StartTurnCommand,
+    TurnDispatchError, TurnDispatcher,
 };
 use serde_json::Value;
 use tempfile::TempDir;
@@ -1023,6 +1028,104 @@ fn event_projection_advances_over_gaps_and_replays_terminal_text() {
         restarted.get_timeline(&session.session_id, 0, 10).unwrap(),
         timeline
     );
+}
+
+#[test]
+fn public_session_surfaces_exclude_internal_planner_turns_and_content() {
+    let harness = Harness::new(64);
+    let installed = installed();
+    let session = harness
+        .host
+        .create_session("planner-private", "definition-main")
+        .unwrap();
+    let session_id = SessionId::try_from(session.session_id.as_str()).unwrap();
+    let planned = plan_start_plan_proposal_execution(
+        &StartPlanProposalExecutionCommand {
+            start: StartTurnCommand {
+                command_id: RuntimeCommandId::new("planner-private-start").unwrap(),
+                session_id: session_id.clone(),
+                agent_instance_id: AgentInstanceId::try_from(session.agent_instance_id.as_str())
+                    .unwrap(),
+                definition_id: AgentDefinitionId::try_from(installed.definition_id.as_str())
+                    .unwrap(),
+                definition_revision: AgentDefinitionRevision::try_from(
+                    installed.definition_revision.as_str(),
+                )
+                .unwrap(),
+                snapshot_digest: installed.snapshot_digest,
+                trusted_input: "planner-secret-request".into(),
+                limits: installed.runtime_limits,
+                recorded_at: NOW.into(),
+            },
+            goal_id: "goal-private".into(),
+            goal_revision: 1,
+            goal_definition_digest: "a".repeat(64),
+            expected_session_version: 1,
+            proposer_reference: "planner:test-v1".into(),
+            output_schema_digest: "b".repeat(64),
+        },
+        1,
+    )
+    .unwrap();
+    let mut ledger = SqliteLedger::open(&harness.database).unwrap();
+    commit_planned_turn(&mut ledger, session_id.clone(), 1, &planned).unwrap();
+    let usage = UsageSummary {
+        input_tokens: TokenCount::Known(1),
+        output_tokens: TokenCount::Known(1),
+        estimated: false,
+    };
+    let terminal = plan_core_terminal(
+        &CoreTerminalContext {
+            turn_id: planned.turn_id.clone(),
+            execution_id: planned.execution_id.clone().unwrap(),
+            recorded_at: NOW.into(),
+        },
+        &ExecutionReport {
+            outcome: AgentOutcome::Completed {
+                response_items: vec![ModelItem::Text {
+                    text: "planner-secret-result".into(),
+                }],
+                usage,
+            },
+            completed_iterations: 1,
+            usage,
+        },
+    )
+    .unwrap();
+    ledger.commit(session_id, 2, terminal).unwrap();
+    drop(ledger);
+
+    let public = harness
+        .host
+        .start_turn("ordinary-public", &session.session_id, "visible-user-input")
+        .unwrap();
+    let view = harness.host.get_session(&session.session_id).unwrap();
+    assert_eq!(view.session.turn_count, 1);
+    assert_eq!(
+        view.session.latest_turn_id.as_deref(),
+        Some(public.turn_id.as_str())
+    );
+    let timeline = harness
+        .host
+        .get_timeline(&session.session_id, 0, 8)
+        .unwrap();
+    assert_eq!(timeline.items.len(), 1);
+    assert_eq!(timeline.items[0].turn_id, public.turn_id);
+    let events = harness
+        .host
+        .read_event_page(&session.session_id, 0)
+        .unwrap();
+    assert!(events
+        .events
+        .iter()
+        .all(|event| event.turn_id != planned.turn_id.as_str()));
+    let encoded = format!(
+        "{} {:?}",
+        serde_json::to_string(&(view, timeline)).unwrap(),
+        events.events
+    );
+    assert!(!encoded.contains("planner-secret"), "{encoded}");
+    assert!(!encoded.contains(planned.turn_id.as_str()), "{encoded}");
 }
 
 #[test]

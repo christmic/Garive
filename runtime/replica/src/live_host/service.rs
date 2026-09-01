@@ -28,14 +28,15 @@ use crate::{
 };
 
 use super::{
-    completion_text, project_activities, project_fact, AgentDefinitionPageV1,
-    AgentDefinitionSummary, AgentDefinitionSummaryV1, CommittedTurn, CreateSessionResponse,
-    GoalCommandAuthority, GoalCommandAuthorityError, GoalCommandResponseV1, GoalPageV1,
-    GoalSummaryV1, HostArtifact, HostArtifactPage, HostClock, HostContinuationInput, HostEventPage,
-    HostReadLimits, HostWorkspaceAttachment, HostWorkspaceContextEntry, HostWorkspaceDetachment,
-    InstalledAgent, LiveHostError, LiveHostEvent, LiveHostLimits, LiveHostState, PlanPageV1,
-    PlanSummaryV1, SessionPageV1, SessionSummary, SessionViewV1, TurnCommandResponse,
-    TurnDispatcher, TurnSuspensionView, TurnTimelineItem, TurnTimelinePage, TurnTimelinePageV1,
+    completion_text, internal_turn::InternalPlannerTurns, project_activities, project_fact,
+    AgentDefinitionPageV1, AgentDefinitionSummary, AgentDefinitionSummaryV1, CommittedTurn,
+    CreateSessionResponse, GoalCommandAuthority, GoalCommandAuthorityError, GoalCommandResponseV1,
+    GoalPageV1, GoalSummaryV1, HostArtifact, HostArtifactPage, HostClock, HostContinuationInput,
+    HostEventPage, HostReadLimits, HostWorkspaceAttachment, HostWorkspaceContextEntry,
+    HostWorkspaceDetachment, InstalledAgent, LiveHostError, LiveHostEvent, LiveHostLimits,
+    LiveHostState, PlanPageV1, PlanSummaryV1, SessionPageV1, SessionSummary, SessionViewV1,
+    TurnCommandResponse, TurnDispatcher, TurnSuspensionView, TurnTimelineItem, TurnTimelinePage,
+    TurnTimelinePageV1,
 };
 use super::{read_cursor, read_model, timeline_projection};
 
@@ -1594,6 +1595,13 @@ impl LiveHost {
             .saturating_add(self.state.limits.event_batch_size)
             .min(watermark.max_position);
         let activity_enabled = self.state.limits.activity.is_some();
+        let planner_kinds =
+            BTreeSet::from([FactKind::new("plan.proposal.requested")
+                .map_err(|_| LiveHostError::CorruptState)?]);
+        let planner_facts = ledger
+            .read_facts(&session_id, 0, through, Some(&planner_kinds))
+            .map_err(map_sqlite)?;
+        let internal = InternalPlannerTurns::from_facts(&planner_facts)?;
         let facts = ledger
             .read_facts(
                 &session_id,
@@ -1615,6 +1623,9 @@ impl LiveHost {
         };
         let mut events = Vec::new();
         for fact in facts.iter().filter(|fact| fact.position > after_position) {
+            if internal.contains_fact(fact) {
+                continue;
+            }
             if let Some(activity) = activities
                 .as_ref()
                 .and_then(|items| items.get(&fact.position))

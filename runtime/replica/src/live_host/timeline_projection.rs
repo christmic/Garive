@@ -5,6 +5,7 @@ use serde::Deserialize;
 use sha2::{Digest, Sha256};
 
 use super::{
+    internal_turn::InternalPlannerTurns,
     projection,
     timeline_prompt::{self, Interaction},
     HostActivity, HostReadLimits, LiveHostError, SuspensionViewV1, TurnTimelineItemV1,
@@ -49,9 +50,16 @@ pub(super) fn project_timeline(
         return Err(LiveHostError::ReadBoundExceeded);
     }
     verify_prefix(session_id, observed_max_position, facts)?;
-    let interactions = timeline_prompt::interactions(facts, limits)?;
+    let internal = InternalPlannerTurns::from_facts(facts)?;
+    internal.remove_activities(&mut activities);
+    let public_facts = facts
+        .iter()
+        .filter(|fact| !internal.contains_fact(fact))
+        .cloned()
+        .collect::<Vec<_>>();
+    let interactions = timeline_prompt::interactions(&public_facts, limits)?;
     let mut turns = BTreeMap::<String, Turn>::new();
-    for fact in facts.iter().skip(1) {
+    for fact in public_facts.iter().skip(1) {
         let Some(turn_id) = fact.turn_id.as_ref().map(|value| value.as_str()) else {
             if is_public_lifecycle(fact.kind.as_str()) {
                 return Err(LiveHostError::CorruptState);
