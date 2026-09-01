@@ -14,14 +14,16 @@ use crate::{
 
 use super::{palette, primitives::truncate_display, safe_text, style::Palette};
 
+mod row_layout;
+
+use row_layout::{has_detail, InspectorRowLayout};
+
 pub(super) const WIDE_WIDTH: u16 = 32;
-const ENTRY_ROWS: u16 = 2;
 
 #[derive(Clone, Debug)]
 struct Geometry {
     inner: Rect,
-    start: usize,
-    end: usize,
+    rows: InspectorRowLayout,
 }
 
 pub(super) fn wide_area(area: Rect) -> Option<Rect> {
@@ -66,17 +68,13 @@ pub(super) fn render(
     if projection.entries.is_empty() {
         Line::styled(empty_copy(model), colors.muted).render(geometry.inner, buffer);
     } else {
-        for (offset, entry) in projection.entries[geometry.start..geometry.end]
-            .iter()
-            .enumerate()
-        {
-            let index = geometry.start + offset;
-            let y = geometry.inner.y + u16::try_from(offset).unwrap_or(u16::MAX) * ENTRY_ROWS;
+        for visible in &geometry.rows.entries {
+            let entry = &projection.entries[visible.index];
             render_entry(
                 entry,
-                index == model.inspector_selection(),
+                visible.index == model.inspector_selection(),
                 colors,
-                Rect::new(geometry.inner.x, y, geometry.inner.width, ENTRY_ROWS),
+                visible.area,
                 buffer,
             );
         }
@@ -94,15 +92,7 @@ pub(super) fn render(
 
 pub(super) fn selection_at(model: &AppModel, area: Rect, column: u16, row: u16) -> Option<usize> {
     let geometry = geometry(model, area);
-    if column < geometry.inner.x
-        || column >= geometry.inner.right()
-        || row < geometry.inner.y
-        || row >= geometry.inner.bottom().saturating_sub(1)
-    {
-        return None;
-    }
-    let index = geometry.start + usize::from((row - geometry.inner.y) / ENTRY_ROWS);
-    (index < geometry.end).then_some(index)
+    geometry.rows.selection_at(column, row)
 }
 
 pub(super) fn linear_text(model: &AppModel) -> String {
@@ -143,9 +133,14 @@ fn geometry(model: &AppModel, area: Rect) -> Geometry {
         .padding(Padding::new(1, 1, 0, 0))
         .inner(area);
     let projection = model.inspector_projection();
-    let capacity = usize::from(inner.height.saturating_sub(1) / ENTRY_ROWS);
-    let (start, end) = projection.window(model.inspector_selection(), capacity);
-    Geometry { inner, start, end }
+    let rows = InspectorRowLayout::resolve(inner, &projection.entries, model.inspector_selection());
+    Geometry { inner, rows }
+}
+
+pub(super) fn desired_height(model: &AppModel) -> u16 {
+    row_layout::desired_rows(&model.inspector_projection().entries)
+        .saturating_add(3)
+        .clamp(8, 18)
 }
 
 fn render_entry(
@@ -173,7 +168,7 @@ fn render_entry(
         ),
     ])
     .render(Rect::new(area.x, area.y, area.width, 1), buffer);
-    if area.height > 1 && !detail_repeats_label(&entry.label, &entry.detail) {
+    if area.height > 1 && has_detail(entry) {
         Line::styled(
             format!(
                 "    {}",
@@ -205,15 +200,6 @@ fn footer_copy(model: &AppModel, width: u16) -> String {
     } else {
         truncate_display(close, width)
     }
-}
-
-fn detail_repeats_label(label: &str, detail: &str) -> bool {
-    let detail = detail.trim();
-    !detail.is_empty()
-        && label
-            .trim()
-            .to_lowercase()
-            .ends_with(&format!("· {}", detail.to_lowercase()))
 }
 
 fn empty_copy(model: &AppModel) -> &'static str {
@@ -269,17 +255,5 @@ mod tests {
         let copy = footer_copy(&model, 28);
         assert!(copy.ends_with("Esc close"));
         assert!(unicode_width::UnicodeWidthStr::width(copy.as_str()) <= 28);
-    }
-
-    #[test]
-    fn completed_detail_is_not_repeated_under_completed_label() {
-        assert!(detail_repeats_label(
-            "Agent action · completed",
-            "Completed"
-        ));
-        assert!(!detail_repeats_label(
-            "Running tests",
-            "cargo test --workspace"
-        ));
     }
 }

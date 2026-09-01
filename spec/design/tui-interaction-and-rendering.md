@@ -406,7 +406,11 @@ consume the same ordered `InspectorEntry` projection, visible window, and
 typed activation. `Tab`/`Shift+Tab` retain their global focus-cycle meaning;
 arrows and `Home`/`End` move selection, `Enter` activates, and `Esc` closes and
 restores prior page focus. Variants change only through typed `/inspect`
-commands.
+commands. Visual entries use content-driven height: a repeated state already
+present in the label is not emitted again as an empty two-row slot, while an
+independent safe detail receives its own muted row. One row-layout component
+owns the visible window and pointer cells, so compact and wide modes cannot
+select a row the user did not see.
 
 When a focused, single-line composer draft begins literally with `/`, is at
 most 128 bytes, and is an exact case-folded prefix of a catalog input, a
