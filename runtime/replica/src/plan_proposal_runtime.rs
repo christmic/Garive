@@ -16,10 +16,10 @@ use sha2::{Digest, Sha256};
 use crate::{
     bind_completed_plan_proposal_result, commit_plan_command, commit_planned_turn,
     parse_bound_plan_proposal_result, plan_proposal_output_schema, plan_propose_plan,
-    plan_start_plan_proposal_execution, reconstruct_goal, reconstruct_plan_graph,
-    BoundPlanProposalResult, CommittedTurn, PlanCommandContext, PlanRuntimeError,
-    RuntimeAgentCatalogue, RuntimeCommandId, SqliteLedger, StartPlanProposalExecutionCommand,
-    StartTurnCommand,
+    plan_start_plan_proposal_execution, plan_start_plan_replan_proposal_execution,
+    reconstruct_goal, reconstruct_plan_graph, BoundPlanProposalResult, CommittedTurn,
+    PlanCommandContext, PlanRuntimeError, RuntimeAgentCatalogue, RuntimeCommandId, SqliteLedger,
+    StartPlanProposalExecutionCommand, StartPlanReplanProposalExecutionCommand, StartTurnCommand,
 };
 
 /// Read-only Goal content and ceilings exposed to a configured planner.
@@ -147,16 +147,34 @@ pub async fn commit_completed_plan_proposal_once(
     let content = parse_bound_plan_proposal_result(&bound)
         .map_err(|_| PlanProposalRuntimeError::ProposalFailed)?;
     let goal_id = bound.goal_id.clone();
+    let replan = bound.replan.clone();
+    let binding_fact_id = bound.binding_fact_id.clone();
     let port = BoundResultPort { bound, content };
-    propose_initial_goal_plan_once(
-        database_path,
-        session_id,
-        &goal_id,
-        recorded_at,
-        catalogue,
-        &port,
-    )
-    .await
+    if let Some(replan) = replan {
+        propose_replacement_goal_plan_at_prefix(
+            database_path,
+            session_id,
+            &goal_id,
+            &replan.source_plan_id,
+            replan.source_plan_revision,
+            &replan.admission_fact_id,
+            Some(&binding_fact_id),
+            recorded_at,
+            catalogue,
+            &port,
+        )
+        .await
+    } else {
+        propose_initial_goal_plan_once(
+            database_path,
+            session_id,
+            &goal_id,
+            recorded_at,
+            catalogue,
+            &port,
+        )
+        .await
+    }
 }
 
 struct BoundResultPort {
@@ -171,10 +189,21 @@ impl PlanProposalPort for BoundResultPort {
 
     fn propose<'a>(&'a self, request: &'a PlanProposalRequest) -> PlanProposalFuture<'a> {
         Box::pin(async move {
+            let replan_matches = match (&request.replan, &self.bound.replan) {
+                (None, None) => true,
+                (Some(request), Some(bound)) => {
+                    request.admission_fact_id == bound.admission_fact_id
+                        && request.source_plan_id == bound.source_plan_id
+                        && request.source_plan_revision == bound.source_plan_revision
+                        && request.source_plan_definition_digest
+                            == bound.source_plan_definition_digest
+                }
+                _ => false,
+            };
             if request.goal_id != self.bound.goal_id
                 || request.goal_revision != self.bound.goal_revision
                 || request.goal_definition_digest != self.bound.goal_definition_digest
-                || request.replan.is_some()
+                || !replan_matches
             {
                 Err(PlanProposalPortError::InvalidOutput)
             } else {
@@ -326,6 +355,178 @@ pub fn start_initial_goal_plan_proposal_execution(
         definition_id: text(&opened_value, "definition_id")?.into(),
         definition_revision: text(&opened_value, "definition_revision")?.into(),
         snapshot_digest: installation.snapshot().snapshot_digest().into(),
+        session_version: result.session_version,
+        committed_position: *result
+            .positions
+            .last()
+            .ok_or(PlanProposalRuntimeError::CorruptState)?,
+    })
+}
+
+/// Starts or reconstructs one durable model-backed admitted replan Execution.
+#[allow(clippy::too_many_arguments)]
+pub fn start_replacement_goal_plan_proposal_execution(
+    database_path: &Path,
+    session_id: &SessionId,
+    goal_id: &str,
+    source_plan_id: &str,
+    source_plan_revision: u64,
+    admission_fact_id: &str,
+    proposer_reference: &str,
+    recorded_at: &str,
+    catalogue: Arc<RuntimeAgentCatalogue>,
+) -> Result<CommittedTurn, PlanProposalRuntimeError> {
+    if goal_id.is_empty()
+        || source_plan_id.is_empty()
+        || source_plan_revision == 0
+        || admission_fact_id.is_empty()
+        || proposer_reference.is_empty()
+        || chrono::DateTime::parse_from_rfc3339(recorded_at).is_err()
+    {
+        return Err(PlanProposalRuntimeError::InvalidInput);
+    }
+    let mut ledger =
+        SqliteLedger::open(database_path).map_err(|_| PlanProposalRuntimeError::CorruptState)?;
+    let watermark = ledger
+        .session_watermark(session_id)
+        .map_err(|_| PlanProposalRuntimeError::CorruptState)?
+        .ok_or(PlanProposalRuntimeError::CorruptState)?;
+    let facts = ledger
+        .read_facts(session_id, 0, watermark.max_position, None)
+        .map_err(|_| PlanProposalRuntimeError::CorruptState)?;
+    let opened = session_opened(&facts)?;
+    let opened_value = serde_json::from_str::<serde_json::Value>(opened.payload.as_json())
+        .map_err(|_| PlanProposalRuntimeError::CorruptState)?;
+    let existing = facts
+        .iter()
+        .filter(|fact| fact.kind.as_str() == "plan.replan.proposal.requested")
+        .filter_map(|fact| {
+            serde_json::from_str::<serde_json::Value>(fact.payload.as_json())
+                .ok()
+                .filter(|value| {
+                    value
+                        .get("admission_fact_id")
+                        .and_then(serde_json::Value::as_str)
+                        == Some(admission_fact_id)
+                })
+                .map(|value| (fact, value))
+        })
+        .collect::<Vec<_>>();
+    if let [(fact, value)] = existing.as_slice() {
+        if text(value, "goal_id")? != goal_id
+            || text(value, "source_plan_id")? != source_plan_id
+            || value
+                .get("source_plan_revision")
+                .and_then(serde_json::Value::as_u64)
+                != Some(source_plan_revision)
+            || text(value, "proposer_reference")? != proposer_reference
+        {
+            return Err(PlanProposalRuntimeError::CorruptState);
+        }
+        return existing_committed_turn(&ledger, session_id, &facts, fact, value, &opened_value);
+    }
+    if !existing.is_empty() {
+        return Err(PlanProposalRuntimeError::CorruptState);
+    }
+    let prepared = prepare_replan_at_admission_prefix(
+        &ledger,
+        session_id,
+        goal_id,
+        source_plan_id,
+        source_plan_revision,
+        admission_fact_id,
+        None,
+        &catalogue,
+    )?;
+    let replan = prepared
+        .request
+        .replan
+        .as_ref()
+        .ok_or(PlanProposalRuntimeError::CorruptState)?;
+    let schema = plan_proposal_output_schema();
+    let prompt = CanonicalPayload::from_value(&serde_json::json!({
+        "contract":"garive.plan-replan-proposal-request", "version":1,
+        "goal":{"goal_id":prepared.request.goal_id,
+            "goal_revision":prepared.request.goal_revision,
+            "goal_definition_digest":prepared.request.goal_definition_digest,
+            "objective":prepared.request.objective,
+            "criterion_ids":prepared.request.criterion_ids,
+            "available_capabilities":prepared.request.available_capabilities,
+            "max_total_attempts":prepared.request.max_total_attempts},
+        "replan":{"admission_fact_id":replan.admission_fact_id,
+            "policy_reference":replan.policy_reference,
+            "source_plan_id":replan.source_plan_id,
+            "source_plan_revision":replan.source_plan_revision,
+            "source_plan_definition_digest":replan.source_plan_definition_digest,
+            "source_steps":replan.source_steps,
+            "completed_step_ids":replan.completed_step_ids,
+            "failed_step_ids":replan.failed_step_ids},
+        "output":{"contract":"garive.plan-proposal-topology","version":1,
+            "schema_digest":schema.digest}
+    }))
+    .map_err(|_| PlanProposalRuntimeError::CorruptState)?;
+    let command_seed = format!("{}:{}", admission_fact_id, proposer_reference);
+    let planned = plan_start_plan_replan_proposal_execution(
+        &StartPlanReplanProposalExecutionCommand {
+            proposal: StartPlanProposalExecutionCommand {
+                start: StartTurnCommand {
+                    command_id: RuntimeCommandId::new(format!(
+                        "replanner-start-{}",
+                        &digest(command_seed.as_bytes())[..32]
+                    ))
+                    .map_err(|_| PlanProposalRuntimeError::InvalidInput)?,
+                    session_id: session_id.clone(),
+                    agent_instance_id: AgentInstanceId::try_from(text(
+                        &prepared.opened_value,
+                        "agent_instance_id",
+                    )?)
+                    .map_err(|_| PlanProposalRuntimeError::CorruptState)?,
+                    definition_id: AgentDefinitionId::try_from(text(
+                        &prepared.opened_value,
+                        "definition_id",
+                    )?)
+                    .map_err(|_| PlanProposalRuntimeError::CorruptState)?,
+                    definition_revision: AgentDefinitionRevision::try_from(text(
+                        &prepared.opened_value,
+                        "definition_revision",
+                    )?)
+                    .map_err(|_| PlanProposalRuntimeError::CorruptState)?,
+                    snapshot_digest: prepared.installation.snapshot().snapshot_digest().into(),
+                    trusted_input: prompt.as_json().into(),
+                    limits: prepared.installation.installed_agent().runtime_limits,
+                    recorded_at: recorded_at.into(),
+                },
+                goal_id: goal_id.into(),
+                goal_revision: prepared.request.goal_revision,
+                goal_definition_digest: prepared.request.goal_definition_digest.clone(),
+                expected_session_version: prepared.expected_session_version,
+                proposer_reference: proposer_reference.into(),
+                output_schema_digest: schema.digest,
+            },
+            admission_fact_id: admission_fact_id.into(),
+            source_plan_id: source_plan_id.into(),
+            source_plan_revision,
+            source_plan_definition_digest: replan.source_plan_definition_digest.clone(),
+        },
+        prepared.expected_through_position,
+    )
+    .map_err(|_| PlanProposalRuntimeError::CorruptState)?;
+    let result = commit_planned_turn(
+        &mut ledger,
+        session_id.clone(),
+        prepared.expected_session_version,
+        &planned,
+    )
+    .map_err(|_| PlanProposalRuntimeError::CorruptState)?;
+    Ok(CommittedTurn {
+        session_id: session_id.clone(),
+        turn_id: planned.turn_id,
+        execution_id: planned
+            .execution_id
+            .ok_or(PlanProposalRuntimeError::CorruptState)?,
+        definition_id: text(&prepared.opened_value, "definition_id")?.into(),
+        definition_revision: text(&prepared.opened_value, "definition_revision")?.into(),
+        snapshot_digest: prepared.installation.snapshot().snapshot_digest().into(),
         session_version: result.session_version,
         committed_position: *result
             .positions
@@ -493,6 +694,34 @@ pub async fn propose_replacement_goal_plan_once(
     catalogue: Arc<RuntimeAgentCatalogue>,
     port: &dyn PlanProposalPort,
 ) -> Result<ProposedGoalPlan, PlanProposalRuntimeError> {
+    propose_replacement_goal_plan_at_prefix(
+        database_path,
+        session_id,
+        goal_id,
+        source_plan_id,
+        source_plan_revision,
+        admission_fact_id,
+        None,
+        recorded_at,
+        catalogue,
+        port,
+    )
+    .await
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn propose_replacement_goal_plan_at_prefix(
+    database_path: &Path,
+    session_id: &SessionId,
+    goal_id: &str,
+    source_plan_id: &str,
+    source_plan_revision: u64,
+    admission_fact_id: &str,
+    binding_fact_id: Option<&str>,
+    recorded_at: &str,
+    catalogue: Arc<RuntimeAgentCatalogue>,
+    port: &dyn PlanProposalPort,
+) -> Result<ProposedGoalPlan, PlanProposalRuntimeError> {
     if goal_id.is_empty()
         || source_plan_id.is_empty()
         || source_plan_revision == 0
@@ -504,136 +733,32 @@ pub async fn propose_replacement_goal_plan_once(
     }
     let ledger =
         SqliteLedger::open(database_path).map_err(|_| PlanProposalRuntimeError::CorruptState)?;
-    let goal = reconstruct_goal(&ledger, session_id, goal_id)
-        .map_err(|_| PlanProposalRuntimeError::CorruptState)?;
-    if goal.snapshot.state() != GoalState::Active {
-        return Err(PlanProposalRuntimeError::CorruptState);
-    }
-    let graph = reconstruct_plan_graph(&ledger, session_id)
-        .map_err(|_| PlanProposalRuntimeError::CorruptState)?;
-    let source = graph
-        .get(&(source_plan_id.into(), source_plan_revision))
-        .filter(|plan| {
-            plan.snapshot.state() == PlanState::Running
-                && plan.active_claims.is_empty()
-                && plan.session_version == goal.session_version
-                && plan.through_position == goal.through_position
-        })
-        .ok_or(PlanProposalRuntimeError::CorruptState)?;
-    let source_definition = source.snapshot.definition();
-    let source_digest = source_definition
-        .digest()
-        .map_err(|_| PlanProposalRuntimeError::CorruptState)?;
-    let failed_step_ids = source_definition
-        .steps()
-        .iter()
-        .filter(|step| {
-            source
-                .snapshot
-                .step(step.step_id())
-                .map(|value| value.state())
-                == Some(StepState::Failed)
-        })
-        .map(|step| step.step_id().as_str().into())
-        .collect::<Vec<_>>();
-    if failed_step_ids.is_empty() {
-        return Err(PlanProposalRuntimeError::CorruptState);
-    }
-    let facts = ledger
-        .read_facts(session_id, 0, goal.through_position, None)
-        .map_err(|_| PlanProposalRuntimeError::CorruptState)?;
-    let admission = facts
-        .last()
-        .filter(|fact| {
-            fact.fact_id.as_str() == admission_fact_id
-                && fact.kind.as_str() == "plan.replan.admitted"
-        })
-        .ok_or(PlanProposalRuntimeError::CorruptState)?;
-    let admission_value = serde_json::from_str::<serde_json::Value>(admission.payload.as_json())
-        .map_err(|_| PlanProposalRuntimeError::CorruptState)?;
-    let admitted_failed_step_ids = admission_value
-        .get("failed_step_ids")
-        .and_then(serde_json::Value::as_array)
-        .ok_or(PlanProposalRuntimeError::CorruptState)?
-        .iter()
-        .map(|value| {
-            value
-                .as_str()
-                .filter(|value| !value.is_empty())
-                .map(str::to_owned)
-                .ok_or(PlanProposalRuntimeError::CorruptState)
-        })
-        .collect::<Result<Vec<_>, _>>()?;
-    let goal_digest = goal
-        .snapshot
-        .definition()
-        .digest()
-        .map_err(|_| PlanProposalRuntimeError::CorruptState)?;
-    if text(&admission_value, "source_plan_id")? != source_plan_id
-        || admission_value
-            .get("source_plan_revision")
-            .and_then(serde_json::Value::as_u64)
-            != Some(source_plan_revision)
-        || text(&admission_value, "source_plan_definition_digest")? != source_digest
-        || text(&admission_value, "goal_id")? != goal_id
-        || admission_value
-            .get("goal_revision")
-            .and_then(serde_json::Value::as_u64)
-            != Some(goal.snapshot.revision())
-        || text(&admission_value, "goal_definition_digest")? != goal_digest
-        || admitted_failed_step_ids != failed_step_ids
-    {
-        return Err(PlanProposalRuntimeError::CorruptState);
-    }
-    let installation = resolve_session_installation(&ledger, session_id, &catalogue)?;
-    let goal_definition = goal.snapshot.definition();
-    let available_capabilities = goal_definition
-        .capability_references()
-        .iter()
-        .map(|capability| {
-            PlanCapabilityReference::new(capability.name(), capability.exact_revision())
-                .map_err(|_| PlanProposalRuntimeError::CorruptState)
-        })
-        .collect::<Result<BTreeSet<_>, _>>()?;
-    let request = PlanProposalRequest {
-        goal_id: goal_id.into(),
-        goal_revision: goal.snapshot.revision(),
-        goal_definition_digest: goal_digest.clone(),
-        objective: goal_definition.objective().into(),
-        criterion_ids: goal_definition
-            .criteria()
-            .iter()
-            .map(|criterion| criterion.criterion_id().as_str().into())
-            .collect(),
-        available_capabilities: available_capabilities.clone(),
-        max_total_attempts: goal_definition.bounds().max_attempts(),
-        replan: Some(PlanReplanContext {
-            admission_fact_id: admission_fact_id.into(),
-            policy_reference: text(&admission_value, "policy_reference")?.into(),
-            source_plan_id: source_plan_id.into(),
-            source_plan_revision,
-            source_plan_definition_digest: source_digest,
-            source_steps: source_definition.steps().to_vec(),
-            completed_step_ids: source_definition
-                .steps()
-                .iter()
-                .filter(|step| {
-                    source
-                        .snapshot
-                        .step(step.step_id())
-                        .map(|value| value.state())
-                        == Some(StepState::Completed)
-                })
-                .map(|step| step.step_id().as_str().into())
-                .collect(),
-            failed_step_ids,
-        }),
-    };
-    let expected_session_version = goal.session_version;
-    let expected_through_position = goal.through_position;
-    let agent_snapshot_digest = installation.snapshot().snapshot_digest().to_owned();
-    let tool_catalogue_digest = installation.tool_catalogue_digest().to_owned();
-    let safety_policy_revision = installation.snapshot().governance().exact_revision.clone();
+    let prepared = prepare_replan_at_admission_prefix(
+        &ledger,
+        session_id,
+        goal_id,
+        source_plan_id,
+        source_plan_revision,
+        admission_fact_id,
+        binding_fact_id,
+        &catalogue,
+    )?;
+    let request = prepared.request;
+    let expected_session_version = prepared.expected_session_version;
+    let expected_through_position = prepared.expected_through_position;
+    let agent_snapshot_digest = prepared
+        .installation
+        .snapshot()
+        .snapshot_digest()
+        .to_owned();
+    let tool_catalogue_digest = prepared.installation.tool_catalogue_digest().to_owned();
+    let safety_policy_revision = prepared
+        .installation
+        .snapshot()
+        .governance()
+        .exact_revision
+        .clone();
+    let available_capabilities = request.available_capabilities.clone();
     drop(ledger);
     let content = port
         .propose(&request)
@@ -707,6 +832,192 @@ pub async fn propose_replacement_goal_plan_once(
         plan_id: source_plan_id.into(),
         plan_revision: target_revision,
         plan_definition_digest,
+    })
+}
+
+struct PreparedReplanProposal {
+    request: PlanProposalRequest,
+    expected_session_version: u64,
+    expected_through_position: u64,
+    installation: Arc<crate::RuntimeAgentInstallation>,
+    opened_value: serde_json::Value,
+}
+
+#[allow(clippy::too_many_arguments)]
+fn prepare_replan_at_admission_prefix(
+    ledger: &SqliteLedger,
+    session_id: &SessionId,
+    goal_id: &str,
+    source_plan_id: &str,
+    source_plan_revision: u64,
+    admission_fact_id: &str,
+    binding_fact_id: Option<&str>,
+    catalogue: &RuntimeAgentCatalogue,
+) -> Result<PreparedReplanProposal, PlanProposalRuntimeError> {
+    let goal = reconstruct_goal(ledger, session_id, goal_id)
+        .map_err(|_| PlanProposalRuntimeError::CorruptState)?;
+    if goal.snapshot.state() != GoalState::Active {
+        return Err(PlanProposalRuntimeError::CorruptState);
+    }
+    let graph = reconstruct_plan_graph(ledger, session_id)
+        .map_err(|_| PlanProposalRuntimeError::CorruptState)?;
+    let source = graph
+        .get(&(source_plan_id.into(), source_plan_revision))
+        .filter(|plan| {
+            plan.snapshot.state() == PlanState::Running
+                && plan.active_claims.is_empty()
+                && plan.session_version == goal.session_version
+                && plan.through_position == goal.through_position
+        })
+        .ok_or(PlanProposalRuntimeError::CorruptState)?;
+    let source_definition = source.snapshot.definition();
+    let source_digest = source_definition
+        .digest()
+        .map_err(|_| PlanProposalRuntimeError::CorruptState)?;
+    let failed_step_ids = source_definition
+        .steps()
+        .iter()
+        .filter(|step| {
+            source
+                .snapshot
+                .step(step.step_id())
+                .map(|value| value.state())
+                == Some(StepState::Failed)
+        })
+        .map(|step| step.step_id().as_str().into())
+        .collect::<Vec<_>>();
+    if failed_step_ids.is_empty() {
+        return Err(PlanProposalRuntimeError::CorruptState);
+    }
+    let facts = ledger
+        .read_facts(session_id, 0, goal.through_position, None)
+        .map_err(|_| PlanProposalRuntimeError::CorruptState)?;
+    let admission = facts
+        .iter()
+        .find(|fact| {
+            fact.fact_id.as_str() == admission_fact_id
+                && fact.kind.as_str() == "plan.replan.admitted"
+        })
+        .ok_or(PlanProposalRuntimeError::CorruptState)?;
+    match binding_fact_id {
+        None if facts.last().map(|fact| &fact.fact_id) != Some(&admission.fact_id) => {
+            return Err(PlanProposalRuntimeError::CorruptState);
+        }
+        Some(binding_fact_id) => {
+            let binding = facts
+                .last()
+                .filter(|fact| {
+                    fact.fact_id.as_str() == binding_fact_id
+                        && fact.kind.as_str() == "plan.replan.proposal.result_bound"
+                })
+                .ok_or(PlanProposalRuntimeError::CorruptState)?;
+            let value = serde_json::from_str::<serde_json::Value>(binding.payload.as_json())
+                .map_err(|_| PlanProposalRuntimeError::CorruptState)?;
+            if text(&value, "admission_fact_id")? != admission_fact_id
+                || text(&value, "source_plan_id")? != source_plan_id
+                || value
+                    .get("source_plan_revision")
+                    .and_then(serde_json::Value::as_u64)
+                    != Some(source_plan_revision)
+            {
+                return Err(PlanProposalRuntimeError::CorruptState);
+            }
+        }
+        _ => {}
+    }
+    let admission_value = serde_json::from_str::<serde_json::Value>(admission.payload.as_json())
+        .map_err(|_| PlanProposalRuntimeError::CorruptState)?;
+    let admitted_failed_step_ids = admission_value
+        .get("failed_step_ids")
+        .and_then(serde_json::Value::as_array)
+        .ok_or(PlanProposalRuntimeError::CorruptState)?
+        .iter()
+        .map(|value| {
+            value
+                .as_str()
+                .filter(|value| !value.is_empty())
+                .map(str::to_owned)
+                .ok_or(PlanProposalRuntimeError::CorruptState)
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    let goal_definition = goal.snapshot.definition();
+    let goal_digest = goal_definition
+        .digest()
+        .map_err(|_| PlanProposalRuntimeError::CorruptState)?;
+    if text(&admission_value, "source_plan_id")? != source_plan_id
+        || admission_value
+            .get("source_plan_revision")
+            .and_then(serde_json::Value::as_u64)
+            != Some(source_plan_revision)
+        || text(&admission_value, "source_plan_definition_digest")? != source_digest
+        || text(&admission_value, "goal_id")? != goal_id
+        || admission_value
+            .get("goal_revision")
+            .and_then(serde_json::Value::as_u64)
+            != Some(goal.snapshot.revision())
+        || text(&admission_value, "goal_definition_digest")? != goal_digest
+        || admitted_failed_step_ids != failed_step_ids
+    {
+        return Err(PlanProposalRuntimeError::CorruptState);
+    }
+    let opened = session_opened(&facts)?;
+    let opened_value = serde_json::from_str::<serde_json::Value>(opened.payload.as_json())
+        .map_err(|_| PlanProposalRuntimeError::CorruptState)?;
+    let installation = catalogue
+        .resolve(
+            text(&opened_value, "definition_id")?,
+            text(&opened_value, "definition_revision")?,
+            text(&opened_value, "snapshot_digest")?,
+        )
+        .map_err(|_| PlanProposalRuntimeError::CorruptState)?
+        .clone();
+    let available_capabilities = goal_definition
+        .capability_references()
+        .iter()
+        .map(|capability| {
+            PlanCapabilityReference::new(capability.name(), capability.exact_revision())
+                .map_err(|_| PlanProposalRuntimeError::CorruptState)
+        })
+        .collect::<Result<BTreeSet<_>, _>>()?;
+    Ok(PreparedReplanProposal {
+        request: PlanProposalRequest {
+            goal_id: goal_id.into(),
+            goal_revision: goal.snapshot.revision(),
+            goal_definition_digest: goal_digest,
+            objective: goal_definition.objective().into(),
+            criterion_ids: goal_definition
+                .criteria()
+                .iter()
+                .map(|criterion| criterion.criterion_id().as_str().into())
+                .collect(),
+            available_capabilities,
+            max_total_attempts: goal_definition.bounds().max_attempts(),
+            replan: Some(PlanReplanContext {
+                admission_fact_id: admission_fact_id.into(),
+                policy_reference: text(&admission_value, "policy_reference")?.into(),
+                source_plan_id: source_plan_id.into(),
+                source_plan_revision,
+                source_plan_definition_digest: source_digest,
+                source_steps: source_definition.steps().to_vec(),
+                completed_step_ids: source_definition
+                    .steps()
+                    .iter()
+                    .filter(|step| {
+                        source
+                            .snapshot
+                            .step(step.step_id())
+                            .map(|value| value.state())
+                            == Some(StepState::Completed)
+                    })
+                    .map(|step| step.step_id().as_str().into())
+                    .collect(),
+                failed_step_ids,
+            }),
+        },
+        expected_session_version: goal.session_version,
+        expected_through_position: goal.through_position,
+        installation,
+        opened_value,
     })
 }
 
