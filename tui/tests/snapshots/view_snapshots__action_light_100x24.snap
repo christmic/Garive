@@ -6,13 +6,13 @@ expression: "frame(&action, Theme::Light, 100, 24)"
 
     › Summarize the release plan.
       ✓  Agent action · completed
-    ◆ Garive       ╭ Approval required ─────────────────────────────────────────╮
-      ## Release   │                                                            │
+                   ╭ Approval required ─────────────────────────────────────────╮
+                   │                                                            │
                    │  !  Review the public request before responding.           │
-      • Verify th  │  Create one bounded local file.                            │
-      • Ship with  │                                                            │
+                   │  Create one bounded local file.                            │
+                   │                                                            │
                    │  Choose                                                    │
-      cargo test   │  › true                                                    │
+                   │  › true                                                    │
                    │    false                                                   │
                    │  Enter true or false.                                      │
                    │                                                            │

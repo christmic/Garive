@@ -5,14 +5,14 @@ expression: "frame(&sessions, Theme::Mono, 100, 24)"
   Session 12  ·  Agent                                                               Agent running
 
     › Summarize the release plan.
-      ✓  Agent ac  ╭ Switch session ────────────────────────────────────────────╮
-    ◆ Garive       │                                                            │
-      ## Release   │  Filter  type to search                                    │
+                   ╭ Switch session ────────────────────────────────────────────╮
+                   │                                                            │
+                   │  Filter  type to search                                    │
                    │    Session 4 · Agent   ● running                           │
-      • Verify th  │    Session 5 · Agent   ● running                           │
-      • Ship with  │    Session 6 · Agent   ● running                           │
+                   │    Session 5 · Agent   ● running                           │
+                   │    Session 6 · Agent   ● running                           │
                    │    Session 7 · Agent   ● running                           │
-      cargo test   │    Session 8 · Agent   ● running                           │
+                   │    Session 8 · Agent   ● running                           │
                    │    Session 9 · Agent   ● running                           │
                    │    Session 10 · Agent   ● running                          │
                    │    Session 11 · Agent   ● running                          │

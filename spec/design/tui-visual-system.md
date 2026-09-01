@@ -55,7 +55,9 @@ so committed and live answers cannot diverge. `LiveCaret` alone combines
 availability, terminal state, and reduced motion before emitting its one-cell
 cue; answer renderers cannot append a private caret glyph.
 `ModalFrame` alone computes modal inner padding and paints the retained-workspace
-backdrop, two-cell horizontal halo, cleared popup, title, and rounded border.
+backdrop, full-width same-height quiet band, cleared popup, title, and rounded
+border. The quiet band removes horizontally clipped transcript fragments while
+leaving the rows above and below the modal available as dimmed context.
 CommandPalette, generic overlays, and the overlay Inspector cannot reproduce
 any part of that chrome locally.
 The shared Session identity/state presentation lives in `view/session.rs`;
@@ -266,10 +268,12 @@ Inspector and TurnNavigator may expose direct navigation, but the default
 transcript has no permanent position rail or hover preview.
 Modal geometry reserves the semantic ContextLine and Composer/HintLine
 boundary on standard terminals. The reservation contracts responsively on
-short terminals so at least the selected row and its actions remain visible. A modal may clear
-only its rectangle plus a two-cell same-height horizontal halo; it must not
-erase rows above or below, splice the ComposerDock, or hide the command
-palette action row. The command palette uses compact vertical chrome and a
+short terminals so at least the selected row and its actions remain visible. A
+modal clears its full retained-workspace width only for the rows occupied by
+its rectangle. It must not erase rows above or below, splice the ComposerDock,
+or hide the command palette action row. This same-height quiet band prevents
+partial words or glyphs from surviving beside the focused surface. The command
+palette uses compact vertical chrome and a
 fixed command column so all admitted rows fit at `160x28`. Its selected state
 uses only the shared two-cell `SelectionMarker`; the command and detail remain
 neutral, while every query-matching grapheme is bold. Unavailable detail keeps

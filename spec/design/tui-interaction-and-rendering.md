@@ -125,8 +125,9 @@ Focus is visible without relying on color. The Composer retains one stable
 frame and uses its caret, border token, and text marker to expose focus without
 changing geometry. Inspector and overlay selections use a textual marker plus
 terminal-native reverse style in monochrome. A modal dims the workspace,
-preserves it as visible context, and gives its active row a background or
-terminal-native reverse style.
+preserves the rows above and below it as visible context, clears a same-height
+full-width quiet band so clipped background fragments cannot compete for
+focus, and gives its active row a background or terminal-native reverse style.
 Background Host events never steal focus. A newly committed suspension
 opens its prompt only when its Session is selected; otherwise SessionSwitcher
 marks the Session as action-required and the terminal bell follows preference.
