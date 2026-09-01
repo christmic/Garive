@@ -400,6 +400,8 @@ pub struct TurnTimelineItemV1 {
     pub latest_position: u64,
     /// Stable public lifecycle state.
     pub state: String,
+    /// Whether a durable cancellation request is awaiting Turn termination.
+    pub cancellation_requested: bool,
     /// Exact verified first trusted-user input.
     pub user_text: String,
     /// Redacted terminal response text when completed.
@@ -712,6 +714,8 @@ pub struct TurnTimelineItem {
     pub latest_position: u64,
     /// Stable public lifecycle state.
     pub state: String,
+    /// Whether a durable cancellation request is awaiting Turn termination.
+    pub cancellation_requested: bool,
     /// Trusted user text bound to the first start.
     pub user_text: String,
     /// Redacted committed response projection when completed.

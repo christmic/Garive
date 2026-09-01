@@ -61,6 +61,7 @@ pub(super) fn project_timeline(
         match fact.kind.as_str() {
             "turn.started" => start_or_continue(&mut turns, turn_id, fact)?,
             "turn.input" => admit_input(&mut turns, turn_id, fact, limits)?,
+            "turn.cancel_requested" => request_cancel(&mut turns, turn_id, fact)?,
             "turn.suspended" => suspend(
                 &mut turns,
                 turn_id,
@@ -136,11 +137,34 @@ fn is_public_lifecycle(kind: &str) -> bool {
         kind,
         "turn.started"
             | "turn.input"
+            | "turn.cancel_requested"
             | "turn.suspended"
             | "turn.completed"
             | "turn.stopped"
             | "turn.failed"
     )
+}
+
+fn request_cancel(
+    turns: &mut BTreeMap<String, Turn>,
+    turn_id: &str,
+    fact: &DurableFact,
+) -> Result<(), LiveHostError> {
+    require_v1(fact)?;
+    let payload: CancelRequested = decode(fact)?;
+    if payload.command_id.is_empty()
+        || payload.requested_through_position == 0
+        || !matches!(
+            payload.reason.as_str(),
+            "user" | "deadline" | "shutdown" | "operator" | "policy"
+        )
+    {
+        return Err(LiveHostError::CorruptState);
+    }
+    let turn = running(turns, turn_id)?;
+    turn.cancellation_requested = true;
+    turn.latest_position = fact.position;
+    Ok(())
 }
 
 fn start_or_continue(
@@ -330,6 +354,7 @@ struct Turn {
     suspension: Option<SuspensionViewV1>,
     content_truncated: bool,
     pending_continuation: Option<String>,
+    cancellation_requested: bool,
 }
 
 impl Turn {
@@ -344,6 +369,7 @@ impl Turn {
             suspension: None,
             content_truncated: false,
             pending_continuation: None,
+            cancellation_requested: false,
         }
     }
 
@@ -363,6 +389,7 @@ impl Turn {
             started_position: self.started_position,
             latest_position: self.latest_position,
             state: self.state.to_owned(),
+            cancellation_requested: self.cancellation_requested && self.state == "running",
             user_text: user,
             completion_text: self.completion_text,
             suspension: self.suspension,
@@ -384,6 +411,13 @@ struct Input {
     input_kind: String,
     content: Content,
     suspension_id: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct CancelRequested {
+    command_id: String,
+    reason: String,
+    requested_through_position: u64,
 }
 
 #[derive(Deserialize)]

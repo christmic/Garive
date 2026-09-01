@@ -399,6 +399,9 @@ pub struct TurnTimelineItem {
     pub latest_position: u64,
     /// Stable public lifecycle state.
     pub state: String,
+    /// Whether a durable cancellation request is awaiting Turn termination.
+    #[serde(default)]
+    pub cancellation_requested: bool,
     /// Verified first trusted-user input.
     pub user_text: String,
     /// Redacted committed completion text.

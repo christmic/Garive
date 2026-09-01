@@ -2044,6 +2044,7 @@ fn project_timeline(
                         started_position: fact.position,
                         latest_position: fact.position,
                         state: "running".into(),
+                        cancellation_requested: false,
                         user_text: String::new(),
                         completion_text: None,
                         suspension: None,
@@ -2072,11 +2073,21 @@ fn project_timeline(
                     item.latest_position = fact.position;
                 }
             }
+            "turn.cancel_requested" => {
+                let _: Cancelled = decode_payload(fact)?;
+                let item = timeline_item(&mut items, turn_id)?;
+                if item.state != "running" {
+                    return Err(LiveHostError::CorruptState);
+                }
+                item.latest_position = fact.position;
+                item.cancellation_requested = true;
+            }
             "turn.suspended" | "turn.stopped" | "turn.failed" => {
                 let state = fact.kind.as_str().trim_start_matches("turn.");
                 let item = timeline_item(&mut items, turn_id)?;
                 item.latest_position = fact.position;
                 item.state = state.into();
+                item.cancellation_requested = false;
                 if state != "suspended" {
                     item.suspension = None;
                 }
@@ -2086,6 +2097,7 @@ fn project_timeline(
                 let item = timeline_item(&mut items, turn_id)?;
                 item.latest_position = fact.position;
                 item.state = "completed".into();
+                item.cancellation_requested = false;
                 item.completion_text = Some(text);
                 item.suspension = None;
                 item.content_truncated |= truncated;

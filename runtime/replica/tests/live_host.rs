@@ -1041,6 +1041,16 @@ fn cancellation_is_a_replayable_request_not_a_terminal_claim() {
         .cancel_turn("cancel-1", &session.session_id, &started.turn_id, 4)
         .unwrap();
     assert_eq!(cancelled.committed_position, 5);
+    let timeline = harness
+        .host
+        .get_timeline(&session.session_id, 0, 10)
+        .unwrap();
+    assert_eq!(timeline.items[0].state, "running");
+    assert!(timeline.items[0].cancellation_requested);
+    assert_eq!(
+        timeline.items[0].latest_position,
+        cancelled.committed_position
+    );
     assert_eq!(
         harness
             .host
@@ -1054,6 +1064,22 @@ fn cancellation_is_a_replayable_request_not_a_terminal_claim() {
             .cancel_turn("cancel-1", &session.session_id, &started.turn_id, 3)
             .unwrap_err(),
         LiveHostError::CommandConflict
+    );
+
+    let restarted = LiveHost::new(
+        &harness.database,
+        installed(),
+        harness.host.limits(),
+        Arc::new(FixedClock),
+        harness.dispatcher.clone(),
+    )
+    .unwrap();
+    assert!(
+        restarted
+            .get_timeline(&session.session_id, 0, 10)
+            .unwrap()
+            .items[0]
+            .cancellation_requested
     );
 }
 

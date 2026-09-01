@@ -69,6 +69,13 @@ back the command; C6 recovery owns the resulting open Execution.
 Cancellation is only a durable request. HTTP success does not claim that a
 running model or effect has stopped.
 
+H2 exposes `TurnTimelineItemV1.cancellation_requested` as an additive boolean.
+It is true only while the fixed durable prefix contains
+`turn.cancel_requested` for that still-running Turn and no terminal fact. The
+cancel fact advances the item's `latest_position`, so incremental pages and a
+fresh process both observe the request. Clients must still wait for
+stopped/completed/failed/suspended state before presenting terminal truth.
+
 ### Typed continuation value amendment
 
 The shipped Proto `ContinueTurnRequestV1.input = 4` remains a raw UTF-8 string.
