@@ -7,7 +7,7 @@ use std::{
     process::Command,
     sync::{
         atomic::{AtomicBool, AtomicUsize, Ordering},
-        Arc, Mutex,
+        Arc, Condvar, Mutex,
     },
     time::Duration,
 };
@@ -31,6 +31,48 @@ static LIVE_H4_TEST_GATE: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new
 
 impl HostClock for Clock {
     fn recorded_at(&self) -> String {
+        "2026-09-01T00:00:00Z".into()
+    }
+}
+
+#[derive(Default)]
+struct CancellationResponseGate {
+    armed: AtomicBool,
+    entered: AtomicBool,
+    released: AtomicBool,
+    lock: Mutex<()>,
+    release: Condvar,
+}
+
+impl CancellationResponseGate {
+    fn arm(&self) {
+        self.entered.store(false, Ordering::SeqCst);
+        self.released.store(false, Ordering::SeqCst);
+        self.armed.store(true, Ordering::SeqCst);
+    }
+
+    fn release(&self) {
+        self.released.store(true, Ordering::SeqCst);
+        self.release.notify_all();
+    }
+}
+
+impl HostClock for CancellationResponseGate {
+    fn recorded_at(&self) -> String {
+        if self.armed.swap(false, Ordering::SeqCst) {
+            self.entered.store(true, Ordering::SeqCst);
+            let mut guard = self.lock.lock().unwrap();
+            while !self.released.load(Ordering::SeqCst) {
+                let (next, timeout) = self
+                    .release
+                    .wait_timeout(guard, Duration::from_secs(15))
+                    .unwrap();
+                guard = next;
+                if timeout.timed_out() {
+                    break;
+                }
+            }
+        }
         "2026-09-01T00:00:00Z".into()
     }
 }
@@ -233,7 +275,7 @@ async fn shipping_tui_recovers_live_snapshot_then_converges_to_durable_truth() {
     server_stopped.await.unwrap().unwrap();
 }
 
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn shipping_tui_keeps_input_help_and_cancel_responsive_during_a_live_flood() {
     let _gate = LIVE_H4_TEST_GATE.lock().await;
     let temporary = tempfile::tempdir().unwrap();
@@ -247,6 +289,7 @@ async fn shipping_tui_keeps_input_help_and_cancel_responsive_during_a_live_flood
     })
     .unwrap();
     let dispatcher = Arc::new(CaptureDispatcher::default());
+    let cancellation_gate = Arc::new(CancellationResponseGate::default());
     let host = LiveHost::new_with_live_output(
         &database,
         installed(),
@@ -256,7 +299,7 @@ async fn shipping_tui_keeps_input_help_and_cancel_responsive_during_a_live_flood
             event_poll_interval_ms: 5,
             activity: None,
         },
-        Arc::new(Clock),
+        cancellation_gate.clone(),
         dispatcher.clone(),
         hub.clone(),
     )
@@ -272,6 +315,7 @@ async fn shipping_tui_keeps_input_help_and_cancel_responsive_during_a_live_flood
         )
         .unwrap();
     let committed = dispatcher.0.lock().unwrap().clone().unwrap();
+    cancellation_gate.arm();
     let mut sink = hub.event_sink();
     sink.emit(core_event(&committed, AgentEventKind::ExecutionStarted))
         .unwrap();
@@ -296,6 +340,9 @@ async fn shipping_tui_keeps_input_help_and_cancel_responsive_during_a_live_flood
     let redraw_seen = temporary.path().join("redraw-seen");
     let terminal_committed = temporary.path().join("terminal-committed");
     let help_seen = temporary.path().join("help-seen");
+    let requesting_seen = temporary.path().join("requesting-seen");
+    let host_accepted = temporary.path().join("host-accepted");
+    let accepted_seen = temporary.path().join("accepted-seen");
     let log = temporary.path().join("fairness.log");
     let state = temporary.path().join("state");
     let expect = tokio::task::spawn_blocking({
@@ -310,6 +357,9 @@ async fn shipping_tui_keeps_input_help_and_cancel_responsive_during_a_live_flood
             active.clone(),
             redraw_seen.clone(),
             terminal_committed.clone(),
+            requesting_seen.clone(),
+            host_accepted.clone(),
+            accepted_seen.clone(),
         ];
         move || run_fairness_expect(address, &session_id, &paths)
     });
@@ -372,6 +422,29 @@ async fn shipping_tui_keeps_input_help_and_cancel_responsive_during_a_live_flood
             help_seen.exists()
         );
     }
+    if tokio::time::timeout(Duration::from_secs(10), async {
+        while !requesting_seen.exists() {
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    })
+    .await
+    .is_err()
+    {
+        cancellation_gate.release();
+        let transcript = fs::read_to_string(&log).unwrap_or_default();
+        panic!(
+            "shipping TUI never rendered requesting cancellation; gate_entered={}, transcript={transcript:?}",
+            cancellation_gate.entered.load(Ordering::SeqCst)
+        );
+    }
+    tokio::time::timeout(Duration::from_secs(10), async {
+        while !cancellation_gate.entered.load(Ordering::SeqCst) {
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+    })
+    .await
+    .expect("cancel request did not reach the gated Host response");
+    cancellation_gate.release();
     let cancel_result = tokio::time::timeout(Duration::from_secs(2), async {
         loop {
             let snapshot = SqliteLedger::open(&database)
@@ -412,6 +485,8 @@ async fn shipping_tui_keeps_input_help_and_cancel_responsive_during_a_live_flood
             transcript.contains("draft-under-flood")
         );
     }
+    fs::write(&host_accepted, b"ready").unwrap();
+    wait_for(&accepted_seen).await;
     stop.store(true, Ordering::Relaxed);
     flood.await.unwrap();
     assert!(
@@ -445,6 +520,8 @@ async fn shipping_tui_keeps_input_help_and_cancel_responsive_during_a_live_flood
     }
     assert!(transcript.contains("draft-under-flood"));
     assert!(transcript.contains("Keyboard guide"));
+    assert!(transcript.contains("Requesting cancellation"));
+    assert!(transcript.contains("Cancellation accepted"));
     assert!(transcript.contains("stopped"));
     assert!(transcript.contains("\x1b[?1049h") && transcript.contains("\x1b[?1049l"));
     server_shutdown.send(()).unwrap();
@@ -544,7 +621,7 @@ fn run_expect(address: SocketAddr, session: &str, paths: &[PathBuf; 10], end_log
         .success()
 }
 
-fn run_fairness_expect(address: SocketAddr, session: &str, paths: &[PathBuf; 9]) -> i32 {
+fn run_fairness_expect(address: SocketAddr, session: &str, paths: &[PathBuf; 12]) -> i32 {
     Command::new("expect")
         .env("TERM", "xterm-256color")
         .env("GARIVE_TUI_BIN", env!("CARGO_BIN_EXE_garive-tui"))
@@ -559,6 +636,9 @@ fn run_fairness_expect(address: SocketAddr, session: &str, paths: &[PathBuf; 9])
         .env("GARIVE_FAIRNESS_ACTIVE", &paths[6])
         .env("GARIVE_FAIRNESS_REDRAW", &paths[7])
         .env("GARIVE_FAIRNESS_TERMINAL", &paths[8])
+        .env("GARIVE_FAIRNESS_REQUESTING", &paths[9])
+        .env("GARIVE_FAIRNESS_HOST_ACCEPTED", &paths[10])
+        .env("GARIVE_FAIRNESS_ACCEPTED", &paths[11])
         .args(["-c", FAIRNESS_EXPECT_SCRIPT])
         .status()
         .unwrap()
@@ -709,19 +789,34 @@ const FAIRNESS_EXPECT_SCRIPT: &str = r#"
     must "cancel" 33
     send "\033"
     mark $env(GARIVE_FAIRNESS_CANCELLED)
-    set timeout 10
-    wait_file $env(GARIVE_FAIRNESS_TERMINAL) 34
-    after 250
-    send "\011"
+    after 100
     send "\014"
-    must "\033\[2J" 36
-    must "stopped" 37
+    must "\033\[2J" 34
+    must "Requesting cancellation" 35
+    must "draft-under-flood" 36
+    mark $env(GARIVE_FAIRNESS_REQUESTING)
+    wait_file $env(GARIVE_FAIRNESS_HOST_ACCEPTED) 37
+    after 100
+    send "\014"
+    must "\033\[2J" 38
+    must "Cancellation accepted" 39
+    must "draft-under-flood" 40
+    mark $env(GARIVE_FAIRNESS_ACCEPTED)
+    set timeout 10
+    wait_file $env(GARIVE_FAIRNESS_TERMINAL) 41
+    must "stopped" 42
+    send "x"
+    after 100
+    send "\014"
+    must "\033\[2J" 43
+    must "stopped" 44
+    must "draft-under-floodx" 45
     send "\021"
-    must "Garive?" 39
+    must "Garive?" 46
     send "\r"
     expect {
         eof { exit 0 }
-        timeout { exit 41 }
+        timeout { exit 48 }
     }
 "#;
 

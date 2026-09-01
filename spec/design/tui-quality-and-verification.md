@@ -146,8 +146,10 @@ Each scenario launches `CARGO_BIN_EXE_garive-tui`, not a test-only entry point:
    the visible anchor and draft;
 5. disconnect the loopback stream, observe unknown state, restart Host, and
    reconnect from the saved cursor;
-6. request cancellation and prove UI remains running until a committed
-   stopped/completed/failed terminal arrives;
+6. request cancellation, observe distinct requesting and accepted-but-waiting
+   states with no duplicate cancel action, restart from H2 while accepted, and
+   prove UI remains non-terminal until a committed stopped/completed/failed
+   terminal arrives;
 7. render and answer a typed suspension, then continue the same Turn;
 8. terminate at each pending-command crash hook, restart, exact-retry, reload
    H2, and submit another Turn;
