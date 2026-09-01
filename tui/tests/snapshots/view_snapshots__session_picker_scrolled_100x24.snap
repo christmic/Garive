@@ -3,7 +3,7 @@ source: tui/tests/view_snapshots.rs
 expression: "frame(&sessions, Theme::Mono, 100, 24)"
 ---
 
-  › Summarize the release plan.
+› Summarize the release plan.
                    ╭ Switch session ────────────────────────────────────────────╮
                    │                                                            │
                    │  Filter  type to search                                    │
