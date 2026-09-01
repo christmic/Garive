@@ -38,8 +38,10 @@ bound Goal ID, current revision and definition digest to match, the Goal to be
 non-terminal, and the number of proposed revisions to remain within
 `max_plan_revisions`. Exact proposal-command replay is admitted even at the
 bound; reuse of the same Plan identity/revision with another command or digest
-is `plan_command_conflict`. The general pure transition entry point rejects
-both Adopt and Step Start so neither binding can bypass the ledger check.
+is `plan_command_conflict`. Rejection is also a fixed-prefix Runtime operation
+and records the authenticated actor, exact admission-policy revision and a
+stable secret-free reason. The general pure transition entry point rejects
+Adopt, Reject and Step Start so none can bypass the ledger check.
 
 ## Definition
 
@@ -302,7 +304,7 @@ the Plan mutation and any corresponding C6 posture atomically.
 |---|---|
 | `plan.proposed` | command, Plan/revision, state version 1, definition digest/content, Goal and frozen Agent/Tool/Safety bindings, proposer reference |
 | `plan.adopted` | old/new state versions, expected Goal/prior-Plan revisions, actor/policy reference, canonical carry-forward evidence binding |
-| `plan.rejected` | old/new state versions and stable safe reason |
+| `plan.rejected` | old/new state versions, authenticated actor, exact admission-policy revision and stable safe reason |
 | `plan.superseded` | old/new state versions, replacement Plan/revision/digest and canonical unresolved-work binding |
 | `plan.step.claimed` | old/new state versions, step/digest, claim, worker, positive lease epoch, monotonic clock revision and `[claimed_at_tick, expires_at_tick)` |
 | `plan.step.claim_expired` | old/new state versions, step/claim/lease epoch and observed monotonic expiry tick |

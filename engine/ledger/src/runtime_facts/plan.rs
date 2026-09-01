@@ -91,7 +91,13 @@ fn adopted(value: &Map<String, Value>) -> Result<(), LedgerError> {
 }
 
 fn rejected(value: &Map<String, Value>) -> Result<(), LedgerError> {
-    mutation_with(value, &["reason"], &[])?;
+    mutation_with(
+        value,
+        &["actor_reference", "policy_reference", "reason"],
+        &[],
+    )?;
+    non_empty(value, "actor_reference")?;
+    non_empty(value, "policy_reference")?;
     non_empty(value, "reason")
 }
 

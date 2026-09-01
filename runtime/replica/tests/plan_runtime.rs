@@ -32,14 +32,14 @@ use garive_runtime::{
     plan_complete_owned_step_from_turn, plan_complete_plan, plan_continue_owned_plan_turn,
     plan_continue_turn, plan_core_terminal, plan_fail_owned_step_from_turn, plan_goal_transition,
     plan_next_turn_cancellation_for_goal, plan_plan_replacement, plan_plan_transition,
-    plan_propose_plan, plan_resume_goal_from_continued_turn, plan_start_step_execution,
-    plan_start_turn, plan_succeed_goal_from_completed_plan, plan_suspend_goal_from_owned_turn,
-    plan_suspend_owned_plan_from_turn, reconstruct_execution_work_binding, reconstruct_goal,
-    reconstruct_plan, reconstruct_plan_graph, reconstruct_suspended_turn,
-    verify_plan_carry_forward, ContinuationInput, ContinueTurnCommand, CoreTerminalContext,
-    EffectiveRuntimeLimits, GetTurnQuery, GoalCommandContext, GoalPlanAdvanceOutcome,
-    GoalPlanCoordinationError, GoalPlanCoordinationTick, GoalPlanDecision, GoalRuntimeError,
-    GoalRuntimeTransition, InteractionInputRepresentation, LocalExecutionAttempt,
+    plan_propose_plan, plan_reject_plan, plan_resume_goal_from_continued_turn,
+    plan_start_step_execution, plan_start_turn, plan_succeed_goal_from_completed_plan,
+    plan_suspend_goal_from_owned_turn, plan_suspend_owned_plan_from_turn,
+    reconstruct_execution_work_binding, reconstruct_goal, reconstruct_plan, reconstruct_plan_graph,
+    reconstruct_suspended_turn, verify_plan_carry_forward, ContinuationInput, ContinueTurnCommand,
+    CoreTerminalContext, EffectiveRuntimeLimits, GetTurnQuery, GoalCommandContext,
+    GoalPlanAdvanceOutcome, GoalPlanCoordinationError, GoalPlanCoordinationTick, GoalPlanDecision,
+    GoalRuntimeError, GoalRuntimeTransition, InteractionInputRepresentation, LocalExecutionAttempt,
     LocalExecutionPolicy, LocalExecutionWorker, LocalWorkerDisposition, PlanCommandContext,
     PlanDispatchError, PlanDispatchOutcome, PlanDispatchTick, PlanRuntimeError, PlanRuntimeState,
     PlanRuntimeTransition, PlanStepDispatchFactory, PlanStepDispatchInput, PlanStepExecutionStart,
@@ -504,6 +504,56 @@ fn proposal_and_adoption_require_the_current_durable_goal_binding() {
         .unwrap()
         .iter()
         .all(|fact| fact.fact_id.as_str() != "claim-terminal-goal"));
+}
+
+#[test]
+fn proposal_rejection_requires_the_fixed_goal_prefix_and_policy_identity() {
+    let directory = tempdir().unwrap();
+    let path = directory.path().join("plan-rejection.sqlite3");
+    let session = SessionId::try_from("session-1").unwrap();
+    let mut ledger = SqliteLedger::open(&path).unwrap();
+    open_session(&mut ledger, &session);
+    let proposed =
+        plan_propose_plan(&ledger, &session, &context("reject-propose"), definition()).unwrap();
+    commit_plan_command(&mut ledger, session.clone(), 1, &proposed).unwrap();
+    let current = recover(&ledger, &session);
+    assert_eq!(
+        plan_plan_transition(
+            &current,
+            current.state_version,
+            &context("reject-bypass"),
+            PlanRuntimeTransition::Reject {
+                policy_reference: "policy-v1".into(),
+                reason: "scope_denied".into(),
+            },
+        ),
+        Err(PlanRuntimeError::TransitionInvalid)
+    );
+    let rejected = plan_reject_plan(
+        &ledger,
+        &session,
+        &current,
+        current.state_version,
+        &context("reject-admitted"),
+        "policy-v1".into(),
+        "scope_denied".into(),
+    )
+    .unwrap();
+    let payload: serde_json::Value =
+        serde_json::from_str(rejected.facts[0].payload.as_json()).unwrap();
+    assert_eq!(payload["actor_reference"], "user:fixture");
+    assert_eq!(payload["policy_reference"], "policy-v1");
+    commit_plan_command(
+        &mut ledger,
+        session.clone(),
+        current.session_version,
+        &rejected,
+    )
+    .unwrap();
+    assert_eq!(
+        recover(&ledger, &session).snapshot.state(),
+        PlanState::Rejected
+    );
 }
 
 #[test]

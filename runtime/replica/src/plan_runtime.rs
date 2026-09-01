@@ -8,7 +8,7 @@ mod command;
 
 pub use command::{
     commit_plan_command, plan_adopt_plan, plan_complete_plan, plan_fail_plan, plan_plan_transition,
-    plan_propose_plan, plan_start_step_execution,
+    plan_propose_plan, plan_reject_plan, plan_start_step_execution,
 };
 pub(crate) use command::{plan_resume_step_execution, plan_suspend_step_and_plan};
 
@@ -195,6 +195,13 @@ pub enum PlanRuntimeTransition {
         policy_reference: String,
         /// Canonical verified carry-forward evidence list.
         carry_forward_evidence: CanonicalPayload,
+    },
+    /// Reject one proposal under an exact admitted policy revision.
+    Reject {
+        /// Stable policy revision that made the decision.
+        policy_reference: String,
+        /// Stable secret-free rejection reason.
+        reason: String,
     },
     /// Fence one Ready step before worker dispatch.
     Claim {

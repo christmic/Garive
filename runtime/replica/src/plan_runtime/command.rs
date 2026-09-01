@@ -130,6 +130,37 @@ pub fn plan_adopt_plan(
     plan_transition(current, expected_state_version, context, request)
 }
 
+/// Rejects one proposal only while its exact durable Goal binding is current.
+pub fn plan_reject_plan(
+    ledger: &SqliteLedger,
+    session_id: &SessionId,
+    current: &PlanRuntimeState,
+    expected_state_version: u64,
+    context: &PlanCommandContext,
+    policy_reference: String,
+    reason: String,
+) -> Result<PlannedPlanCommand, PlanRuntimeError> {
+    let prefix = goal_prefix(ledger, session_id)?;
+    if current.session_version != prefix.session_version
+        || current.through_position != prefix.through_position
+    {
+        return Err(PlanRuntimeError::RevisionConflict);
+    }
+    validate_goal_anchor_binding(
+        current.snapshot.definition(),
+        goal(&prefix, current.snapshot.definition().goal_id())?,
+    )?;
+    plan_transition(
+        current,
+        expected_state_version,
+        context,
+        PlanRuntimeTransition::Reject {
+            policy_reference,
+            reason,
+        },
+    )
+}
+
 /// Plans one exact-state-version normal-path transition.
 pub fn plan_plan_transition(
     current: &PlanRuntimeState,
@@ -141,6 +172,7 @@ pub fn plan_plan_transition(
         request,
         PlanRuntimeTransition::Start { .. }
             | PlanRuntimeTransition::Adopt { .. }
+            | PlanRuntimeTransition::Reject { .. }
             | PlanRuntimeTransition::SuspendStep(_)
             | PlanRuntimeTransition::SuspendPlan { .. }
             | PlanRuntimeTransition::ResumePlan { .. }
@@ -330,6 +362,22 @@ fn plan_transition(
                 "plan.adopted",
                 Value::Object(value),
                 vec![PlanTransition::Adopt],
+            )
+        }
+        PlanRuntimeTransition::Reject {
+            policy_reference,
+            reason,
+        } => {
+            require_non_empty(&policy_reference)?;
+            require_non_empty(&reason)?;
+            let mut value = mutation(context, definition, expected_state_version, next_version);
+            value.insert("actor_reference".into(), json!(context.actor_reference));
+            value.insert("policy_reference".into(), json!(policy_reference));
+            value.insert("reason".into(), json!(reason));
+            (
+                "plan.rejected",
+                Value::Object(value),
+                vec![PlanTransition::Reject],
             )
         }
         PlanRuntimeTransition::Claim {

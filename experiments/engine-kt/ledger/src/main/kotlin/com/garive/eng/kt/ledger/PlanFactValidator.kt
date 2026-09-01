@@ -55,7 +55,9 @@ private fun JsonObject.adopted() {
 }
 
 private fun JsonObject.rejected() {
-    planMutation(setOf("reason"))
+    planMutation(setOf("actor_reference", "policy_reference", "reason"))
+    nonEmpty("actor_reference")
+    nonEmpty("policy_reference")
     nonEmpty("reason")
 }
 

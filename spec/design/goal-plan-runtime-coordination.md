@@ -331,6 +331,13 @@ failed Steps likewise stop at explicit continuation/failure-policy reasons.
 Proposal admission, suspension continuation and failed-Step retry/replan
 selection remain explicit policy gaps; the pump must stop at those decisions.
 
+Plan admission may Adopt, Reject or Defer one exact proposal. Adopt records the
+policy revision in `plan.adopted`; Reject records the same revision plus the
+authenticated Runtime actor and a stable reason in `plan.rejected`. Both
+commands re-read the complete Goal prefix before planning and again at commit.
+No policy receives a write-capable Ledger, and no model-supplied policy identity
+is authoritative.
+
 ## Public surface
 
 V1 public Goal mutation remains limited to Create, Revise and Cancel. Clients

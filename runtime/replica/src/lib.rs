@@ -230,9 +230,10 @@ pub use plan_dispatch_runtime::{
 pub use plan_recovery::{reconstruct_plan, reconstruct_plan_graph};
 pub use plan_runtime::{
     commit_plan_command, plan_adopt_plan, plan_complete_plan, plan_fail_plan, plan_plan_transition,
-    plan_propose_plan, plan_start_step_execution, ActivePlanClaim, PlanCommandContext,
-    PlanRetryPosture, PlanRuntimeError, PlanRuntimeState, PlanRuntimeTransition,
-    PlanStepContinuation, PlanStepExecutionStart, PlanStepSuspension, PlannedPlanCommand,
+    plan_propose_plan, plan_reject_plan, plan_start_step_execution, ActivePlanClaim,
+    PlanCommandContext, PlanRetryPosture, PlanRuntimeError, PlanRuntimeState,
+    PlanRuntimeTransition, PlanStepContinuation, PlanStepExecutionStart, PlanStepSuspension,
+    PlannedPlanCommand,
 };
 #[cfg(unix)]
 pub use podman_process_backend::{PodmanProcessBackend, PodmanProcessConfig};
