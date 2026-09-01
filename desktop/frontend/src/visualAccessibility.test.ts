@@ -76,6 +76,9 @@ describe("Desktop visual accessibility contract", () => {
     expect(CSS).toContain("grid-template-columns: minmax(0, 1fr); grid-template-rows: var(--height-window-bar) minmax(0, 1fr)");
     expect(CSS).toContain(".navigation-collapsed > .sidebar { display: none; }");
     expect(CSS).toContain(".task-groups { display: grid; align-content: start; gap: 8px;");
+    expect(CSS).toContain(".sidebar-footer { grid-template-columns: minmax(0, 1fr) 30px; align-items: center; gap: 2px; }");
+    expect(CSS).toContain(".host-identity { grid-template-columns: 18px minmax(0, 1fr) 8px;");
+    expect(CSS).toContain(".sidebar-settings-button { display: grid; place-items: center; width: 30px; height: 30px;");
     expect(CSS).toContain(".environment-panel { position: absolute");
     expect(CSS).toContain(".environment-content { display: grid; gap: 7px; width: 100%; }");
     expect(CSS).toContain(".environment-section + .environment-section { padding-top: 7px; border-top: 1px solid var(--border-subtle); }");

@@ -715,15 +715,22 @@ export function App({ client = "desktop", webCapabilities, createProductPort,
           </section>}
         </div>
         <div className="sidebar-footer">
-          <NavItem icon="settings" label={t("nav.settings")} selected={screen === "settings"}
-            onClick={() => { setSettingsSection("general"); setScreen("settings"); }} />
-          <div className={`host-identity ${state.capabilities?.configured ? "online" : "offline"}`}
-            role="status" aria-live="polite">
+          <button className={`host-identity ${state.capabilities?.configured ? "online" : "offline"}`}
+            type="button" aria-label={`${t("settings.runtime.title")} · ${t(state.capabilities?.configured
+              ? "shell.runtimeReadyShort" : "shell.setupRequired")}`}
+            title={`${t("shell.local")} · ${t(state.capabilities?.configured
+              ? "shell.runtimeReadyShort" : "shell.setupRequired")}`}
+            onClick={() => { setSettingsSection("runtime"); setScreen("settings"); }}>
             <span className="host-identity-icon" aria-hidden="true"><Icon name="desktop" /></span>
             <span className="host-identity-copy"><strong>{t("shell.local")}</strong>
               <small>{state.capabilities?.configured ? t("shell.runtimeReadyShort") : t("shell.setupRequired")}</small></span>
             <span className="status-dot" aria-hidden="true" />
-          </div>
+          </button>
+          <button className="sidebar-settings-button" type="button" aria-label={t("nav.settings")}
+            title={`${t("nav.settings")} (⌘,)`} onClick={() => { setSettingsSection("general"); setScreen("settings"); }}>
+            <Icon name="settings" /></button>
+          <span className="sr-only" role="status" aria-live="polite">{t("shell.local")} · {t(state.capabilities?.configured
+            ? "shell.runtimeReadyShort" : "shell.setupRequired")}</span>
         </div>
       </aside>
       {navigationOpen && <button className="navigation-backdrop" type="button"

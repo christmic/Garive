@@ -127,6 +127,10 @@ workbench made from four persistent spatial layers:
    routes to Runtime, Workspace and general settings; unavailable routes are
    omitted. Product and Work menus share dismissal, focus restoration and
    Arrow/Home/End keyboard behavior.
+   The rail footer is one 30–34 px utility row, not stacked Settings and Host
+   cards. It keeps the truthful local identity and lifecycle marker together,
+   opens Runtime settings from that identity, and reserves one quiet Settings
+   action at the far edge. Detailed Host copy remains in the product menu.
    Its task area is a semantic stack rather than one undifferentiated feed:
    truthful needs-input, running and failed Sessions form a bounded Priority
    group ahead of completed/idle Recents. A Session appears once, empty groups

@@ -630,8 +630,15 @@ kbd { font-size: var(--text-2xs); }
 .recent-item small { font-size: 0; }
 .recent-item small .task-state-dot { margin-left: 5px; }
 .status-dot { width: 6px; height: 6px; box-shadow: none !important; }
-.sidebar-footer { gap: 4px; }
-.host-identity { min-height: 38px; }
+.sidebar-footer { grid-template-columns: minmax(0, 1fr) 30px; align-items: center; gap: 2px; }
+.host-identity { grid-template-columns: 18px minmax(0, 1fr) 8px; gap: 6px; min-width: 0; min-height: 32px; padding: 2px 5px; border: 0; border-radius: var(--radius-control); color: var(--text-secondary); background: transparent; text-align: left; }
+.host-identity:hover, .sidebar-settings-button:hover { background: var(--surface-hover); }
+.host-identity-icon { width: 18px; height: 18px; border-radius: 0; background: transparent; }
+.host-identity-icon svg { width: 13px; height: 13px; }
+.host-identity-copy strong { font-size: var(--text-xs); font-weight: 570; }
+.host-identity-copy small { display: none; }
+.sidebar-settings-button { display: grid; place-items: center; width: 30px; height: 30px; padding: 0; border: 0; border-radius: var(--radius-control); color: var(--text-tertiary); background: transparent; }
+.sidebar-settings-button svg { width: 14px; }
 
 .main-surface { grid-template-columns: minmax(0, 1fr); grid-template-rows: var(--height-window-bar) minmax(0, 1fr); background: var(--surface-canvas); }
 .work-surface { min-width: 0; overflow: hidden; }
@@ -1094,6 +1101,10 @@ html[data-client="desktop"] .navigation-collapsed .topbar { padding-left: 70px; 
   .sidebar-product-row { justify-content: center; }
   .product-switcher { display: none; }
   .sidebar-search { margin-left: 0; }
+  .sidebar-footer { grid-template-columns: 26px 26px; }
+  .host-identity { grid-template-columns: 26px; min-height: 30px; padding: 0; place-items: center; }
+  .host-identity-icon { width: 26px; height: 26px; }
+  .host-identity .status-dot { display: none; }
   .workspace-panel { width: min(680px, calc(100% - 72px)); }
 }
 
@@ -1113,6 +1124,10 @@ html[data-client="desktop"] .navigation-collapsed .topbar { padding-left: 70px; 
   .sidebar .brand > span:last-child, .sidebar .new-work > span, .sidebar .new-work kbd,
   .sidebar .nav-item > span, .sidebar .nav-item small,
   .sidebar .host-identity-copy { display: block; }
+  .sidebar .sidebar-footer { grid-template-columns: minmax(0, 1fr) 30px; }
+  .sidebar .host-identity { grid-template-columns: 18px minmax(0, 1fr) 8px; padding: 2px 5px; place-items: initial; align-items: center; }
+  .sidebar .host-identity-icon { width: 18px; height: 18px; }
+  .sidebar .host-identity .status-dot { display: block; }
   .sidebar .sidebar-section { display: block; }
   .sidebar .sidebar-section.library { display: grid; }
   .sidebar .new-work, .sidebar .nav-item { display: grid; grid-template-columns: 22px 1fr auto; place-items: center start; padding: 0 9px; }

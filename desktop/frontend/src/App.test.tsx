@@ -125,6 +125,9 @@ describe("Desktop product experience", () => {
     expect(host?.textContent).not.toContain("LocalLocal");
     expect(view.container.querySelector(".topbar .local-badge")).toBeNull();
     expect(screen.queryByRole("button", { name: "Account and app menu" })).toBeNull();
+    const runtime = screen.getByRole("button", { name: "Local Runtime · Runtime ready" });
+    fireEvent.click(runtime);
+    expect(screen.getByRole("heading", { name: "Local Runtime" })).toBeTruthy();
   });
 
   it("turns the product switcher into a truthful keyboard Runtime menu", async () => {

@@ -637,6 +637,21 @@ x=8, y=62, 220×156px, resolves to the same overlay surfaces as Environment,
 and retains zero document overflow. This exceeds the reference's visual cue by
 making the switcher operational without inventing another Host or account.
 
+### XIX. Single-row rail identity footer
+
+The supplied references end the navigation rail with one compact identity and
+utility row. Garive previously stacked a full Settings navigation row above a
+38px two-line Host card, repeating the Runtime detail already admitted by the
+new product menu and consuming roughly twice the reference height.
+
+The shared rail footer is now one 32px row: Local identity and its real state
+marker open Local Runtime settings, while a 30px far-edge Settings action opens
+General. The verbose Runtime state remains in accessible naming and the product
+menu rather than adding a second visible line. In the 1280×720 running fixture
+the footer measures x=8, y=678, 189×32px with a 10px bottom safe inset and zero
+document overflow. Compact rail mode reduces both actions to icons; the 480px
+navigation drawer restores the Local label without creating a second footer.
+
 ## Gate 1 — Codex fidelity
 
 This gate passes only when both Desktop and Web show:
