@@ -37,7 +37,11 @@ func malformedFramesFailClosed() throws {
     var identityRequest = GRVProcessIdentityRequestV1()
     identityRequest.identity = GRVProcessIdentityV1()
     request.query = identityRequest
-    let payload = try encodeProcessFrame(request).dropFirst(4)
+    let frame = try encodeProcessFrame(request)
+    let payload = frame.dropFirst(4)
+    #expect(throws: ProcessFrameFailure.malformed) {
+        try decodeHostRequestFrame(frame + Data([0]))
+    }
     #expect(throws: ProcessFrameFailure.malformed) {
         try decodeHostRequestFrame(framed(with: Data(payload) + Data([0x98, 0x06, 0x01])))
     }

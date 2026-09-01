@@ -77,8 +77,8 @@ separate measurements and cross-invocation erasure evidence exist.
 | Slice | Deliverable | Evidence |
 |---|---|---|
 | V0-A | Explicit immutable VM configuration and executor-binding digest | Swift structure tests over official SDK types; no environment reads |
-| V0-B | Versioned host/XPC and guest-agent protocol | strict decoder, identity, bounds, malformed-input, and code-signing admission tests |
-| V0-C | Packaged VM service and guest image | no-network, read/write scope, argv/environment/resource, forced-stop, and receipt tests |
+| V0-B | Versioned host/XPC and guest-agent protocol | strict decoder, identity, bounds, malformed-input, digest, and lifecycle tests |
+| V0-C | Packaged VM service and guest image | code-signing admission, no-network, read/write scope, argv/environment/resource, forced-stop, and receipt tests |
 | V0-D | Runtime `ProcessIsolationBackend` composition | real SQLite Started/receipt/acknowledgement and independent-process recovery matrix |
 
 V0-A does not claim process execution or close F0. Each later slice consumes

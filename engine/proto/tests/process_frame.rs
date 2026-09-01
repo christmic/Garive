@@ -90,6 +90,12 @@ fn malformed_lengths_payloads_unknowns_and_duplicates_fail_closed() {
     let (host, _, _, _) = envelopes();
     let frame = encode_process_frame(&host).unwrap();
     let payload = &frame[4..];
+    let mut trailing = frame.clone();
+    trailing.push(0);
+    assert_eq!(
+        decode_host_request_frame(&trailing),
+        Err(ProcessFrameError::Malformed)
+    );
     let mut unknown = payload.to_vec();
     unknown.extend([0x98, 0x06, 0x01]);
     assert_eq!(

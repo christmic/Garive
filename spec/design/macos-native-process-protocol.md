@@ -137,6 +137,16 @@ V0-B requires generated Rust and Swift bindings plus validators proving:
 V0-B is complete only after both language suites pass. V0-C packaging and real
 VM evidence, and V0-D Runtime composition and recovery, remain unclaimed.
 
+## Implementation evidence
+
+- `spec/proto/garive/process/v1/process.proto` is the sole wire-schema source.
+- `engine/proto/src/process_{frame,digest,state}.rs` implements Rust validation.
+- `Sources/GariveProcessProtocol` generates official SwiftProtobuf bindings from
+  that same schema and implements the matching Swift validators.
+- Rust protocol tests, strict Clippy, root Swift protocol tests, and the nested
+  macOS native package tests pass. V0-C and V0-D evidence is not inferred from
+  these protocol tests.
+
 ## See also
 
 - [`macos-native-process-isolation.md`](macos-native-process-isolation.md)
@@ -147,4 +157,4 @@ VM evidence, and V0-D Runtime composition and recovery, remain unclaimed.
 
 - Owner: `@christmic`
 - Last reviewed: 2026-09-01
-- Status: proposed
+- Status: accepted
