@@ -5,10 +5,10 @@ expression: matrix
 ===== loading compact · Mono · 40x18 =====
 New conversation              connecting
 
-╭────────────────────────────────────╮
-│  >_ Garive                         │
-│  Starting workspace…               │
-╰────────────────────────────────────╯
+
+  Garive
+  Starting workspace…
+
 
 
 
@@ -20,15 +20,15 @@ New conversation              connecting
 
 
 › Ask Garive anything
-
+  Garive · New conversation
 
 ===== loading standard · Dark · 80x18 =====
 New conversation  ·  Garive                                           connecting
 
-╭────────────────────────────────────────────╮
-│  >_ Garive                                 │
-│  Starting workspace…                       │
-╰────────────────────────────────────────────╯
+
+  Garive
+  Starting workspace…
+
 
 
 
@@ -40,15 +40,15 @@ New conversation  ·  Garive                                           connectin
 
 
 › Ask Garive anything
-
+  Garive · New conversation
 
 ===== loading wide · Light · 120x18 =====
 New conversation  ·  Garive                                                                                   connecting
 
-╭────────────────────────────────────────────╮
-│  >_ Garive                                 │
-│  Starting workspace…                       │
-╰────────────────────────────────────────────╯
+
+  Garive
+  Starting workspace…
+
 
 
 
@@ -60,14 +60,14 @@ New conversation  ·  Garive                                                    
 
 
 › Ask Garive anything
-
+  Garive · New conversation
 
 ===== ready · Dark · 100x18 =====
 
-╭────────────────────────────────────────────╮
-│  >_ Garive                                 │
-│  / commands  ·  ? help                     │
-╰────────────────────────────────────────────╯
+
+  Garive
+  Ask, plan, or run work from this terminal.
+  / commands  ·  ? help
 
 
 
@@ -80,7 +80,7 @@ New conversation  ·  Garive                                                    
 
 
 › Ask Garive anything
-
+  Garive · New conversation
 
 ===== not configured · Mono · 100x18 =====
 
@@ -100,7 +100,7 @@ New conversation  ·  Garive                                                    
 
 
 › Ask Garive anything
-
+  Garive · New conversation
 
 ===== degraded · Dark · 100x18 =====
 New conversation  ·  Garive                                                              unavailable

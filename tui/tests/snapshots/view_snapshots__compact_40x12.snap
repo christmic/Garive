@@ -4,12 +4,13 @@ expression: "frame(&model, Theme::Mono, 40, 12)"
 ---
 
   ✓ Agent action · completed
-• ## Release plan
+## Release plan
 
   • Verify the Runtime
   • Ship with evidence
 
   cargo test passes.
 
-              Working…  ·  Esc interrupt
+• Working…  ·  esc to interrupt
 › Ask a follow-up…
+  Agent · Session 1
