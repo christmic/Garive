@@ -80,6 +80,28 @@ kbd { color: var(--subtle); font: 11px -apple-system, sans-serif; }
 .conversation { overflow-anchor: none; }
 .conversation-top-fade { pointer-events: none; position: absolute; z-index: 2; top: 0; right: 0; left: 0; height: 16px; background: linear-gradient(to bottom, var(--surface-canvas), transparent); opacity: 0; transition: opacity var(--motion-basic) var(--ease-basic); }
 .conversation-top-fade[data-visible="true"] { opacity: 1; }
+.thread-user-navigation { position: absolute; z-index: 20; top: 50%; left: 16px; opacity: 1; transform: translateY(-50%); }
+.thread-user-navigation-list { display: flex; max-height: min(70vh, 640px); overflow: auto; flex-direction: column; overscroll-behavior: contain; scrollbar-width: none; }
+.thread-user-navigation-list::-webkit-scrollbar { display: none; }
+.thread-user-navigation-list button { display: flex; align-items: center; flex: 0 0 auto; width: 36px; height: 10px; padding: 0; border: 0; color: inherit; background: transparent; outline: 0; }
+.thread-user-navigation-marker { --marker-progress: 0; position: relative; display: flex; width: 26px; height: 2px; color: var(--text-tertiary); opacity: .4; }
+.thread-user-navigation-marker-line { width: 100%; height: 100%; background: currentColor; transition: transform 160ms linear(0, .398 10%, .682 20%, .843 30%, .925 40%, .972 50%, 1.004 60%, 1.008 70%, 1.003 80%, 1); transform: scaleX(calc(.2308 + .7692 * var(--marker-progress))); transform-origin: left; }
+.thread-user-navigation-list button[aria-current="true"] .thread-user-navigation-marker { color: var(--text-primary); opacity: .6; }
+.thread-user-navigation-list :is(button:has(+ button[data-scrub-target]), button[data-scrub-target] + button) .thread-user-navigation-marker { --marker-progress: .7; }
+.thread-user-navigation-list :is(button:has(+ button + button[data-scrub-target]), button[data-scrub-target] + button + button) .thread-user-navigation-marker { --marker-progress: .4; }
+.thread-user-navigation-list :is(button:has(+ button + button + button[data-scrub-target]), button[data-scrub-target] + button + button + button) .thread-user-navigation-marker { --marker-progress: .2; }
+.thread-user-navigation-list :is(button:focus-visible, button[data-scrub-target]) .thread-user-navigation-marker { --marker-progress: 1; color: var(--text-primary); opacity: 1; }
+.thread-user-navigation-list[data-scrubbing] .thread-user-navigation-marker-line { transition-duration: 0s; }
+.thread-user-navigation-preview { pointer-events: none; position: absolute; top: var(--rail-preview-offset, 50%); left: 36px; width: min(320px, calc(100vw - 72px)); padding: 8px; border: 1px solid var(--border-subtle); border-radius: var(--radius-panel); color: var(--text-primary); background: color-mix(in srgb, var(--surface-overlay) 95%, transparent); box-shadow: var(--shadow-overlay); transform: translateY(-50%); font-size: var(--text-xs); line-height: 1.45; }
+.thread-user-navigation-preview strong { display: block; margin-bottom: 3px; font-weight: var(--font-weight-medium); }
+.thread-user-navigation-preview p { display: -webkit-box; margin: 0; overflow: hidden; color: var(--text-secondary); -webkit-box-orient: vertical; -webkit-line-clamp: 4; overflow-wrap: anywhere; }
+@media (hover: hover) {
+  .thread-user-navigation-list:not([data-scrubbing]):hover button[aria-current="true"]:not(:hover):not(:focus-visible) .thread-user-navigation-marker { color: var(--text-tertiary); opacity: .4; }
+  .thread-user-navigation-list:not([data-scrubbing]):hover :is(button:has(+ button:hover), button:hover + button) .thread-user-navigation-marker { --marker-progress: .7; }
+  .thread-user-navigation-list:not([data-scrubbing]):hover :is(button:has(+ button + button:hover), button:hover + button + button) .thread-user-navigation-marker { --marker-progress: .4; }
+  .thread-user-navigation-list:not([data-scrubbing]):hover :is(button:has(+ button + button + button:hover), button:hover + button + button + button) .thread-user-navigation-marker { --marker-progress: .2; }
+  .thread-user-navigation-list:not([data-scrubbing]):hover button:hover .thread-user-navigation-marker { --marker-progress: 1; color: var(--text-primary); opacity: 1; }
+}
 .conversation-tail-button { pointer-events: auto; position: absolute; z-index: 4; top: -25px; left: 50%; display: flex; align-items: center; gap: 5px; min-height: 30px; padding: 0 10px; border: 1px solid var(--border-strong); border-radius: var(--radius-pill); color: var(--text-secondary); background: color-mix(in srgb, var(--surface-raised) 94%, transparent); box-shadow: var(--shadow-raised); transform: translateX(-50%); -webkit-backdrop-filter: blur(var(--blur-lg)); backdrop-filter: blur(var(--blur-lg)); font-size: var(--text-xs); }
 .conversation-tail-button:hover { color: var(--text-primary); background: var(--surface-hover); }
 .conversation-tail-button svg { width: 13px; transform: rotate(90deg); }
@@ -711,6 +733,7 @@ kbd { font-size: var(--text-2xs); }
 .workspace-loading-dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; animation: workspace-loading-pulse 1.4s var(--ease-basic) infinite; }
 @keyframes workspace-loading-pulse { 50% { opacity: .35; transform: scale(.72); } }
 @media (prefers-reduced-motion: reduce) { .workspace-loading-dot { animation: none; } }
+@media (prefers-reduced-motion: reduce) { .thread-user-navigation-marker-line { transition-duration: 0s; } }
 
 .timeline { width: min(var(--thread-content-max-width), calc(100% - 48px)); padding: var(--thread-content-top-inset) 0 var(--thread-scroll-padding-bottom, 174px); transition: transform var(--motion-relaxed) var(--ease-enter); }
 .message { margin: 0; }

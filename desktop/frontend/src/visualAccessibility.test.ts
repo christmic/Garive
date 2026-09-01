@@ -238,6 +238,13 @@ describe("Desktop visual accessibility contract", () => {
     expect(CSS).toContain(".composer-rail { --composer-rail-transition-duration: var(--motion-relaxed);");
     expect(CSS).toContain("grid-template-rows: 1fr");
     expect(CSS).toContain('[data-composer-rail-item="exiting"] { grid-template-rows: 0fr;');
+    expect(CSS).toContain(".thread-user-navigation-list button { display: flex; align-items: center; flex: 0 0 auto; width: 36px; height: 10px;");
+    expect(CSS).toContain("width: 26px; height: 2px;");
+    expect(CSS).toContain("scaleX(calc(.2308 + .7692 * var(--marker-progress)))");
+    expect(CSS).toContain("--marker-progress: .7");
+    expect(CSS).toContain("--marker-progress: .4");
+    expect(CSS).toContain("--marker-progress: .2");
+    expect(CSS).toContain('button[aria-current="true"] .thread-user-navigation-marker { color: var(--text-primary); opacity: .6; }');
     expect(CSS).toContain("margin-inline: var(--composer-rail-inline-inset)");
     expect(CSS).toContain("border-radius: var(--radius-composer-rail) var(--radius-composer-rail) 0 0");
     expect(CSS).toContain("background: var(--surface-composer-action-bar)");

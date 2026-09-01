@@ -23,6 +23,7 @@ import { Icon, type IconName } from "./ui/Icon";
 import { ComposerRail } from "./ui/ComposerRail";
 import { Tooltip } from "./ui/Tooltip";
 import { TurnActionControls } from "./ui/TurnActionControls";
+import { ThreadUserNavigationRail } from "./ui/ThreadUserNavigationRail";
 import { UsageBudgetCard, UsageBudgetTrigger, type UsageBudgetSnapshot } from "./ui/UsageBudget";
 import { WindowZoomBanner } from "./ui/WindowZoomBanner";
 import { SetupFlow } from "./features/setup/SetupFlow";
@@ -101,6 +102,17 @@ const visualArtifactTimeline = {
       label_key: "agent.activity.read_file", state: "running", source_position: 31,
       terminal: false }],
   }],
+} satisfies HostTimelinePage;
+const visualUserRailTimeline = {
+  api_version: "v1", session_id: "visual-user-rail", scanned_through_position: 36,
+  observed_max_position: 36, has_more: false, items: Array.from({ length: 6 }, (_, index) => ({
+    turn_id: `visual-user-rail-${index + 1}`, started_position: index * 6 + 1,
+    latest_position: index * 6 + 6, state: "completed" as const,
+    user_text: ["Audit the Runtime boundary", "Map the user journey", "Compare source behavior",
+      "Verify the interaction states", "Record the design contract", "Ship the tested desktop app"][index]!,
+    completion_text: `### Verified result ${index + 1}\n\nThe admitted evidence is connected to the real thread state and remains available after navigation.\n\nThe client keeps presentation separate from durable Runtime truth while preserving a calm, progressive work surface.`,
+    content_truncated: false, activities: [],
+  })),
 } satisfies HostTimelinePage;
 const visualArtifactPage = {
   api_version: "v1", session_id: "visual-artifact-session", scanned_through_position: 23,
@@ -555,6 +567,9 @@ export function App({ client = "desktop", webCapabilities, createProductPort,
           content_truncated: false, activities: [],
         }],
       } });
+      if (visualTestMode === "user-rail") {
+        dispatch({ type: "session_loaded", timeline: visualUserRailTimeline });
+      }
       return;
     }
     if (!desktop) {
@@ -1065,6 +1080,8 @@ function WorkSurface({ state, composer, submit, startSuggestion, dispatch, conte
   const footerLayoutFrame = useRef<number | undefined>(undefined);
   const previousSessionId = useRef(state.sessionId);
   const tailRevision = `${state.messages.length}:${state.messages.at(-1)?.text.length ?? 0}:${state.livePreview?.sequence ?? -1}:${state.phase}`;
+  const userNavigationItems = useMemo(() => state.messages.flatMap((message) => message.role === "user"
+    ? [{ id: message.id, text: message.text }] : []), [state.messages]);
   const previousTailRevision = useRef(tailRevision);
   const composerLayoutMode: ComposerLayoutMode = (state.messages.length > 0 || state.phase === "submitting"
     || state.messages.some((message) => Boolean(message.suspension))
@@ -1251,6 +1268,26 @@ function WorkSurface({ state, composer, submit, startSuggestion, dispatch, conte
     setTailFollowing(true); setNewOutputBelow(false);
     scrollConversationToTail(element, motionReduced);
   };
+  const navigateToUserMessage = (id: string, behavior: ScrollBehavior) => {
+    const element = conversation.current;
+    const target = [...(element?.querySelectorAll<HTMLElement>("[data-user-message-id]") ?? [])]
+      .find((candidate) => candidate.dataset.userMessageId === id);
+    if (!element || !target) return;
+    if (pendingTailFrame.current !== undefined) {
+      cancelAnimationFrame(pendingTailFrame.current); pendingTailFrame.current = undefined;
+    }
+    if (footerLayoutFrame.current !== undefined) {
+      cancelAnimationFrame(footerLayoutFrame.current); footerLayoutFrame.current = undefined;
+    }
+    setTailFollowing(false); setNewOutputBelow(false);
+    const motionReduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    target.scrollIntoView({ behavior: motionReduced ? "auto" : behavior, block: "start" });
+    target.querySelector<HTMLElement>("[data-user-message-bubble]")?.animate?.([
+      { backgroundColor: "color-mix(in srgb, var(--text-primary) 14%, transparent)" },
+      { backgroundColor: "color-mix(in srgb, var(--text-primary) 14%, transparent)", offset: .35 },
+      { backgroundColor: "color-mix(in srgb, var(--text-primary) 5%, transparent)" },
+    ], { duration: motionReduced ? 0 : 1_400, easing: "cubic-bezier(0.23, 1, 0.32, 1)" });
+  };
 
   if (state.boot === "loading") return <WorkspaceLoading title={t("work.boot.title")}
     body={t("work.boot.body")} />;
@@ -1300,6 +1337,8 @@ function WorkSurface({ state, composer, submit, startSuggestion, dispatch, conte
       {state.messages.length === 0 ? <h1 className="sr-only">{t("work.welcome.title")}</h1>
         : <Timeline state={state} dispatch={dispatch} t={t} />}
     </div>
+    <ThreadUserNavigationRail items={userNavigationItems} scrollElement={conversation}
+      onNavigate={navigateToUserMessage} t={t} />
     <div className="conversation-top-fade" data-visible={scrolledFromTop} aria-hidden="true" />
     {(state.error || disconnected || reconnecting) && <div className={disconnected || reconnecting
       ? "error-banner connection-banner" : "error-banner"} role={state.error ? "alert" : "status"}>
@@ -1480,8 +1519,8 @@ export function UserMessage({ id, text, copied, onCopy, t }: {
     return () => observer.disconnect();
   }, [measure]);
   const collapsed = collapsible && !expanded;
-  return <article className="message user-message"><div className="user-turn">
-    <div className="user-message-bubble">
+  return <article className="message user-message" data-user-message-id={id}><div className="user-turn">
+    <div className="user-message-bubble" data-user-message-bubble="">
       <div ref={content} className={collapsed ? "user-message-content collapsed" : "user-message-content"}
         data-collapsed-lines={collapsed ? 19 : undefined}>{text}</div>
       {collapsed && <span className="user-message-ellipsis" aria-hidden="true">…</span>}

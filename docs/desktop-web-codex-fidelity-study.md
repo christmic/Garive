@@ -1567,6 +1567,31 @@ evidence measures the close action at opacity zero, hidden and pointer-inert at
 rest, then opacity one, visible and pointer-active on tab hover; the overflowing
 sidebar title resolves to `text-overflow: clip` with a one-rem mask.
 
+### LV. Long threads gain a source-backed user-message rail
+
+Installed Codex `26.825.51511` ships a dedicated
+`thread-user-message-navigation-rail`. The source returns nothing below four
+user messages, then positions a `User messages` navigation landmark 16 px from
+the Electron work surface and vertically centers it. Each direct button is
+36×10 px around a 26×2 px marker. Resting progress is `0.2308`, current markers
+use 0.6 opacity, and hover, focus or scrubbing expands the target to 1 with
+three neighboring steps of 0.7, 0.4 and 0.2. Expansion uses the source's exact
+160 ms linear spring approximation and reduced motion removes the transition.
+
+This is navigation, not a scrollbar decoration. Source click behavior scrolls
+the corresponding real user message to block start and highlights its bubble
+for 1400 ms with `cubic-bezier(0.23, 1, 0.32, 1)`; pointer capture supports
+instant drag scrubbing. Intersection observation with a −16 px top margin owns
+the current state. Hover and keyboard focus reveal a message preview aligned
+to the selected 10 px row.
+
+Garive now implements that contract once for Desktop and Web against durable
+Timeline messages. Live 1280×720 evidence measures the exact 16 px inset,
+36×10 px targets, 26×2 px markers, 0.2308 rest transform and 0.4/0.6 opacity.
+Hover produces the expected 1/0.7/0.4/0.2 neighborhood. Activating the first
+anchor lands its real message at container offset zero, exits tail following,
+reveals the return-to-latest action and preserves zero document overflow.
+
 ## Gate 1 — Codex fidelity
 
 This gate passes only when both Desktop and Web show:

@@ -718,6 +718,15 @@ product admits those actions.
   resize persists an explicit bounded value, while double-click restores
   `adaptive`. At 480 px the selected Artifact is a full-width single panel;
   the covered Work surface is inert and `aria-hidden`, never a clipped sliver.
+- A thread with fewer than four user messages has no navigation rail. At four
+  or more, Desktop and Web render one `User messages` landmark against real
+  Timeline anchors. Direct buttons are 36×10 px; their 26×2 px markers rest at
+  progress 0.2308 and expand through 1/0.7/0.4/0.2 focus, hover and scrub
+  proximity. Current state comes from visible message intersections, not a
+  decorative scroll percentage. Activation moves the message to block start,
+  highlights its bubble, exits tail following and leaves return-to-latest
+  reachable. Native button semantics own Enter/Space; focus exposes the same
+  aligned preview as pointer hover.
 
 ## Content rules
 
@@ -748,3 +757,6 @@ an exact task price from prompt length, selected model, or prior averages.
 - Keyboard-only, reduced-motion, increased-contrast and 200% text matrices stay
   usable. Web captures prove shared presentation only; native macOS integration
   retains its separate evidence matrix.
+- Long-thread evidence covers the hidden-under-four threshold, exact rail
+  geometry and opacity, pointer proximity, focus preview, anchor landing,
+  drag scrubbing, reduced motion and return-to-latest recovery.
