@@ -107,7 +107,11 @@ pub async fn run(config: LaunchConfig) -> Result<(), TuiError> {
     if config.test_crash_hook == Some(crate::args::TestCrashHook::TerminalAcquiredPanic) {
         panic!("injected panic after terminal acquisition");
     }
-    let terminal_theme = terminal_appearance::probe(terminal_appearance::PROBE_TIMEOUT);
+    let terminal_theme = if config.theme == crate::Theme::System {
+        terminal_appearance::probe(terminal_appearance::PROBE_TIMEOUT)
+    } else {
+        terminal_appearance::TerminalTheme::default()
+    };
     let mut terminal = match Terminal::new(CrosstermBackend::new(io::stderr())) {
         Ok(terminal) => terminal,
         Err(_) => return Err(terminal_setup_failure(&mut guard, &mut shutdown).await),
