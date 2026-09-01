@@ -296,6 +296,24 @@ Recovery cases:
 
 No process-local queue or callback is authoritative for these decisions.
 
+### Landed bounded coordinator slice
+
+Runtime reconstructs the Goal and complete Plan graph at one shared watermark
+before returning one `GoalPlanDecision`. It rejects mixed projection versions,
+multiple authoritative non-terminal Plans and multiple terminal authorities.
+It can currently advance the policy-independent Activate, Ready-Step dispatch,
+Plan completion, Goal success and Goal failure decisions exactly once. Command
+identities for non-worker decisions are derived from the frozen Goal/Session
+prefix and transition class; every domain planner and commit boundary still
+revalidates the prefix.
+
+A Draft Goal with no Plan requests `ProposePlan`. A proposed Plan is never
+silently adopted: until a constructed admission-policy port supplies a bounded
+decision, coordination returns `plan_admission_required`. Suspended work and
+failed Steps likewise stop at explicit continuation/failure-policy reasons.
+This slice is not yet installed in the Desktop/Host pump, so product-level
+automatic Plan progress remains incomplete.
+
 ## Public surface
 
 V1 public Goal mutation remains limited to Create, Revise and Cancel. Clients
