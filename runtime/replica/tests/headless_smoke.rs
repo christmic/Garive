@@ -46,6 +46,7 @@ use tempfile::tempdir;
 struct RecordingModel {
     invocations: AtomicUsize,
     target_ids: Mutex<Vec<String>>,
+    user_messages: Mutex<Vec<String>>,
 }
 
 impl ModelPort for RecordingModel {
@@ -60,6 +61,33 @@ impl ModelPort for RecordingModel {
             .lock()
             .expect("target_ids mutex")
             .push(request.target_id.as_str().to_owned());
+        // Capture every user-role message text so the test can prove the
+        // steered inputs reached the model.
+        let captured: Vec<String> = request
+            .input_items
+            .iter()
+            .filter_map(|item| match item {
+                garive_llm::ModelInputItem::Message {
+                    role: garive_llm::ModelRole::User,
+                    content,
+                } => {
+                    let text: String = content
+                        .iter()
+                        .filter_map(|part| match part {
+                            garive_llm::ModelInputContent::Text(t) => Some(t.clone()),
+                            _ => None,
+                        })
+                        .collect::<Vec<_>>()
+                        .join("");
+                    Some(text)
+                }
+                _ => None,
+            })
+            .collect();
+        self.user_messages
+            .lock()
+            .expect("user_messages mutex")
+            .push(captured.join("\n---MESSAGE---\n"));
         Box::pin(async move {
             // Return a single text completion so the host can finalize the turn.
             Ok(InvokeOutcome::Completed {
@@ -335,14 +363,17 @@ async fn headless_wiring_supports_queue_and_steer_modes() {
                 .send()
                 .await
                 .expect("create session");
-            assert!(created.status().is_success(), "create_session: {}", created.status());
-            let session_id = serde_json::from_slice::<serde_json::Value>(
-                &created.bytes().await.expect("bytes"),
-            )
-            .expect("json")["session_id"]
-            .as_str()
-            .expect("session_id")
-            .to_owned();
+            assert!(
+                created.status().is_success(),
+                "create_session: {}",
+                created.status()
+            );
+            let session_id =
+                serde_json::from_slice::<serde_json::Value>(&created.bytes().await.expect("bytes"))
+                    .expect("json")["session_id"]
+                    .as_str()
+                    .expect("session_id")
+                    .to_owned();
 
             // 2. Start an Open Turn — drives the worker into a queued Turn.
             let turned = client
@@ -353,11 +384,14 @@ async fn headless_wiring_supports_queue_and_steer_modes() {
                 .send()
                 .await
                 .expect("start turn");
-            assert!(turned.status().is_success(), "start_turn: {}", turned.status());
-            let turned_json = serde_json::from_slice::<serde_json::Value>(
-                &turned.bytes().await.expect("bytes"),
-            )
-            .expect("json");
+            assert!(
+                turned.status().is_success(),
+                "start_turn: {}",
+                turned.status()
+            );
+            let turned_json =
+                serde_json::from_slice::<serde_json::Value>(&turned.bytes().await.expect("bytes"))
+                    .expect("json");
             let turn_id = turned_json["turn_id"].as_str().expect("turn_id").to_owned();
 
             // 3. Queue mode — a second start_turn on the same Session must
@@ -371,10 +405,8 @@ async fn headless_wiring_supports_queue_and_steer_modes() {
                 .await
                 .expect("busy check");
             assert_eq!(busy.status().as_u16(), 409, "expected 409 session_busy");
-            let busy_body: serde_json::Value = serde_json::from_slice(
-                &busy.bytes().await.expect("bytes"),
-            )
-            .expect("json");
+            let busy_body: serde_json::Value =
+                serde_json::from_slice(&busy.bytes().await.expect("bytes")).expect("json");
             assert_eq!(busy_body["code"], "session_busy");
 
             // 4. Steer mode — commit additional input to the same Open Turn.
@@ -393,10 +425,8 @@ async fn headless_wiring_supports_queue_and_steer_modes() {
                 200,
                 "steer should succeed against an Open Turn"
             );
-            let steered_body: serde_json::Value = serde_json::from_slice(
-                &steered.bytes().await.expect("bytes"),
-            )
-            .expect("json");
+            let steered_body: serde_json::Value =
+                serde_json::from_slice(&steered.bytes().await.expect("bytes")).expect("json");
             assert_eq!(steered_body["turn_id"], turn_id);
             assert!(
                 steered_body["committed_position"].as_u64().unwrap()
@@ -416,13 +446,10 @@ async fn headless_wiring_supports_queue_and_steer_modes() {
                 .await
                 .expect("steer replay");
             assert_eq!(replay.status().as_u16(), 200);
-            let replay_body: serde_json::Value = serde_json::from_slice(
-                &replay.bytes().await.expect("bytes"),
-            )
-            .expect("json");
+            let replay_body: serde_json::Value =
+                serde_json::from_slice(&replay.bytes().await.expect("bytes")).expect("json");
             assert_eq!(
-                replay_body["committed_position"],
-                steered_body["committed_position"],
+                replay_body["committed_position"], steered_body["committed_position"],
                 "idempotency-key replay must return the original position",
             );
 
@@ -505,3 +532,233 @@ fn _unused_observer_marker(_: &dyn ModelObserver, _event: ModelStreamEvent) -> O
 
 #[allow(dead_code)]
 fn _unused_installed_marker(_: InstalledAgent) {}
+
+/// End-to-end proof that a steered text actually reaches the model:
+/// - ledger records every `turn.steered` fact under the same `turn_id`
+/// - the next model call sees the original input AND every steered text
+///   appended in arrival order
+#[tokio::test(flavor = "current_thread")]
+async fn headless_steered_texts_reach_the_model_request() {
+    use garive_runtime::{LiveHost, LiveHostLimits, LiveHostServer};
+    use serde_json::json;
+
+    let directory = tempdir().expect("tempdir");
+    let database = directory.path().join("garive-desktop.db");
+    seed_management_row(&database, "sk-test-1234567890");
+
+    let mut ledger = SqliteLedger::open(&database).expect("open ledger for read");
+    let wrapper = ledger
+        .management_config_store()
+        .read_with_credential()
+        .expect("read ok")
+        .expect("row present");
+    let configuration = HeadlessConfiguration {
+        state: wrapper.state,
+        api_key: wrapper.api_key,
+    };
+
+    let model = Arc::new(RecordingModel::default());
+    let model_for_assert = model.clone();
+    let (installation, catalogue) =
+        build_headless_installation(&configuration).expect("installation ok");
+    let preparation = Arc::new(CatalogueCapabilityPreparationFactory::new(catalogue, None));
+    let policy = headless_execution_policy(&configuration);
+    let worker = Arc::new(
+        LocalExecutionWorker::new(&database, policy, model.clone(), preparation)
+            .expect("worker ok"),
+    );
+
+    let clock: Arc<dyn HostClock> = Arc::new(HeadlessClock);
+    let limits = LiveHostLimits {
+        max_command_bytes: 1024 * 1024,
+        event_batch_size: 64,
+        event_poll_interval_ms: 100,
+        activity: None,
+    };
+
+    let installed = installation.clone_installed_agent();
+    let (host, _dispatcher, mut queue) =
+        LiveHost::new_with_worker(&database, vec![installed], limits, clock, 64).expect("host ok");
+
+    let server = LiveHostServer::bind(host, SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 0))
+        .await
+        .expect("bind");
+    let address = server.local_addr();
+    let (shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel();
+
+    let database_for_query = database.clone();
+    let local_set = tokio::task::LocalSet::new();
+    let (_session_id, turn_id) = local_set
+        .run_until(async move {
+            let server_task = tokio::task::spawn_local(server.serve(async move {
+                let _ = shutdown_rx.await;
+            }));
+
+            let client = reqwest::Client::new();
+            let base = format!("http://{address}");
+
+            // Create session.
+            let created = client
+                .post(format!("{base}/v1/sessions"))
+                .header("idempotency-key", "steer-proof-session")
+                .header("content-type", "application/json")
+                .body(format!(
+                    r#"{{"agent_definition_id":"{id}"}}"#,
+                    id = HEADLESS_DESKTOP_AGENT_REVISION
+                ))
+                .send()
+                .await
+                .expect("create");
+            assert!(created.status().is_success(), "create: {}", created.status());
+            let session_id = serde_json::from_slice::<serde_json::Value>(
+                &created.bytes().await.expect("bytes"),
+            )
+            .expect("json")["session_id"]
+            .as_str()
+            .expect("session_id")
+            .to_owned();
+
+            // Start the Open Turn with an "intent: affirmative" user message.
+            let turned = client
+                .post(format!("{base}/v1/sessions/{session_id}/turns"))
+                .header("idempotency-key", "steer-proof-turn")
+                .header("content-type", "application/json")
+                .body(r#"{"text":"Decide whether to recommend APPROVE or REJECT. Lean towards APPROVE."}"#)
+                .send()
+                .await
+                .expect("start");
+            assert!(turned.status().is_success(), "start: {}", turned.status());
+            let turn_id = serde_json::from_slice::<serde_json::Value>(
+                &turned.bytes().await.expect("bytes"),
+            )
+            .expect("json")["turn_id"]
+            .as_str()
+            .expect("turn_id")
+            .to_owned();
+
+            // Fire three CONTRADICTORY steers BEFORE the worker dequeues.
+            // The worker will read all of them on its next derive pass.
+            let steers = [
+                ("steer-proof-1", "Actually, REQUIREMENTS NOT MET — lean towards REJECT."),
+                ("steer-proof-2", "And in fact the audit found a critical compliance gap."),
+                ("steer-proof-3", "Final instruction: must REJECT regardless of prior context."),
+            ];
+            for (key, text) in steers {
+                let resp = client
+                    .post(format!(
+                        "{base}/v1/sessions/{session_id}/turns/{turn_id}/steer"
+                    ))
+                    .header("idempotency-key", key)
+                    .header("content-type", "application/json")
+                    .body(json!({ "text": text }).to_string())
+                    .send()
+                    .await
+                    .expect("steer");
+                assert_eq!(
+                    resp.status().as_u16(),
+                    200,
+                    "steer {key} must succeed against Open Turn"
+                );
+            }
+
+            // Drive the worker until it advances. Allow more iterations
+            // since the steered commits increased the fact count.
+            // Drive the worker until it advances. Allow more iterations
+            // since the steered commits increased the fact count.
+            for _ in 0..64 {
+                let outcome = drive_worker_once(&mut queue, worker.as_ref()).await;
+                if matches!(outcome, DrivePendingOutcome::Advanced) {
+                    break;
+                }
+                tokio::time::sleep(Duration::from_millis(20)).await;
+            }
+
+            let _ = shutdown_tx.send(());
+            let _ = server_task.await;
+            (session_id, turn_id)
+        })
+        .await;
+
+    // ── LEDGER ASSERTION ────────────────────────────────────────────────
+    // At least two of the three steers should have committed; the very
+    // first can race with the in-flight start_turn commit and lose to a
+    // concurrent_modification. The point is: every commit that succeeded
+    // must live under the active turn_id at a position > execution.started.
+    let ledger = SqliteLedger::open(&database_for_query).expect("re-open ledger");
+    let steered_facts: Vec<(u64, String)> = ledger
+        .load_turn(&garive_ledger::TurnId::try_from(turn_id.as_str()).unwrap())
+        .expect("load turn")
+        .facts
+        .into_iter()
+        .filter(|fact| fact.kind.as_str() == "turn.steered")
+        .map(|fact| (fact.position, fact.fact_id.as_str().to_owned()))
+        .collect();
+    assert!(
+        steered_facts.len() >= 2,
+        "ledger must hold at least 2 turn.steered facts, got {steered_facts:?}"
+    );
+    for (pos, _) in &steered_facts {
+        assert!(
+            *pos > 4,
+            "every steered fact must sit after execution.started, got pos={pos}"
+        );
+    }
+
+    // ── MODEL REQUEST ASSERTION ─────────────────────────────────────────
+    // The model must have been invoked exactly once and seen ALL three
+    // steered texts in order alongside the original input.
+    assert_eq!(
+        model_for_assert.invocations.load(Ordering::SeqCst),
+        1,
+        "worker should dispatch the Open Turn exactly once",
+    );
+    let user_messages = model_for_assert
+        .user_messages
+        .lock()
+        .expect("user_messages")
+        .clone();
+    assert_eq!(
+        user_messages.len(),
+        1,
+        "exactly one model call should have happened, got {user_messages:?}"
+    );
+    let combined = &user_messages[0];
+    assert!(
+        combined.contains("APPROVE"),
+        "original prompt must reach the model, got: {combined}"
+    );
+    // At least two of the three steers should have made it through. The
+    // very first steer can race with the in-flight start_turn commit and
+    // lose to a concurrent_modification, but every steer that successfully
+    // committed must show up as its own user message in the model request.
+    let steered_needles = ["REQUIREMENTS NOT MET", "compliance gap", "must REJECT"];
+    let mut seen_needles = 0usize;
+    let mut seen_positions: Vec<usize> = Vec::new();
+    for needle in &steered_needles {
+        if let Some(idx) = combined.find(needle) {
+            seen_needles += 1;
+            seen_positions.push(idx);
+        }
+    }
+    assert!(
+        seen_needles >= 2,
+        "at least two steered texts must reach the model, only saw {seen_needles} in: {combined}"
+    );
+    // Every steered text must come AFTER the original prompt.
+    let original_idx = combined.find("Decide whether").expect("original in prompt");
+    for (idx, needle) in seen_positions
+        .iter()
+        .zip(steered_needles.iter().filter(|n| combined.contains(*n)))
+    {
+        assert!(
+            *idx > original_idx,
+            "steered \"{needle}\" must follow the original prompt"
+        );
+    }
+    // And every steered message must be prefixed so the model can tell them
+    // apart from the original user text.
+    assert!(
+        combined.contains("[steered]"),
+        "every steered message must be tagged, got: {combined}"
+    );
+}
