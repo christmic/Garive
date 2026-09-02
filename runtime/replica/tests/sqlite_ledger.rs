@@ -109,6 +109,7 @@ fn migrations_advance_v1_and_refuse_unknown_future_schema() {
                 "DROP TABLE execution_leases; \
                  DROP TABLE schedule_leases; \
                  DROP TABLE runtime_monotonic_clock; \
+                 DROP TABLE runtime_management_config; \
                  DROP TABLE memory_repository_transitions; \
                  DROP TABLE memory_control_sources; \
                  DROP TABLE memory_control_current; \
@@ -127,7 +128,7 @@ fn migrations_advance_v1_and_refuse_unknown_future_schema() {
                 row.get(0)
             })
             .unwrap();
-        assert_eq!(version, 8);
+        assert_eq!(version, 9);
         let leases: u32 = migrated
             .connection_for_test()
             .query_row(
@@ -158,15 +159,79 @@ fn migrations_advance_v1_and_refuse_unknown_future_schema() {
         migrated
             .connection_for_test()
             .execute(
-                "INSERT INTO schema_migrations(version, applied_at) VALUES (9, ?1)",
+                "INSERT INTO schema_migrations(version, applied_at) VALUES (10, ?1)",
                 ["2026-08-29T00:00:00Z"],
             )
             .unwrap();
     }
     assert!(matches!(
         SqliteLedger::open(path),
-        Err(SqliteLedgerError::UnsupportedSchema(9))
+        Err(SqliteLedgerError::UnsupportedSchema(10))
     ));
+}
+
+#[test]
+fn migrations_advance_to_v9_with_management_config_table() {
+    let directory = tempdir().unwrap();
+    let path = directory.path().join("migration_v9.sqlite3");
+    let ledger = SqliteLedger::open(&path).unwrap();
+    let version: u32 = ledger
+        .connection_for_test()
+        .query_row("SELECT MAX(version) FROM schema_migrations", [], |row| {
+            row.get(0)
+        })
+        .unwrap();
+    assert_eq!(version, 9);
+    let management_table: u32 = ledger
+        .connection_for_test()
+        .query_row(
+            "SELECT COUNT(*) FROM sqlite_schema \
+             WHERE type='table' AND name='runtime_management_config'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(management_table, 1);
+    ledger
+        .connection_for_test()
+        .execute(
+            "INSERT INTO runtime_management_config(\
+                config_id, profile_id, model_target_id, model_id, deployment_id, \
+                definition_id, api_key, runtime_id, configuration_revision, \
+                configuration_digest, committed_at\
+             ) VALUES (1, ?1, ?2, ?3, ?4, ?5, ?6, ?7, 1, ?8, '2026-09-02T00:00:00Z')",
+            rusqlite::params_from_iter([
+                "openai.responses.v1",
+                "gpt-5.6",
+                "gpt-5.6",
+                "tok9-flash",
+                "desktop.agent.v3",
+                "api-key-bytes",
+                "runtime-7e22bcbe-bfa4-4c8f-a0c3-94e07be8f363",
+                "0".repeat(64).as_str(),
+            ]),
+        )
+        .unwrap();
+    ledger
+        .connection_for_test()
+        .execute(
+            "INSERT INTO runtime_management_config(\
+                config_id, profile_id, model_target_id, model_id, deployment_id, \
+                definition_id, api_key, runtime_id, configuration_revision, \
+                configuration_digest, committed_at\
+             ) VALUES (2, ?1, ?2, ?3, ?4, ?5, ?6, ?7, 1, ?8, '2026-09-02T00:00:00Z')",
+            rusqlite::params_from_iter([
+                "openai.responses.v1",
+                "gpt-5.6",
+                "gpt-5.6",
+                "tok9-flash",
+                "desktop.agent.v3",
+                "api-key-bytes",
+                "runtime-7e22bcbe-bfa4-4c8f-a0c3-94e07be8f363",
+                "0".repeat(64).as_str(),
+            ]),
+        )
+        .expect_err("config_id CHECK constraint must reject duplicate singleton rows");
 }
 
 #[test]

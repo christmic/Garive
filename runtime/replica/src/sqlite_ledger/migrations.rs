@@ -211,6 +211,24 @@ CREATE TABLE runtime_monotonic_clock (
 ) STRICT;
 "#;
 
+const MIGRATION_9: &str = r#"
+CREATE TABLE runtime_management_config (
+    config_id INTEGER PRIMARY KEY NOT NULL CHECK(config_id = 1),
+    profile_id TEXT NOT NULL CHECK(length(profile_id) > 0),
+    endpoint_override TEXT,
+    model_target_id TEXT NOT NULL CHECK(length(model_target_id) > 0),
+    model_id TEXT NOT NULL CHECK(length(model_id) > 0),
+    deployment_id TEXT NOT NULL CHECK(length(deployment_id) > 0),
+    definition_id TEXT NOT NULL CHECK(length(definition_id) > 0),
+    api_key TEXT NOT NULL CHECK(length(api_key) > 0),
+    runtime_id TEXT NOT NULL CHECK(length(runtime_id) > 0),
+    configuration_revision INTEGER NOT NULL CHECK(configuration_revision > 0),
+    configuration_digest TEXT NOT NULL CHECK(length(configuration_digest) = 64),
+    committed_at TEXT NOT NULL CHECK(length(committed_at) > 0),
+    CHECK(endpoint_override IS NULL OR length(endpoint_override) > 0)
+) STRICT;
+"#;
+
 pub(super) fn migrate(connection: &mut Connection) -> Result<(), SqliteLedgerError> {
     connection.execute_batch(
         "CREATE TABLE IF NOT EXISTS schema_migrations (\
@@ -222,7 +240,7 @@ pub(super) fn migrate(connection: &mut Connection) -> Result<(), SqliteLedgerErr
         [],
         |row| row.get(0),
     )?;
-    if version > 8 {
+    if version > 9 {
         return Err(SqliteLedgerError::UnsupportedSchema(version));
     }
     if version == 0 {
@@ -308,6 +326,17 @@ pub(super) fn migrate(connection: &mut Connection) -> Result<(), SqliteLedgerErr
         transaction.execute(
             "INSERT INTO schema_migrations(version, applied_at) \
              VALUES (8, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))",
+            [],
+        )?;
+        transaction.commit()?;
+        version = 8;
+    }
+    if version == 8 {
+        let transaction = connection.transaction()?;
+        transaction.execute_batch(MIGRATION_9)?;
+        transaction.execute(
+            "INSERT INTO schema_migrations(version, applied_at) \
+             VALUES (9, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))",
             [],
         )?;
         transaction.commit()?;
