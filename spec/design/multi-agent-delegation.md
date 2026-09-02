@@ -2,13 +2,16 @@
 
 ## Status
 
-Accepted implementation contract in the Agent capability set. Coordinated
-C3/C6F changes and fixtures precede behavior.
+Accepted MA0 compatibility slice for a single explicitly blocking delegation.
+MA1 [`multi-agent-collaboration.md`](multi-agent-collaboration.md) supersedes
+its topology assumptions for named peers, anonymous/fork targets, concurrency
+and non-blocking delivery. MA0 remains the `SuspendExecution` specialization;
+it is not the general definition of multi-Agent collaboration.
 
 ## Scope and identity boundary
 
-MA0 defines one parent Agent requesting bounded work from one child Agent in
-the same durable Session. Engine Multi-Agent owns portable intent, budget and
+MA0 defines one dispatcher Agent requesting bounded work from one assignee Agent
+in the same durable Session and explicitly selecting blocking delivery. Engine Multi-Agent owns portable intent, budget and
 result reduction. Runtime owns Agent Instance creation/lookup, authorization,
 child Turn lifecycle, scheduling, persistence, cancellation and recovery.
 
@@ -94,10 +97,10 @@ consumes the corresponding full reservation. Only a committed child terminal
 may release unused reservation; process loss or missing usage never creates
 budget. Checked arithmetic failure rejects before child start.
 
-V1 permits one active delegation per parent Turn and exactly one child Turn per
-delegation. Parallel fan-out, DAGs, swarms, voting and recursive aggregation are
-future measured slices. A child may delegate only when its own snapshot admits
-it and `current_depth < max_depth`.
+MA0 permits one active blocking delegation per dispatcher Turn and exactly one
+assignee Turn per delegation. MA1 owns concurrent non-blocking fan-out and fork
+exploration. An assignee may delegate only when its own snapshot admits it and
+`current_depth < max_depth`.
 
 ## Parent suspension and child lifecycle
 

@@ -25,8 +25,10 @@ the capability crates participate without creating a second product Runtime.
 | Prepared Call | Validated immutable tool request with stable digest and requirements. | Tools/Core |
 | Invocation | Runtime-authorized attempt to execute one exact Prepared Call under a stable identity. | Runtime |
 
-These identities are distinct. A model role, provider model, tool call, branch,
-or sub-agent is not automatically an Agent Instance.
+These identities are distinct. A model role, provider model, tool call or
+lightweight branch is not automatically an Agent Instance. A named collaborator,
+anonymous assignee or self-fork is an Agent only after Runtime allocates and
+durably binds an Agent Instance.
 
 ## Product boundary
 
@@ -135,11 +137,14 @@ Kernel Execution with the same `turn_id` and a new `execution_id`. No in-memory
 
 ## Multi-Agent semantics
 
-Delegation produces a request for Runtime to start or address another Agent
-Instance. The child owns its own definition revision, execution IDs, budgets,
-ports and outcomes. A child cannot inherit credentials or authority implicitly.
-The parent observes only a governed, durable child result. Internal model roles
-used for drafting/critique remain model calls, not Agent Instances.
+A Session may contain up to ten equal named Agent Instances. Names are display
+metadata; identity and authority remain explicit Runtime bindings. “Parent” and
+“child” describe only one temporary delegation edge, never a permanent roster
+hierarchy. A delegation may target an anonymous task Agent, a real fork of the
+dispatcher, or another named Session peer. Dispatch is non-blocking unless the
+request explicitly selects a join or suspension policy. Every assignee owns its
+definition revision, execution IDs, budgets, ports and outcomes and inherits no
+credential or authority implicitly. See MA1.
 
 ## Hard invariants
 

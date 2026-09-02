@@ -4,6 +4,7 @@
 #![deny(missing_docs)]
 
 mod budget;
+mod collaboration;
 mod grant;
 mod intent;
 mod result;
@@ -12,6 +13,9 @@ mod values;
 pub use budget::{
     settle_delegation_budget, BudgetAmounts, DelegationBudgetSettlement, DelegationConsumption,
     DelegationUsage, TokenUsageEvidence,
+};
+pub use collaboration::{
+    AssigneeSelector, DeliveryPolicy, NamedAgent, SessionRoster, MAX_NAMED_SESSION_AGENTS,
 };
 pub use grant::{
     authorize_delegation, release_delegation_budget, DelegationAllowance, DelegationAuthorization,
