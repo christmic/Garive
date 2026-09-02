@@ -128,49 +128,11 @@ pub fn reconstruct_local_start(
     let facts = ledger
         .read_facts(&committed.session_id, 0, committed.committed_position, None)
         .map_err(|_| LocalReconstructionError::DurabilityUnavailable)?;
-    // turn.steered facts commit after execution.started on the same turn_id,
-    // so they fall outside the [0, committed.committed_position] window above.
-    // Read them separately up to the session watermark so a derive iteration
-    // can pick up every steer the user injected between dispatch and now.
+    // Freeze the latest session watermark. Durable Runtime context projection
+    // reads control/history facts through this boundary during derivation.
     let session_watermark = ledger
         .session_watermark(&committed.session_id)
         .map_err(|_| LocalReconstructionError::DurabilityUnavailable)?;
-    let steered_inputs: Vec<String> = session_watermark
-        .map(|watermark| {
-            // Nothing past execution.started yet, skip the steered read.
-            if watermark.max_position <= committed.committed_position {
-                return Ok(Vec::new());
-            }
-            // Read facts in (committed.committed_position, watermark.max_position]
-            // so the ledger API's strict after < through constraint holds even
-            // when the watermark is exactly one position ahead.
-            ledger
-                .read_facts(
-                    &committed.session_id,
-                    committed.committed_position,
-                    watermark.max_position,
-                    None,
-                )
-                .map_err(|_| LocalReconstructionError::DurabilityUnavailable)
-        })
-        .transpose()?
-        .unwrap_or_default()
-        .into_iter()
-        .filter(|fact| {
-            fact.turn_id.as_ref() == Some(&committed.turn_id)
-                && fact.kind.as_str() == "turn.steered"
-                && fact.position > committed.committed_position
-        })
-        .map(|fact| {
-            let steered_payload = payload(&fact)?;
-            let inline = text(&steered_payload, &["input", "inline_utf8"])?;
-            let digest_value = text(&steered_payload, &["input", "digest"])?;
-            if digest(inline.as_bytes()) != digest_value {
-                return Err(LocalReconstructionError::ReconstructionFailed);
-            }
-            Ok::<String, LocalReconstructionError>(inline.to_owned())
-        })
-        .collect::<Result<Vec<_>, LocalReconstructionError>>()?;
     let opened = exactly_one(&facts, |fact| fact.kind.as_str() == "session.opened")?;
     let execution = exactly_one(&facts, |fact| {
         fact.turn_id.as_ref() == Some(&committed.turn_id)
@@ -264,43 +226,6 @@ pub fn reconstruct_local_start(
         text: trusted_input.to_owned(),
         workspace_context,
         internal_instruction: planner_owned,
-        steered: Vec::new(), // populated after we know the steered positions
-    };
-    // The steered inputs were read in position order above; pair each with
-    // its durable position so the context port can emit a properly-referenced
-    // candidate per steer.
-    let steered_positions: Vec<u64> = session_watermark
-        .as_ref()
-        .map(|wm| {
-            if wm.max_position <= committed.committed_position {
-                return Ok(Vec::new());
-            }
-            ledger
-                .read_facts(
-                    &committed.session_id,
-                    committed.committed_position,
-                    wm.max_position,
-                    None,
-                )
-                .map_err(|_| LocalReconstructionError::DurabilityUnavailable)
-        })
-        .transpose()?
-        .unwrap_or_default()
-        .into_iter()
-        .filter(|fact| {
-            fact.turn_id.as_ref() == Some(&committed.turn_id)
-                && fact.kind.as_str() == "turn.steered"
-                && fact.position > committed.committed_position
-        })
-        .map(|fact| fact.position)
-        .collect();
-    let context = LocalInputContext {
-        steered: steered_positions
-            .into_iter()
-            .zip(steered_inputs.iter())
-            .map(|(pos, text)| (pos, text.clone()))
-            .collect(),
-        ..context
     };
     let frozen_input = optional_number(&execution_payload, &["limits", "max_input_tokens"])?;
     let max_total_tokens = match (frozen_input, frozen_output) {
@@ -426,16 +351,14 @@ pub fn reconstruct_local_start(
 }
 
 /// Fixed-prefix context containing the original trusted user input plus
-/// every `turn.steered` text the user injected between `execution.started`
-/// and the current derive pass — each steered text becomes its own user
-/// message so the model sees them in arrival order.
+/// the current derive pass. Durable history and steer projection belongs to
+/// the Runtime bridge, which can refresh it while an execution is active.
 pub struct LocalInputContext {
     session_id: String,
     position: u64,
     text: String,
     workspace_context: Option<ContextCandidate>,
     internal_instruction: bool,
-    steered: Vec<(u64, String)>,
 }
 impl ContextPort for LocalInputContext {
     fn read_candidates(
@@ -472,29 +395,7 @@ impl ContextPort for LocalInputContext {
             visibility: Visibility::Visible,
             items: vec![item],
         };
-        // Surface every steered text as its own user message after the
-        // original input. Positions are strictly increasing because the
-        // ledger assigns them at commit time.
-        let mut steered_candidates = Vec::with_capacity(self.steered.len());
-        for (pos, text) in &self.steered {
-            if *pos <= self.position || *pos > request.through_position {
-                continue;
-            }
-            steered_candidates.push(ContextCandidate {
-                fact_ref: FactRef {
-                    session_id: self.session_id.clone(),
-                    position: *pos,
-                },
-                kind: CandidateKind::UserInput,
-                retention: Retention::Required,
-                visibility: Visibility::Visible,
-                items: vec![ModelInputItem::Message {
-                    role: ModelRole::User,
-                    content: vec![ModelInputContent::Text(format!("[steered] {text}"))],
-                }],
-            });
-        }
-        let mut candidates = Vec::with_capacity(2 + steered_candidates.len());
+        let mut candidates = Vec::with_capacity(2);
         if let Some(workspace) = &self.workspace_context {
             if workspace.fact_ref.session_id != request.session_id
                 || workspace.fact_ref.position == 0
@@ -505,7 +406,6 @@ impl ContextPort for LocalInputContext {
             candidates.push(workspace.clone());
         }
         candidates.push(input);
-        candidates.extend(steered_candidates);
         Ok(candidates)
     }
 }

@@ -370,6 +370,13 @@ pub enum ContextPortError {
     PortFailure,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+/// A newer durable context boundary that requires another inference pass.
+pub struct ContextAdvance {
+    /// Inclusive durable position to use for the next derivation.
+    pub through_position: u64,
+}
+
 /// Frozen port that reads purpose-specific candidates from durable facts.
 pub trait ContextPort {
     /// Reads ordered candidates for one bounded rebuild attempt.
@@ -378,6 +385,17 @@ pub trait ContextPort {
         request: &ContextRequest,
         rebuild_attempt: u32,
     ) -> Result<Vec<ContextCandidate>, ContextPortError>;
+
+    /// Observes user input committed while the preceding model call was in flight.
+    ///
+    /// Static context ports return no advance. Durable Runtime ports override
+    /// this hook and only return positions authorized to continue inference.
+    fn advance_after_model(
+        &mut self,
+        _consumed_through_position: u64,
+    ) -> Result<Option<ContextAdvance>, ContextPortError> {
+        Ok(None)
+    }
 }
 
 /// Sink for ordered semantic progress; emission is not proof of persistence.

@@ -402,6 +402,24 @@ async fn execute_kernel(
                         }
                     }
                 }
+                match ports.context.advance_after_model(through_position) {
+                    Ok(Some(advance)) if advance.through_position > through_position => {
+                        through_position = advance.through_position;
+                        continue;
+                    }
+                    Ok(Some(_)) | Err(crate::ContextPortError::PortFailure) => {
+                        return finish(
+                            request,
+                            ports,
+                            &mut control,
+                            &usage,
+                            AgentOutcome::Failed {
+                                reason: AgentFailureReason::PortFailure,
+                            },
+                        );
+                    }
+                    Ok(None) => {}
+                }
                 return finish(
                     request,
                     ports,

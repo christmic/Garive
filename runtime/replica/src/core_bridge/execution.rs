@@ -6,8 +6,8 @@ use std::{
 use garive_core::{
     execute_agent_with_preparation, execute_model_only, merge_context_candidates, AgentEvent,
     AgentEventKind, AgentExecutionPorts, AgentFailureReason, AgentOutcome, AgentToolCapabilities,
-    AgentTurnRequest, CandidateKind, ClockPort, ContextCandidate, ContextPort, ContextPortError,
-    ContextPurpose, ContextRequest, EventSink, FactRef, PortFailure, Retention,
+    AgentTurnRequest, CandidateKind, ClockPort, ContextAdvance, ContextCandidate, ContextPort,
+    ContextPortError, ContextPurpose, ContextRequest, EventSink, FactRef, PortFailure, Retention,
     ToolPreparationPort, Visibility,
 };
 use garive_ledger::{
@@ -186,6 +186,8 @@ async fn execute_durable_model_only_inner(
         turn_id: config.model.turn_id.clone(),
         version: config.expected_session_version,
         position: request.context_request.through_position,
+        consumed_context_position: request.context_request.through_position,
+        latest_steer_position: None,
         cancellation_requested,
         failure: None,
     };
@@ -245,6 +247,16 @@ fn finish_durable_execution(
     if let Some(failure) = coordinator.failure.take() {
         return Err(failure);
     }
+    if coordinator
+        .latest_steer_position
+        .is_some_and(|position| position > coordinator.consumed_context_position)
+    {
+        coordinator
+            .ledger
+            .release_execution_lease(&coordinator.lease)
+            .map_err(DurableExecutionError::Lease)?;
+        return Err(DurableExecutionError::RecoverableInterruption);
+    }
     if !coordinator.cancellation_requested && recoverable_f0_interruption(&coordinator, &report)? {
         return Err(DurableExecutionError::RecoverableInterruption);
     }
@@ -257,7 +269,17 @@ fn finish_durable_execution(
         &report,
     )
     .map_err(DurableExecutionError::Command)?;
-    let terminal_commit = coordinator.commit(terminal)?;
+    let terminal_commit = match coordinator.commit(terminal) {
+        Ok(commit) => commit,
+        Err(DurableExecutionError::RecoverableInterruption) => {
+            coordinator
+                .ledger
+                .release_execution_lease(&coordinator.lease)
+                .map_err(DurableExecutionError::Lease)?;
+            return Err(DurableExecutionError::RecoverableInterruption);
+        }
+        Err(error) => return Err(error),
+    };
     coordinator
         .ledger
         .release_execution_lease(&coordinator.lease)
@@ -368,6 +390,8 @@ async fn execute_durable_agent_inner(
         turn_id: config.model.turn_id.clone(),
         version: config.expected_session_version,
         position: request.context_request.through_position,
+        consumed_context_position: request.context_request.through_position,
+        latest_steer_position: None,
         cancellation_requested,
         failure: None,
     };
@@ -461,13 +485,18 @@ impl ContextPort for DurableContextPort<'_, '_> {
         if request.session_id != self.session_id.as_str() {
             return Err(ContextPortError::PortFailure);
         }
-        let observation_kind =
-            FactKind::new("effect.observation").map_err(|_| ContextPortError::PortFailure)?;
-        let kinds = BTreeSet::from([observation_kind]);
-        let coordinator = self
+        let kinds = ["effect.observation", "turn.steered", "model.completed"]
+            .into_iter()
+            .map(FactKind::new)
+            .collect::<Result<BTreeSet<_>, _>>()
+            .map_err(|_| ContextPortError::PortFailure)?;
+        let mut coordinator = self
             .coordinator
             .lock()
             .map_err(|_| ContextPortError::PortFailure)?;
+        coordinator.consumed_context_position = coordinator
+            .consumed_context_position
+            .max(request.through_position);
         let facts = coordinator
             .ledger
             .read_facts(
@@ -477,50 +506,156 @@ impl ContextPort for DurableContextPort<'_, '_> {
                 Some(&kinds),
             )
             .map_err(|_| ContextPortError::PortFailure)?;
-        let observations = facts
+        let durable = facts
             .into_iter()
             .filter(|fact| fact.turn_id.as_ref() == Some(self.turn_id))
-            .map(|fact| {
-                let value: serde_json::Value = serde_json::from_str(fact.payload.as_json())
-                    .map_err(|_| ContextPortError::PortFailure)?;
-                let model_call_id = value
-                    .get("model_call_id")
-                    .and_then(serde_json::Value::as_str)
-                    .ok_or(ContextPortError::PortFailure)?;
-                let binding = value
-                    .get("observation")
-                    .and_then(serde_json::Value::as_object)
-                    .ok_or(ContextPortError::PortFailure)?;
-                let canonical = CanonicalPayload::from_canonical_parts(
-                    binding
-                        .get("inline_utf8")
-                        .and_then(serde_json::Value::as_str)
-                        .ok_or(ContextPortError::PortFailure)?
-                        .to_owned(),
-                    binding
-                        .get("digest")
-                        .and_then(serde_json::Value::as_str)
-                        .ok_or(ContextPortError::PortFailure)?
-                        .to_owned(),
-                )
-                .map_err(|_| ContextPortError::PortFailure)?;
-                Ok(ContextCandidate {
-                    fact_ref: FactRef {
-                        session_id: request.session_id.clone(),
-                        position: fact.position,
-                    },
-                    kind: CandidateKind::ToolObservation,
-                    retention: Retention::Required,
-                    visibility: Visibility::Visible,
-                    items: vec![ModelInputItem::ToolObservation {
-                        model_call_id: model_call_id.to_owned(),
-                        result_json: canonical.as_json().to_owned(),
-                    }],
-                })
-            })
-            .collect::<Result<Vec<_>, _>>()?;
-        merge_context_candidates(base, &observations).map_err(|_| ContextPortError::PortFailure)
+            .map(|fact| durable_context_candidate(request, &fact))
+            .collect::<Result<Vec<_>, _>>()?
+            .into_iter()
+            .flatten()
+            .collect::<Vec<_>>();
+        merge_context_candidates(base, &durable).map_err(|_| ContextPortError::PortFailure)
     }
+
+    fn advance_after_model(
+        &mut self,
+        consumed_through_position: u64,
+    ) -> Result<Option<ContextAdvance>, ContextPortError> {
+        self.coordinator
+            .lock()
+            .map_err(|_| ContextPortError::PortFailure)?
+            .observe_context_advance(consumed_through_position)
+    }
+}
+
+fn durable_context_candidate(
+    request: &ContextRequest,
+    fact: &garive_ledger::DurableFact,
+) -> Result<Option<ContextCandidate>, ContextPortError> {
+    let value: serde_json::Value =
+        serde_json::from_str(fact.payload.as_json()).map_err(|_| ContextPortError::PortFailure)?;
+    let (kind, items) = match fact.kind.as_str() {
+        "effect.observation" => {
+            let model_call_id = required_json_text(&value, "model_call_id")?;
+            let canonical = canonical_binding(&value, "observation")?;
+            (
+                CandidateKind::ToolObservation,
+                vec![ModelInputItem::ToolObservation {
+                    model_call_id: model_call_id.to_owned(),
+                    result_json: canonical.as_json().to_owned(),
+                }],
+            )
+        }
+        "turn.steered" => {
+            let text = verified_text_binding(&value, "input")?;
+            (
+                CandidateKind::UserInput,
+                vec![ModelInputItem::Message {
+                    role: ModelRole::User,
+                    content: vec![ModelInputContent::Text(format!("[steered] {text}"))],
+                }],
+            )
+        }
+        "model.completed" => (
+            CandidateKind::ModelOutput,
+            completed_model_inputs(&canonical_binding(&value, "items")?)?,
+        ),
+        _ => return Err(ContextPortError::PortFailure),
+    };
+    if items.is_empty() {
+        return Ok(None);
+    }
+    Ok(Some(ContextCandidate {
+        fact_ref: FactRef {
+            session_id: request.session_id.clone(),
+            position: fact.position,
+        },
+        kind,
+        retention: Retention::Required,
+        visibility: Visibility::Visible,
+        items,
+    }))
+}
+
+fn required_json_text<'a>(
+    value: &'a serde_json::Value,
+    key: &str,
+) -> Result<&'a str, ContextPortError> {
+    value
+        .get(key)
+        .and_then(serde_json::Value::as_str)
+        .ok_or(ContextPortError::PortFailure)
+}
+
+fn canonical_binding(
+    value: &serde_json::Value,
+    key: &str,
+) -> Result<CanonicalPayload, ContextPortError> {
+    let binding = value
+        .get(key)
+        .and_then(serde_json::Value::as_object)
+        .ok_or(ContextPortError::PortFailure)?;
+    CanonicalPayload::from_canonical_parts(
+        binding
+            .get("inline_utf8")
+            .and_then(serde_json::Value::as_str)
+            .ok_or(ContextPortError::PortFailure)?
+            .to_owned(),
+        binding
+            .get("digest")
+            .and_then(serde_json::Value::as_str)
+            .ok_or(ContextPortError::PortFailure)?
+            .to_owned(),
+    )
+    .map_err(|_| ContextPortError::PortFailure)
+}
+
+fn verified_text_binding<'a>(
+    value: &'a serde_json::Value,
+    key: &str,
+) -> Result<&'a str, ContextPortError> {
+    let binding = value
+        .get(key)
+        .and_then(serde_json::Value::as_object)
+        .ok_or(ContextPortError::PortFailure)?;
+    let inline = binding
+        .get("inline_utf8")
+        .and_then(serde_json::Value::as_str)
+        .ok_or(ContextPortError::PortFailure)?;
+    let expected = binding
+        .get("digest")
+        .and_then(serde_json::Value::as_str)
+        .ok_or(ContextPortError::PortFailure)?;
+    if digest(inline.as_bytes()) != expected {
+        return Err(ContextPortError::PortFailure);
+    }
+    Ok(inline)
+}
+
+fn completed_model_inputs(
+    content: &CanonicalPayload,
+) -> Result<Vec<ModelInputItem>, ContextPortError> {
+    let values: serde_json::Value =
+        serde_json::from_str(content.as_json()).map_err(|_| ContextPortError::PortFailure)?;
+    let values = values.as_array().ok_or(ContextPortError::PortFailure)?;
+    let mut messages = Vec::new();
+    for value in values {
+        match required_json_text(value, "kind")? {
+            "text" | "refusal" => messages.push(ModelInputContent::Text(
+                required_json_text(value, "text")?.to_owned(),
+            )),
+            "reasoning" | "tool_intent" | "tool_observation" | "media_reference" => {}
+            _ => return Err(ContextPortError::PortFailure),
+        }
+    }
+    let mut items = Vec::with_capacity(usize::from(!messages.is_empty()));
+    if !messages.is_empty() {
+        items.push(ModelInputItem::Message {
+            role: ModelRole::Assistant,
+            content: messages,
+        });
+    }
+    Ok(items)
 }
 
 /// Runs the complete tool-capable Core loop with mandatory Prepared-v3 governance.
@@ -756,6 +891,8 @@ pub(super) struct CommitCoordinator<'a> {
     turn_id: TurnId,
     version: u64,
     position: u64,
+    consumed_context_position: u64,
+    latest_steer_position: Option<u64>,
     cancellation_requested: bool,
     failure: Option<DurableExecutionError>,
 }
@@ -772,12 +909,25 @@ impl CommitCoordinator<'_> {
         &mut self,
         facts: Vec<FactDraft>,
     ) -> Result<CommitResult, DurableExecutionError> {
+        let terminal_batch = facts.iter().any(|fact| {
+            matches!(
+                fact.kind.as_str(),
+                "turn.completed" | "turn.suspended" | "turn.stopped" | "turn.failed"
+            )
+        });
         let turn_id = self.turn_id.clone();
         self.observe_durable_cancellation(&turn_id);
         if self.failure.is_some() {
             return Err(DurableExecutionError::Command(
                 RuntimeCommandError::ConcurrentModification,
             ));
+        }
+        if terminal_batch
+            && self
+                .latest_steer_position
+                .is_some_and(|position| position > self.consumed_context_position)
+        {
+            return Err(DurableExecutionError::RecoverableInterruption);
         }
         let first = self.ledger.commit_leased(
             &self.lease,
@@ -792,6 +942,13 @@ impl CommitCoordinator<'_> {
                     return Err(DurableExecutionError::Command(
                         RuntimeCommandError::ConcurrentModification,
                     ));
+                }
+                if terminal_batch
+                    && self
+                        .latest_steer_position
+                        .is_some_and(|position| position > self.consumed_context_position)
+                {
+                    return Err(DurableExecutionError::RecoverableInterruption);
                 }
                 self.ledger
                     .commit_leased(&self.lease, self.session_id.clone(), self.version, facts)
@@ -860,20 +1017,50 @@ impl CommitCoordinator<'_> {
             }
         };
         if appended.is_empty()
-            || appended.iter().any(|fact| {
-                fact.kind.as_str() != "turn.cancel_requested"
-                    || fact.turn_id.as_ref() != Some(turn_id)
-            })
+            || appended
+                .iter()
+                .any(|fact| fact.turn_id.as_ref() != Some(turn_id))
         {
             self.failure = Some(DurableExecutionError::Command(
                 RuntimeCommandError::ConcurrentModification,
             ));
             return true;
         }
+        for fact in &appended {
+            match fact.kind.as_str() {
+                "turn.cancel_requested" => self.cancellation_requested = true,
+                "turn.steered" => self.latest_steer_position = Some(fact.position),
+                _ => {
+                    self.failure = Some(DurableExecutionError::Command(
+                        RuntimeCommandError::ConcurrentModification,
+                    ));
+                    return true;
+                }
+            }
+        }
         self.version = snapshot.session_version;
         self.position = snapshot.through_position;
-        self.cancellation_requested = true;
-        true
+        self.cancellation_requested
+    }
+
+    fn observe_context_advance(
+        &mut self,
+        consumed_through_position: u64,
+    ) -> Result<Option<ContextAdvance>, ContextPortError> {
+        let turn_id = self.turn_id.clone();
+        self.observe_durable_cancellation(&turn_id);
+        if self.failure.is_some() {
+            return Err(ContextPortError::PortFailure);
+        }
+        self.consumed_context_position = self
+            .consumed_context_position
+            .max(consumed_through_position);
+        Ok(self
+            .latest_steer_position
+            .filter(|position| *position > consumed_through_position)
+            .map(|_| ContextAdvance {
+                through_position: self.position,
+            }))
     }
 
     fn append_for_model(&mut self, fact: FactDraft) -> Result<(), ModelPortFailure> {
