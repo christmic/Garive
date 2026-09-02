@@ -485,6 +485,21 @@ impl ModelPort for Model {
     ) -> ModelFuture<'a> {
         Box::pin(async move {
             let call = self.calls.fetch_add(1, Ordering::SeqCst);
+            if self.tool_first && call == 1 {
+                assert!(request.input_items.iter().any(|item| matches!(
+                    item,
+                    ModelInputItem::ToolIntent {
+                        model_call_id,
+                        tool_name,
+                        ..
+                    } if model_call_id == "call" && tool_name == "read_file"
+                )));
+                assert!(request.input_items.iter().any(|item| matches!(
+                    item,
+                    ModelInputItem::ToolObservation { model_call_id, .. }
+                        if model_call_id == "call"
+                )));
+            }
             let ledger = SqliteLedger::open(&self.path).unwrap();
             let active = ledger.list_uncertain_model_requests(&self.session).unwrap();
             assert_eq!(active[0].as_str(), request.request_id.as_str());

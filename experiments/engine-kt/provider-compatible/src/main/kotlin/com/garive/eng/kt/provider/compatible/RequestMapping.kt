@@ -54,6 +54,11 @@ public fun mapResponsesRequest(deployment: ResponsesDeployment, request: ModelRe
                     },
                     content = item.content.map { responsesContent(deployment, it) },
                 )
+                is ModelInputItem.ToolIntent -> ResponsesItem.FunctionCall(
+                    callId = item.modelCallId,
+                    name = wireToolName(item.toolName),
+                    arguments = item.argumentsJson,
+                )
                 is ModelInputItem.ToolObservation -> ResponsesItem.FunctionCallOutput(
                     callId = item.modelCallId,
                     output = FunctionOutput.Text(item.resultJson),
@@ -109,12 +114,25 @@ public fun mapMessagesRequest(deployment: MessagesDeployment, request: ModelRequ
             }
             is ModelInputItem.ToolObservation -> {
                 conversationStarted = true
-                turns += Message(
+                appendMessageBlock(
+                    turns,
                     MessagesRole.USER,
-                    MessageContent.Blocks(listOf(MessagesContentBlock.ToolResult(
+                    MessagesContentBlock.ToolResult(
                         toolUseId = item.modelCallId,
                         content = ToolResultContent.Text(item.resultJson),
-                    ))),
+                    ),
+                )
+            }
+            is ModelInputItem.ToolIntent -> {
+                conversationStarted = true
+                appendMessageBlock(
+                    turns,
+                    MessagesRole.ASSISTANT,
+                    MessagesContentBlock.ToolUse(
+                        id = item.modelCallId,
+                        name = wireToolName(item.toolName),
+                        input = jsonObject(item.argumentsJson),
+                    ),
                 )
             }
             is ModelInputItem.ReasoningReference -> fail(CompatibleProviderError.UNSUPPORTED_INPUT)
@@ -133,6 +151,22 @@ public fun mapMessagesRequest(deployment: MessagesDeployment, request: ModelRequ
     )
     validateProtocol { mapped.validate() }
     return mapped
+}
+
+private fun appendMessageBlock(
+    turns: MutableList<Message>,
+    role: MessagesRole,
+    block: MessagesContentBlock,
+) {
+    val previous = turns.lastOrNull()
+    val blocks = previous?.content as? MessageContent.Blocks
+    val mayJoin = block !is MessagesContentBlock.ToolResult ||
+        blocks?.value?.all { it is MessagesContentBlock.ToolResult } == true
+    if (previous?.role == role && blocks != null && mayJoin) {
+        turns[turns.lastIndex] = previous.copy(content = MessageContent.Blocks(blocks.value + block))
+    } else {
+        turns += Message(role, MessageContent.Blocks(listOf(block)))
+    }
 }
 
 private fun admit(targetId: String, capabilities: Set<ModelCapability>, request: ModelRequest): Unit {
@@ -169,14 +203,14 @@ private fun messagesContent(deployment: MessagesDeployment, content: ModelInputC
     }
 
 private fun responsesTool(tool: ToolDescriptor): FunctionTool = FunctionTool(
-    name = tool.name,
+    name = wireToolName(tool.name),
     description = tool.description,
     parameters = jsonObject(tool.inputSchemaJson),
     strict = tool.strict,
 )
 
 private fun messagesTool(tool: ToolDescriptor): MessagesTool = MessagesTool(
-    name = tool.name,
+    name = wireToolName(tool.name),
     description = tool.description,
     inputSchema = jsonObject(tool.inputSchemaJson),
     strict = tool.strict,

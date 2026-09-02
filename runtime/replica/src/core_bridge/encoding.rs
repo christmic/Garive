@@ -61,6 +61,14 @@ fn input_item(value: &ModelInputItem) -> Value {
         } => {
             json!({"kind":"tool_observation","model_call_id":model_call_id,"result_json":result_json})
         }
+        ModelInputItem::ToolIntent {
+            model_call_id,
+            tool_name,
+            arguments_json,
+        } => json!({
+            "kind":"tool_intent","model_call_id":model_call_id,
+            "tool_name":tool_name,"arguments_json":arguments_json
+        }),
         ModelInputItem::ReasoningReference { reference } => {
             json!({"kind":"reasoning_reference","reference":reference})
         }

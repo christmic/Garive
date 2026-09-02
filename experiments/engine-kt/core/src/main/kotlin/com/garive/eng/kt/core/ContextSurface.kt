@@ -290,6 +290,7 @@ private fun itemUtf8Bytes(item: ModelInputItem): Int? {
             }
         }
         is ModelInputItem.ToolObservation -> listOf(item.modelCallId, item.resultJson)
+        is ModelInputItem.ToolIntent -> listOf(item.modelCallId, item.toolName, item.argumentsJson)
         is ModelInputItem.ReasoningReference -> listOf(item.reference)
     }
     var total = 0

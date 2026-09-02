@@ -33,6 +33,13 @@ public sealed interface ModelInputItem {
         public val content: List<ModelInputContent>,
     ) : ModelInputItem
 
+    /** Prior model tool invocation retained for protocol correlation. */
+    public data class ToolIntent(
+        public val modelCallId: String,
+        public val toolName: String,
+        public val argumentsJson: String,
+    ) : ModelInputItem
+
     /** Neutral [resultJson] answering [modelCallId]. */
     public data class ToolObservation(
         public val modelCallId: String,

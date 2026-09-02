@@ -109,6 +109,13 @@
       "expected": {"kind": "rejected", "reason": "context_overflow", "items": [], "input": null, "output": null}
     }
   ],
+  "tool_name_mapping_cases": [
+    {
+      "neutral": "garive.workspace.read_text",
+      "wire": "garive_ad4f3022f655351c5ff1b939485a8bce5c67042e7f03228de33295202"
+    },
+    {"neutral": "already_safe-1", "wire": "already_safe-1"}
+  ],
   "error_cases": [
     {"name": "exact-authentication", "status": 401, "type": "authentication_error", "code": null, "expected": "authentication"},
     {"name": "exact-rate-limit", "status": 429, "type": "rate_limit_error", "code": "rate_limit", "expected": "rate_limited"},

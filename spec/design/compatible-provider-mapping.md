@@ -73,12 +73,22 @@ Mapping first validates the neutral request and target/capability snapshot.
 JSON tool schemas, tool observations and JSON output schemas must parse as JSON
 objects; duplicate members and Portable Tool Schema semantics remain C4-owned.
 
+Garive tool identity remains provider-neutral and may contain dots. Protocol
+names already matching `[A-Za-z0-9_-]+` within 64 bytes pass through. Every
+other name maps deterministically to `garive_` plus the first 57 lowercase hex
+characters of SHA-256 over its UTF-8 bytes. The request-local map must be
+collision-free; an unknown or colliding returned name is a protocol invariant
+failure. Normalized `ToolIntent` always restores the exact Garive name before
+Core or the ledger sees it.
+
 ### Responses-compatible
 
 - neutral message roles map one-to-one;
 - text maps to `input_text`;
 - image references require a constructed URL or file-ID binding;
 - tool observations map to `function_call_output` with exact call ID;
+- prior tool intents map to `function_call` with the same call ID, mapped name,
+  and exact canonical argument JSON, immediately before their observations;
 - reasoning references are unsupported by the portable input profile;
 - tools map to strict/non-strict function definitions without revision fields
   leaking into protocol JSON;
@@ -94,6 +104,9 @@ objects; duplicate members and Portable Tool Schema semantics remain C4-owned.
   conversational item is rejected because moving it would reorder semantics;
 - User and Assistant messages retain order and role;
 - tool observations become User `tool_result` blocks with exact call ID;
+- prior tool intents become Assistant `tool_use` blocks; consecutive tool uses
+  and consecutive tool results are grouped without merging a result into an
+  earlier ordinary User message;
 - image/document references require exact constructed protocol bindings;
 - reasoning references require a protocol-valid constructed prior-thinking
   binding; otherwise they are rejected;

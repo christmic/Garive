@@ -10,7 +10,8 @@ use std::{
 use garive_llm::{
     InvokeOutcome, ModelCancellation, ModelCapability, ModelInputContent, ModelInputItem,
     ModelObserver, ModelOutputSettings, ModelPort, ModelPortFailure, ModelRequest, ModelRequestId,
-    ModelRole, ModelStreamEvent, ModelTargetId, ObserverDecision, TextMode, UnavailableKind,
+    ModelRole, ModelStreamEvent, ModelTargetId, ObserverDecision, TextMode, ToolDescriptor,
+    UnavailableKind,
 };
 use garive_provider_anthropic::build_profile as build_anthropic_profile;
 use garive_provider_compatible::{MessagesDeployment, ProtocolErrorPolicy, ResponsesDeployment};
@@ -254,7 +255,7 @@ fn messages_deployment(streaming: bool) -> MessagesDeployment {
 }
 
 fn capabilities(streaming: bool) -> BTreeSet<ModelCapability> {
-    let mut values = BTreeSet::from([ModelCapability::Text]);
+    let mut values = BTreeSet::from([ModelCapability::Text, ModelCapability::Tools]);
     if streaming {
         values.insert(ModelCapability::Streaming);
     }
@@ -266,15 +267,27 @@ fn request(streaming: bool) -> ModelRequest {
         request_id: ModelRequestId::new("request-1"),
         target_id: ModelTargetId::new("target"),
         required_capabilities: if streaming {
-            vec![ModelCapability::Text, ModelCapability::Streaming]
+            vec![
+                ModelCapability::Text,
+                ModelCapability::Tools,
+                ModelCapability::Streaming,
+            ]
         } else {
-            vec![ModelCapability::Text]
+            vec![ModelCapability::Text, ModelCapability::Tools]
         },
         input_items: vec![ModelInputItem::Message {
             role: ModelRole::User,
             content: vec![ModelInputContent::Text("hello".into())],
         }],
-        tools: vec![],
+        tools: vec![ToolDescriptor {
+            name: "weather".into(),
+            description: "Get fixture weather.".into(),
+            definition_revision: "1".into(),
+            input_schema_json:
+                r#"{"type":"object","properties":{"city":{"type":"string"}},"required":["city"],"additionalProperties":false}"#
+                    .into(),
+            strict: true,
+        }],
         output: ModelOutputSettings {
             max_output_tokens: Some(32),
             text_mode: TextMode::Plain,

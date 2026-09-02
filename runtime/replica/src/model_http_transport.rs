@@ -11,8 +11,9 @@ use garive_openai_responses as responses;
 use garive_provider_anthropic::AnthropicProfile;
 use garive_provider_compatible::{
     classify_protocol_error, map_messages_request, map_responses_request, normalize_messages,
-    normalize_responses, CompatibleProviderError, ErrorSignature, MessagesDeployment,
-    MessagesStreamMapper, ResponsesDeployment, ResponsesStreamMapper, StreamMapping,
+    normalize_responses, restore_neutral_tool_names, CompatibleProviderError, ErrorSignature,
+    MessagesDeployment, MessagesStreamMapper, ResponsesDeployment, ResponsesStreamMapper,
+    StreamMapping,
 };
 use garive_provider_openai::OpenAiProfile;
 
@@ -207,7 +208,7 @@ impl ModelPort for RuntimeModelHttpTransport {
             if cancellation.is_cancelled() {
                 return Ok(cancelled(Vec::new(), unknown_usage()));
             }
-            match &self.inner {
+            let mut outcome = match &self.inner {
                 TransportKind::Responses {
                     deployment,
                     adapter,
@@ -252,7 +253,9 @@ impl ModelPort for RuntimeModelHttpTransport {
                         buffered_messages(response, adapter, deployment, *limits).await
                     }
                 }
-            }
+            }?;
+            restore_neutral_tool_names(&mut outcome, &request.tools).map_err(provider_failure)?;
+            Ok(outcome)
         })
     }
 }

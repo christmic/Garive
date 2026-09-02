@@ -13,6 +13,7 @@ import com.garive.eng.kt.llm.ModelTargetId
 import com.garive.eng.kt.llm.TextMode
 import com.garive.eng.kt.llm.ToolDescriptor
 import com.garive.eng.kt.openai.ResponseInput
+import com.garive.eng.kt.openai.InputItem as ResponsesItem
 import com.garive.eng.kt.openai.ResponseEnvelope
 import com.garive.eng.kt.openai.TextFormat
 import java.nio.file.Path
@@ -20,6 +21,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertIs
+import kotlin.test.assertTrue
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonNull
@@ -57,6 +59,53 @@ public class RequestMappingTest {
         assertEquals(2, (messages.system as SystemPrompt.Blocks).value.size)
         assertEquals(2, messages.messages.size)
         assertIs<MessageContent.Blocks>(messages.messages[1].content)
+    }
+
+    @Test
+    public fun `tool history correlates calls and uses safe wire names`(): Unit {
+        fixture["tool_name_mapping_cases"]!!.jsonArray.forEach { value ->
+            val case = value.jsonObject
+            assertEquals(
+                case["wire"]!!.jsonPrimitive.content,
+                wireToolName(case["neutral"]!!.jsonPrimitive.content),
+            )
+        }
+        val base = request("responses-target", schema = true)
+        val history = base.inputItems.dropLast(1) + ModelInputItem.ToolIntent(
+            "call-0",
+            "garive.workspace.read_text",
+            "{\"path\":\"README.md\"}",
+        ) + base.inputItems.last()
+        val responses = mapResponsesRequest(
+            responsesDeployment(),
+            base.copy(
+                inputItems = history,
+                tools = listOf(ToolDescriptor("garive.workspace.read_text", "Read.", "1", "{\"type\":\"object\"}", true)),
+            ),
+        )
+        val responseItems = assertIs<ResponseInput.Items>(responses.input).value
+        val call = assertIs<ResponsesItem.FunctionCall>(responseItems[3])
+        assertTrue(call.name.startsWith("garive_") && '.' !in call.name)
+        assertIs<ResponsesItem.FunctionCallOutput>(responseItems[4])
+
+        val messagesBase = request("messages-target")
+        val messagesHistory = messagesBase.inputItems.dropLast(1) + ModelInputItem.ToolIntent(
+            "call-0",
+            "garive.workspace.read_text",
+            "{\"path\":\"README.md\"}",
+        ) + messagesBase.inputItems.last()
+        val messages = mapMessagesRequest(
+            messagesDeployment(),
+            messagesBase.copy(
+                inputItems = messagesHistory,
+                tools = listOf(ToolDescriptor("garive.workspace.read_text", "Read.", "1", "{\"type\":\"object\"}", true)),
+            ),
+        )
+        assertEquals(3, messages.messages.size)
+        val assistant = assertIs<MessageContent.Blocks>(messages.messages[1].content)
+        assertTrue(assistant.value.single() is com.garive.eng.kt.anthropic.ContentBlock.ToolUse)
+        val result = assertIs<MessageContent.Blocks>(messages.messages[2].content)
+        assertTrue(result.value.single() is com.garive.eng.kt.anthropic.ContentBlock.ToolResult)
     }
 
     @Test

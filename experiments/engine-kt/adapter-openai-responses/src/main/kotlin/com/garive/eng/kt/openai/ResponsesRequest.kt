@@ -1,5 +1,6 @@
 package com.garive.eng.kt.openai
 
+import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
@@ -19,6 +20,12 @@ public sealed interface ResponseInput {
 public sealed interface InputItem {
     /** Role-bearing message. */
     public data class Message(public val role: MessageRole, public val content: List<InputContent>) : InputItem
+    /** Prior assistant function call supplied for result correlation. */
+    public data class FunctionCall(
+        public val callId: String,
+        public val name: String,
+        public val arguments: String,
+    ) : InputItem
     /** Result for a prior client function call. */
     public data class FunctionCallOutput(
         public val callId: String,
@@ -175,6 +182,10 @@ private fun validateItem(item: InputItem): Unit {
             require(item.content.isNotEmpty())
             item.content.forEach(::validateContent)
         }
+        is InputItem.FunctionCall -> {
+            require(item.callId.isNotEmpty() && item.name.isNotEmpty())
+            require(runCatching { Json.parseToJsonElement(item.arguments) is JsonObject }.getOrDefault(false))
+        }
         is InputItem.FunctionCallOutput -> {
             require(item.callId.isNotEmpty())
             if (item.output is FunctionOutput.Content) {
@@ -198,6 +209,10 @@ private fun InputItem.toJson(): JsonObject = buildJsonObject {
         is InputItem.Message -> {
             put(ResponseFields.TYPE, ResponseKinds.MESSAGE); put(ResponseFields.ROLE, role.wire())
             put("content", JsonArray(content.map(InputContent::toJson)))
+        }
+        is InputItem.FunctionCall -> {
+            put(ResponseFields.TYPE, "function_call"); put("call_id", callId)
+            put("name", name); put("arguments", arguments)
         }
         is InputItem.FunctionCallOutput -> {
             put(ResponseFields.TYPE, ResponseKinds.FUNCTION_CALL_OUTPUT); put("call_id", callId)
