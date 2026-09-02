@@ -193,6 +193,7 @@ pub use local_worker::{
 pub use management::{
     AllowAllValidator, ManagementCommitBody, ManagementConfigError, ManagementConfigReceipt,
     ManagementConfigState, ManagementConfigStore, ManagementValidator,
+    MANAGEMENT_COMMIT_BODY_SCHEMA_VERSION,
 };
 pub use memory_control::{
     MemoryControlAction, MemoryControlGrant, MemoryControlProjection, MemoryControlRuntimeError,

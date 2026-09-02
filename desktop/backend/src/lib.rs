@@ -36,6 +36,7 @@ mod artifact_export;
 mod desktop_agent;
 mod desktop_knowledge;
 mod desktop_menu;
+mod management_validator;
 mod product_store;
 mod setup;
 mod system_configuration;
@@ -79,6 +80,7 @@ pub use desktop_menu::{
     build_desktop_menu, build_desktop_menu_for_locale, DesktopMenuIntent, DesktopMenuLocale,
     DESKTOP_MENU_EVENT,
 };
+
 /// Bounded installed-Agent catalogue exposed to Desktop clients.
 pub use garive_runtime::AgentDefinitionPageV1 as DesktopDefinitionPage;
 /// Exact durable Session command receipt exposed to Desktop clients.
@@ -103,6 +105,7 @@ pub use garive_runtime::TurnCommandResponse as DesktopTurnCommandReceipt;
 pub use garive_runtime::TurnTimelinePage as DesktopTimelinePage;
 /// Bounded H2/H3 timeline page exposed to product clients.
 pub use garive_runtime::TurnTimelinePageV1 as DesktopProductTimelinePage;
+pub use management_validator::{builtin_management_validator, BuiltinManagementValidator};
 pub use product_store::{
     DesktopProductStore, DesktopProductStoreError, MAX_PRODUCT_STORE_BYTES,
     MAX_UPDATE_PENDING_BYTES,
