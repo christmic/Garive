@@ -483,6 +483,11 @@ fn item_utf8_bytes(item: &ModelInputItem) -> Result<usize, ContextDerivationErro
             model_call_id,
             result_json,
         } => vec![model_call_id, result_json],
+        ModelInputItem::ToolIntent {
+            model_call_id,
+            tool_name,
+            arguments_json,
+        } => vec![model_call_id, tool_name, arguments_json],
         ModelInputItem::ReasoningReference { reference } => vec![reference],
     };
     strings.into_iter().try_fold(0usize, |total, value| {

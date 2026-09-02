@@ -179,6 +179,15 @@ fn wire_item(value: &ModelInputItem) -> WireItem<'_> {
             model_call_id,
             result_json,
         },
+        ModelInputItem::ToolIntent {
+            model_call_id,
+            tool_name,
+            arguments_json,
+        } => WireItem::ToolIntent {
+            model_call_id,
+            tool_name,
+            arguments_json,
+        },
         ModelInputItem::ReasoningReference { reference } => {
             WireItem::ReasoningReference { reference }
         }
@@ -248,6 +257,11 @@ enum WireItem<'a> {
     ToolObservation {
         model_call_id: &'a str,
         result_json: &'a str,
+    },
+    ToolIntent {
+        model_call_id: &'a str,
+        tool_name: &'a str,
+        arguments_json: &'a str,
     },
     ReasoningReference {
         reference: &'a str,

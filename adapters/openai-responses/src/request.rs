@@ -156,6 +156,8 @@ pub enum InputItem {
         /// Ordered message content.
         content: Vec<InputContent>,
     },
+    /// Prior assistant function call retained for result correlation.
+    FunctionCall(FunctionCall),
     /// Result returned for a prior client function call.
     FunctionCallOutput(FunctionCallOutput),
 }
@@ -169,7 +171,35 @@ impl InputItem {
                 ))
             }
             Self::Message { content, .. } => content.iter().try_for_each(InputContent::validate),
+            Self::FunctionCall(call) => call.validate(),
             Self::FunctionCallOutput(output) => output.validate(),
+        }
+    }
+}
+
+/// Prior assistant function call supplied as conversation input.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct FunctionCall {
+    /// Stable correlation identifier emitted by the model.
+    pub call_id: String,
+    /// Protocol-safe function name.
+    pub name: String,
+    /// Canonical JSON object encoded as text.
+    pub arguments: String,
+}
+
+impl FunctionCall {
+    fn validate(&self) -> Result<(), ResponsesAdapterError> {
+        require_text(&self.call_id, "Responses call_id must not be empty")?;
+        require_text(&self.name, "Responses function name must not be empty")?;
+        let value: Value = serde_json::from_str(&self.arguments)
+            .map_err(|_| ResponsesAdapterError::InvalidJson)?;
+        if value.is_object() {
+            Ok(())
+        } else {
+            Err(ResponsesAdapterError::InvalidRequest(
+                "Responses function arguments must be an object",
+            ))
         }
     }
 }

@@ -57,6 +57,11 @@ fn item_bytes(value: &ModelInputItem) -> usize {
             model_call_id,
             result_json,
         } => model_call_id.len() + result_json.len(),
+        ModelInputItem::ToolIntent {
+            model_call_id,
+            tool_name,
+            arguments_json,
+        } => model_call_id.len() + tool_name.len() + arguments_json.len(),
         ModelInputItem::ReasoningReference { reference } => reference.len(),
     }
 }

@@ -8,6 +8,7 @@ mod error;
 mod outcome;
 mod request;
 mod stream;
+mod tool_name;
 
 pub use deployment::{
     ErrorDisposition, ErrorSignature, MessagesDeployment, MessagesMediaBinding, PolicyBuildError,
@@ -17,3 +18,4 @@ pub use error::CompatibleProviderError;
 pub use outcome::{classify_protocol_error, normalize_messages, normalize_responses};
 pub use request::{map_messages_request, map_responses_request};
 pub use stream::{MessagesStreamMapper, ResponsesStreamMapper, StreamMapping, StreamMappingError};
+pub use tool_name::{restore_neutral_tool_names, wire_tool_name};

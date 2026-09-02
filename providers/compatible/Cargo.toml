@@ -14,6 +14,7 @@ garive-anthropic-messages = { package = "garive-adapter-anthropic-messages", pat
 garive-llm = { path = "../../engine/llm" }
 garive-openai-responses = { package = "garive-adapter-openai-responses", path = "../../adapters/openai-responses" }
 serde_json.workspace = true
+sha2.workspace = true
 
 [dev-dependencies]
 serde.workspace = true

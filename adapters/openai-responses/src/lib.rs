@@ -21,8 +21,8 @@ pub use items::{
     ResponseFunctionCall, ResponseMessage, ResponseOutputItem, ResponseReasoning,
 };
 pub use request::{
-    CreateResponseRequest, FunctionCallOutput, FunctionChoiceType, FunctionOutput, FunctionTool,
-    ImageDetail, InputContent, InputItem, ItemStatus, MessageRole, ReasoningConfig,
+    CreateResponseRequest, FunctionCall, FunctionCallOutput, FunctionChoiceType, FunctionOutput,
+    FunctionTool, ImageDetail, InputContent, InputItem, ItemStatus, MessageRole, ReasoningConfig,
     ReasoningEffort, ReasoningSummary, ResponseInput, ResponseTextConfig, ResponseTool,
     StreamOptions, TextFormat, ToolChoice, ToolChoiceMode, Truncation,
 };

@@ -90,6 +90,15 @@ pub enum ModelInputItem {
         /// Ordered message content parts.
         content: Vec<ModelInputContent>,
     },
+    /// Prior model tool invocation retained for protocol correlation.
+    ToolIntent {
+        /// Model-owned call correlation identity.
+        model_call_id: String,
+        /// Exact provider-neutral tool name.
+        tool_name: String,
+        /// Canonical object arguments encoded as JSON text.
+        arguments_json: String,
+    },
     /// Neutral tool result correlated to a prior model call.
     ToolObservation {
         /// Model-owned call correlation identity.

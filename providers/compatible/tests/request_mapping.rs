@@ -5,8 +5,8 @@ use garive_llm::{
     ModelRequestId, ModelRole, ModelTargetId, TextMode, ToolDescriptor,
 };
 use garive_provider_compatible::{
-    map_messages_request, map_responses_request, normalize_responses, CompatibleProviderError,
-    MessagesDeployment, ProtocolErrorPolicy, ResponsesDeployment,
+    map_messages_request, map_responses_request, normalize_responses, wire_tool_name,
+    CompatibleProviderError, MessagesDeployment, ProtocolErrorPolicy, ResponsesDeployment,
 };
 use serde_json::{json, Value};
 
@@ -181,6 +181,61 @@ fn shared_messages_request_case_uses_leading_system_and_default_limit() {
     assert_eq!(wire["system"][1]["text"], expected["system_blocks"][1]);
     assert_eq!(wire["messages"][1]["content"][0]["type"], "tool_result");
     assert_eq!(wire["output_config"]["format"]["type"], "json_schema");
+}
+
+#[test]
+fn tool_call_history_is_correlated_and_uses_wire_safe_names() {
+    let fixture = fixture();
+    for value in fixture["tool_name_mapping_cases"].as_array().unwrap() {
+        assert_eq!(
+            wire_tool_name(value["neutral"].as_str().unwrap()),
+            value["wire"]
+        );
+    }
+    for protocol in ["responses", "messages"] {
+        let case_index = usize::from(protocol == "messages");
+        let mut request = neutral_request(&fixture["request_cases"][case_index]["request"]);
+        request.tools[0].name = "garive.workspace.read_text".into();
+        let observation = request.input_items.pop().expect("observation");
+        request.input_items.push(ModelInputItem::ToolIntent {
+            model_call_id: "call-0".into(),
+            tool_name: "garive.workspace.read_text".into(),
+            arguments_json: "{\"path\":\"README.md\"}".into(),
+        });
+        request.input_items.push(observation);
+
+        let wire = if protocol == "responses" {
+            serde_json::to_value(
+                map_responses_request(
+                    &response_deployment(&fixture["deployments"]["responses"]),
+                    &request,
+                )
+                .unwrap(),
+            )
+            .unwrap()
+        } else {
+            serde_json::to_value(
+                map_messages_request(
+                    &messages_deployment(&fixture["deployments"]["messages"]),
+                    &request,
+                )
+                .unwrap(),
+            )
+            .unwrap()
+        };
+        let encoded = wire.to_string();
+        assert!(!encoded.contains("garive.workspace.read_text"));
+        assert!(encoded.contains("garive_"));
+        assert!(encoded.contains("call-0"));
+        if protocol == "messages" {
+            assert_eq!(wire["messages"][1]["role"], "assistant");
+            assert_eq!(wire["messages"][1]["content"][0]["type"], "tool_use");
+            assert_eq!(wire["messages"][2]["content"][0]["type"], "tool_result");
+        } else {
+            assert_eq!(wire["input"][2]["type"], "function_call");
+            assert_eq!(wire["input"][3]["type"], "function_call_output");
+        }
+    }
 }
 
 #[test]

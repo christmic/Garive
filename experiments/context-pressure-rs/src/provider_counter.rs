@@ -160,7 +160,7 @@ fn required_capabilities(items: &[ModelInputItem]) -> Vec<ModelCapability> {
             {
                 values.insert(ModelCapability::Vision);
             }
-            ModelInputItem::ToolObservation { .. } => {
+            ModelInputItem::ToolIntent { .. } | ModelInputItem::ToolObservation { .. } => {
                 values.insert(ModelCapability::Tools);
             }
             ModelInputItem::ReasoningReference { .. } => {

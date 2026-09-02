@@ -1,8 +1,9 @@
 use garive_adapter_openai_responses::{
-    CreateResponseRequest, FunctionCallOutput, FunctionOutput, FunctionTool, Header, ImageDetail,
-    InputContent, InputItem, ItemStatus, MessageRole, ReasoningConfig, ReasoningEffort,
-    ReasoningSummary, ResponseInput, ResponseTextConfig, ResponseTool, ResponsesAdapter,
-    ResponsesAdapterConfig, ResponsesAdapterError, TextFormat, ToolChoice, ToolChoiceMode,
+    CreateResponseRequest, FunctionCall, FunctionCallOutput, FunctionOutput, FunctionTool, Header,
+    ImageDetail, InputContent, InputItem, ItemStatus, MessageRole, ReasoningConfig,
+    ReasoningEffort, ReasoningSummary, ResponseInput, ResponseTextConfig, ResponseTool,
+    ResponsesAdapter, ResponsesAdapterConfig, ResponsesAdapterError, TextFormat, ToolChoice,
+    ToolChoiceMode,
 };
 use serde_json::{json, Value};
 use std::{collections::BTreeMap, fs, path::PathBuf};
@@ -174,4 +175,28 @@ fn portable_request_unions_encode_as_official_shapes() {
         status: None,
     })]);
     assert!(request.validate().is_err());
+}
+
+#[test]
+fn prior_function_call_encodes_for_tool_result_correlation() {
+    let request = CreateResponseRequest::new(
+        "model",
+        ResponseInput::Items(vec![
+            InputItem::FunctionCall(FunctionCall {
+                call_id: "call_1".into(),
+                name: "read_text".into(),
+                arguments: "{\"path\":\"README.md\"}".into(),
+            }),
+            InputItem::FunctionCallOutput(FunctionCallOutput {
+                call_id: "call_1".into(),
+                output: FunctionOutput::Text("ok".into()),
+                status: None,
+            }),
+        ]),
+        false,
+    );
+    let value: Value = serde_json::from_slice(adapter().prepare(&request).unwrap().body()).unwrap();
+    assert_eq!(value["input"][0]["type"], "function_call");
+    assert_eq!(value["input"][0]["call_id"], "call_1");
+    assert_eq!(value["input"][1]["type"], "function_call_output");
 }

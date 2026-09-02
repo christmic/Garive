@@ -7,8 +7,8 @@ use garive_openai_responses as responses;
 use serde_json::{Map, Value};
 
 use crate::{
-    CompatibleProviderError, MessagesDeployment, MessagesMediaBinding, ResponsesDeployment,
-    ResponsesMediaBinding,
+    wire_tool_name, CompatibleProviderError, MessagesDeployment, MessagesMediaBinding,
+    ResponsesDeployment, ResponsesMediaBinding,
 };
 
 /// Maps one neutral request into the portable Responses protocol shape.
@@ -33,6 +33,15 @@ pub fn map_responses_request(
                     .map(|part| responses_content(deployment, part))
                     .collect::<Result<_, _>>()?,
             },
+            ModelInputItem::ToolIntent {
+                model_call_id,
+                tool_name,
+                arguments_json,
+            } => responses::InputItem::FunctionCall(responses::FunctionCall {
+                call_id: model_call_id.clone(),
+                name: wire_tool_name(tool_name),
+                arguments: arguments_json.clone(),
+            }),
             ModelInputItem::ToolObservation {
                 model_call_id,
                 result_json,
@@ -134,20 +143,38 @@ pub fn map_messages_request(
                     ),
                 ));
             }
+            ModelInputItem::ToolIntent {
+                model_call_id,
+                tool_name,
+                arguments_json,
+            } => {
+                conversation_started = true;
+                push_message_block(
+                    &mut turns,
+                    messages::MessageRole::Assistant,
+                    messages::ContentBlock::ToolUse {
+                        id: model_call_id.clone(),
+                        name: wire_tool_name(tool_name),
+                        input: json_object(arguments_json)?,
+                        cache_control: None,
+                    },
+                );
+            }
             ModelInputItem::ToolObservation {
                 model_call_id,
                 result_json,
             } => {
                 conversation_started = true;
-                turns.push(messages::Message::new(
+                push_message_block(
+                    &mut turns,
                     messages::MessageRole::User,
-                    messages::MessageContent::Blocks(vec![messages::ContentBlock::ToolResult {
+                    messages::ContentBlock::ToolResult {
                         tool_use_id: model_call_id.clone(),
                         content: Some(messages::ToolResultContent::Text(result_json.clone())),
                         is_error: None,
                         cache_control: None,
-                    }]),
-                ));
+                    },
+                );
             }
             ModelInputItem::ReasoningReference { .. } => {
                 return Err(CompatibleProviderError::UnsupportedInput)
@@ -176,6 +203,33 @@ pub fn map_messages_request(
         .validate()
         .map_err(|_| CompatibleProviderError::InvalidProtocolRequest)?;
     Ok(mapped)
+}
+
+fn push_message_block(
+    turns: &mut Vec<messages::Message>,
+    role: messages::MessageRole,
+    block: messages::ContentBlock,
+) {
+    if let Some(messages::Message {
+        role: previous_role,
+        content: messages::MessageContent::Blocks(blocks),
+    }) = turns.last_mut()
+    {
+        let may_join = match &block {
+            messages::ContentBlock::ToolResult { .. } => blocks
+                .iter()
+                .all(|value| matches!(value, messages::ContentBlock::ToolResult { .. })),
+            _ => true,
+        };
+        if *previous_role == role && may_join {
+            blocks.push(block);
+            return;
+        }
+    }
+    turns.push(messages::Message::new(
+        role,
+        messages::MessageContent::Blocks(vec![block]),
+    ));
 }
 
 fn admit_request(
@@ -258,7 +312,7 @@ fn responses_tool(
     tool: &ToolDescriptor,
 ) -> Result<responses::ResponseTool, CompatibleProviderError> {
     Ok(responses::ResponseTool::Function(responses::FunctionTool {
-        name: tool.name.clone(),
+        name: wire_tool_name(&tool.name),
         description: Some(tool.description.clone()),
         parameters: json_object(&tool.input_schema_json)?,
         strict: tool.strict,
@@ -318,7 +372,7 @@ fn messages_content(
 
 fn messages_tool(tool: &ToolDescriptor) -> Result<messages::Tool, CompatibleProviderError> {
     Ok(messages::Tool {
-        name: tool.name.clone(),
+        name: wire_tool_name(&tool.name),
         input_schema: json_object(&tool.input_schema_json)?,
         description: Some(tool.description.clone()),
         strict: Some(tool.strict),
