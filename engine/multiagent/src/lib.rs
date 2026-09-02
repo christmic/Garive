@@ -8,6 +8,7 @@ mod collaboration;
 mod grant;
 mod intent;
 mod result;
+mod tools;
 mod values;
 
 pub use budget::{
@@ -25,6 +26,11 @@ pub use intent::{CancellationPolicy, ChildRequirement, DelegationIntent, Delegat
 pub use result::{
     complete_delegation_result, terminal_delegation_result, ChildTerminalReason, DelegationOutcome,
     DelegationResult, DelegationResultContext, TerminalOutcomeKind,
+};
+pub use tools::{
+    CollaborationToolCatalogue, COLLABORATION_ACCESS_RESOLVER_REVISION,
+    COLLABORATION_TOOL_REVISION, COLLECT_DELEGATIONS_TOOL, DELEGATE_TOOL, FORK_SELF_TOOL,
+    MESSAGE_AGENT_TOOL,
 };
 pub use values::{
     ContentBinding, DelegationBudget, DelegationError, DelegationErrorCode, FactReference,

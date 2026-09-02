@@ -142,12 +142,41 @@ must not emit a parent suspension.
 ## API and tool surface
 
 H1 exposes roster read/mutation, addressed Session messages, delegation query,
-result collection and join. The Agent capability catalogue exposes neutral
-`delegate`, `message_agent`, `collect_delegations` and `fork_self` tools. Tools
-carry no provider/vendor semantics and all configuration is constructor-supplied.
+result collection and join. H1 is a client and operator boundary; it is not the
+normal collaboration coordinator and an unauthenticated body field cannot
+establish Agent authorship.
 
-An API client may initiate the same governed command for testing/operations, but
-it cannot submit a fabricated child result. Runtime owns allocation, dispatch,
+An admitted Agent snapshot exposes these provider-neutral tool names:
+
+| Tool | Purpose |
+|---|---|
+| `garive.collaboration.message_agent` | Send one addressed peer message or one roster broadcast. |
+| `garive.collaboration.delegate` | Dispatch a Notify task to a named peer or anonymous Agent. |
+| `garive.collaboration.fork_self` | Dispatch a Notify task using the caller's exact definition and prefix. |
+| `garive.collaboration.collect_delegations` | Read the caller's bounded delegation states and delivered results. |
+
+The model never supplies a sender or dispatcher identity. Runtime derives the
+actor from the active `(SessionId, TurnId, ExecutionId, AgentInstanceId)` and
+binds it to the Tool invocation before accepting a collaboration command.
+Names supplied by the model resolve against the current durable roster; missing,
+ambiguous, self, or cross-Session targets fail closed.
+
+Message, delegation and fork commands are idempotent under the Runtime-owned
+Tool invocation ID. The Tool receipt becomes durable before command publication.
+A Runtime outbox drains accepted commands after the owning Agent effect is
+durable and reconstructs undrained commands from `effect.prepared` plus
+`effect.receipt` after restart. Publication commits the collaboration facts
+before queuing an assignee Turn. `collect_delegations` is read-only and returns
+only delegations whose durable dispatcher identity equals the active Agent.
+
+Tools carry no provider/vendor semantics and all configuration is
+constructor-supplied.
+
+An authorized API client may initiate the same governed command for testing or
+operations, but that proves only the H1 command boundary. Autonomous acceptance
+requires a recorded model Tool intent and the corresponding Runtime-derived
+actor binding; API-submitted coordination cannot substitute for it. No client
+can submit a fabricated child result. Runtime owns allocation, dispatch,
 terminal binding and delivery.
 
 ## Acceptance
@@ -155,14 +184,16 @@ terminal binding and delivery.
 Real-provider acceptance must record:
 
 1. one Session with ten distinct named peer Agent Instances;
-2. addressed collaboration in which multiple peers contribute and consume each
-   other's durable messages;
-3. `Named`, `Anonymous` and `ForkSelf` delegation targets;
-4. a `Notify` dispatcher continuing while the assignee runs;
+2. model-originated addressed and broadcast Tool calls in which multiple peers
+   contribute and consume each other's durable messages;
+3. model-originated `Named`, `Anonymous` and `ForkSelf` delegation Tool calls;
+4. a `Notify` dispatcher continuing after its accepted Tool observation while
+   the assignee runs;
 5. an `AwaitBeforeFinal` join and explicit `SuspendExecution` continuation;
 6. concurrent fork results arriving out of order but collected deterministically;
 7. restart/replay without duplicate assignees, results or messages;
-8. authority, roster-size, cross-Session target, fanout and budget rejection.
+8. forged actor, authority, roster-size, cross-Session target, fanout and budget
+   rejection.
 
 Rust and Kotlin share canonical V2 intent/result fixtures and reducers. Runtime,
 worker, H1 and SQLite recovery are Rust composition responsibilities; Kotlin
