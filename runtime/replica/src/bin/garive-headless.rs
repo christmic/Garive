@@ -13,23 +13,28 @@
 //! rejected unless it is loopback.
 
 use std::{
+    fs::DirBuilder,
     io::Read,
     net::SocketAddr,
+    os::unix::fs::DirBuilderExt,
     path::{Path, PathBuf},
     sync::Arc,
     time::Duration,
 };
 
 use garive_runtime::headless::{
-    build_headless_installation, build_headless_model_port, headless_execution_attempt,
-    headless_execution_policy, headless_now_ms, HeadlessClock, HeadlessConfiguration,
+    build_headless_installation, build_headless_model_port, build_headless_workspace_installation,
+    headless_execution_attempt, headless_execution_policy, headless_now_ms,
+    headless_workspace_execution_policy, HeadlessClock, HeadlessConfiguration,
     HeadlessConstructionError,
 };
 use garive_runtime::{
-    drive_pending, local_dispatch_queue, AllowAllValidator, CatalogueCapabilityPreparationFactory,
-    DrivePendingOutcome, HostClock, LiveHost, LiveHostLimits, LiveHostServer, LiveOutputHub,
-    LiveOutputLimits, LocalExecutionWorker, ManagementCommitBody, SqliteLedger, SqliteLedgerError,
-    MANAGEMENT_COMMIT_BODY_SCHEMA_VERSION,
+    drive_pending, local_dispatch_queue, AllowAllValidator, CatalogueBoundGovernedExecutionFactory,
+    CatalogueCapabilityPreparationFactory, DrivePendingOutcome, HeadlessWorkspaceExecutionFactory,
+    HostClock, LiveHost, LiveHostLimits, LiveHostServer, LiveOutputHub, LiveOutputLimits,
+    LocalExecutionWorker, ManagementCommitBody, SqliteLedger, SqliteLedgerError,
+    T1WorkspaceRuntimeConfig, HEADLESS_WORKSPACE_EXECUTOR_REVISION,
+    HEADLESS_WORKSPACE_POLICY_REVISION, MANAGEMENT_COMMIT_BODY_SCHEMA_VERSION,
 };
 
 const DEFAULT_LISTEN: &str = "127.0.0.1:8787";
@@ -47,11 +52,16 @@ async fn run() -> Result<(), String> {
     if arguments.first().map(String::as_str) == Some("setup") {
         return setup(&arguments[1..]);
     }
-    let (directory, listen) = match arguments.as_slice() {
-        [directory] => (PathBuf::from(directory), DEFAULT_LISTEN),
-        [directory, listen] => (PathBuf::from(directory), listen.as_str()),
+    let (directory, listen, workspace) = match arguments.as_slice() {
+        [directory] => (PathBuf::from(directory), DEFAULT_LISTEN, None),
+        [directory, listen] => (PathBuf::from(directory), listen.as_str(), None),
+        [directory, listen, workspace] => (
+            PathBuf::from(directory),
+            listen.as_str(),
+            Some(PathBuf::from(workspace)),
+        ),
         _ => {
-            eprintln!("usage: garive-headless <config-dir> [127.0.0.1:8787]");
+            eprintln!("usage: garive-headless <config-dir> [127.0.0.1:8787] [workspace-root]");
             eprintln!();
             eprintln!("Reads the singleton runtime_management_config row from");
             eprintln!("<config-dir>/garive-desktop.db and serves H1 over loopback.");
@@ -81,10 +91,28 @@ async fn run() -> Result<(), String> {
     );
 
     let model = build_headless_model_port(&configuration).map_err(map_construction_error)?;
-    let (installation, catalogue) =
-        build_headless_installation(&configuration).map_err(map_construction_error)?;
-    let preparation = Arc::new(CatalogueCapabilityPreparationFactory::new(catalogue, None));
-    let policy = headless_execution_policy(&configuration);
+    let workspace_config = workspace
+        .map(|root| headless_workspace_config(&directory, root))
+        .transpose()?;
+    let (installation, catalogue) = match &workspace_config {
+        Some(config) => {
+            let execution = config
+                .build()
+                .map_err(|_| "workspace_construction_failed".to_owned())?;
+            build_headless_workspace_installation(&configuration, execution.capabilities())
+                .map_err(map_construction_error)?
+        }
+        None => build_headless_installation(&configuration).map_err(map_construction_error)?,
+    };
+    let preparation = Arc::new(CatalogueCapabilityPreparationFactory::new(
+        catalogue.clone(),
+        None,
+    ));
+    let policy = if workspace_config.is_some() {
+        headless_workspace_execution_policy(&configuration)
+    } else {
+        headless_execution_policy(&configuration)
+    };
 
     let clock: Arc<dyn HostClock> = Arc::new(HeadlessClock);
     let limits = LiveHostLimits {
@@ -105,9 +133,27 @@ async fn run() -> Result<(), String> {
 
     let (dispatcher, mut queue) =
         local_dispatch_queue(64).map_err(|_| "queue_construction_failed".to_owned())?;
-    let worker = LocalExecutionWorker::new(&database_path, policy, model, preparation)
-        .map_err(|_| "worker_construction_failed".to_owned())?
-        .with_live_output(hub.clone());
+    let worker = match workspace_config {
+        Some(config) => {
+            let governed = Arc::new(
+                HeadlessWorkspaceExecutionFactory::new(config, "headless-workspace")
+                    .map_err(|_| "workspace_construction_failed".to_owned())?,
+            );
+            LocalExecutionWorker::new_governed(
+                &database_path,
+                policy,
+                model,
+                Arc::new(CatalogueBoundGovernedExecutionFactory::new(
+                    catalogue.clone(),
+                    governed,
+                )),
+                preparation,
+            )
+        }
+        None => LocalExecutionWorker::new(&database_path, policy, model, preparation),
+    }
+    .map_err(|_| "worker_construction_failed".to_owned())?
+    .with_live_output(hub.clone());
 
     let host = LiveHost::new_catalogue_with_live_output(
         &database_path,
@@ -153,6 +199,26 @@ async fn run() -> Result<(), String> {
             }
         })
         .await
+}
+
+fn headless_workspace_config(
+    directory: &Path,
+    workspace: PathBuf,
+) -> Result<T1WorkspaceRuntimeConfig, String> {
+    let recovery = directory.join("headless-patch-recovery");
+    if !recovery.exists() {
+        DirBuilder::new()
+            .mode(0o700)
+            .create(&recovery)
+            .map_err(|_| "workspace_recovery_unavailable".to_owned())?;
+    }
+    T1WorkspaceRuntimeConfig::new(
+        HEADLESS_WORKSPACE_POLICY_REVISION,
+        HEADLESS_WORKSPACE_EXECUTOR_REVISION,
+        workspace,
+        recovery,
+    )
+    .map_err(|_| "workspace_construction_failed".to_owned())
 }
 
 fn setup(arguments: &[String]) -> Result<(), String> {

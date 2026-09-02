@@ -218,6 +218,7 @@ async fn execute_durable_model_only_inner(
             coordinator: &coordinator,
             session_id: &config.session_id,
             turn_id: &config.model.turn_id,
+            agent_instance_id: effective_request.agent_instance_id.as_str(),
         };
         let mut ports = AgentExecutionPorts {
             context: &mut durable_context,
@@ -448,6 +449,7 @@ async fn execute_durable_agent_inner(
             coordinator: &coordinator,
             session_id: &config.session_id,
             turn_id: &config.model.turn_id,
+            agent_instance_id: effective_request.agent_instance_id.as_str(),
         };
         let mut ports = AgentExecutionPorts {
             context: &mut durable_context,
@@ -473,6 +475,7 @@ struct DurableContextPort<'a, 'ledger> {
     coordinator: &'a Mutex<CommitCoordinator<'ledger>>,
     session_id: &'a SessionId,
     turn_id: &'a TurnId,
+    agent_instance_id: &'a str,
 }
 
 impl ContextPort for DurableContextPort<'_, '_> {
@@ -485,11 +488,16 @@ impl ContextPort for DurableContextPort<'_, '_> {
         if request.session_id != self.session_id.as_str() {
             return Err(ContextPortError::PortFailure);
         }
-        let kinds = ["effect.observation", "turn.steered", "model.completed"]
-            .into_iter()
-            .map(FactKind::new)
-            .collect::<Result<BTreeSet<_>, _>>()
-            .map_err(|_| ContextPortError::PortFailure)?;
+        let kinds = [
+            "effect.observation",
+            "turn.steered",
+            "model.completed",
+            "session.agent_message",
+        ]
+        .into_iter()
+        .map(FactKind::new)
+        .collect::<Result<BTreeSet<_>, _>>()
+        .map_err(|_| ContextPortError::PortFailure)?;
         let mut coordinator = self
             .coordinator
             .lock()
@@ -508,7 +516,11 @@ impl ContextPort for DurableContextPort<'_, '_> {
             .map_err(|_| ContextPortError::PortFailure)?;
         let durable = facts
             .into_iter()
-            .filter(|fact| fact.turn_id.as_ref() == Some(self.turn_id))
+            .filter(|fact| {
+                fact.turn_id.as_ref() == Some(self.turn_id)
+                    || (fact.kind.as_str() == "session.agent_message"
+                        && message_visible_to(fact, self.agent_instance_id))
+            })
             .map(|fact| durable_context_candidate(request, &fact))
             .collect::<Result<Vec<_>, _>>()?
             .into_iter()
@@ -560,6 +572,19 @@ fn durable_context_candidate(
             CandidateKind::ModelOutput,
             completed_model_inputs(&canonical_binding(&value, "items")?)?,
         ),
+        "session.agent_message" => {
+            let from = required_json_text(&value, "from_agent_instance_id")?;
+            let text = verified_text_binding(&value, "content")?;
+            (
+                CandidateKind::UserInput,
+                vec![ModelInputItem::Message {
+                    role: ModelRole::User,
+                    content: vec![ModelInputContent::Text(format!(
+                        "[agent message from {from}] {text}"
+                    ))],
+                }],
+            )
+        }
         _ => return Err(ContextPortError::PortFailure),
     };
     if items.is_empty() {
@@ -575,6 +600,18 @@ fn durable_context_candidate(
         visibility: Visibility::Visible,
         items,
     }))
+}
+
+fn message_visible_to(fact: &garive_ledger::DurableFact, agent_instance_id: &str) -> bool {
+    serde_json::from_str::<serde_json::Value>(fact.payload.as_json()).is_ok_and(|value| {
+        value
+            .get("from_agent_instance_id")
+            .and_then(serde_json::Value::as_str)
+            != Some(agent_instance_id)
+            && value.get("to_agent_instance_id").is_some_and(|target| {
+                target.is_null() || target.as_str() == Some(agent_instance_id)
+            })
+    })
 }
 
 fn required_json_text<'a>(
@@ -639,21 +676,29 @@ fn completed_model_inputs(
         serde_json::from_str(content.as_json()).map_err(|_| ContextPortError::PortFailure)?;
     let values = values.as_array().ok_or(ContextPortError::PortFailure)?;
     let mut messages = Vec::new();
+    let mut items = Vec::new();
     for value in values {
         match required_json_text(value, "kind")? {
             "text" | "refusal" => messages.push(ModelInputContent::Text(
                 required_json_text(value, "text")?.to_owned(),
             )),
-            "reasoning" | "tool_intent" | "tool_observation" | "media_reference" => {}
+            "tool_intent" => items.push(ModelInputItem::ToolIntent {
+                model_call_id: required_json_text(value, "model_call_id")?.to_owned(),
+                tool_name: required_json_text(value, "tool_name")?.to_owned(),
+                arguments_json: required_json_text(value, "arguments_json")?.to_owned(),
+            }),
+            "reasoning" | "tool_observation" | "media_reference" => {}
             _ => return Err(ContextPortError::PortFailure),
         }
     }
-    let mut items = Vec::with_capacity(usize::from(!messages.is_empty()));
     if !messages.is_empty() {
-        items.push(ModelInputItem::Message {
-            role: ModelRole::Assistant,
-            content: messages,
-        });
+        items.insert(
+            0,
+            ModelInputItem::Message {
+                role: ModelRole::Assistant,
+                content: messages,
+            },
+        );
     }
     Ok(items)
 }

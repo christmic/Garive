@@ -26,6 +26,8 @@ mod goal_plan_coordinator;
 mod goal_recovery;
 mod goal_runtime;
 pub mod headless;
+#[cfg(unix)]
+mod headless_workspace;
 mod live_host;
 mod live_output;
 mod local_composition;
@@ -156,17 +158,23 @@ pub use goal_runtime::{
     commit_goal_command, plan_create_goal, plan_goal_transition, GoalCommandContext,
     GoalRuntimeError, GoalRuntimeState, GoalRuntimeTransition, PlannedGoalCommand,
 };
+#[cfg(unix)]
+pub use headless_workspace::{
+    HeadlessWorkspaceExecutionFactory, HEADLESS_WORKSPACE_EXECUTOR_REVISION,
+    HEADLESS_WORKSPACE_POLICY_REVISION,
+};
 pub use live_host::{
     ActivityProjectionLimits, AgentDefinitionPageV1, AgentDefinitionSummary,
-    AgentDefinitionSummaryV1, CommittedTurn, CreateSessionResponse, GoalCommandAuthority,
-    GoalCommandAuthorityError, GoalCommandResponseV1, GoalPageV1, GoalSummaryV1, HostActivity,
-    HostArtifact, HostArtifactPage, HostClock, HostContinuationInput, HostEventPage,
-    HostReadLimits, HostWorkspaceAttachment, HostWorkspaceContextEntry, HostWorkspaceDetachment,
-    InstalledActivityCatalogue, InstalledActivityDescriptor, InstalledAgent, LiveHost,
-    LiveHostError, LiveHostEvent, LiveHostLimits, LiveHostServer, LiveHostServerError, PlanPageV1,
-    PlanSummaryV1, SessionPageV1, SessionSummary, SessionSummaryV1, SessionViewV1,
-    SuspensionViewV1, TurnCommandResponse, TurnDispatchError, TurnDispatcher, TurnSuspensionView,
-    TurnTimelineItem, TurnTimelineItemV1, TurnTimelinePage, TurnTimelinePageV1,
+    AgentDefinitionSummaryV1, AgentDelegationResponse, CommittedTurn, CreateSessionResponse,
+    GoalCommandAuthority, GoalCommandAuthorityError, GoalCommandResponseV1, GoalPageV1,
+    GoalSummaryV1, HostActivity, HostArtifact, HostArtifactPage, HostClock, HostContinuationInput,
+    HostEventPage, HostReadLimits, HostWorkspaceAttachment, HostWorkspaceContextEntry,
+    HostWorkspaceDetachment, InstalledActivityCatalogue, InstalledActivityDescriptor,
+    InstalledAgent, LiveHost, LiveHostError, LiveHostEvent, LiveHostLimits, LiveHostServer,
+    LiveHostServerError, PlanPageV1, PlanSummaryV1, SessionAgentMember, SessionAgentMessage,
+    SessionAgentMessagePage, SessionAgentRoster, SessionPageV1, SessionSummary, SessionSummaryV1,
+    SessionViewV1, SuspensionViewV1, TurnCommandResponse, TurnDispatchError, TurnDispatcher,
+    TurnSuspensionView, TurnTimelineItem, TurnTimelineItemV1, TurnTimelinePage, TurnTimelinePageV1,
 };
 pub use live_output::{
     LiveOutputEndReason, LiveOutputError, LiveOutputEvent, LiveOutputEventKind, LiveOutputHub,
@@ -313,5 +321,5 @@ pub use t1_dispatch::t1_dispatch_attempt_id;
 #[cfg(unix)]
 pub use t1_system_composition::{
     ProcessBackendConfig, ProcessBackendHostConfig, T1ExecutorBinding, T1HostSystemConfig,
-    T1RuntimeExecution, T1RuntimeSystemConfig, PROCESS_BACKEND_PODMAN,
+    T1RuntimeExecution, T1RuntimeSystemConfig, T1WorkspaceRuntimeConfig, PROCESS_BACKEND_PODMAN,
 };

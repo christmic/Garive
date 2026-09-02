@@ -32,11 +32,12 @@ use std::{
 };
 
 use garive_config::{
-    resolve_definition, AgentDefinition, ContextPolicyReference, DefaultLimits, GovernancePolicy,
-    ProductPolicy, ResolutionRegistry,
+    resolve_definition, AgentDefinition, CapabilityKind, CapabilityReference,
+    ContextPolicyReference, DefaultLimits, GovernancePolicy, ProductPolicy, ResolutionRegistry,
 };
 use garive_core::{
-    MissingUsagePolicy, ModelRecoveryPolicy, OutputLimitAction, TerminalRecoveryAction,
+    AgentToolCapabilities, MissingUsagePolicy, ModelRecoveryPolicy, OutputLimitAction,
+    TerminalRecoveryAction,
 };
 use garive_llm::{ModelCapability, ModelOutputSettings, ModelPort, TextMode};
 use garive_provider_anthropic::build_profile as build_anthropic_profile;
@@ -77,7 +78,7 @@ pub const HEADLESS_DEFAULT_MAX_OUTPUT_TOKENS: u64 = 4_096;
 /// Default bounded HTTP limits applied to every headless model port.
 pub const HEADLESS_DEFAULT_HTTP_LIMITS: RuntimeHttpLimits = RuntimeHttpLimits {
     connect_timeout_ms: 1_000,
-    request_timeout_ms: 5_000,
+    request_timeout_ms: 30_000,
     max_response_bytes: 1_048_576,
 };
 
@@ -95,6 +96,8 @@ pub const HEADLESS_CLOCK_REVISION: &str = "headless-clock-v1";
 pub const HEADLESS_AGENT_NAMESPACE: &str = "headless-ns";
 /// Stable capability label exposed by the singular catalogue entry.
 pub const HEADLESS_AGENT_CAPABILITY: &str = "model_only";
+/// Stable public capability label for an explicitly bound Workspace.
+pub const HEADLESS_WORKSPACE_CAPABILITY: &str = "workspace";
 
 /// Stable failure codes emitted by the headless wiring helpers.
 ///
@@ -170,7 +173,11 @@ pub fn build_headless_model_port(
             EndpointSelection::Explicit(value.to_owned())
         });
     let connection = ConnectionInput::new(endpoint, secret, Vec::new());
-    let capabilities = BTreeSet::from([ModelCapability::Text, ModelCapability::Streaming]);
+    let capabilities = BTreeSet::from([
+        ModelCapability::Text,
+        ModelCapability::Streaming,
+        ModelCapability::Tools,
+    ]);
     let port: Arc<dyn ModelPort> = match config.state.profile_id.as_str() {
         HEADLESS_OPENAI_RESPONSES_PROFILE_ID => {
             let deployment = ResponsesDeployment {
@@ -239,15 +246,55 @@ pub fn headless_revision_for(definition_id: &str) -> Option<&'static str> {
 pub fn build_headless_installation(
     config: &HeadlessConfiguration,
 ) -> Result<(RuntimeAgentInstallation, Arc<RuntimeAgentCatalogue>), HeadlessConstructionError> {
+    build_headless_installation_inner(config, Vec::new(), vec![HEADLESS_AGENT_CAPABILITY.into()])
+}
+
+/// Builds a headless installation that freezes one exact Workspace tool set.
+pub fn build_headless_workspace_installation(
+    config: &HeadlessConfiguration,
+    tools: &AgentToolCapabilities,
+) -> Result<(RuntimeAgentInstallation, Arc<RuntimeAgentCatalogue>), HeadlessConstructionError> {
+    build_headless_installation_inner(
+        config,
+        tools.definitions.clone(),
+        vec![
+            HEADLESS_AGENT_CAPABILITY.into(),
+            HEADLESS_WORKSPACE_CAPABILITY.into(),
+        ],
+    )
+}
+
+fn build_headless_installation_inner(
+    config: &HeadlessConfiguration,
+    tools: Vec<garive_tools::ToolDefinition>,
+    public_capabilities: Vec<String>,
+) -> Result<(RuntimeAgentInstallation, Arc<RuntimeAgentCatalogue>), HeadlessConstructionError> {
     let revision = headless_revision_for(&config.state.definition_id)
         .ok_or(HeadlessConstructionError::DefinitionUnknown)?;
-    let capabilities = BTreeSet::from([HEADLESS_AGENT_CAPABILITY.to_owned()]);
+    let requirement_capabilities = tools
+        .iter()
+        .flat_map(|tool| tool.requirements().capabilities())
+        .map(|capability| capability.wire_name().to_owned())
+        .collect::<BTreeSet<_>>();
+    let capability_references = tools
+        .iter()
+        .map(|tool| {
+            CapabilityReference::new(
+                CapabilityKind::Tool,
+                tool.name(),
+                tool.revision(),
+                tool.prepared_contract_version().into(),
+                true,
+            )
+        })
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|_| HeadlessConstructionError::ResolutionFailed)?;
     let limits = DefaultLimits::new(8, Some(16_384), Some(4_096), Some(30_000))
         .map_err(|_| HeadlessConstructionError::ResolutionFailed)?;
     let governance = GovernancePolicy::new(
         "headless.governance",
         "headless.governance.v1",
-        capabilities.clone(),
+        requirement_capabilities.clone(),
         Vec::<garive_config::InteractionMode>::new(),
     )
     .map_err(|_| HeadlessConstructionError::ResolutionFailed)?;
@@ -258,7 +305,7 @@ pub fn build_headless_installation(
         revision,
         Vec::new(),
         Vec::new(),
-        Vec::<garive_config::CapabilityReference>::new(),
+        capability_references,
         governance,
         context_policy,
         limits.clone(),
@@ -268,12 +315,12 @@ pub fn build_headless_installation(
     let registry = ResolutionRegistry {
         instructions: Vec::new(),
         model_roles: Vec::new(),
-        tools: Vec::new(),
+        tools,
         capability_descriptors: Vec::new(),
         governance_policies: vec![garive_config::GovernancePolicyCandidate {
             policy_id: "headless.governance".to_owned(),
             exact_revision: "headless.governance.v1".to_owned(),
-            allowed_requirement_capabilities: capabilities.clone(),
+            allowed_requirement_capabilities: requirement_capabilities.clone(),
             interaction_modes: BTreeSet::new(),
         }],
         context_policies: vec![garive_config::ContextPolicyCandidate {
@@ -284,7 +331,7 @@ pub fn build_headless_installation(
         public_tool_activity_catalogue: None,
     };
     let product_policy = ProductPolicy {
-        allowed_requirement_capabilities: capabilities,
+        allowed_requirement_capabilities: requirement_capabilities,
         interaction_modes: BTreeSet::new(),
         limit_caps: limits,
         admitted_contract_versions: BTreeMap::from([(
@@ -294,12 +341,9 @@ pub fn build_headless_installation(
     };
     let snapshot = resolve_definition(&definition, &registry, &product_policy)
         .map_err(|_| HeadlessConstructionError::ResolutionFailed)?;
-    let installation = RuntimeAgentInstallation::new(
-        snapshot,
-        HEADLESS_AGENT_NAMESPACE,
-        vec![HEADLESS_AGENT_CAPABILITY.to_owned()],
-    )
-    .map_err(map_installation_error)?;
+    let installation =
+        RuntimeAgentInstallation::new(snapshot, HEADLESS_AGENT_NAMESPACE, public_capabilities)
+            .map_err(map_installation_error)?;
     let catalogue = Arc::new(
         RuntimeAgentCatalogue::new(vec![installation.clone()])
             .map_err(|_| HeadlessConstructionError::InstallationInvalid)?,
@@ -334,6 +378,13 @@ pub fn headless_execution_policy(config: &HeadlessConfiguration) -> LocalExecuti
         max_context_utf8_bytes: HEADLESS_DEFAULT_MAX_CONTEXT_UTF8_BYTES,
         max_model_attempts: HEADLESS_DEFAULT_MAX_MODEL_ATTEMPTS,
     }
+}
+
+/// Adds neutral tool calling to the normal headless model requirements.
+pub fn headless_workspace_execution_policy(config: &HeadlessConfiguration) -> LocalExecutionPolicy {
+    let mut policy = headless_execution_policy(config);
+    policy.required_capabilities.push(ModelCapability::Tools);
+    policy
 }
 
 /// Returns the current Unix epoch milliseconds using the system clock.

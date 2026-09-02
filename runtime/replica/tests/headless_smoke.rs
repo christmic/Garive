@@ -12,6 +12,7 @@
 use std::{
     collections::BTreeSet,
     net::{IpAddr, Ipv4Addr, SocketAddr},
+    os::unix::fs::PermissionsExt,
     sync::{
         atomic::{AtomicUsize, Ordering},
         Arc, Mutex,
@@ -30,14 +31,16 @@ use garive_llm::{
 use garive_runtime::{
     drive_pending,
     headless::{
-        build_headless_installation, headless_execution_attempt, headless_execution_policy,
-        headless_now_ms, headless_revision_for, HeadlessClock, HeadlessConfiguration,
-        HEADLESS_DESKTOP_AGENT_REVISION, HEADLESS_LEGACY_AGENT_REVISION,
+        build_headless_installation, build_headless_workspace_installation,
+        headless_execution_attempt, headless_execution_policy, headless_now_ms,
+        headless_revision_for, headless_workspace_execution_policy, HeadlessClock,
+        HeadlessConfiguration, HEADLESS_DESKTOP_AGENT_REVISION, HEADLESS_LEGACY_AGENT_REVISION,
     },
     local_dispatch_queue, CatalogueCapabilityPreparationFactory, DrivePendingOutcome, HostClock,
     InstalledAgent, LiveHost, LiveHostLimits, LiveHostServer, LocalExecutionPolicy,
     LocalExecutionWorker, ManagementCommitBody, ManagementConfigState, ManagementConfigStore,
-    SqliteLedger, MANAGEMENT_COMMIT_BODY_SCHEMA_VERSION,
+    SqliteLedger, T1WorkspaceRuntimeConfig, HEADLESS_WORKSPACE_EXECUTOR_REVISION,
+    HEADLESS_WORKSPACE_POLICY_REVISION, MANAGEMENT_COMMIT_BODY_SCHEMA_VERSION,
 };
 use tempfile::tempdir;
 
@@ -199,6 +202,35 @@ fn seed_management_row(database: &std::path::Path, api_key: &str) {
             "2026-09-02T00:00:00Z",
         )
         .expect("commit management row");
+}
+
+#[test]
+fn workspace_mode_freezes_five_tools_and_requires_model_tool_use() {
+    let directory = tempdir().unwrap();
+    let workspace = directory.path().join("workspace");
+    let recovery = directory.path().join("recovery");
+    std::fs::create_dir_all(&workspace).unwrap();
+    std::fs::create_dir_all(&recovery).unwrap();
+    std::fs::set_permissions(&recovery, std::fs::Permissions::from_mode(0o700)).unwrap();
+    let execution = T1WorkspaceRuntimeConfig::new(
+        HEADLESS_WORKSPACE_POLICY_REVISION,
+        HEADLESS_WORKSPACE_EXECUTOR_REVISION,
+        workspace,
+        recovery,
+    )
+    .unwrap()
+    .build()
+    .unwrap();
+    let configuration = HeadlessConfiguration {
+        state: seeded_state(),
+        api_key: "fixture-secret".into(),
+    };
+    let (installation, _) =
+        build_headless_workspace_installation(&configuration, execution.capabilities()).unwrap();
+    assert_eq!(installation.tool_capabilities().definitions.len(), 5);
+    assert!(headless_workspace_execution_policy(&configuration)
+        .required_capabilities
+        .contains(&ModelCapability::Tools));
 }
 
 async fn drive_worker_once(

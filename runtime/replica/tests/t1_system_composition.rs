@@ -4,10 +4,10 @@ use std::{collections::BTreeSet, fs, os::unix::fs::PermissionsExt};
 
 use garive_runtime::{
     PodmanProcessConfig, ProcessBackendHostConfig, ProcessExecutable, ProcessLane,
-    ProcessLaneRegistry, T1HostSystemConfig, T1RuntimeSystemConfig, T1_PROCESS_EXECUTOR_ID,
-    T1_WORKSPACE_EXECUTOR_ID,
+    ProcessLaneRegistry, T1HostSystemConfig, T1RuntimeSystemConfig, T1WorkspaceRuntimeConfig,
+    T1_PROCESS_EXECUTOR_ID, T1_WORKSPACE_EXECUTOR_ID,
 };
-use garive_tools::{ToolIntent, T1_PROCESS_RUN, T1_READ_TEXT};
+use garive_tools::{ToolIntent, T1_PROCESS_RUN, T1_READ_TEXT, T1_WRITE_TEXT};
 use tempfile::tempdir;
 
 #[test]
@@ -30,7 +30,7 @@ fn one_explicit_system_config_builds_the_exact_five_tool_execution_surface() {
     )
     .unwrap();
     let execution = config.build().unwrap();
-    assert_eq!(execution.capabilities().definitions.len(), 5);
+    assert_eq!(execution.capabilities().definitions.len(), 6);
     assert_eq!(
         execution
             .capabilities()
@@ -44,6 +44,7 @@ fn one_explicit_system_config_builds_the_exact_five_tool_execution_surface() {
             "garive.workspace.list",
             "garive.workspace.read_text",
             "garive.workspace.search_text",
+            "garive.workspace.write_text",
         ])
     );
     let (_, preparation, _) = execution.into_parts();
@@ -117,7 +118,7 @@ fn persistent_host_values_bind_an_explicit_workspace_without_discovery() {
     assert_eq!(host.policy_revision(), "policy.v1");
     assert_eq!(host.executor_revision(), "executor.v1");
     assert_eq!(host.process_lane_names().collect::<Vec<_>>(), ["rust"]);
-    assert_eq!(host.tool_capabilities().unwrap().definitions.len(), 5);
+    assert_eq!(host.tool_capabilities().unwrap().definitions.len(), 6);
     assert_eq!(
         host.bind_workspace(&workspace)
             .unwrap()
@@ -126,7 +127,7 @@ fn persistent_host_values_bind_an_explicit_workspace_without_discovery() {
             .capabilities()
             .definitions
             .len(),
-        5
+        6
     );
     assert!(ProcessBackendHostConfig::podman(
         "/opt/garive/bin/podman",
@@ -136,6 +137,23 @@ fn persistent_host_values_bind_an_explicit_workspace_without_discovery() {
         5_000,
     )
     .is_err());
+}
+
+#[test]
+fn workspace_only_config_excludes_process_and_keeps_write() {
+    let directory = tempdir().unwrap();
+    let workspace = directory.path().join("workspace");
+    let recovery = directory.path().join("patch-recovery");
+    private_directory(&workspace, 0o755);
+    private_directory(&recovery, 0o700);
+    let execution =
+        T1WorkspaceRuntimeConfig::new("policy.v1", "executor.v1", &workspace, &recovery)
+            .unwrap()
+            .build()
+            .unwrap();
+    assert_eq!(execution.capabilities().definitions.len(), 5);
+    assert!(execution.executor_binding(T1_PROCESS_RUN).is_none());
+    assert!(execution.executor_binding(T1_WRITE_TEXT).is_some());
 }
 
 #[test]

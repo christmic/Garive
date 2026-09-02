@@ -6,6 +6,7 @@ use garive_runtime::{BuiltinWorkspaceExecutor, ExecutorDispatch, ExecutorPort};
 use garive_tools::{
     BuiltinT1Catalogue, ExecutionFact, GrantId, InvocationGrant, TerminalClassification,
     ToolIntent, ToolInvocationId, T1_APPLY_PATCH, T1_LIST, T1_READ_TEXT, T1_SEARCH_TEXT,
+    T1_WRITE_TEXT,
 };
 use serde_json::json;
 use sha2::{Digest, Sha256};
@@ -92,6 +93,39 @@ async fn read_text_maps_bounds_encoding_types_and_links_to_safe_failures() {
         )
         .await["text"],
         "ok"
+    );
+}
+
+#[tokio::test]
+async fn write_text_creates_once_without_overwriting_or_following_links() {
+    let directory = tempdir().unwrap();
+    std::fs::create_dir(directory.path().join("notes")).unwrap();
+    let arguments = r#"{"path":"notes/result.txt","text":"first"}"#;
+    let result = run_completed(directory.path(), T1_WRITE_TEXT, arguments).await;
+    assert_eq!(result["path"], "notes/result.txt");
+    assert_eq!(result["byte_count"], 5);
+    assert_eq!(
+        std::fs::read_to_string(directory.path().join("notes/result.txt")).unwrap(),
+        "first"
+    );
+    assert_eq!(
+        run_failure(directory.path(), T1_WRITE_TEXT, arguments).await,
+        "path_exists"
+    );
+    assert_eq!(
+        std::fs::read_to_string(directory.path().join("notes/result.txt")).unwrap(),
+        "first"
+    );
+
+    symlink("notes", directory.path().join("linked-notes")).unwrap();
+    assert_eq!(
+        run_failure(
+            directory.path(),
+            T1_WRITE_TEXT,
+            r#"{"path":"linked-notes/other.txt","text":"blocked"}"#,
+        )
+        .await,
+        "access_denied"
     );
 }
 

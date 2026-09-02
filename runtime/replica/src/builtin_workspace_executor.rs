@@ -1,16 +1,24 @@
 //! Descriptor-rooted T1 workspace read and list executor.
 
-use std::{collections::BinaryHeap, fs::File, io::Read, path::Path};
+use std::{
+    collections::BinaryHeap,
+    fs::File,
+    io::{Read, Write},
+    path::Path,
+};
 
 use garive_ledger::CanonicalPayload;
 use garive_tools::{
     AccessMode, AccessNamespace, BuiltinT1Catalogue, EffectReceipt, ExecutionCapability,
     ExecutionFact, InvocationGrant, PreparedToolCall, ReceiptId, ReplayClass,
     TerminalClassification, ToolIntent, ToolInvocationId, T1_LIST, T1_READ_TEXT, T1_SEARCH_TEXT,
+    T1_WRITE_TEXT,
 };
 use rustix::{
     fd::OwnedFd,
-    fs::{fstat, open, openat, statat, AtFlags, Dir, FileType, Mode, OFlags},
+    fs::{
+        fstat, fsync, linkat, open, openat, statat, unlinkat, AtFlags, Dir, FileType, Mode, OFlags,
+    },
     io::{dup, Errno},
 };
 use serde_json::{json, Value};
@@ -128,6 +136,12 @@ enum Operation {
         max_nodes: usize,
         result_bound: u64,
     },
+    Write {
+        path: String,
+        text: String,
+        temporary: String,
+        result_bound: u64,
+    },
 }
 
 fn operation(
@@ -136,8 +150,13 @@ fn operation(
     prepared: &PreparedToolCall,
     grant: &InvocationGrant,
 ) -> Result<Operation, String> {
+    let expected_replay = if prepared.tool_name() == T1_WRITE_TEXT {
+        ReplayClass::NeverReplay
+    } else {
+        ReplayClass::ReadOnly
+    };
     if prepared.contract_version() != 3
-        || prepared.replay_class() != ReplayClass::ReadOnly
+        || prepared.replay_class() != expected_replay
         || grant.invocation_id != *invocation_id
         || grant.prepared_digest != prepared.input_digest()
         || grant.tool_name != prepared.tool_name()
@@ -163,8 +182,13 @@ fn operation(
     else {
         return Err("one T1 workspace access required".into());
     };
-    if access.namespace() != AccessNamespace::Filesystem || access.mode() != AccessMode::Read {
-        return Err("read-only T1 workspace access required".into());
+    let expected_mode = if prepared.tool_name() == T1_WRITE_TEXT {
+        AccessMode::Write
+    } else {
+        AccessMode::Read
+    };
+    if access.namespace() != AccessNamespace::Filesystem || access.mode() != expected_mode {
+        return Err("invalid T1 workspace access".into());
     }
     let arguments: Value = serde_json::from_str(prepared.normalized_arguments())
         .map_err(|_| "invalid T1 arguments")?;
@@ -214,6 +238,19 @@ fn operation(
                 .map_err(|_| "invalid T1 node bound")?,
             result_bound,
         }),
+        T1_WRITE_TEXT => Ok(Operation::Write {
+            path,
+            text: arguments
+                .get("text")
+                .and_then(Value::as_str)
+                .ok_or_else(|| "invalid T1 write text".to_owned())?
+                .to_owned(),
+            temporary: format!(
+                ".garive-write-{:x}.tmp",
+                Sha256::digest(invocation_id.as_str().as_bytes())
+            ),
+            result_bound,
+        }),
         _ => Err("unsupported T1 workspace operation".into()),
     }
 }
@@ -221,12 +258,15 @@ fn operation(
 fn requirements_cover(prepared: &PreparedToolCall, grant: &InvocationGrant) -> bool {
     let requested = prepared.requirements();
     let granted = &grant.granted_requirements;
+    let expected = match prepared.tool_name() {
+        T1_READ_TEXT | T1_LIST | T1_SEARCH_TEXT => vec![ExecutionCapability::FilesystemRead],
+        T1_WRITE_TEXT => vec![ExecutionCapability::FilesystemWrite],
+        _ => return false,
+    };
     requested.capabilities().eq(granted.capabilities())
         && granted.max_duration_ms() <= requested.max_duration_ms()
         && granted.max_output_bytes() <= requested.max_output_bytes()
-        && requested
-            .capabilities()
-            .eq([ExecutionCapability::FilesystemRead])
+        && requested.capabilities().eq(expected)
 }
 
 fn number(arguments: &Value, name: &str) -> Result<u64, String> {
@@ -275,7 +315,54 @@ fn execute(root: OwnedFd, operation: Operation) -> Result<Value, WorkspaceExecut
             max_nodes,
             result_bound,
         ),
+        Operation::Write {
+            path,
+            text,
+            temporary,
+            result_bound,
+        } => write_text(root, &path, &text, &temporary, result_bound),
     }
+}
+
+fn write_text(
+    root: OwnedFd,
+    path: &str,
+    text: &str,
+    temporary: &str,
+    result_bound: u64,
+) -> Result<Value, WorkspaceExecutionError> {
+    let (parent, name) = open_parent(root, path)?;
+    if has_exact_component(&parent, name.as_bytes())? {
+        return Err(WorkspaceExecutionError::PathExists);
+    }
+    let descriptor = openat(
+        &parent,
+        temporary,
+        OFlags::CREATE | OFlags::EXCL | OFlags::WRONLY | OFlags::NOFOLLOW | OFlags::CLOEXEC,
+        Mode::RUSR | Mode::WUSR,
+    )
+    .map_err(map_errno)?;
+    let mut file = File::from(descriptor);
+    if file
+        .write_all(text.as_bytes())
+        .and_then(|()| file.sync_all())
+        .is_err()
+    {
+        let _ = unlinkat(&parent, temporary, AtFlags::empty());
+        return Err(WorkspaceExecutionError::AccessDenied);
+    }
+    if linkat(&parent, temporary, &parent, name.as_str(), AtFlags::empty()).is_err() {
+        let _ = unlinkat(&parent, temporary, AtFlags::empty());
+        return Err(WorkspaceExecutionError::PathExists);
+    }
+    unlinkat(&parent, temporary, AtFlags::empty()).map_err(map_errno)?;
+    fsync(&parent).map_err(map_errno)?;
+    let digest = format!("{:x}", Sha256::digest(text.as_bytes()));
+    bounded_result(
+        json!({"path":path,"byte_count":text.len(),"content_digest":digest}),
+        result_bound,
+        WorkspaceExecutionError::ResultBoundExceeded,
+    )
 }
 
 fn read_text(
@@ -679,6 +766,32 @@ fn open_target(root: OwnedFd, path: &str) -> Result<OwnedFd, WorkspaceExecutionE
     Ok(current)
 }
 
+fn open_parent(root: OwnedFd, path: &str) -> Result<(OwnedFd, String), WorkspaceExecutionError> {
+    let mut components = path.split('/').collect::<Vec<_>>();
+    let name = components
+        .pop()
+        .filter(|value| !value.is_empty())
+        .ok_or(WorkspaceExecutionError::AccessDenied)?
+        .to_owned();
+    let mut current = root;
+    for component in components {
+        if !has_exact_component(&current, component.as_bytes())? {
+            return Err(WorkspaceExecutionError::PathNotFound);
+        }
+        current = openat(
+            &current,
+            component,
+            OFlags::RDONLY | OFlags::DIRECTORY | OFlags::NOFOLLOW | OFlags::CLOEXEC,
+            Mode::empty(),
+        )
+        .map_err(|error| match error {
+            Errno::NOENT => WorkspaceExecutionError::PathNotFound,
+            _ => WorkspaceExecutionError::AccessDenied,
+        })?;
+    }
+    Ok((current, name))
+}
+
 fn has_exact_component(
     directory: &OwnedFd,
     component: &[u8],
@@ -708,6 +821,7 @@ fn bounded_result(
 #[derive(Clone, Copy)]
 enum WorkspaceExecutionError {
     PathNotFound,
+    PathExists,
     PathTypeMismatch,
     AccessDenied,
     NonUtf8Content,
@@ -720,6 +834,7 @@ impl WorkspaceExecutionError {
     const fn code(self) -> &'static str {
         match self {
             Self::PathNotFound => "path_not_found",
+            Self::PathExists => "path_exists",
             Self::PathTypeMismatch => "path_type_mismatch",
             Self::AccessDenied => "access_denied",
             Self::NonUtf8Content => "non_utf8_content",
@@ -733,6 +848,7 @@ impl WorkspaceExecutionError {
 fn map_errno(error: Errno) -> WorkspaceExecutionError {
     match error {
         Errno::NOENT => WorkspaceExecutionError::PathNotFound,
+        Errno::EXIST => WorkspaceExecutionError::PathExists,
         Errno::NOTDIR | Errno::ISDIR => WorkspaceExecutionError::PathTypeMismatch,
         _ => WorkspaceExecutionError::AccessDenied,
     }

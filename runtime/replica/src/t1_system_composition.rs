@@ -5,7 +5,7 @@ use std::{collections::BTreeMap, fs, path::PathBuf, sync::Arc};
 use garive_core::{AgentToolCapabilities, ToolPreparationPort};
 use garive_tools::{
     BuiltinT1Catalogue, PreparationError, PreparedToolCall, ToolIntent, T1_APPLY_PATCH, T1_LIST,
-    T1_PROCESS_RUN, T1_READ_TEXT, T1_SEARCH_TEXT,
+    T1_PROCESS_RUN, T1_READ_TEXT, T1_SEARCH_TEXT, T1_WRITE_TEXT,
 };
 use sha2::{Digest, Sha256};
 
@@ -235,6 +235,86 @@ pub struct T1RuntimeSystemConfig {
     process_backend: ProcessBackendConfig,
 }
 
+/// Workspace-only T1 configuration for a Runtime without a Process backend.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct T1WorkspaceRuntimeConfig {
+    policy_revision: String,
+    executor_revision: String,
+    workspace_root: PathBuf,
+    patch_recovery_root: PathBuf,
+}
+
+impl T1WorkspaceRuntimeConfig {
+    /// Validates explicit Workspace and private patch-recovery capabilities.
+    pub fn new(
+        policy_revision: impl Into<String>,
+        executor_revision: impl Into<String>,
+        workspace_root: impl Into<PathBuf>,
+        patch_recovery_root: impl Into<PathBuf>,
+    ) -> Result<Self, String> {
+        let value = Self {
+            policy_revision: policy_revision.into(),
+            executor_revision: executor_revision.into(),
+            workspace_root: canonical_directory(workspace_root.into())?,
+            patch_recovery_root: canonical_private_directory(patch_recovery_root.into())?,
+        };
+        if value.policy_revision.is_empty() || value.executor_revision.is_empty() {
+            return Err("invalid T1 Workspace Runtime configuration".into());
+        }
+        Ok(value)
+    }
+
+    /// Builds read, list, search, create and patch tools without Process authority.
+    pub fn build(&self) -> Result<T1RuntimeExecution, String> {
+        let catalogue = BuiltinT1Catalogue::new(&self.policy_revision, std::iter::empty::<&str>())
+            .map_err(|_| "invalid T1 catalogue")?;
+        let workspace = BuiltinWorkspaceExecutor::new(
+            &self.workspace_root,
+            &self.executor_revision,
+            catalogue.clone(),
+        )
+        .map_err(|_| "T1 workspace executor unavailable")?;
+        let patch = BuiltinPatchExecutor::new(
+            &self.workspace_root,
+            &self.patch_recovery_root,
+            &self.executor_revision,
+            catalogue.clone(),
+        )
+        .map_err(|_| "T1 patch executor unavailable")?;
+        let executor = RoutedExecutorPort::new([
+            ExecutorRoute::new(
+                T1_WORKSPACE_EXECUTOR_ID,
+                [T1_READ_TEXT, T1_LIST, T1_SEARCH_TEXT, T1_WRITE_TEXT],
+                Box::new(workspace),
+            )?,
+            ExecutorRoute::new(T1_PATCH_EXECUTOR_ID, [T1_APPLY_PATCH], Box::new(patch))?,
+        ])?;
+        let definitions = catalogue
+            .definitions()
+            .iter()
+            .filter(|definition| definition.name() != T1_PROCESS_RUN)
+            .cloned()
+            .collect();
+        let mut executor_bindings = BTreeMap::new();
+        for name in [T1_READ_TEXT, T1_LIST, T1_SEARCH_TEXT, T1_WRITE_TEXT] {
+            executor_bindings.insert(
+                name.into(),
+                T1ExecutorBinding::new(T1_WORKSPACE_EXECUTOR_ID, &self.executor_revision)?,
+            );
+        }
+        executor_bindings.insert(
+            T1_APPLY_PATCH.into(),
+            T1ExecutorBinding::new(T1_PATCH_EXECUTOR_ID, &self.executor_revision)?,
+        );
+        Ok(T1RuntimeExecution {
+            capabilities: AgentToolCapabilities { definitions },
+            preparation: Box::new(T1Preparation(catalogue)),
+            executor: Box::new(executor),
+            executor_bindings,
+        })
+    }
+}
+
 impl T1RuntimeSystemConfig {
     /// Validates explicit roots, revisions, lanes and Process backend ownership.
     pub fn new(
@@ -297,7 +377,7 @@ impl T1RuntimeSystemConfig {
         let executor = RoutedExecutorPort::new([
             ExecutorRoute::new(
                 T1_WORKSPACE_EXECUTOR_ID,
-                [T1_READ_TEXT, T1_LIST, T1_SEARCH_TEXT],
+                [T1_READ_TEXT, T1_LIST, T1_SEARCH_TEXT, T1_WRITE_TEXT],
                 Box::new(workspace),
             )?,
             ExecutorRoute::new(T1_PATCH_EXECUTOR_ID, [T1_APPLY_PATCH], Box::new(patch))?,
@@ -314,6 +394,10 @@ impl T1RuntimeSystemConfig {
             ),
             (
                 T1_SEARCH_TEXT.into(),
+                T1ExecutorBinding::new(T1_WORKSPACE_EXECUTOR_ID, &self.executor_revision)?,
+            ),
+            (
+                T1_WRITE_TEXT.into(),
                 T1ExecutorBinding::new(T1_WORKSPACE_EXECUTOR_ID, &self.executor_revision)?,
             ),
             (
