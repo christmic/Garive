@@ -11,7 +11,8 @@ use super::types::{
     CancelTurnCommand, ContinuationInput, ContinueTurnCommand, PlannedTurn,
     ReconcileInvocationCommand, ReconciliationDecision, RecoveryRestartCommand,
     RuntimeCommandError, RuntimeSuspensionKind, StartPlanProposalExecutionCommand,
-    StartPlanReplanProposalExecutionCommand, StartTurnCommand, SuspendedTurnState,
+    StartPlanReplanProposalExecutionCommand, StartTurnCommand, SteerTurnCommand,
+    SuspendedTurnState,
 };
 
 /// Creates the exact three-fact StartTurn transaction with Runtime-owned identities.
@@ -192,6 +193,49 @@ pub fn plan_cancel_turn(command: &CancelTurnCommand) -> Result<PlannedTurn, Runt
             "command_id":command.command_id.as_str(),
             "reason":command.reason.as_str(),
             "requested_through_position":command.requested_through_position,
+        }),
+        &command.recorded_at,
+    )?;
+    Ok(PlannedTurn {
+        turn_id: command.turn_id.clone(),
+        execution_id: None,
+        facts: vec![fact],
+    })
+}
+
+/// Creates the one-fact durable steering transaction that injects new user
+/// input into the next derive iteration of an already-running Turn.
+///
+/// The committed fact shares the same `turn_id` as the active Turn; position
+/// ordering naturally interleaves it with whatever `plan.*` events the worker
+/// has emitted and will emit after the steering. The worker observes the new
+/// fact at the start of its next derive iteration and surfaces the inline
+/// text as a user message on the next model call.
+pub fn plan_steer_turn(command: &SteerTurnCommand) -> Result<PlannedTurn, RuntimeCommandError> {
+    validate_time(&command.recorded_at)?;
+    if command.inline_text.is_empty() {
+        return Err(RuntimeCommandError::InvalidCommand);
+    }
+    let input_digest = digest(command.inline_text.as_bytes());
+    let steer_id = digest(
+        format!(
+            "{}:{}:{}",
+            command.command_id.as_str(),
+            command.session_id.as_str(),
+            command.turn_id.as_str()
+        )
+        .as_bytes(),
+    );
+    let fact = fact(
+        command.command_id.as_str(),
+        "turn.steered",
+        Some(&command.turn_id),
+        None,
+        json!({
+            "command_id": command.command_id.as_str(),
+            "steer_id": steer_id,
+            "session_version": command.expected_session_version,
+            "input": {"digest": input_digest, "inline_utf8": command.inline_text},
         }),
         &command.recorded_at,
     )?;

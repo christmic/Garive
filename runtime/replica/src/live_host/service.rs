@@ -19,12 +19,12 @@ use sha2::{Digest, Sha256};
 use crate::{
     commit_goal_command, commit_planned_turn, get_turn,
     goal_recovery::reconstruct_goal_graph_from_facts, plan_cancel_turn, plan_continue_turn,
-    plan_create_goal, plan_goal_transition, plan_start_turn, reconstruct_goal,
+    plan_create_goal, plan_goal_transition, plan_start_turn, plan_steer_turn, reconstruct_goal,
     reconstruct_plan_graph, reconstruct_suspended_turn, CancelReason, CancelTurnCommand,
     ContinuationInput, ContinueTurnCommand, GetTurnQuery, GoalCommandContext, GoalRuntimeError,
     GoalRuntimeTransition, InteractionInputRepresentation, LiveOutputHub, LiveOutputSubscriber,
     RuntimeCommandError, RuntimeCommandId, RuntimeSuspensionKind, RuntimeTurnStatus, SqliteLedger,
-    SqliteLedgerError, StartTurnCommand,
+    SqliteLedgerError, StartTurnCommand, SteerTurnCommand,
 };
 
 use super::{
@@ -1640,6 +1640,71 @@ impl LiveHost {
         ))
     }
 
+    /// Injects new user input into the next derive iteration of an
+    /// already-running Turn (steer mode).
+    ///
+    /// The committed `turn.steered` fact shares the active Turn's identity;
+    /// position ordering naturally interleaves it with whatever `plan.*`
+    /// events the worker has emitted and will emit afterwards. The worker
+    /// consumes the steered text at the next derive boundary.
+    ///
+    /// Rejects when the targeted Turn is not currently Open (suspended,
+    /// completed, stopped, or failed Turns all fall under the
+    /// `precondition_failed` wire code).
+    pub fn steer_turn(
+        &self,
+        idempotency_key: &str,
+        session: &str,
+        turn: &str,
+        inline_text: &str,
+    ) -> Result<TurnCommandResponse, LiveHostError> {
+        validate_key(idempotency_key)?;
+        validate_text(inline_text, self.state.limits.max_command_bytes)?;
+        let session_id = identity::<SessionId>(session)?;
+        let turn_id = identity::<TurnId>(turn)?;
+        let mut ledger = self.ledger()?;
+        if let Some(response) =
+            self.replay_steer(&ledger, &session_id, &turn_id, idempotency_key, inline_text)?
+        {
+            return Ok(response);
+        }
+        let view = get_turn(
+            &ledger,
+            &GetTurnQuery {
+                session_id: session_id.clone(),
+                turn_id: turn_id.clone(),
+                through_position: None,
+            },
+        )
+        .map_err(map_runtime_query)?;
+        if view.status != RuntimeTurnStatus::Open {
+            return Err(LiveHostError::PreconditionFailed);
+        }
+        let plan = plan_steer_turn(&SteerTurnCommand {
+            command_id: RuntimeCommandId::new(idempotency_key).map_err(map_runtime)?,
+            session_id: session_id.clone(),
+            turn_id: turn_id.clone(),
+            inline_text: inline_text.to_owned(),
+            expected_session_version: view.observed_session_version,
+            recorded_at: self.recorded_at()?,
+        })
+        .map_err(map_runtime)?;
+        let committed = commit_planned_turn(
+            &mut ledger,
+            session_id.clone(),
+            view.observed_session_version,
+            &plan,
+        )
+        .map_err(map_runtime)?;
+        let last = last_position(&committed.positions)?;
+        Ok(turn_response(
+            &session_id,
+            &turn_id,
+            view.execution_id.as_ref(),
+            last,
+        ))
+    }
+
     /// Scans one bounded durable position range and projects admitted public events.
     pub fn read_event_page(
         &self,
@@ -1983,6 +2048,57 @@ impl LiveHost {
             ReplayInput::Continue(request.input),
             Some(request.suspension_id),
         )
+    }
+
+    fn replay_steer(
+        &self,
+        ledger: &SqliteLedger,
+        session_id: &SessionId,
+        turn_id: &TurnId,
+        command_id: &str,
+        inline_text: &str,
+    ) -> Result<Option<TurnCommandResponse>, LiveHostError> {
+        let Some(watermark) = ledger.session_watermark(session_id).map_err(map_sqlite)? else {
+            return Err(LiveHostError::NotFound);
+        };
+        let facts = ledger
+            .read_facts(session_id, 0, watermark.max_position, None)
+            .map_err(map_sqlite)?;
+        for fact in &facts {
+            if fact.kind.as_str() != "turn.steered" {
+                continue;
+            }
+            if fact.turn_id.as_ref() != Some(turn_id) {
+                continue;
+            }
+            let payload: Steered = decode_payload(fact)?;
+            if payload.command_id != command_id {
+                continue;
+            }
+            if payload.input.inline_utf8 != inline_text
+                || payload.input.digest != digest(inline_text.as_bytes())
+            {
+                return Err(LiveHostError::CommandConflict);
+            }
+            let execution_id = get_turn(
+                ledger,
+                &GetTurnQuery {
+                    session_id: session_id.clone(),
+                    turn_id: turn_id.clone(),
+                    through_position: Some(fact.position),
+                },
+            )
+            .map_err(map_runtime_query)?
+            .execution_id;
+            return Ok(Some(turn_response(
+                session_id,
+                turn_id,
+                execution_id.as_ref(),
+                fact.position,
+            )));
+        }
+        reject_other_command(&facts, command_id)?;
+        Ok(None)
     }
 
     fn replay_cancel(
@@ -2562,6 +2678,23 @@ struct InlineContent {
 struct Cancelled {
     command_id: String,
     requested_through_position: u64,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+#[allow(dead_code)]
+struct Steered {
+    command_id: String,
+    steer_id: String,
+    session_version: u64,
+    input: ReplayInputContent,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ReplayInputContent {
+    digest: String,
+    inline_utf8: String,
 }
 
 fn find_started(

@@ -18,7 +18,7 @@ use tokio::net::TcpListener;
 use super::{
     validate_key, CancelGoalBody, CancelTurnBody, ContinueTurnBody, CreateGoalBody,
     CreateSessionBody, ErrorBody, LiveHost, LiveHostError, LiveHostEvent, ReviseGoalBody,
-    StartTurnBody,
+    StartTurnBody, SteerTurnBody,
 };
 use crate::{LiveOutputReceiveError, LiveOutputSubscriber};
 
@@ -52,6 +52,10 @@ impl LiveHostServer {
             .route("/v1/sessions/:session_id/plans", get(plan_page))
             .route("/v1/sessions/:session_id/timeline", get(turn_timeline))
             .route("/v1/sessions/:session_id/turns", post(start_turn))
+            .route(
+                "/v1/sessions/:session_id/turns/:turn_id/steer",
+                post(steer_turn_http),
+            )
             .route("/v1/goals/:operation", post(mutate_goal))
             .route("/v1/turns/:operation", post(mutate_turn))
             .route("/v1/sessions/:session_id/events", get(events))
@@ -258,6 +262,21 @@ async fn start_turn(
         let key = idempotency_key(&headers)?;
         let body: StartTurnBody = decode_body(&host, body).await?;
         host.start_turn(key, &session_id, &body.text)
+    }
+    .await;
+    command_response(result)
+}
+
+async fn steer_turn_http(
+    State(host): State<LiveHost>,
+    Path((session_id, turn_id)): Path<(String, String)>,
+    headers: HeaderMap,
+    body: Body,
+) -> Response {
+    let result = async {
+        let key = idempotency_key(&headers)?;
+        let body: SteerTurnBody = decode_body(&host, body).await?;
+        host.steer_turn(key, &session_id, &turn_id, &body.text)
     }
     .await;
     command_response(result)

@@ -208,6 +208,7 @@ impl SessionProjection {
             "turn.stopped" => self.terminal_turn(fact, TurnState::Stopped),
             "turn.failed" => self.terminal_turn(fact, TurnState::Failed),
             "turn.input" => self.admit_turn_input(fact),
+            "turn.steered" => self.admit_turn_steered(fact),
             "turn.cancel_requested" => self.require_non_terminal_turn(required(&fact.turn_id)?),
             "execution.started" => self.start_execution(fact),
             "execution.iteration_started" => self.start_iteration(fact),
@@ -433,6 +434,19 @@ impl SessionProjection {
     fn require_non_terminal_turn(&self, turn_id: &TurnId) -> Result<(), LedgerError> {
         match self.turns.get(turn_id) {
             Some(TurnState::Open | TurnState::Suspended) => Ok(()),
+            Some(_) => Err(LedgerError::InvalidTransition),
+            None => Err(LedgerError::MissingReference),
+        }
+    }
+
+    fn admit_turn_steered(&mut self, fact: &FactDraft) -> Result<(), LedgerError> {
+        let turn = required(&fact.turn_id)?;
+        // Steered messages are only admitted into Turn that is still Open.
+        // Suspended/Completed/Stopped/Failed Turns reject the steering —
+        // the client must use continue_turn for suspended or accept that
+        // the Turn is terminal.
+        match self.turns.get(turn) {
+            Some(TurnState::Open) => Ok(()),
             Some(_) => Err(LedgerError::InvalidTransition),
             None => Err(LedgerError::MissingReference),
         }

@@ -31,4 +31,5 @@ pub(crate) use service::validate_key;
 pub(crate) use types::{
     CancelGoalBody, CancelTurnBody, ContinueTurnBody, CreateGoalBody, CreateSessionBody, ErrorBody,
     LiveHostState, MobileWakeObservation, MobileWakePage, ReviseGoalBody, StartTurnBody,
+    SteerTurnBody,
 };

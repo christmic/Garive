@@ -263,6 +263,187 @@ async fn headless_wiring_drives_h1_session_end_to_end() {
         .await;
 }
 
+#[tokio::test(flavor = "current_thread")]
+async fn headless_wiring_supports_queue_and_steer_modes() {
+    // E2E companion to the main smoke: drives both queue mode (busy check)
+    // and steer mode against the same loopback H1 wiring, with a recording
+    // ModelPort stub so the worker does not need token9.
+    use garive_runtime::{LiveHost, LiveHostLimits, LiveHostServer};
+
+    let directory = tempdir().expect("tempdir");
+    let database = directory.path().join("garive-desktop.db");
+    seed_management_row(&database, "sk-test-1234567890");
+
+    let mut ledger = SqliteLedger::open(&database).expect("open ledger for read");
+    let wrapper = ledger
+        .management_config_store()
+        .read_with_credential()
+        .expect("read ok")
+        .expect("row present");
+    let configuration = HeadlessConfiguration {
+        state: wrapper.state,
+        api_key: wrapper.api_key,
+    };
+
+    let model = Arc::new(RecordingModel::default());
+    let (installation, catalogue) =
+        build_headless_installation(&configuration).expect("installation ok");
+    let preparation = Arc::new(CatalogueCapabilityPreparationFactory::new(catalogue, None));
+    let policy = headless_execution_policy(&configuration);
+    let worker = Arc::new(
+        LocalExecutionWorker::new(&database, policy, model.clone(), preparation)
+            .expect("worker ok"),
+    );
+
+    let clock: Arc<dyn HostClock> = Arc::new(HeadlessClock);
+    let limits = LiveHostLimits {
+        max_command_bytes: 1024 * 1024,
+        event_batch_size: 64,
+        event_poll_interval_ms: 100,
+        activity: None,
+    };
+
+    let installed = installation.clone_installed_agent();
+    let (host, _dispatcher, mut queue) =
+        LiveHost::new_with_worker(&database, vec![installed], limits, clock, 64).expect("host ok");
+
+    let server = LiveHostServer::bind(host, SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 0))
+        .await
+        .expect("bind");
+    let address = server.local_addr();
+    let (shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel();
+
+    let local_set = tokio::task::LocalSet::new();
+    local_set
+        .run_until(async move {
+            let server_task = tokio::task::spawn_local(server.serve(async move {
+                let _ = shutdown_rx.await;
+            }));
+
+            let client = reqwest::Client::new();
+            let base = format!("http://{address}");
+
+            // 1. Create a session.
+            let created = client
+                .post(format!("{base}/v1/sessions"))
+                .header("idempotency-key", "queue-steer-session")
+                .header("content-type", "application/json")
+                .body(format!(
+                    r#"{{"agent_definition_id":"{id}"}}"#,
+                    id = HEADLESS_DESKTOP_AGENT_REVISION
+                ))
+                .send()
+                .await
+                .expect("create session");
+            assert!(created.status().is_success(), "create_session: {}", created.status());
+            let session_id = serde_json::from_slice::<serde_json::Value>(
+                &created.bytes().await.expect("bytes"),
+            )
+            .expect("json")["session_id"]
+            .as_str()
+            .expect("session_id")
+            .to_owned();
+
+            // 2. Start an Open Turn — drives the worker into a queued Turn.
+            let turned = client
+                .post(format!("{base}/v1/sessions/{session_id}/turns"))
+                .header("idempotency-key", "queue-steer-turn")
+                .header("content-type", "application/json")
+                .body(r#"{"text":"hello"}"#)
+                .send()
+                .await
+                .expect("start turn");
+            assert!(turned.status().is_success(), "start_turn: {}", turned.status());
+            let turned_json = serde_json::from_slice::<serde_json::Value>(
+                &turned.bytes().await.expect("bytes"),
+            )
+            .expect("json");
+            let turn_id = turned_json["turn_id"].as_str().expect("turn_id").to_owned();
+
+            // 3. Queue mode — a second start_turn on the same Session must
+            //    be rejected with `session_busy` (409).
+            let busy = client
+                .post(format!("{base}/v1/sessions/{session_id}/turns"))
+                .header("idempotency-key", "queue-steer-busy")
+                .header("content-type", "application/json")
+                .body(r#"{"text":"second"}"#)
+                .send()
+                .await
+                .expect("busy check");
+            assert_eq!(busy.status().as_u16(), 409, "expected 409 session_busy");
+            let busy_body: serde_json::Value = serde_json::from_slice(
+                &busy.bytes().await.expect("bytes"),
+            )
+            .expect("json");
+            assert_eq!(busy_body["code"], "session_busy");
+
+            // 4. Steer mode — commit additional input to the same Open Turn.
+            let steered = client
+                .post(format!(
+                    "{base}/v1/sessions/{session_id}/turns/{turn_id}/steer"
+                ))
+                .header("idempotency-key", "queue-steer-steer")
+                .header("content-type", "application/json")
+                .body(r#"{"text":"additional context"}"#)
+                .send()
+                .await
+                .expect("steer");
+            assert_eq!(
+                steered.status().as_u16(),
+                200,
+                "steer should succeed against an Open Turn"
+            );
+            let steered_body: serde_json::Value = serde_json::from_slice(
+                &steered.bytes().await.expect("bytes"),
+            )
+            .expect("json");
+            assert_eq!(steered_body["turn_id"], turn_id);
+            assert!(
+                steered_body["committed_position"].as_u64().unwrap()
+                    > turned_json["committed_position"].as_u64().unwrap(),
+                "steer must commit strictly after start",
+            );
+
+            // 5. Replay — same idempotency key returns the original position.
+            let replay = client
+                .post(format!(
+                    "{base}/v1/sessions/{session_id}/turns/{turn_id}/steer"
+                ))
+                .header("idempotency-key", "queue-steer-steer")
+                .header("content-type", "application/json")
+                .body(r#"{"text":"additional context"}"#)
+                .send()
+                .await
+                .expect("steer replay");
+            assert_eq!(replay.status().as_u16(), 200);
+            let replay_body: serde_json::Value = serde_json::from_slice(
+                &replay.bytes().await.expect("bytes"),
+            )
+            .expect("json");
+            assert_eq!(
+                replay_body["committed_position"],
+                steered_body["committed_position"],
+                "idempotency-key replay must return the original position",
+            );
+
+            // 6. Run the worker once so the queued Turn gets dispatched.
+            //    (Steer added a fact, so the worker observes it on derive.)
+            for _ in 0..16 {
+                let outcome = drive_worker_once(&mut queue, worker.as_ref()).await;
+                if matches!(outcome, garive_runtime::DrivePendingOutcome::Advanced) {
+                    break;
+                }
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+
+            let _ = shutdown_tx.send(());
+            let _ = server_task.await;
+        })
+        .await;
+}
+
+async fn _unused_drive_worker_once_stub() {}
+
 #[test]
 fn headless_revision_lookup_is_stable() {
     assert_eq!(

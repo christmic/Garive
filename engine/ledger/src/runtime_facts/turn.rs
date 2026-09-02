@@ -16,6 +16,7 @@ pub(super) fn validate(kind: &str, value: &Map<String, Value>) -> Result<(), Led
         "turn.completed" => completed(value, true),
         "turn.stopped" => stopped(value, true),
         "turn.failed" => failed(value, true),
+        "turn.steered" => steered(value),
         "execution.started" => execution_started(value),
         "execution.iteration_started" => iteration_started(value),
         "execution.abandoned" => abandoned(value),
@@ -308,4 +309,17 @@ fn abandoned(value: &Map<String, Value>) -> Result<(), LedgerError> {
     enumeration(value, "reason", &["runtime_lost"])?;
     unsigned(value, "last_safe_position", false)?;
     unsigned(value, "recovery_ordinal", true)
+}
+
+fn steered(value: &Map<String, Value>) -> Result<(), LedgerError> {
+    fields(
+        value,
+        &["command_id", "steer_id", "session_version", "input"],
+        EMPTY,
+    )?;
+    non_empty(value, "command_id")?;
+    non_empty(value, "steer_id")?;
+    unsigned(value, "session_version", false)?;
+    content(value, "input")?;
+    Ok(())
 }

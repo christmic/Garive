@@ -495,6 +495,231 @@ fn queue_mode_rejects_second_start_while_first_open() {
 }
 
 #[test]
+fn steer_mode_appends_under_same_open_turn_id() {
+    // Steer is purely ledger-driven: it commits a turn.steered fact sharing
+    // the targeted Turn's id and position order naturally interleaves it
+    // with whatever plan.* events the worker emits after this point. The
+    // active Turn remains Open; no abort, no in-memory inbox.
+    let harness = Harness::new(64);
+    let session = harness
+        .host
+        .create_session("create-steer", "definition-main")
+        .unwrap();
+    let started = harness
+        .host
+        .start_turn("start-steer", &session.session_id, "first")
+        .unwrap();
+    let steered = harness
+        .host
+        .steer_turn(
+            "steer-1",
+            &session.session_id,
+            &started.turn_id,
+            "additional context",
+        )
+        .unwrap();
+    assert_eq!(started.turn_id, steered.turn_id);
+    assert!(
+        steered.committed_position > started.committed_position,
+        "steer must commit strictly after start",
+    );
+
+    // After steering, the Turn remains Open — a second start_turn still hits
+    // the queue-mode busy rejection.
+    let busy = harness
+        .host
+        .start_turn("start-second", &session.session_id, "second");
+    assert!(matches!(busy, Err(LiveHostError::SessionBusy)));
+
+    // The committed turn.steered fact lives under the targeted turn_id and
+    // increments the durable session version.
+    let watermark = SqliteLedger::open(&harness.database)
+        .unwrap()
+        .session_watermark(
+            &garive_ledger::SessionId::try_from(session.session_id.as_str()).unwrap(),
+        )
+        .unwrap()
+        .unwrap();
+    assert_eq!(watermark.max_position, steered.committed_position);
+}
+
+#[test]
+fn steer_mode_rejects_non_open_turn() {
+    // Steer into a Suspended / Completed / Failed / Stopped Turn is a
+    // precondition failure — the caller must use continue_turn for a
+    // suspended Turn or accept that the Turn is terminal otherwise. We
+    // drive the Open Turn to Completed by committing a `turn.completed`
+    // fact directly through the ledger, mirroring the same pattern used
+    // by the rest of the live_host test suite.
+    let harness = Harness::new(64);
+    let session = harness
+        .host
+        .create_session("create-steer-pre", "definition-main")
+        .unwrap();
+    let started = harness
+        .host
+        .start_turn("start-steer-pre", &session.session_id, "first")
+        .unwrap();
+
+    // Move the Open Turn to Completed.
+    let session_id = SessionId::try_from(session.session_id.as_str()).unwrap();
+    let turn_id = garive_ledger::TurnId::try_from(started.turn_id.as_str()).unwrap();
+    let execution_id = garive_ledger::ExecutionId::try_from(started.execution_id.as_str()).unwrap();
+    let usage = UsageSummary {
+        input_tokens: TokenCount::Known(0),
+        output_tokens: TokenCount::Known(0),
+        estimated: true,
+    };
+    let report = ExecutionReport {
+        outcome: AgentOutcome::Completed {
+            response_items: vec![],
+            usage,
+        },
+        completed_iterations: 1,
+        usage,
+    };
+    let terminal = plan_core_terminal(
+        &CoreTerminalContext {
+            turn_id: turn_id.clone(),
+            execution_id: execution_id.clone(),
+            recorded_at: NOW.into(),
+        },
+        &report,
+    )
+    .unwrap();
+    SqliteLedger::open(&harness.database)
+        .unwrap()
+        .commit(session_id.clone(), 2, terminal)
+        .unwrap();
+
+    let rejected = harness.host.steer_turn(
+        "steer-pre",
+        &session.session_id,
+        &started.turn_id,
+        "should be rejected",
+    );
+    assert!(matches!(rejected, Err(LiveHostError::PreconditionFailed)));
+}
+
+#[test]
+fn steer_mode_rejects_empty_or_oversized_inline_text() {
+    let harness = Harness::new(64);
+    let session = harness
+        .host
+        .create_session("create-steer-bound", "definition-main")
+        .unwrap();
+    let started = harness
+        .host
+        .start_turn("start-steer-bound", &session.session_id, "first")
+        .unwrap();
+
+    let empty = harness
+        .host
+        .steer_turn("steer-empty", &session.session_id, &started.turn_id, "");
+    assert!(matches!(empty, Err(LiveHostError::InvalidRequest)));
+
+    let oversized = "x".repeat(8 * 1024);
+    let too_big = harness.host.steer_turn(
+        "steer-toobig",
+        &session.session_id,
+        &started.turn_id,
+        &oversized,
+    );
+    assert!(matches!(too_big, Err(LiveHostError::InvalidRequest)));
+}
+
+#[test]
+fn steer_mode_is_idempotent_under_replay() {
+    // Replaying the same idempotency key for a steer command returns the
+    // same TurnCommandResponse without writing a second turn.steered fact —
+    // this is the same guarantee we already enforce for start_turn and
+    // cancel_turn.
+    let harness = Harness::new(64);
+    let session = harness
+        .host
+        .create_session("create-steer-replay", "definition-main")
+        .unwrap();
+    let started = harness
+        .host
+        .start_turn("start-steer-replay", &session.session_id, "first")
+        .unwrap();
+    let first = harness
+        .host
+        .steer_turn(
+            "steer-replay",
+            &session.session_id,
+            &started.turn_id,
+            "context",
+        )
+        .unwrap();
+    let replay = harness
+        .host
+        .steer_turn(
+            "steer-replay",
+            &session.session_id,
+            &started.turn_id,
+            "context",
+        )
+        .unwrap();
+    assert_eq!(first.turn_id, replay.turn_id);
+    assert_eq!(first.committed_position, replay.committed_position);
+}
+
+#[test]
+fn steer_endpoint_returns_structured_command_response() {
+    // End-to-end through the HTTP surface: POST a steer request, verify the
+    // 200 body matches TurnCommandResponse shape (session_id, turn_id,
+    // committed_position) — proves the route is wired and matches the
+    // service-layer contract.
+    use std::net::SocketAddr;
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+    runtime.block_on(async {
+        let harness = Harness::new(64);
+        let session = harness
+            .host
+            .create_session("create-steer-http", "definition-main")
+            .unwrap();
+        let started = harness
+            .host
+            .start_turn("start-steer-http", &session.session_id, "first")
+            .unwrap();
+        let address = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 0);
+        let server = LiveHostServer::bind(harness.host.clone(), address)
+            .await
+            .unwrap();
+        let listener_addr = server.local_addr();
+        let (shutdown_tx, shutdown_rx) = oneshot::channel::<()>();
+        let server_handle = tokio::spawn(server.serve(async move {
+            let _ = shutdown_rx.await;
+        }));
+        let url = format!(
+            "http://{}/v1/sessions/{}/turns/{}/steer",
+            listener_addr, session.session_id, started.turn_id
+        );
+        let client = reqwest::Client::new();
+        let response = client
+            .post(&url)
+            .header("Idempotency-Key", "steer-http-1")
+            .header("Content-Type", "application/json")
+            .body(r#"{"text":"hello from steer"}"#)
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), reqwest::StatusCode::OK);
+        let body_bytes = response.bytes().await.unwrap();
+        let body: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
+        assert_eq!(body["session_id"], session.session_id);
+        assert_eq!(body["turn_id"], started.turn_id);
+        assert!(body["committed_position"].as_u64().unwrap() > started.committed_position);
+        let _ = shutdown_tx.send(());
+        let _ = server_handle.await.unwrap();
+    });
+}
+
+#[test]
 fn h3_query_bounds_return_read_bound_exceeded_without_partial_views() {
     let harness = Harness::with_limits(
         64,

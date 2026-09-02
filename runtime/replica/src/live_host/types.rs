@@ -835,6 +835,12 @@ pub(crate) struct StartTurnBody {
 
 #[derive(Clone, Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
+pub(crate) struct SteerTurnBody {
+    pub text: String,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub(crate) struct CancelTurnBody {
     pub session_id: String,
     pub requested_through_position: u64,

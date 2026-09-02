@@ -155,6 +155,23 @@ pub struct CancelTurnCommand {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
+/// One atomic user-steered input targeted at an already-running Turn.
+pub struct SteerTurnCommand {
+    /// Idempotency identity supplied by the caller.
+    pub command_id: RuntimeCommandId,
+    /// Owning Session.
+    pub session_id: SessionId,
+    /// Active Turn whose next derivation iteration will consume the input.
+    pub turn_id: TurnId,
+    /// New user input text to surface at the next derive iteration.
+    pub inline_text: String,
+    /// Fixed durable watermark observed by the caller.
+    pub expected_session_version: u64,
+    /// RFC 3339 observation time supplied by the Runtime clock port.
+    pub recorded_at: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
 /// Fixed-prefix query for a redacted durable Turn projection.
 pub struct GetTurnQuery {
     /// Session expected to own the Turn.
