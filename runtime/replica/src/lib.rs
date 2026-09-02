@@ -31,6 +31,7 @@ mod local_composition;
 mod local_memory;
 mod local_recovery;
 mod local_worker;
+mod management;
 mod memory_control;
 mod memory_export;
 mod memory_export_io;
@@ -188,6 +189,10 @@ pub use local_worker::{
     LocalDispatchQueue, LocalExecutionWorker, LocalF0Governance, LocalGovernedExecution,
     LocalGovernedExecutionFactory, LocalTurnDispatcher, LocalWorkerDisposition, LocalWorkerError,
     LocalWorkerShutdownReport,
+};
+pub use management::{
+    ManagementCommitBody, ManagementConfigError, ManagementConfigReceipt, ManagementConfigState,
+    ManagementConfigStore,
 };
 pub use memory_control::{
     MemoryControlAction, MemoryControlGrant, MemoryControlProjection, MemoryControlRuntimeError,

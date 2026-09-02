@@ -688,6 +688,16 @@ impl SqliteLedger {
     pub fn connection_for_test(&self) -> &Connection {
         &self.connection
     }
+
+    /// Returns a [`crate::management::ManagementConfigStore`] borrowing this
+    /// Ledger's underlying SQLite connection mutably. The borrow ties the
+    /// store's lifetime to the Ledger so the connection cannot be dropped
+    /// mid-write.
+    #[doc(hidden)]
+    #[allow(dead_code)] // exercised by commit-3 handlers + tests
+    pub fn management_config_store(&mut self) -> crate::management::ManagementConfigStore<'_> {
+        crate::management::ManagementConfigStore::new(&mut self.connection)
+    }
 }
 
 fn commit_transaction(
