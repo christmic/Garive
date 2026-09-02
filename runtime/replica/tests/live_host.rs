@@ -445,15 +445,17 @@ fn h2_timeline_is_one_consistent_prefix_during_concurrent_commit() {
         .host
         .start_turn("start-before-read", &session.session_id, "first")
         .unwrap();
+    // Queue mode: while first Turn is Open, a concurrent second start must
+    // be rejected with SessionBusy. The concurrent read observes the prefix
+    // it was granted at read time, never the post-write position.
     let barrier = Arc::new(Barrier::new(2));
     let writer_host = harness.host.clone();
     let writer_session = session.session_id.clone();
     let writer_barrier = barrier.clone();
     let writer = std::thread::spawn(move || {
         writer_barrier.wait();
-        writer_host
-            .start_turn("start-during-read", &writer_session, "second")
-            .unwrap()
+        let result = writer_host.start_turn("start-during-read", &writer_session, "second");
+        assert!(matches!(result, Err(LiveHostError::SessionBusy)));
     });
     barrier.wait();
     let concurrent = harness
@@ -466,20 +468,30 @@ fn h2_timeline_is_one_consistent_prefix_during_concurrent_commit() {
         .items
         .iter()
         .all(|item| item.latest_position <= concurrent.observed_max_position));
-    assert_eq!(
-        concurrent.items.len(),
-        if concurrent.observed_max_position == 4 {
-            1
-        } else {
-            2
-        }
-    );
-    let final_view = harness
+    assert_eq!(concurrent.items.len(), 1);
+}
+
+#[test]
+fn queue_mode_rejects_second_start_while_first_open() {
+    let harness = Harness::new(64);
+    let session = harness
         .host
-        .get_timeline(&session.session_id, 0, 8)
+        .create_session("create-busy", "definition-main")
         .unwrap();
-    assert_eq!(final_view.observed_max_position, 7);
-    assert_eq!(final_view.items.len(), 2);
+    harness
+        .host
+        .start_turn("start-first", &session.session_id, "first")
+        .unwrap();
+    let busy = harness
+        .host
+        .start_turn("start-second", &session.session_id, "second");
+    assert!(matches!(busy, Err(LiveHostError::SessionBusy)));
+    // Replaying the same idempotency key still returns the original
+    // TurnCommandResponse (no new commit attempted while busy).
+    let replay = harness
+        .host
+        .start_turn("start-first", &session.session_id, "first");
+    assert!(replay.is_ok());
 }
 
 #[test]
@@ -856,33 +868,21 @@ fn timeline_pages_complete_turns_by_latest_change_without_splitting() {
         .host
         .start_turn("timeline-first", &session.session_id, "first")
         .unwrap();
-    let second = harness
-        .host
-        .start_turn("timeline-second", &session.session_id, "second")
-        .unwrap();
 
     let page = harness
         .host
         .get_timeline(&session.session_id, 0, 1)
         .unwrap();
     assert_eq!(page.api_version, "v1");
-    assert_eq!(page.observed_max_position, 7);
-    assert_eq!(page.scanned_through_position, 3);
-    assert!(page.has_more);
+    assert_eq!(page.observed_max_position, 4);
+    assert_eq!(page.scanned_through_position, 4);
+    assert!(!page.has_more);
     assert_eq!(page.items[0].turn_id, first.turn_id);
     assert_eq!(page.items[0].user_text, "first");
     assert_eq!(page.items[0].state, "running");
-
-    let next = harness
-        .host
-        .get_timeline(&session.session_id, page.scanned_through_position, 1)
-        .unwrap();
-    assert!(!next.has_more);
-    assert_eq!(next.scanned_through_position, 7);
-    assert_eq!(next.items[0].turn_id, second.turn_id);
-    assert_eq!(next.items[0].user_text, "second");
+    // Asking for a position beyond the watermark is rejected.
     assert_eq!(
-        harness.host.get_timeline(&session.session_id, 8, 1),
+        harness.host.get_timeline(&session.session_id, 5, 1),
         Err(LiveHostError::InvalidRequest)
     );
 }

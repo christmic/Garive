@@ -1318,6 +1318,12 @@ impl LiveHost {
         )? {
             return Ok(response);
         }
+        let prior_facts = ledger
+            .read_facts(&session_id, 0, binding.max_position, None)
+            .map_err(map_sqlite)?;
+        if has_open_turn(&prior_facts) {
+            return Err(LiveHostError::SessionBusy);
+        }
         let plan = plan_start_turn(
             &StartTurnCommand {
                 command_id: RuntimeCommandId::new(idempotency_key).map_err(map_runtime)?,
@@ -1406,6 +1412,9 @@ impl LiveHost {
             &payload,
         )? {
             return Ok(response);
+        }
+        if has_open_turn(&facts) {
+            return Err(LiveHostError::SessionBusy);
         }
         let recorded_at = self.recorded_at()?;
         let mut plan = plan_start_turn(
@@ -2126,6 +2135,40 @@ fn set_latest_turn_state(
     }
     latest.1 = state.to_owned();
     Ok(())
+}
+
+/// Walks a Session's facts and returns `true` when at least one Turn is still
+/// Open (a `turn.started` has not been followed by `turn.completed`,
+/// `turn.stopped`, `turn.failed`, or `turn.suspended`). Suspended Turns count
+/// as in-flight; the client is expected to use `continue_turn` to resume them
+/// rather than starting a new Turn.
+fn has_open_turn(facts: &[DurableFact]) -> bool {
+    let mut latest: std::collections::HashMap<&str, &str> =
+        std::collections::HashMap::with_capacity(facts.len());
+    for fact in facts {
+        let Some(turn_id) = fact.turn_id.as_ref() else {
+            continue;
+        };
+        match fact.kind.as_str() {
+            "turn.started" => {
+                latest.insert(turn_id.as_str(), "running");
+            }
+            "turn.completed" => {
+                latest.insert(turn_id.as_str(), "completed");
+            }
+            "turn.stopped" => {
+                latest.insert(turn_id.as_str(), "stopped");
+            }
+            "turn.failed" => {
+                latest.insert(turn_id.as_str(), "failed");
+            }
+            "turn.suspended" => {
+                latest.insert(turn_id.as_str(), "suspended");
+            }
+            _ => {}
+        }
+    }
+    latest.values().any(|state| *state == "running")
 }
 
 fn project_timeline(

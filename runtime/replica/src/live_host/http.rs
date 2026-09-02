@@ -524,6 +524,7 @@ fn error_response(error: LiveHostError) -> Response {
         LiveHostError::CommandConflict | LiveHostError::ConcurrentModification => {
             StatusCode::CONFLICT
         }
+        LiveHostError::SessionBusy => StatusCode::CONFLICT,
         LiveHostError::PreconditionFailed => StatusCode::PRECONDITION_FAILED,
         LiveHostError::DurabilityUnavailable => StatusCode::SERVICE_UNAVAILABLE,
         LiveHostError::ReadBoundExceeded => StatusCode::PAYLOAD_TOO_LARGE,

@@ -769,6 +769,8 @@ pub enum LiveHostError {
     ConcurrentModification,
     /// Current lifecycle or suspension does not admit the command.
     PreconditionFailed,
+    /// Session already has an Open Turn; queue mode rejects concurrent starts.
+    SessionBusy,
     /// SQLite could not complete a required durable operation.
     DurabilityUnavailable,
     /// A verified read projection cannot fit configured public bounds.
@@ -786,6 +788,7 @@ impl LiveHostError {
             Self::CommandConflict => "command_conflict",
             Self::ConcurrentModification => "concurrent_modification",
             Self::PreconditionFailed => "precondition_failed",
+            Self::SessionBusy => "session_busy",
             Self::DurabilityUnavailable => "durability_unavailable",
             Self::ReadBoundExceeded => "read_bound_exceeded",
             Self::CorruptState => "corrupt_state",
@@ -800,6 +803,9 @@ impl LiveHostError {
             Self::CommandConflict => "the idempotency key conflicts with prior semantics",
             Self::ConcurrentModification => "the durable Session changed concurrently",
             Self::PreconditionFailed => "the durable lifecycle does not admit this command",
+            Self::SessionBusy => {
+                "the Session already has an Open Turn; wait for completion before starting another"
+            }
             Self::DurabilityUnavailable => "the durable store is unavailable",
             Self::ReadBoundExceeded => "the Host read result exceeds configured bounds",
             Self::CorruptState => "the durable Host state failed validation",
