@@ -164,6 +164,40 @@ impl LiveHost {
         )
     }
 
+    /// Constructs a Headless-compatible Host bound to one explicit local dispatch queue.
+    ///
+    /// This is the canonical entry point for binary callers that wire
+    /// [`crate::LocalExecutionWorker`] themselves (i.e. outside `DesktopHost`).
+    /// The returned `dispatcher` is what callers wire into their
+    /// [`crate::LocalExecutionWorker`]; the returned `queue` is what
+    /// [`crate::drive_pending`] drains.
+    pub fn new_with_worker(
+        database_path: impl AsRef<Path>,
+        installed: impl IntoIterator<Item = InstalledAgent>,
+        limits: LiveHostLimits,
+        clock: Arc<dyn HostClock>,
+        queue_capacity: usize,
+    ) -> Result<
+        (
+            Self,
+            Arc<crate::LocalTurnDispatcher>,
+            crate::LocalDispatchQueue,
+        ),
+        crate::LocalWorkerError,
+    > {
+        let (dispatcher, queue) = crate::local_dispatch_queue(queue_capacity)?;
+        let host = Self::new_catalogue_with_read_limits(
+            database_path,
+            installed,
+            limits,
+            HostReadLimits::PRODUCT_DEFAULT,
+            clock,
+            dispatcher.clone(),
+        )
+        .map_err(|_| crate::LocalWorkerError::InvalidComposition)?;
+        Ok((host, dispatcher, queue))
+    }
+
     fn construct(
         database_path: impl AsRef<Path>,
         installed: impl IntoIterator<Item = InstalledAgent>,

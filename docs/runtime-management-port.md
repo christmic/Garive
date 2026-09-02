@@ -214,6 +214,31 @@ will read on restart (`<config-dir>/garive-desktop.db`). The H1 path
 itself does not depend on this row — only the next cold start sees it
 when constructing `RuntimeModelHttpTransport`.
 
+## Driven runtime (runtime crate headless binary)
+
+A companion slice ships a third Runtime entry point that actually consumes the
+committed row at startup, in the **runtime** crate (no Desktop source involved):
+
+```text
+runtime/replica/src/bin/garive-headless.rs   <- loopback-only binary
+runtime/replica/src/headless.rs              <- runtime::headless helpers
+runtime/replica/tests/headless_smoke.rs      <- end-to-end wiring test
+```
+
+`garive-headless <config-dir> [127.0.0.1:8787]` reads the singleton row via
+`ManagementConfigStore::read_with_credential()`, constructs the `ModelPort`
+directly from the provider crates (no `BuiltinDesktopProfileRegistry`
+involvement), builds a tool-free headless `RuntimeAgentInstallation`, wires
+a `LocalExecutionWorker`, and serves H1 on a loopback listener.
+
+Full wire contract, end-to-end recipe against the local `token9` gateway,
+catalogue policy and risks are documented in
+[`docs/runtime-headless.md`](runtime-headless.md).
+
+The Desktop path (`FileDesktopConfigurationProvider::load`) is unchanged and
+still reads only `desktop-v1.json`; merging the SQLite row into the Desktop
+loader remains the separate R3 follow-up.
+
 ## Risks (carried verbatim from the design plan)
 
 ### R1 — API key plaintext in SQLite (user-chosen)

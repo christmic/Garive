@@ -80,6 +80,18 @@ pub struct ManagementConfigState {
     pub committed_at: String,
 }
 
+/// Internal Runtime view of the committed configuration INCLUDING the
+/// plaintext `api_key`. Reserved for trusted in-process callers (the
+/// headless binary, integration tests). It is **never** serialized to the
+/// H1 wire — read paths use [`ManagementConfigState`] instead.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ManagementConfigStateWithCredential {
+    /// Field-for-field mirror of [`ManagementConfigState`].
+    pub state: ManagementConfigState,
+    /// Plaintext Provider API key.
+    pub api_key: String,
+}
+
 /// Wire receipt returned from `POST /v1/management/setup`.
 ///
 /// `restart_required` is always `true`: the Runtime does not hot-swap

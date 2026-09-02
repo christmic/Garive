@@ -15,6 +15,6 @@ pub use digest::{configuration_digest, receipt_digest, MANAGEMENT_CONFIG_CONTRAC
 pub use store::ManagementConfigStore;
 pub use types::{
     ManagementCommitBody, ManagementConfigError, ManagementConfigReceipt, ManagementConfigState,
-    MANAGEMENT_COMMIT_BODY_SCHEMA_VERSION,
+    ManagementConfigStateWithCredential, MANAGEMENT_COMMIT_BODY_SCHEMA_VERSION,
 };
 pub use validator::{AllowAllValidator, ManagementValidator};

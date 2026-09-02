@@ -5,8 +5,9 @@ use super::digest::{
 };
 use super::types::{
     ManagementCommitBody, ManagementConfigError, ManagementConfigReceipt, ManagementConfigState,
-    MANAGEMENT_COMMIT_BODY_SCHEMA_VERSION, MANAGEMENT_RECEIPT_SCHEMA_VERSION, MAX_API_KEY_BYTES,
-    MAX_ENDPOINT_BYTES, MAX_ID_BYTES, MAX_RUNTIME_ID_BYTES,
+    ManagementConfigStateWithCredential, MANAGEMENT_COMMIT_BODY_SCHEMA_VERSION,
+    MANAGEMENT_RECEIPT_SCHEMA_VERSION, MAX_API_KEY_BYTES, MAX_ENDPOINT_BYTES, MAX_ID_BYTES,
+    MAX_RUNTIME_ID_BYTES,
 };
 use ManagementConfigError::{
     ApiKeyInvalid, EndpointInvalid, IdentifierInvalid, RuntimeIdInvalid, SchemaVersionUnsupported,
@@ -16,6 +17,12 @@ use ManagementConfigError::{
 const SELECT_COLUMNS: &str = "profile_id, endpoint_override, model_target_id, model_id, \
     deployment_id, definition_id, runtime_id, configuration_revision, \
     configuration_digest, committed_at";
+
+/// All singleton-row columns INCLUDING the plaintext `api_key`. Reserved for
+/// trusted internal callers via [`ManagementConfigStore::read_with_credential`].
+const SELECT_COLUMNS_WITH_CREDENTIAL: &str =
+    "profile_id, endpoint_override, model_target_id, model_id, deployment_id, \
+    definition_id, api_key, runtime_id, configuration_revision, configuration_digest, committed_at";
 
 /// DAO over the singleton `runtime_management_config` row introduced in
 /// SQLite schema v9.
@@ -42,6 +49,25 @@ impl<'a> ManagementConfigStore<'a> {
             format!("SELECT {SELECT_COLUMNS} FROM runtime_management_config WHERE config_id = 1");
         self.connection
             .query_row(&query, [], row_to_state)
+            .optional()
+            .map_err(|_| StorageFailed)
+    }
+
+    /// Reads the committed singleton row INCLUDING the plaintext `api_key`.
+    ///
+    /// Reserved for trusted in-process callers (the headless binary, the
+    /// management validator tests, integration tests that need to drive
+    /// `RuntimeModelHttpTransport`). The returned wrapper is **never**
+    /// serialized to the H1 wire — [`Self::read`] is the public surface for
+    /// any caller that might.
+    pub fn read_with_credential(
+        &self,
+    ) -> Result<Option<ManagementConfigStateWithCredential>, ManagementConfigError> {
+        let query = format!(
+            "SELECT {SELECT_COLUMNS_WITH_CREDENTIAL} FROM runtime_management_config WHERE config_id = 1"
+        );
+        self.connection
+            .query_row(&query, [], row_to_state_with_credential)
             .optional()
             .map_err(|_| StorageFailed)
     }
@@ -159,6 +185,34 @@ fn row_to_state(row: &rusqlite::Row<'_>) -> rusqlite::Result<ManagementConfigSta
         configuration_revision: revision,
         configuration_digest: row.get(8)?,
         committed_at: row.get(9)?,
+    })
+}
+
+fn row_to_state_with_credential(
+    row: &rusqlite::Row<'_>,
+) -> rusqlite::Result<ManagementConfigStateWithCredential> {
+    let revision: i64 = row.get(8)?;
+    let revision = u64::try_from(revision).map_err(|_| {
+        rusqlite::Error::InvalidColumnType(
+            8,
+            "configuration_revision".into(),
+            rusqlite::types::Type::Integer,
+        )
+    })?;
+    Ok(ManagementConfigStateWithCredential {
+        state: ManagementConfigState {
+            profile_id: row.get(0)?,
+            endpoint_override: row.get(1)?,
+            model_target_id: row.get(2)?,
+            model_id: row.get(3)?,
+            deployment_id: row.get(4)?,
+            definition_id: row.get(5)?,
+            runtime_id: row.get(7)?,
+            configuration_revision: revision,
+            configuration_digest: row.get(9)?,
+            committed_at: row.get(10)?,
+        },
+        api_key: row.get(6)?,
     })
 }
 

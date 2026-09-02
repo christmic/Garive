@@ -26,6 +26,7 @@ garive-browser-cdp = { package = "garive-adapter-browser-cdp", path = "../../ada
 garive-provider-compatible = { path = "../../providers/compatible" }
 garive-provider-openai = { path = "../../providers/openai" }
 garive-provider-anthropic = { path = "../../providers/anthropic" }
+garive-provider-profile = { path = "../../providers/profile" }
 axum.workspace = true
 base64.workspace = true
 chrono.workspace = true
@@ -44,7 +45,6 @@ rustix.workspace = true
 
 [dev-dependencies]
 garive-host-client = { path = "../../clients/host-rs" }
-garive-provider-profile = { path = "../../providers/profile" }
 serde_json.workspace = true
 tempfile.workspace = true
 tokio-tungstenite.workspace = true
@@ -61,5 +61,11 @@ bench = false
 [[bin]]
 name = "garive-podman-process-probe"
 path = "tests/support/podman_process_probe.rs"
+test = false
+bench = false
+
+[[bin]]
+name = "garive-headless"
+path = "src/bin/garive-headless.rs"
 test = false
 bench = false

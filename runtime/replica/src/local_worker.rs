@@ -713,6 +713,40 @@ pub struct LocalWorkerShutdownReport {
     pub abandoned: usize,
 }
 
+/// Outcome of one [`drive_pending`] tick consumed by a headless binary caller.
+///
+/// The four-way enum mirrors the [`crate::DesktopHost::drive_pending`] contract:
+/// callers poll in a loop, sleeping on `Idle`, breaking on `Stopped`, and
+/// logging on `Failed` while continuing the loop.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum DrivePendingOutcome {
+    /// One committed Turn was advanced to a terminal or suspended state.
+    Advanced,
+    /// The queue is empty; caller should sleep before polling again.
+    Idle,
+    /// The dispatch queue is disconnected; no further work will arrive.
+    Stopped,
+    /// Execution failed for an internal reason (model port error, durability fault, ...).
+    Failed,
+}
+
+/// Advances at most one committed Turn through the supplied worker.
+///
+/// Translates [`LocalWorkerError`] into a stable four-way outcome so binary
+/// callers do not need to import the worker-error taxonomy.
+pub async fn drive_pending(
+    queue: &mut LocalDispatchQueue,
+    worker: &LocalExecutionWorker,
+    attempt: &LocalExecutionAttempt,
+) -> DrivePendingOutcome {
+    match queue.try_run_next(worker, attempt).await {
+        Ok(_) => DrivePendingOutcome::Advanced,
+        Err(LocalWorkerError::QueueEmpty) => DrivePendingOutcome::Idle,
+        Err(LocalWorkerError::WorkerStopped) => DrivePendingOutcome::Stopped,
+        Err(_) => DrivePendingOutcome::Failed,
+    }
+}
+
 /// Stable secret-free local queue or worker failure.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum LocalWorkerError {

@@ -1,0 +1,326 @@
+//! End-to-end smoke test for `runtime::headless` wiring.
+//!
+//! Spins up a `LiveHostServer` bound to a SQLite ledger seeded with the
+//! canonical headless `runtime_management_config` row, plus a
+//! `LocalExecutionWorker` driven by a recording `ModelPort` stub. Then
+//! hits H1 endpoints over loopback HTTP and asserts the worker received
+//! exactly one dispatch with the configured identity.
+//!
+//! This proves the wiring without spawning the `garive-headless` binary
+//! itself; the binary smoke against token9 lives in `docs/runtime-headless.md`.
+
+use std::{
+    collections::BTreeSet,
+    net::{IpAddr, Ipv4Addr, SocketAddr},
+    sync::{
+        atomic::{AtomicUsize, Ordering},
+        Arc, Mutex,
+    },
+    time::Duration,
+};
+
+use garive_core::{
+    MissingUsagePolicy, ModelRecoveryPolicy, OutputLimitAction, TerminalRecoveryAction,
+};
+use garive_llm::{
+    InvokeOutcome, ModelCancellation, ModelCapability, ModelFuture, ModelItem, ModelObserver,
+    ModelPort, ModelRequest, ModelStreamEvent, ModelUsage, ObserverDecision, TokenCount,
+    UsageSource,
+};
+use garive_runtime::{
+    drive_pending,
+    headless::{
+        build_headless_installation, headless_execution_attempt, headless_execution_policy,
+        headless_now_ms, headless_revision_for, HeadlessClock, HeadlessConfiguration,
+        HEADLESS_DESKTOP_AGENT_REVISION, HEADLESS_LEGACY_AGENT_REVISION,
+    },
+    local_dispatch_queue, CatalogueCapabilityPreparationFactory, DrivePendingOutcome, HostClock,
+    InstalledAgent, LiveHost, LiveHostLimits, LiveHostServer, LocalExecutionPolicy,
+    LocalExecutionWorker, ManagementCommitBody, ManagementConfigState, ManagementConfigStore,
+    SqliteLedger, MANAGEMENT_COMMIT_BODY_SCHEMA_VERSION,
+};
+use tempfile::tempdir;
+
+/// Records every `invoke` call so the test can assert post-dispatch state.
+#[derive(Default)]
+struct RecordingModel {
+    invocations: AtomicUsize,
+    target_ids: Mutex<Vec<String>>,
+}
+
+impl ModelPort for RecordingModel {
+    fn invoke<'a>(
+        &'a self,
+        request: &'a ModelRequest,
+        _observer: &'a mut dyn ModelObserver,
+        _cancellation: &'a dyn ModelCancellation,
+    ) -> ModelFuture<'a> {
+        self.invocations.fetch_add(1, Ordering::SeqCst);
+        self.target_ids
+            .lock()
+            .expect("target_ids mutex")
+            .push(request.target_id.as_str().to_owned());
+        Box::pin(async move {
+            // Return a single text completion so the host can finalize the turn.
+            Ok(InvokeOutcome::Completed {
+                items: vec![ModelItem::Text {
+                    text: "hello back".to_owned(),
+                }],
+                usage: ModelUsage {
+                    input_tokens: TokenCount::Known(1),
+                    output_tokens: TokenCount::Known(1),
+                    cache_read_tokens: None,
+                    cache_write_tokens: None,
+                    source: UsageSource::Estimated,
+                },
+                stop_reason: garive_llm::ModelStopReason::EndTurn,
+            })
+        })
+    }
+}
+
+fn seeded_state() -> ManagementConfigState {
+    ManagementConfigState {
+        profile_id: "openai.responses.v1".to_owned(),
+        endpoint_override: Some("http://127.0.0.1:4319/v1/responses".to_owned()),
+        model_target_id: "tok9-flash".to_owned(),
+        model_id: "tok9-flash".to_owned(),
+        deployment_id: "tok9-flash".to_owned(),
+        definition_id: HEADLESS_DESKTOP_AGENT_REVISION.to_owned(),
+        runtime_id: "runtime-smoke".to_owned(),
+        configuration_revision: 1,
+        configuration_digest: "a".repeat(64),
+        committed_at: "2026-09-02T00:00:00Z".to_owned(),
+    }
+}
+
+fn seed_management_row(database: &std::path::Path, api_key: &str) {
+    let mut ledger = SqliteLedger::open(database).expect("open ledger");
+    let mut store: ManagementConfigStore<'_> = ledger.management_config_store();
+    store
+        .commit(
+            &ManagementCommitBody {
+                schema_version: MANAGEMENT_COMMIT_BODY_SCHEMA_VERSION,
+                profile_id: seeded_state().profile_id,
+                endpoint_override: seeded_state().endpoint_override,
+                model_target_id: seeded_state().model_target_id,
+                model_id: seeded_state().model_id,
+                deployment_id: seeded_state().deployment_id,
+                definition_id: seeded_state().definition_id,
+                api_key: api_key.to_owned(),
+                runtime_id: seeded_state().runtime_id,
+            },
+            "2026-09-02T00:00:00Z",
+        )
+        .expect("commit management row");
+}
+
+async fn drive_worker_once(
+    queue: &mut garive_runtime::LocalDispatchQueue,
+    worker: &LocalExecutionWorker,
+) -> DrivePendingOutcome {
+    drive_pending(
+        queue,
+        worker,
+        &headless_execution_attempt(headless_now_ms()),
+    )
+    .await
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn headless_wiring_drives_h1_session_end_to_end() {
+    let directory = tempdir().expect("tempdir");
+    let database = directory.path().join("garive-desktop.db");
+    seed_management_row(&database, "sk-test-1234567890");
+
+    // Read what we just committed (proves read_with_credential end-to-end).
+    let mut ledger = SqliteLedger::open(&database).expect("open ledger for read");
+    let wrapper = ledger
+        .management_config_store()
+        .read_with_credential()
+        .expect("read ok")
+        .expect("row present");
+    let configuration = HeadlessConfiguration {
+        state: wrapper.state,
+        api_key: wrapper.api_key,
+    };
+    assert_eq!(
+        configuration.state.definition_id,
+        HEADLESS_DESKTOP_AGENT_REVISION
+    );
+
+    let model = Arc::new(RecordingModel::default());
+    let (installation, catalogue) =
+        build_headless_installation(&configuration).expect("installation ok");
+    assert_eq!(
+        headless_revision_for(&configuration.state.definition_id),
+        Some(HEADLESS_LEGACY_AGENT_REVISION)
+    );
+    let preparation = Arc::new(CatalogueCapabilityPreparationFactory::new(catalogue, None));
+    let policy = headless_execution_policy(&configuration);
+
+    let worker = LocalExecutionWorker::new(&database, policy, model.clone(), preparation)
+        .expect("worker ok");
+
+    let clock: Arc<dyn HostClock> = Arc::new(HeadlessClock);
+    let limits = LiveHostLimits {
+        max_command_bytes: 1024 * 1024,
+        event_batch_size: 64,
+        event_poll_interval_ms: 100,
+        activity: None,
+    };
+
+    let installed = installation.clone_installed_agent();
+    let (host, _dispatcher, mut queue) =
+        LiveHost::new_with_worker(&database, vec![installed], limits, clock, 64).expect("host ok");
+
+    let server = LiveHostServer::bind(host, SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 0))
+        .await
+        .expect("bind");
+    let address = server.local_addr();
+    let (shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel();
+
+    // Drive the worker in a side task until it sees a turn commit, then stop.
+    let worker_for_drive = Arc::new(worker);
+    let model_for_assert = model.clone();
+    let local_set = tokio::task::LocalSet::new();
+    local_set
+        .run_until(async move {
+            let drive_handle = tokio::task::spawn_local({
+                let worker = worker_for_drive.clone();
+                async move {
+                    for _ in 0..16 {
+                        let outcome = drive_worker_once(&mut queue, worker.as_ref()).await;
+                        if matches!(outcome, DrivePendingOutcome::Advanced) {
+                            return;
+                        }
+                        tokio::time::sleep(Duration::from_millis(10)).await;
+                    }
+                }
+            });
+            let server_task = tokio::task::spawn_local(server.serve(async move {
+                let _ = shutdown_rx.await;
+            }));
+
+            let client = reqwest::Client::new();
+            let base = format!("http://{address}");
+
+            // 1. POST /v1/sessions
+            let created = client
+                .post(format!("{base}/v1/sessions"))
+                .header("idempotency-key", "smoke-session-1")
+                .header("content-type", "application/json")
+                .body(format!(
+                    r#"{{"agent_definition_id":"{id}"}}"#,
+                    id = HEADLESS_DESKTOP_AGENT_REVISION
+                ))
+                .send()
+                .await
+                .expect("create session");
+            assert!(
+                created.status().is_success(),
+                "create_session failed: {}",
+                created.status()
+            );
+            let created_json: serde_json::Value =
+                serde_json::from_slice(&created.bytes().await.expect("create_session bytes"))
+                    .expect("create_session json");
+            let session_id = created_json["session_id"]
+                .as_str()
+                .expect("session_id")
+                .to_owned();
+
+            // 2. POST /v1/sessions/:id/turns
+            let turned = client
+                .post(format!("{base}/v1/sessions/{session_id}/turns"))
+                .header("idempotency-key", "smoke-turn-1")
+                .header("content-type", "application/json")
+                .body(r#"{"text":"say hello back"}"#)
+                .send()
+                .await
+                .expect("start turn");
+            assert!(
+                turned.status().is_success(),
+                "start_turn failed: {}",
+                turned.status()
+            );
+
+            // Wait for the drive task to complete (or 5s timeout).
+            let _ = tokio::time::timeout(Duration::from_secs(5), drive_handle).await;
+
+            // 3. Assert the model was invoked exactly once with the configured identity.
+            assert_eq!(
+                model_for_assert.invocations.load(Ordering::SeqCst),
+                1,
+                "worker should dispatch exactly once",
+            );
+            let target_ids = model_for_assert.target_ids.lock().expect("lock").clone();
+            assert_eq!(target_ids, vec!["tok9-flash".to_owned()]);
+
+            let _ = shutdown_tx.send(());
+            let _ = server_task.await;
+        })
+        .await;
+}
+
+#[test]
+fn headless_revision_lookup_is_stable() {
+    assert_eq!(
+        headless_revision_for(HEADLESS_DESKTOP_AGENT_REVISION),
+        Some(HEADLESS_LEGACY_AGENT_REVISION),
+    );
+    assert_eq!(headless_revision_for(""), None);
+}
+
+#[test]
+fn headless_policy_carries_required_capabilities() {
+    let configuration = HeadlessConfiguration {
+        state: seeded_state(),
+        api_key: "sk-test".to_owned(),
+    };
+    let policy: LocalExecutionPolicy = headless_execution_policy(&configuration);
+    let caps: BTreeSet<_> = policy.required_capabilities.iter().cloned().collect();
+    assert!(caps.contains(&ModelCapability::Text));
+    assert!(caps.contains(&ModelCapability::Streaming));
+}
+
+#[test]
+fn attempt_carries_distinct_clock_and_recovery_revisions() {
+    let attempt = headless_execution_attempt(42);
+    assert_eq!(attempt.now_ms, 42);
+    assert_eq!(attempt.lease_duration_ms, 60_000);
+    assert!(attempt.worker_owner_id.contains("42"));
+}
+
+#[allow(dead_code)]
+fn _unused_local_dispatch_queue_pin(
+    _: &(
+        Arc<garive_runtime::LocalTurnDispatcher>,
+        garive_runtime::LocalDispatchQueue,
+    ),
+) {
+    let _ = local_dispatch_queue(64);
+}
+
+#[allow(dead_code)]
+fn _unused_recovery_policy_marker(
+    _: ModelRecoveryPolicy,
+) -> (
+    MissingUsagePolicy,
+    OutputLimitAction,
+    TerminalRecoveryAction,
+) {
+    (
+        MissingUsagePolicy::Stop,
+        OutputLimitAction::Suspend,
+        TerminalRecoveryAction::Suspend,
+    )
+}
+
+#[allow(dead_code)]
+fn _unused_observer_marker(_: &dyn ModelObserver, _event: ModelStreamEvent) -> ObserverDecision {
+    ObserverDecision::Continue
+}
+
+#[allow(dead_code)]
+fn _unused_installed_marker(_: InstalledAgent) {}

@@ -25,6 +25,7 @@ mod goal_plan_coordination;
 mod goal_plan_coordinator;
 mod goal_recovery;
 mod goal_runtime;
+pub mod headless;
 mod live_host;
 mod live_output;
 mod local_composition;
@@ -185,15 +186,15 @@ pub use local_recovery::{
     recover_local_dispatches_with_f0_bounded, LocalRecoveryError, LocalRecoveryReport,
 };
 pub use local_worker::{
-    local_dispatch_queue, LocalCapabilityPreparationFactory, LocalCapabilityPreparationInput,
-    LocalDispatchQueue, LocalExecutionWorker, LocalF0Governance, LocalGovernedExecution,
-    LocalGovernedExecutionFactory, LocalTurnDispatcher, LocalWorkerDisposition, LocalWorkerError,
-    LocalWorkerShutdownReport,
+    drive_pending, local_dispatch_queue, DrivePendingOutcome, LocalCapabilityPreparationFactory,
+    LocalCapabilityPreparationInput, LocalDispatchQueue, LocalExecutionWorker, LocalF0Governance,
+    LocalGovernedExecution, LocalGovernedExecutionFactory, LocalTurnDispatcher,
+    LocalWorkerDisposition, LocalWorkerError, LocalWorkerShutdownReport,
 };
 pub use management::{
     AllowAllValidator, ManagementCommitBody, ManagementConfigError, ManagementConfigReceipt,
-    ManagementConfigState, ManagementConfigStore, ManagementValidator,
-    MANAGEMENT_COMMIT_BODY_SCHEMA_VERSION,
+    ManagementConfigState, ManagementConfigStateWithCredential, ManagementConfigStore,
+    ManagementValidator, MANAGEMENT_COMMIT_BODY_SCHEMA_VERSION,
 };
 pub use memory_control::{
     MemoryControlAction, MemoryControlGrant, MemoryControlProjection, MemoryControlRuntimeError,
