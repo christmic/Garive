@@ -17,6 +17,8 @@ public const val T1_READ_TEXT: String = "garive.workspace.read_text"
 public const val T1_LIST: String = "garive.workspace.list"
 /** Exact literal-search tool name. */
 public const val T1_SEARCH_TEXT: String = "garive.workspace.search_text"
+/** Exact create-only UTF-8 write tool name. */
+public const val T1_WRITE_TEXT: String = "garive.workspace.write_text"
 /** Exact journaled-patch tool name. */
 public const val T1_APPLY_PATCH: String = "garive.workspace.apply_patch"
 /** Exact bounded-process tool name. */
@@ -26,7 +28,7 @@ private const val MAX_RESULT_BYTES: Long = 2_097_152
 private const val MAX_EXPECTED_FILES: Int = 128
 private const val MAX_PROCESS_DURATION_MS: Long = 300_000
 
-/** Frozen five-tool catalogue for one effective Agent snapshot. */
+/** Frozen six-tool catalogue for one effective Agent snapshot. */
 public class BuiltinT1Catalogue private constructor(
     definitions: List<ToolDefinition>,
     private val catalogue: ToolCatalog,
@@ -48,6 +50,7 @@ public class BuiltinT1Catalogue private constructor(
                 readDefinition(policyRevision),
                 listDefinition(policyRevision),
                 searchDefinition(policyRevision),
+                writeDefinition(policyRevision),
                 patchDefinition(policyRevision),
                 processDefinition(policyRevision, processLanes),
             ).sortedBy(ToolDefinition::name)
@@ -62,6 +65,7 @@ private class BuiltinT1Resolver(private val toolName: String) : ToolAccessResolv
     override fun resolve(arguments: JsonElement): ToolContractResult<InvocationAccessSet> = contract {
         when (toolName) {
             T1_READ_TEXT -> oneFile(arguments, AccessMode.READ, false)
+            T1_WRITE_TEXT -> oneFile(arguments, AccessMode.WRITE, false)
             T1_LIST, T1_SEARCH_TEXT -> oneFile(arguments, AccessMode.READ, true)
             T1_APPLY_PATCH -> patchAccesses(arguments)
             T1_PROCESS_RUN -> processAccesses(arguments)
@@ -154,10 +158,22 @@ private fun searchDefinition(policy: String): ToolDefinition = fileDefinition(
     1,
 )
 
+private fun writeDefinition(policy: String): ToolDefinition = fileDefinition(
+    T1_WRITE_TEXT,
+    "Create one bounded UTF-8 workspace file without overwriting.",
+    schema("""{"type":"object","properties":{"path":{"type":"string","minLength":1,"maxLength":4096},"text":{"type":"string","maxLength":1048576}},"required":["path","text"],"additionalProperties":false}"""),
+    ReplayClass.NEVER_REPLAY,
+    listOf(ExecutionCapability.FILESYSTEM_WRITE),
+    listOf(AccessMode.WRITE),
+    policy,
+    5_000,
+    1,
+)
+
 private fun patchDefinition(policy: String): ToolDefinition = fileDefinition(
     T1_APPLY_PATCH,
-    "Apply one digest-bound journaled workspace patch.",
-    schema("""{"type":"object","properties":{"patch":{"type":"string","minLength":1,"maxLength":1048576},"expected_files":{"type":"array","minItems":1,"maxItems":128,"items":{"type":"object","properties":{"path":{"type":"string","minLength":1,"maxLength":4096},"before_digest":{"type":"string","minLength":64,"maxLength":64}},"required":["path","before_digest"],"additionalProperties":false}}},"required":["patch","expected_files"],"additionalProperties":false}"""),
+    "Apply a standard unified diff or Garive patch to existing workspace files. Every target must include its digest from read_text.",
+    schema("""{"type":"object","properties":{"patch":{"type":"string","description":"A standard unified diff with --- a/path, +++ b/path and @@ range @@ headers, or a Garive *** Begin Patch block.","minLength":1,"maxLength":1048576},"expected_files":{"type":"array","description":"Every patched path exactly once, bound to the SHA-256 content_digest returned by read_text.","minItems":1,"maxItems":128,"items":{"type":"object","properties":{"path":{"type":"string","minLength":1,"maxLength":4096},"before_digest":{"type":"string","minLength":64,"maxLength":64}},"required":["path","before_digest"],"additionalProperties":false}}},"required":["patch","expected_files"],"additionalProperties":false}"""),
     ReplayClass.RECEIPT_RECOVERABLE,
     listOf(ExecutionCapability.FILESYSTEM_READ, ExecutionCapability.FILESYSTEM_WRITE),
     listOf(AccessMode.READ, AccessMode.WRITE),

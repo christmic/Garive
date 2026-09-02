@@ -94,7 +94,7 @@ fn explicit_document_builds_exact_t1_surface_without_exposing_secrets() {
         .expect("bind explicit workspace")
         .build()
         .expect("build T1 execution");
-    assert_eq!(execution.capabilities().definitions.len(), 5);
+    assert_eq!(execution.capabilities().definitions.len(), 6);
 }
 
 #[test]

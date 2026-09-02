@@ -61,6 +61,10 @@ internal fun t1PatchTargets(patch: String): Set<String>? =
     parseT1Patch(patch)?.map(Target::path)?.toSortedSet()
 
 private fun parseT1Patch(patch: String): List<Target>? {
+    return if (patch.startsWith("*** Begin Patch\n")) parseGarivePatch(patch) else parseUnifiedDiff(patch)
+}
+
+private fun parseGarivePatch(patch: String): List<Target>? {
     val prefix = "*** Begin Patch\n"
     val suffix = "\n*** End Patch"
     val normalized = patch.removeSuffix("\n")
@@ -106,4 +110,70 @@ private fun parseT1Patch(patch: String): List<Target>? {
     }
     if (!finishHunk() || targets.isEmpty() || targets.any { it.hunks.isEmpty() }) return null
     return targets
+}
+
+private fun parseUnifiedDiff(patch: String): List<Target>? {
+    val lines = patch.removeSuffix("\n").lines()
+    val targets = mutableListOf<Target>()
+    var currentHunk: Hunk? = null
+    fun finishHunk(): Boolean {
+        val hunk = currentHunk ?: return true
+        currentHunk = null
+        val valid = hunk.lines.isNotEmpty() && hunk.lines.any { it.kind != LineKind.ADD } &&
+            hunk.lines.any { it.kind != LineKind.CONTEXT }
+        if (!valid) return false
+        targets.lastOrNull()?.hunks?.add(hunk) ?: return false
+        return true
+    }
+    var index = 0
+    while (index < lines.size) {
+        if (lines[index].startsWith("diff --git ")) {
+            if (!finishHunk()) return null
+            index += 1
+        }
+        if (index >= lines.size || !lines[index].startsWith("--- ")) return null
+        if (!finishHunk()) return null
+        val oldPath = unifiedPath(lines[index].removePrefix("--- ")) ?: return null
+        index += 1
+        if (index >= lines.size || !lines[index].startsWith("+++ ")) return null
+        val newPath = unifiedPath(lines[index].removePrefix("+++ ")) ?: return null
+        if (oldPath != newPath || targets.any { it.path == newPath }) return null
+        targets += Target(newPath)
+        index += 1
+        while (index < lines.size && !lines[index].startsWith("--- ") &&
+            !lines[index].startsWith("diff --git ")
+        ) {
+            val line = lines[index]
+            when {
+                line.startsWith("@@ ") && line.drop(3).contains(" @@") -> {
+                    if (!finishHunk()) return null
+                    currentHunk = Hunk()
+                }
+                line == "\\ No newline at end of file" -> {
+                    val previous = currentHunk?.lines?.lastOrNull() ?: return null
+                    if (previous.noNewline) return null
+                    previous.noNewline = true
+                }
+                else -> {
+                    val kind = when (line.firstOrNull()) {
+                        ' ' -> LineKind.CONTEXT
+                        '+' -> LineKind.ADD
+                        '-' -> LineKind.REMOVE
+                        else -> return null
+                    }
+                    currentHunk?.lines?.add(PatchLine(kind, line.drop(1))) ?: return null
+                }
+            }
+            index += 1
+        }
+    }
+    if (!finishHunk() || targets.isEmpty() || targets.any { it.hunks.isEmpty() }) return null
+    return targets
+}
+
+private fun unifiedPath(header: String): String? {
+    val raw = header.substringBefore('\t')
+    val path = raw.removePrefix("a/").takeIf { it != raw }
+        ?: raw.removePrefix("b/").takeIf { it != raw }
+    return path?.takeIf { it.isNotEmpty() && it != "." && it != "/dev/null" }
 }

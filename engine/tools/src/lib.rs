@@ -24,7 +24,7 @@ pub use access::{
 };
 pub use basic_tools::{
     BuiltinT1Catalogue, T1_ACCESS_RESOLVER_REVISION, T1_APPLY_PATCH, T1_LIST, T1_PROCESS_RUN,
-    T1_READ_TEXT, T1_SEARCH_TEXT, T1_TOOL_REVISION,
+    T1_READ_TEXT, T1_SEARCH_TEXT, T1_TOOL_REVISION, T1_WRITE_TEXT,
 };
 pub use batch::{
     plan_effect_batch, plan_effect_batch_intents, EffectBatchError, EffectBatchErrorCode,

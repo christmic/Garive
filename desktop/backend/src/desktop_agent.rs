@@ -11,7 +11,7 @@ use garive_core::AgentToolCapabilities;
 use garive_runtime::RuntimeAgentInstallation;
 use garive_tools::{
     ToolDefinition, T1_APPLY_PATCH, T1_LIST, T1_PROCESS_RUN, T1_READ_TEXT, T1_SEARCH_TEXT,
-    T1_TOOL_REVISION,
+    T1_TOOL_REVISION, T1_WRITE_TEXT,
 };
 
 use crate::workspace_execution::desktop_workspace_tool_definition;
@@ -84,7 +84,7 @@ pub(crate) fn desktop_agent_installation_for_revision(
     )
 }
 
-/// Resolves the exact six-tool T1 Workspace Agent from machine capabilities.
+/// Resolves the exact T1 Workspace Agent from machine capabilities.
 pub fn builtin_desktop_workspace_agent_installation(
     definition_id: &str,
     instance_namespace: &str,
@@ -114,6 +114,7 @@ pub(crate) fn desktop_workspace_agent_installation_for_revision(
         T1_PROCESS_RUN,
         T1_READ_TEXT,
         T1_SEARCH_TEXT,
+        T1_WRITE_TEXT,
     ]);
     if t1.definitions.len() != expected.len()
         || t1
@@ -336,7 +337,7 @@ mod tests {
             installation.installed_agent().definition_revision,
             DESKTOP_WORKSPACE_AGENT_REVISION
         );
-        assert_eq!(installation.tool_capabilities().definitions.len(), 6);
+        assert_eq!(installation.tool_capabilities().definitions.len(), 7);
         assert!(installation
             .tool_capabilities()
             .definitions

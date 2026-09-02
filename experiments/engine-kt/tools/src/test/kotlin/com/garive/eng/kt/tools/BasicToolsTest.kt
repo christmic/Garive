@@ -12,15 +12,26 @@ import kotlinx.serialization.json.jsonPrimitive
 
 class BasicToolsTest {
     @Test
-    fun catalogueFreezesAllFiveV3Definitions() {
+    fun catalogueFreezesAllSixV3Definitions() {
         val catalogue = catalogue()
         assertEquals(
-            listOf(T1_PROCESS_RUN, T1_APPLY_PATCH, T1_LIST, T1_READ_TEXT, T1_SEARCH_TEXT),
+            listOf(T1_PROCESS_RUN, T1_APPLY_PATCH, T1_LIST, T1_READ_TEXT, T1_SEARCH_TEXT, T1_WRITE_TEXT),
             catalogue.definitions.map(ToolDefinition::name),
         )
         assertTrue(catalogue.definitions.all { it.revision == T1_TOOL_REVISION && it.preparedContractVersion == 3 })
         assertEquals(ReplayClass.NEVER_REPLAY, catalogue.definitions.first().replayClass)
         assertEquals(ReplayClass.RECEIPT_RECOVERABLE, catalogue.definitions[1].replayClass)
+    }
+
+    @Test
+    fun writeTextBindsOneCreateOnlyWorkspacePath() {
+        val prepared = catalogue().prepare(
+            ToolIntent("call", T1_WRITE_TEXT, """{"path":"notes/result.txt","text":"finished"}"""),
+        ).value()
+        val access = requireNotNull(prepared.invocationAccesses).values.single()
+        assertEquals(AccessMode.WRITE, access.mode)
+        assertEquals("notes/result.txt", access.resourceKey)
+        assertEquals(ReplayClass.NEVER_REPLAY, prepared.replayClass)
     }
 
     @Test

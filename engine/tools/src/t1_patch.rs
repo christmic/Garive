@@ -124,6 +124,14 @@ pub fn apply_t1_patch(patch: &str, path: &str, current: &str) -> Result<String, 
 }
 
 fn parse(patch: &str) -> Result<Vec<Target>, T1PatchError> {
+    if patch.starts_with("*** Begin Patch\n") {
+        parse_garive_patch(patch)
+    } else {
+        parse_unified_diff(patch)
+    }
+}
+
+fn parse_garive_patch(patch: &str) -> Result<Vec<Target>, T1PatchError> {
     let body = patch
         .strip_prefix("*** Begin Patch\n")
         .and_then(|value| {
@@ -182,6 +190,87 @@ fn parse(patch: &str) -> Result<Vec<Target>, T1PatchError> {
         return Err(T1PatchError::InvalidSyntax);
     }
     Ok(targets)
+}
+
+fn parse_unified_diff(patch: &str) -> Result<Vec<Target>, T1PatchError> {
+    let mut lines = patch.lines().peekable();
+    let mut targets = Vec::<Target>::new();
+    let mut current_hunk: Option<Hunk> = None;
+    while let Some(raw) = lines.next() {
+        if raw.starts_with("diff --git ") {
+            finish_hunk(&mut targets, &mut current_hunk)?;
+            continue;
+        }
+        let Some(old_path) = raw.strip_prefix("--- ") else {
+            return Err(T1PatchError::InvalidSyntax);
+        };
+        finish_hunk(&mut targets, &mut current_hunk)?;
+        let new_header = lines.next().ok_or(T1PatchError::InvalidSyntax)?;
+        let new_path = new_header
+            .strip_prefix("+++ ")
+            .ok_or(T1PatchError::InvalidSyntax)?;
+        let old_path = unified_path(old_path)?;
+        let new_path = unified_path(new_path)?;
+        if old_path != new_path || targets.iter().any(|target| target.path == new_path) {
+            return Err(T1PatchError::InvalidSyntax);
+        }
+        targets.push(Target {
+            path: new_path.to_owned(),
+            hunks: Vec::new(),
+        });
+        while let Some(raw) = lines.peek().copied() {
+            if raw.starts_with("diff --git ") || raw.starts_with("--- ") {
+                break;
+            }
+            let raw = lines.next().ok_or(T1PatchError::InvalidSyntax)?;
+            if raw.starts_with("@@ ") && raw[3..].contains(" @@") {
+                finish_hunk(&mut targets, &mut current_hunk)?;
+                current_hunk = Some(Hunk(Vec::new()));
+            } else if raw == "\\ No newline at end of file" {
+                let line = current_hunk
+                    .as_mut()
+                    .and_then(|hunk| hunk.0.last_mut())
+                    .ok_or(T1PatchError::InvalidSyntax)?;
+                if line.no_newline {
+                    return Err(T1PatchError::InvalidSyntax);
+                }
+                line.no_newline = true;
+            } else {
+                let (kind, text) = match raw.as_bytes().first() {
+                    Some(b' ') => (LineKind::Context, &raw[1..]),
+                    Some(b'+') => (LineKind::Add, &raw[1..]),
+                    Some(b'-') => (LineKind::Remove, &raw[1..]),
+                    _ => return Err(T1PatchError::InvalidSyntax),
+                };
+                current_hunk
+                    .as_mut()
+                    .ok_or(T1PatchError::InvalidSyntax)?
+                    .0
+                    .push(PatchLine {
+                        kind,
+                        text: text.to_owned(),
+                        no_newline: false,
+                    });
+            }
+        }
+    }
+    finish_hunk(&mut targets, &mut current_hunk)?;
+    if targets.is_empty() || targets.iter().any(|target| target.hunks.is_empty()) {
+        return Err(T1PatchError::InvalidSyntax);
+    }
+    Ok(targets)
+}
+
+fn unified_path(header: &str) -> Result<&str, T1PatchError> {
+    let path = header.split_once('\t').map_or(header, |(path, _)| path);
+    let path = path
+        .strip_prefix("a/")
+        .or_else(|| path.strip_prefix("b/"))
+        .ok_or(T1PatchError::InvalidSyntax)?;
+    if path.is_empty() || path == "." || path == "/dev/null" {
+        return Err(T1PatchError::InvalidSyntax);
+    }
+    Ok(path)
 }
 
 fn finish_hunk(targets: &mut [Target], current: &mut Option<Hunk>) -> Result<(), T1PatchError> {

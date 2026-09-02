@@ -21,6 +21,8 @@ pub const T1_READ_TEXT: &str = "garive.workspace.read_text";
 pub const T1_LIST: &str = "garive.workspace.list";
 /// Exact literal-search tool name.
 pub const T1_SEARCH_TEXT: &str = "garive.workspace.search_text";
+/// Exact create-only UTF-8 write tool name.
+pub const T1_WRITE_TEXT: &str = "garive.workspace.write_text";
 /// Exact journaled-patch tool name.
 pub const T1_APPLY_PATCH: &str = "garive.workspace.apply_patch";
 /// Exact bounded-process tool name.
@@ -36,7 +38,7 @@ const MAX_PROCESS_DURATION_MS: u64 = 300_000;
 const MAX_PROCESS_OUTPUT_BYTES: u64 = 1_048_576;
 const MAX_TRAVERSAL_NODES: u64 = 10_000;
 
-/// Frozen five-tool catalogue for one effective Agent snapshot.
+/// Frozen six-tool catalogue for one effective Agent snapshot.
 #[derive(Clone, Debug)]
 pub struct BuiltinT1Catalogue {
     definitions: Vec<ToolDefinition>,
@@ -58,6 +60,7 @@ impl BuiltinT1Catalogue {
             read_definition(&policy_revision)?,
             list_definition(&policy_revision)?,
             search_definition(&policy_revision)?,
+            write_definition(&policy_revision)?,
             patch_definition(&policy_revision)?,
             process_definition(&policy_revision, &lanes)?,
         ];
@@ -97,6 +100,7 @@ impl ToolAccessResolver for BuiltinT1Resolver<'_> {
     fn resolve(&self, arguments: &Value) -> Result<InvocationAccessSet, PreparationError> {
         match self.tool_name {
             T1_READ_TEXT => one_file(arguments, AccessMode::Read, false),
+            T1_WRITE_TEXT => one_file(arguments, AccessMode::Write, false),
             T1_LIST | T1_SEARCH_TEXT => one_file(arguments, AccessMode::Read, true),
             T1_APPLY_PATCH => patch_accesses(arguments),
             T1_PROCESS_RUN => process_accesses(arguments),
@@ -222,11 +226,25 @@ fn search_definition(policy_revision: &str) -> Result<ToolDefinition, Preparatio
     )
 }
 
+fn write_definition(policy_revision: &str) -> Result<ToolDefinition, PreparationError> {
+    file_definition(
+        T1_WRITE_TEXT,
+        "Create one bounded UTF-8 workspace file without overwriting.",
+        json!({"type":"object","properties":{"path":{"type":"string","minLength":1,"maxLength":4096},"text":{"type":"string","maxLength":MAX_FILE_BYTES}},"required":["path","text"],"additionalProperties":false}),
+        ReplayClass::NeverReplay,
+        [ExecutionCapability::FilesystemWrite],
+        [AccessMode::Write],
+        policy_revision,
+        5_000,
+        1,
+    )
+}
+
 fn patch_definition(policy_revision: &str) -> Result<ToolDefinition, PreparationError> {
     file_definition(
         T1_APPLY_PATCH,
-        "Apply one digest-bound journaled workspace patch.",
-        json!({"type":"object","properties":{"patch":{"type":"string","minLength":1,"maxLength":MAX_PATCH_BYTES},"expected_files":{"type":"array","minItems":1,"maxItems":MAX_EXPECTED_FILES,"items":{"type":"object","properties":{"path":{"type":"string","minLength":1,"maxLength":4096},"before_digest":{"type":"string","minLength":64,"maxLength":64}},"required":["path","before_digest"],"additionalProperties":false}}},"required":["patch","expected_files"],"additionalProperties":false}),
+        "Apply a standard unified diff or Garive patch to existing workspace files. Every target must include its digest from read_text.",
+        json!({"type":"object","properties":{"patch":{"type":"string","description":"A standard unified diff with --- a/path, +++ b/path and @@ range @@ headers, or a Garive *** Begin Patch block.","minLength":1,"maxLength":MAX_PATCH_BYTES},"expected_files":{"type":"array","description":"Every patched path exactly once, bound to the SHA-256 content_digest returned by read_text.","minItems":1,"maxItems":MAX_EXPECTED_FILES,"items":{"type":"object","properties":{"path":{"type":"string","minLength":1,"maxLength":4096},"before_digest":{"type":"string","minLength":64,"maxLength":64}},"required":["path","before_digest"],"additionalProperties":false}}},"required":["patch","expected_files"],"additionalProperties":false}),
         ReplayClass::ReceiptRecoverable,
         [
             ExecutionCapability::FilesystemRead,

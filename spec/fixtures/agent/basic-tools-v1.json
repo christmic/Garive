@@ -22,6 +22,12 @@
       "accesses": [{"namespace":"filesystem","resource_key":"src","mode":"read"}]
     },
     {
+      "tool_name": "garive.workspace.write_text",
+      "arguments": {"path":"notes/result.txt","text":"finished\n"},
+      "prepared_digest": "aa96ee26130791a413502269186b38ede417a3736b6a9a26d9bcf6889e4acfde",
+      "accesses": [{"namespace":"filesystem","resource_key":"notes/result.txt","mode":"write"}]
+    },
+    {
       "tool_name": "garive.workspace.apply_patch",
       "arguments": {
         "patch": "*** Begin Patch\n*** Update File: src/lib.rs\n@@\n-old\n+new\n*** End Patch",

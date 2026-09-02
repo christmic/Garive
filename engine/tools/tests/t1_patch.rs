@@ -43,3 +43,27 @@ fn no_newline_marker_is_only_valid_on_the_final_affected_line() {
         Err(T1PatchError::ContextMismatch)
     );
 }
+
+#[test]
+fn accepts_standard_unified_diff_for_existing_files() {
+    let patch = "--- a/source.txt\n+++ b/source.txt\n@@ -1 +1 @@\n-ORIGINAL_ALPHA\n+EDITED_BETA\n";
+    assert_eq!(
+        t1_patch_targets(patch)
+            .unwrap()
+            .into_iter()
+            .collect::<Vec<_>>(),
+        ["source.txt"]
+    );
+    assert_eq!(
+        apply_t1_patch(patch, "source.txt", "ORIGINAL_ALPHA\n").unwrap(),
+        "EDITED_BETA\n"
+    );
+}
+
+#[test]
+fn unified_diff_rejects_rename_and_create_headers() {
+    let rename = "--- a/old.txt\n+++ b/new.txt\n@@ -1 +1 @@\n-old\n+new\n";
+    assert_eq!(t1_patch_targets(rename), Err(T1PatchError::InvalidSyntax));
+    let create = "--- /dev/null\n+++ b/new.txt\n@@ -0,0 +1 @@\n+new\n";
+    assert_eq!(t1_patch_targets(create), Err(T1PatchError::InvalidSyntax));
+}

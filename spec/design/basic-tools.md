@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted implementation contract for five provider-neutral local tools. T1
+Accepted implementation contract for six provider-neutral local tools. T1
 uses C4 Prepared Calls, C5b exact access, F0 sandbox enforcement and C5
 authority/receipts. Installing the catalogue grants no Agent permission.
 
@@ -17,6 +17,7 @@ literals across Core, Runtime and clients.
 garive.workspace.read_text@1
 garive.workspace.list@1
 garive.workspace.search_text@1
+garive.workspace.write_text@1
 garive.workspace.apply_patch@1
 garive.process.run@1
 ```
@@ -157,10 +158,28 @@ scalars. Longer lines expose a 256-scalar window beginning at most 96 scalars
 before the first matched scalar; a leading or trailing Unicode ellipsis marks
 omitted content. The reported column always addresses the original line.
 
+## `garive.workspace.write_text@1`
+
+Input requires an exact workspace `path` and bounded UTF-8 `text`. The access
+set is one `Filesystem(path, Write)`; requirements are `FilesystemWrite` and
+replay is `NeverReplay`.
+
+Revision 1 is deliberately create-only. Runtime opens every parent component
+from the frozen workspace descriptor without following links, writes and
+fsyncs a same-directory temporary file, then publishes it only if the target
+does not exist. It never truncates or replaces an existing file. Empty text is
+valid; the workspace-root identity `.` is not a file target. Success returns
+only `path`, `byte_count`, and the lowercase SHA-256 `content_digest`.
+
+This tool handles new files. Existing files must be changed with the
+digest-bound `apply_patch`; that split prevents a model from turning a
+create-style request into an unguarded overwrite.
+
 ## `garive.workspace.apply_patch@1`
 
-Input requires a non-empty `patch` string in the admitted Garive unified-patch
-subset and a non-empty ordered unique `expected_files` array:
+Input requires a non-empty `patch` string in either standard unified-diff form
+or the admitted Garive patch form, plus a non-empty ordered unique
+`expected_files` array:
 
 ```json
 {
@@ -173,8 +192,11 @@ The pure resolver parses the patch, rejects paths not byte-equal to
 `expected_files`, and returns one `Filesystem(path, Write)` per affected file
 in canonical order. Rename, delete, binary patch, mode change, absolute path,
 symlink target, undeclared file and overlapping hunk are unsupported in v1.
-Target extraction admits only `*** Begin Patch`, `*** Update File:`, one or
-more exact `@@` hunk markers, changed/context lines and `*** End Patch`. Every
+Target extraction admits standard `--- a/path`, `+++ b/path`, `@@ range @@`
+headers, or `*** Begin Patch`, `*** Update File:`, exact `@@` hunk markers and
+`*** End Patch`. Both forms admit changed/context lines and the standard
+no-newline marker. Standard timestamps after a tab and optional
+`diff --git` separators are ignored. Every
 hunk has at least one context or removed anchor and at least one added or
 removed line. At execution, each old hunk sequence must occur exactly once at
 or after the preceding hunk; absent, repeated or reordered anchors fail before
@@ -339,22 +361,22 @@ mismatched roots and non-private recovery authority fail before an executor is
 created. Runtime then derives the backend-bound Process executor revision and
 constructs the complete per-Tool binding map before exposing execution ports.
 
-Construction produces one five-definition `BuiltinT1Catalogue`, one preparation
+Construction produces one six-definition `BuiltinT1Catalogue`, one preparation
 port backed by that exact catalogue, and a closed executor router. Read, list
-and search route to the descriptor-confined Workspace executor; apply-patch
-routes to the journaled Patch executor; process-run routes to the configured
-Podman executor. The router selects during preflight by exact Tool name, then
-dispatches, acknowledges receipts and reconciles lost Started effects only by
-the durable executor identity. Duplicate routes, unknown identities or an
-executor returning an identity different from its configured route fail
-closed.
+search and create-only write route to the descriptor-confined Workspace
+executor; apply-patch routes to the journaled Patch executor; process-run
+routes to the configured Podman executor. The router selects during preflight
+by exact Tool name, then dispatches, acknowledges receipts and reconciles lost
+Started effects only by the durable executor identity. Duplicate routes,
+unknown identities or an executor returning an identity different from its
+configured route fail closed.
 
 Sandbox admission and the selected executor derive the same deterministic T1
 dispatch-attempt identity from the executor ID and Runtime invocation ID.
 Neither Desktop nor another product adapter may invent a random attempt ID or
 copy executor-private algorithms. Read/list/search are allowed without an
-interaction after exact Workspace/Safety/Sandbox binding. Apply-patch and
-process-run require one digest-bound approval; a denial is durable. All five
+interaction after exact Workspace/Safety/Sandbox binding. Write, apply-patch
+and process-run require one digest-bound approval; a denial is durable. All six
 tools still commit Prepared, Safety, grant, Sandbox binding, preflight and
 Started facts before crossing an external-effect boundary.
 

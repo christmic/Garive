@@ -1,14 +1,15 @@
 use garive_tools::{
     AccessMode, AccessNamespace, BuiltinT1Catalogue, PreparationErrorCode, ReplayClass, ToolIntent,
     T1_APPLY_PATCH, T1_LIST, T1_PROCESS_RUN, T1_READ_TEXT, T1_SEARCH_TEXT, T1_TOOL_REVISION,
+    T1_WRITE_TEXT,
 };
 use serde_json::Value;
 
 #[test]
-fn catalogue_freezes_all_five_v3_definitions() {
+fn catalogue_freezes_all_six_v3_definitions() {
     let catalogue = BuiltinT1Catalogue::new("snapshot-1", ["rust-toolchain"]).unwrap();
     let definitions = catalogue.definitions();
-    assert_eq!(definitions.len(), 5);
+    assert_eq!(definitions.len(), 6);
     assert_eq!(
         definitions
             .iter()
@@ -19,7 +20,8 @@ fn catalogue_freezes_all_five_v3_definitions() {
             T1_APPLY_PATCH,
             T1_LIST,
             T1_READ_TEXT,
-            T1_SEARCH_TEXT
+            T1_SEARCH_TEXT,
+            T1_WRITE_TEXT,
         ]
     );
     assert!(definitions.iter().all(|definition| {
@@ -30,6 +32,24 @@ fn catalogue_freezes_all_five_v3_definitions() {
         definitions[1].replay_class(),
         ReplayClass::ReceiptRecoverable
     );
+}
+
+#[test]
+fn write_text_binds_one_new_workspace_path() {
+    let catalogue = BuiltinT1Catalogue::new("snapshot-1", ["rust-toolchain"]).unwrap();
+    let prepared = catalogue
+        .prepare(&ToolIntent::new(
+            "call",
+            T1_WRITE_TEXT,
+            r#"{"path":"notes/result.txt","text":"finished"}"#,
+        ))
+        .unwrap();
+    let accesses = prepared.invocation_accesses().unwrap().values();
+    assert_eq!(accesses.len(), 1);
+    assert_eq!(accesses[0].namespace(), AccessNamespace::Filesystem);
+    assert_eq!(accesses[0].resource_key(), "notes/result.txt");
+    assert_eq!(accesses[0].mode(), AccessMode::Write);
+    assert_eq!(prepared.replay_class(), ReplayClass::NeverReplay);
 }
 
 #[test]
