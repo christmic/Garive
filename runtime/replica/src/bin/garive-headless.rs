@@ -13,6 +13,7 @@
 //! rejected unless it is loopback.
 
 use std::{
+    io::Read,
     net::SocketAddr,
     path::{Path, PathBuf},
     sync::Arc,
@@ -27,7 +28,8 @@ use garive_runtime::headless::{
 use garive_runtime::{
     drive_pending, local_dispatch_queue, AllowAllValidator, CatalogueCapabilityPreparationFactory,
     DrivePendingOutcome, HostClock, LiveHost, LiveHostLimits, LiveHostServer, LiveOutputHub,
-    LiveOutputLimits, LocalExecutionWorker, SqliteLedger, SqliteLedgerError,
+    LiveOutputLimits, LocalExecutionWorker, ManagementCommitBody, SqliteLedger, SqliteLedgerError,
+    MANAGEMENT_COMMIT_BODY_SCHEMA_VERSION,
 };
 
 const DEFAULT_LISTEN: &str = "127.0.0.1:8787";
@@ -42,6 +44,9 @@ async fn main() {
 
 async fn run() -> Result<(), String> {
     let arguments = std::env::args().skip(1).collect::<Vec<_>>();
+    if arguments.first().map(String::as_str) == Some("setup") {
+        return setup(&arguments[1..]);
+    }
     let (directory, listen) = match arguments.as_slice() {
         [directory] => (PathBuf::from(directory), DEFAULT_LISTEN),
         [directory, listen] => (PathBuf::from(directory), listen.as_str()),
@@ -148,6 +153,51 @@ async fn run() -> Result<(), String> {
             }
         })
         .await
+}
+
+fn setup(arguments: &[String]) -> Result<(), String> {
+    let [directory, profile_id, endpoint, model_target_id, model_id, definition_id, deployment_id, runtime_id] =
+        arguments
+    else {
+        eprintln!(
+            "usage: garive-headless setup <config-dir> <profile-id> <endpoint|-> \
+             <target-id> <model-id> <definition-id> <deployment-id> <runtime-id>"
+        );
+        eprintln!("reads the provider credential from stdin");
+        return Err("invalid_arguments".to_owned());
+    };
+    let mut api_key = String::new();
+    std::io::stdin()
+        .read_to_string(&mut api_key)
+        .map_err(|_| "credential_read_failed".to_owned())?;
+    let api_key = api_key.trim_end_matches(['\r', '\n']).to_owned();
+    let database_path = PathBuf::from(directory).join("garive-desktop.db");
+    if let Some(parent) = database_path.parent() {
+        std::fs::create_dir_all(parent).map_err(|_| "database_directory_unwritable".to_owned())?;
+    }
+    let mut ledger = SqliteLedger::open(&database_path).map_err(map_sqlite_error)?;
+    let receipt = ledger
+        .management_config_store()
+        .commit(
+            &ManagementCommitBody {
+                schema_version: MANAGEMENT_COMMIT_BODY_SCHEMA_VERSION,
+                profile_id: profile_id.clone(),
+                endpoint_override: (endpoint != "-").then(|| endpoint.clone()),
+                model_target_id: model_target_id.clone(),
+                model_id: model_id.clone(),
+                deployment_id: deployment_id.clone(),
+                definition_id: definition_id.clone(),
+                api_key,
+                runtime_id: runtime_id.clone(),
+            },
+            &chrono::DateTime::<chrono::Utc>::from(std::time::SystemTime::now()).to_rfc3339(),
+        )
+        .map_err(|error| error.wire_code().to_owned())?;
+    println!(
+        "garive-headless: configuration committed revision={} digest={} restart_required={}",
+        receipt.configuration_revision, receipt.configuration_digest, receipt.restart_required
+    );
+    Ok(())
 }
 
 fn load_headless_configuration(database_path: &Path) -> Result<HeadlessConfiguration, String> {

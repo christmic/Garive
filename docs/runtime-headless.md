@@ -27,10 +27,12 @@ Argument grammar:
 
 ```
 garive-headless <config-dir> [127.0.0.1:8787]
+garive-headless setup <config-dir> <profile-id> <endpoint|-> \
+  <target-id> <model-id> <definition-id> <deployment-id> <runtime-id>
 ```
 
 `<config-dir>` must contain `garive-desktop.db` with a committed singleton
-row (use `garive-host setup-management <config-dir> ...`). The listen
+row (use `garive-headless setup ...`; the credential is read from stdin). The listen
 address defaults to `127.0.0.1:8787` and **must be loopback** —
 non-loopback addresses are rejected with `listen_address_not_loopback` (exit 2).
 
@@ -74,11 +76,10 @@ tool-bearing agents requires the future slice described in R6 below.
 ## Recipe (token9 on `127.0.0.1:9527`)
 
 ```bash
-# 1. Commit config via the existing management CLI.
-echo "token9-loopback" | garive-host setup-management /tmp/garive-headless-run \
-    openai.responses.v1 http://127.0.0.1:9527/v1/responses \
-    deepseek-v4-flash deepseek-v4-flash \
-    desktop.agent.v3 tok9-flash \
+# 1. Commit config via the headless management CLI.
+printf '%s\n' 'token9-loopback' | garive-headless setup /tmp/garive-headless-run \
+    anthropic.messages.v1 http://127.0.0.1:9527/v1/messages \
+    deepseek-v4-flash deepseek-v4-flash desktop.agent.v3 tok9-flash \
     runtime-7e22bcbe-bfa4-4c8f-a0c3-94e07be8f363
 
 # 2. Start the headless driver.
@@ -161,7 +162,7 @@ cargo test -p garive-runtime --test live_host_management
 cargo test -p garive-runtime --test headless_smoke
 ```
 
-All clean: 19 lib tests + 9 management tests + 4 headless smoke tests +
+All clean: 19 lib tests + 9 management tests + 7 headless smoke tests +
 remaining 30+ integration tests pass.
 
 ## Risks
