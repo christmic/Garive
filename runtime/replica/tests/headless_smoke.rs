@@ -49,6 +49,64 @@ struct RecordingModel {
     user_messages: Mutex<Vec<String>>,
 }
 
+#[derive(Default)]
+struct InFlightSteerModel {
+    invocations: AtomicUsize,
+    requests: Mutex<Vec<String>>,
+    second_started: tokio::sync::Notify,
+    release_second: tokio::sync::Notify,
+}
+
+impl ModelPort for InFlightSteerModel {
+    fn invoke<'a>(
+        &'a self,
+        request: &'a ModelRequest,
+        _observer: &'a mut dyn ModelObserver,
+        _cancellation: &'a dyn ModelCancellation,
+    ) -> ModelFuture<'a> {
+        let invocation = self.invocations.fetch_add(1, Ordering::SeqCst) + 1;
+        let rendered = request
+            .input_items
+            .iter()
+            .filter_map(|item| match item {
+                garive_llm::ModelInputItem::Message { role, content } => Some(format!(
+                    "{role:?}:{}",
+                    content
+                        .iter()
+                        .filter_map(|part| match part {
+                            garive_llm::ModelInputContent::Text(text) => Some(text.as_str()),
+                            _ => None,
+                        })
+                        .collect::<Vec<_>>()
+                        .join("")
+                )),
+                _ => None,
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+        self.requests.lock().expect("requests mutex").push(rendered);
+        Box::pin(async move {
+            if invocation == 2 {
+                self.second_started.notify_one();
+                self.release_second.notified().await;
+            }
+            Ok(InvokeOutcome::Completed {
+                items: vec![ModelItem::Text {
+                    text: format!("response-{invocation}"),
+                }],
+                usage: ModelUsage {
+                    input_tokens: TokenCount::Known(1),
+                    output_tokens: TokenCount::Known(1),
+                    cache_read_tokens: None,
+                    cache_write_tokens: None,
+                    source: UsageSource::Estimated,
+                },
+                stop_reason: garive_llm::ModelStopReason::EndTurn,
+            })
+        })
+    }
+}
+
 impl ModelPort for RecordingModel {
     fn invoke<'a>(
         &'a self,
@@ -761,4 +819,170 @@ async fn headless_steered_texts_reach_the_model_request() {
         combined.contains("[steered]"),
         "every steered message must be tagged, got: {combined}"
     );
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn runtime_api_completes_then_steers_an_in_flight_second_turn() {
+    use garive_runtime::{LiveHost, LiveHostLimits, LiveHostServer};
+
+    let directory = tempdir().expect("tempdir");
+    let database = directory.path().join("garive-desktop.db");
+    seed_management_row(&database, "sk-test-1234567890");
+    let mut ledger = SqliteLedger::open(&database).expect("open ledger");
+    let wrapper = ledger
+        .management_config_store()
+        .read_with_credential()
+        .expect("read config")
+        .expect("config present");
+    let configuration = HeadlessConfiguration {
+        state: wrapper.state,
+        api_key: wrapper.api_key,
+    };
+    let model = Arc::new(InFlightSteerModel::default());
+    let (installation, catalogue) =
+        build_headless_installation(&configuration).expect("installation");
+    let preparation = Arc::new(CatalogueCapabilityPreparationFactory::new(catalogue, None));
+    let worker = Arc::new(
+        LocalExecutionWorker::new(
+            &database,
+            headless_execution_policy(&configuration),
+            model.clone(),
+            preparation,
+        )
+        .expect("worker"),
+    );
+    let limits = LiveHostLimits {
+        max_command_bytes: 1024 * 1024,
+        event_batch_size: 64,
+        event_poll_interval_ms: 100,
+        activity: None,
+    };
+    let clock: Arc<dyn HostClock> = Arc::new(HeadlessClock);
+    let (host, _dispatcher, mut queue) = LiveHost::new_with_worker(
+        &database,
+        vec![installation.clone_installed_agent()],
+        limits,
+        clock,
+        64,
+    )
+    .expect("host");
+    let server = LiveHostServer::bind(host, SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 0))
+        .await
+        .expect("bind");
+    let address = server.local_addr();
+    let (shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel();
+    let database_for_assert = database.clone();
+    let model_for_assert = model.clone();
+
+    let second_turn_id = tokio::task::LocalSet::new()
+        .run_until(async move {
+            let server_task = tokio::task::spawn_local(server.serve(async move {
+                let _ = shutdown_rx.await;
+            }));
+            let client = reqwest::Client::new();
+            let base = format!("http://{address}");
+            let created = client
+                .post(format!("{base}/v1/sessions"))
+                .header("idempotency-key", "in-flight-session")
+                .header("content-type", "application/json")
+                .body(format!(
+                    r#"{{"agent_definition_id":"{HEADLESS_DESKTOP_AGENT_REVISION}"}}"#
+                ))
+                .send()
+                .await
+                .expect("create session");
+            assert!(created.status().is_success());
+            let session_json: serde_json::Value =
+                serde_json::from_slice(&created.bytes().await.expect("session response bytes"))
+                    .expect("session json");
+            let session_id = session_json["session_id"]
+                .as_str()
+                .expect("session id")
+                .to_owned();
+
+            let first = client
+                .post(format!("{base}/v1/sessions/{session_id}/turns"))
+                .header("idempotency-key", "in-flight-first")
+                .header("content-type", "application/json")
+                .body(r#"{"text":"first input"}"#)
+                .send()
+                .await
+                .expect("first turn");
+            assert!(first.status().is_success());
+            assert_eq!(
+                drive_worker_once(&mut queue, worker.as_ref()).await,
+                DrivePendingOutcome::Advanced
+            );
+
+            let second = client
+                .post(format!("{base}/v1/sessions/{session_id}/turns"))
+                .header("idempotency-key", "in-flight-second")
+                .header("content-type", "application/json")
+                .body(r#"{"text":"second input"}"#)
+                .send()
+                .await
+                .expect("second turn");
+            assert!(second.status().is_success());
+            let second_json: serde_json::Value =
+                serde_json::from_slice(&second.bytes().await.expect("turn response bytes"))
+                    .expect("turn json");
+            let second_turn_id = second_json["turn_id"].as_str().expect("turn id").to_owned();
+
+            let worker_for_drive = worker.clone();
+            let drive = tokio::task::spawn_local(async move {
+                drive_worker_once(&mut queue, worker_for_drive.as_ref()).await
+            });
+            tokio::time::timeout(
+                Duration::from_secs(5),
+                model_for_assert.second_started.notified(),
+            )
+            .await
+            .expect("second model invocation did not start");
+            assert_eq!(model_for_assert.invocations.load(Ordering::SeqCst), 2);
+
+            let steer = client
+                .post(format!(
+                    "{base}/v1/sessions/{session_id}/turns/{second_turn_id}/steer"
+                ))
+                .header("idempotency-key", "in-flight-steer")
+                .header("content-type", "application/json")
+                .body(r#"{"text":"use this while running"}"#)
+                .send()
+                .await
+                .expect("steer");
+            assert_eq!(steer.status().as_u16(), 200);
+            model_for_assert.release_second.notify_one();
+            assert_eq!(
+                tokio::time::timeout(Duration::from_secs(5), drive)
+                    .await
+                    .expect("worker timed out")
+                    .expect("worker task"),
+                DrivePendingOutcome::Advanced
+            );
+            let _ = shutdown_tx.send(());
+            let _ = server_task.await;
+            second_turn_id
+        })
+        .await;
+
+    assert_eq!(model.invocations.load(Ordering::SeqCst), 3);
+    let requests = model.requests.lock().expect("requests mutex").clone();
+    assert!(requests[2].contains("User:[steered] use this while running"));
+    assert!(requests[2].contains("Assistant:response-2"));
+    let snapshot = SqliteLedger::open(&database_for_assert)
+        .expect("reopen ledger")
+        .load_turn(&garive_ledger::TurnId::try_from(second_turn_id.as_str()).expect("turn id"))
+        .expect("load second turn");
+    assert_eq!(
+        snapshot
+            .facts
+            .iter()
+            .filter(|fact| fact.kind.as_str() == "model.completed")
+            .count(),
+        2
+    );
+    assert!(snapshot
+        .facts
+        .iter()
+        .any(|fact| fact.kind.as_str() == "turn.completed"));
 }
