@@ -17,8 +17,9 @@ use tokio::net::TcpListener;
 
 use super::{
     validate_key, CancelGoalBody, CancelTurnBody, ContinueTurnBody, CreateGoalBody,
-    CreateSessionBody, ErrorBody, LiveHost, LiveHostError, LiveHostEvent, ReviseGoalBody,
-    StartTurnBody, SteerTurnBody,
+    CreateSessionBody, DispatchAgentTaskBody, ErrorBody, JoinSessionAgentBody, LiveHost,
+    LiveHostError, LiveHostEvent, ReviseGoalBody, SendSessionAgentMessageBody, StartTurnBody,
+    SteerTurnBody,
 };
 use crate::{LiveOutputReceiveError, LiveOutputSubscriber};
 
@@ -45,6 +46,22 @@ impl LiveHostServer {
             .route("/v1/agent-definitions", get(agent_definitions))
             .route("/v1/sessions", post(create_session).get(session_page))
             .route("/v1/sessions/:session_id", get(session_view))
+            .route(
+                "/v1/sessions/:session_id/agents",
+                get(session_agents).post(join_session_agent),
+            )
+            .route(
+                "/v1/sessions/:session_id/agents/:agent_instance_id/turns",
+                post(start_agent_turn),
+            )
+            .route(
+                "/v1/sessions/:session_id/agent-messages",
+                get(session_agent_messages).post(send_session_agent_message),
+            )
+            .route(
+                "/v1/sessions/:session_id/delegations",
+                post(dispatch_agent_task),
+            )
             .route(
                 "/v1/sessions/:session_id/goals",
                 post(create_goal).get(goal_page),
@@ -129,6 +146,25 @@ async fn agent_definitions(State(host): State<LiveHost>) -> Response {
 
 async fn session_view(State(host): State<LiveHost>, Path(session_id): Path<String>) -> Response {
     let result = tokio::task::spawn_blocking(move || host.get_session(&session_id))
+        .await
+        .map_err(|_| LiveHostError::DurabilityUnavailable)
+        .and_then(|result| result);
+    command_response(result)
+}
+
+async fn session_agents(State(host): State<LiveHost>, Path(session_id): Path<String>) -> Response {
+    let result = tokio::task::spawn_blocking(move || host.get_session_agents(&session_id))
+        .await
+        .map_err(|_| LiveHostError::DurabilityUnavailable)
+        .and_then(|result| result);
+    command_response(result)
+}
+
+async fn session_agent_messages(
+    State(host): State<LiveHost>,
+    Path(session_id): Path<String>,
+) -> Response {
+    let result = tokio::task::spawn_blocking(move || host.get_session_agent_messages(&session_id))
         .await
         .map_err(|_| LiveHostError::DurabilityUnavailable)
         .and_then(|result| result);
@@ -226,10 +262,102 @@ async fn create_session(State(host): State<LiveHost>, headers: HeaderMap, body: 
     let result = async {
         let key = idempotency_key(&headers)?;
         let body: CreateSessionBody = decode_body(&host, body).await?;
-        host.create_session(key, &body.agent_definition_id)
+        host.create_named_session(
+            key,
+            &body.agent_definition_id,
+            body.agent_name
+                .as_deref()
+                .unwrap_or(&body.agent_definition_id),
+        )
     }
     .await;
     command_response(result)
+}
+
+async fn join_session_agent(
+    State(host): State<LiveHost>,
+    Path(session_id): Path<String>,
+    headers: HeaderMap,
+    body: Body,
+) -> Response {
+    let result = async {
+        let key = idempotency_key(&headers)?;
+        let body: JoinSessionAgentBody = decode_body(&host, body).await?;
+        host.join_session_agent(
+            key,
+            &session_id,
+            &body.agent_definition_id,
+            &body.agent_name,
+        )
+    }
+    .await;
+    command_response(result)
+}
+
+async fn send_session_agent_message(
+    State(host): State<LiveHost>,
+    Path(session_id): Path<String>,
+    headers: HeaderMap,
+    body: Body,
+) -> Response {
+    let result = async {
+        let key = idempotency_key(&headers)?;
+        let body: SendSessionAgentMessageBody = decode_body(&host, body).await?;
+        host.send_session_agent_message(
+            key,
+            &session_id,
+            &body.from_agent_instance_id,
+            body.to_agent_instance_id.as_deref(),
+            &body.text,
+        )
+    }
+    .await;
+    command_response(result)
+}
+
+async fn dispatch_agent_task(
+    State(host): State<LiveHost>,
+    Path(session_id): Path<String>,
+    headers: HeaderMap,
+    body: Body,
+) -> Response {
+    let result = async {
+        let key = idempotency_key(&headers)?;
+        let body: DispatchAgentTaskBody = decode_body(&host, body).await?;
+        host.dispatch_agent_task(
+            key,
+            &session_id,
+            &body.dispatcher_agent_instance_id,
+            body.assignee,
+            &body.delivery_policy,
+            &body.objective,
+        )
+    }
+    .await;
+    match result {
+        Ok(response) => {
+            let background_host = host;
+            let session_id = response.session_id.clone();
+            let delegation_id = response.delegation_id.clone();
+            tokio::spawn(async move {
+                for _ in 0..6_000 {
+                    let host = background_host.clone();
+                    let session = session_id.clone();
+                    let delegation = delegation_id.clone();
+                    let delivered = tokio::task::spawn_blocking(move || {
+                        host.deliver_agent_task_result(&session, &delegation)
+                    })
+                    .await;
+                    match delivered {
+                        Ok(Ok(true)) | Ok(Err(_)) | Err(_) => break,
+                        Ok(Ok(false)) => tokio::time::sleep(Duration::from_millis(100)).await,
+                    }
+                }
+            });
+            command_response(Ok(response))
+        }
+        Err(error) => error_response(error),
+    }
 }
 
 async fn create_goal(
@@ -262,6 +390,21 @@ async fn start_turn(
         let key = idempotency_key(&headers)?;
         let body: StartTurnBody = decode_body(&host, body).await?;
         host.start_turn(key, &session_id, &body.text)
+    }
+    .await;
+    command_response(result)
+}
+
+async fn start_agent_turn(
+    State(host): State<LiveHost>,
+    Path((session_id, agent_instance_id)): Path<(String, String)>,
+    headers: HeaderMap,
+    body: Body,
+) -> Response {
+    let result = async {
+        let key = idempotency_key(&headers)?;
+        let body: StartTurnBody = decode_body(&host, body).await?;
+        host.start_agent_turn(key, &session_id, &agent_instance_id, &body.text)
     }
     .await;
     command_response(result)

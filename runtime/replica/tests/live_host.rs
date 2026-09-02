@@ -156,6 +156,253 @@ impl Harness {
 }
 
 #[test]
+fn one_session_admits_ten_equal_named_agents_and_concurrent_turns() {
+    let harness = Harness::new(64);
+    let session = harness
+        .host
+        .create_named_session("create-team", "definition-main", "Atlas")
+        .unwrap();
+    for index in 1..10 {
+        harness
+            .host
+            .join_session_agent(
+                &format!("join-{index}"),
+                &session.session_id,
+                "definition-main",
+                &format!("Peer-{index}"),
+            )
+            .unwrap();
+    }
+    let roster = harness
+        .host
+        .get_session_agents(&session.session_id)
+        .unwrap();
+    assert_eq!(roster.members.len(), 10);
+    assert_eq!(roster.members[0].display_name, "Atlas");
+    assert!(harness
+        .host
+        .join_session_agent(
+            "join-overflow",
+            &session.session_id,
+            "definition-main",
+            "Peer-10"
+        )
+        .is_err());
+
+    for index in 0..roster.members.len() {
+        let recipient = (index + 1) % roster.members.len();
+        harness
+            .host
+            .send_session_agent_message(
+                &format!("peer-message-{index}"),
+                &session.session_id,
+                &roster.members[index].agent_instance_id,
+                Some(&roster.members[recipient].agent_instance_id),
+                &format!("message-{index}-to-{recipient}"),
+            )
+            .unwrap();
+    }
+    let delivered = harness
+        .host
+        .send_session_agent_message(
+            "peer-broadcast",
+            &session.session_id,
+            &roster.members[9].agent_instance_id,
+            None,
+            "shared-seed",
+        )
+        .unwrap();
+    assert_eq!(delivered.messages.len(), 11);
+    assert_eq!(delivered.messages.last().unwrap().text, "shared-seed");
+    assert!(delivered
+        .messages
+        .iter()
+        .take(10)
+        .enumerate()
+        .all(|(index, message)| {
+            message.from_agent_instance_id == roster.members[index].agent_instance_id
+                && message.to_agent_instance_id.as_deref()
+                    == Some(
+                        roster.members[(index + 1) % roster.members.len()]
+                            .agent_instance_id
+                            .as_str(),
+                    )
+        }));
+    assert_eq!(
+        harness.host.send_session_agent_message(
+            "forged-message",
+            &session.session_id,
+            "agent-not-in-session",
+            None,
+            "forged",
+        ),
+        Err(LiveHostError::PreconditionFailed)
+    );
+    assert_eq!(
+        harness.host.send_session_agent_message(
+            "foreign-recipient",
+            &session.session_id,
+            &roster.members[0].agent_instance_id,
+            Some("agent-not-in-session"),
+            "forged",
+        ),
+        Err(LiveHostError::PreconditionFailed)
+    );
+
+    for (index, member) in roster.members.iter().take(2).enumerate() {
+        harness
+            .host
+            .start_agent_turn(
+                &format!("peer-turn-{index}"),
+                &session.session_id,
+                &member.agent_instance_id,
+                &format!("Contribution {index}"),
+            )
+            .unwrap();
+    }
+    let dispatched = harness.dispatcher.committed.lock().unwrap();
+    assert_eq!(dispatched.len(), 2);
+    assert_ne!(dispatched[0].turn_id, dispatched[1].turn_id);
+}
+
+#[tokio::test]
+async fn notify_delegation_dispatches_named_anonymous_and_fork_assignees() {
+    let harness = Harness::new(64);
+    let session = harness
+        .host
+        .create_named_session("delegation-team", "definition-main", "Atlas")
+        .unwrap();
+    let roster = harness
+        .host
+        .join_session_agent(
+            "delegation-peer",
+            &session.session_id,
+            "definition-main",
+            "Birch",
+        )
+        .unwrap();
+    let atlas = &roster.members[0].agent_instance_id;
+    let birch = &roster.members[1].agent_instance_id;
+    let server = LiveHostServer::bind(
+        harness.host.clone(),
+        SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 0),
+    )
+    .await
+    .unwrap();
+    let address = server.local_addr();
+    let (shutdown_tx, shutdown_rx) = oneshot::channel();
+    let task = tokio::spawn(server.serve(async move {
+        let _ = shutdown_rx.await;
+    }));
+    let client = reqwest::Client::new();
+    let url = format!(
+        "http://{address}/v1/sessions/{}/delegations",
+        session.session_id
+    );
+    for (key, assignee) in [
+        (
+            "delegate-named",
+            serde_json::json!({"kind":"named","agent_instance_id":birch}),
+        ),
+        (
+            "delegate-anonymous",
+            serde_json::json!({"kind":"anonymous","agent_definition_id":"definition-main"}),
+        ),
+        ("delegate-fork", serde_json::json!({"kind":"fork_self"})),
+    ] {
+        let body = serde_json::json!({
+            "dispatcher_agent_instance_id":atlas,
+            "assignee":assignee,
+            "delivery_policy":"notify",
+            "objective":format!("objective-{key}"),
+        })
+        .to_string();
+        let response = client
+            .post(&url)
+            .header("idempotency-key", key)
+            .header("content-type", "application/json")
+            .body(body.clone())
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), reqwest::StatusCode::OK);
+        let value: Value = serde_json::from_slice(&response.bytes().await.unwrap()).unwrap();
+        assert_eq!(value["delivery_policy"], "notify");
+        let replay = client
+            .post(&url)
+            .header("idempotency-key", key)
+            .header("content-type", "application/json")
+            .body(body)
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(replay.status(), reqwest::StatusCode::OK);
+        assert_eq!(
+            serde_json::from_slice::<Value>(&replay.bytes().await.unwrap()).unwrap(),
+            value
+        );
+    }
+    let conflict = client
+        .post(&url)
+        .header("idempotency-key", "delegate-named")
+        .header("content-type", "application/json")
+        .body(
+            serde_json::json!({
+                "dispatcher_agent_instance_id":atlas,
+                "assignee":{"kind":"named","agent_instance_id":birch},
+                "delivery_policy":"notify",
+                "objective":"changed objective",
+            })
+            .to_string(),
+        )
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(conflict.status(), reqwest::StatusCode::CONFLICT);
+    let unsupported = client
+        .post(&url)
+        .header("idempotency-key", "delegate-await")
+        .header("content-type", "application/json")
+        .body(
+            serde_json::json!({
+                "dispatcher_agent_instance_id":atlas,
+                "assignee":{"kind":"named","agent_instance_id":birch},
+                "delivery_policy":"await_before_final",
+                "objective":"not implemented",
+            })
+            .to_string(),
+        )
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(unsupported.status(), reqwest::StatusCode::BAD_REQUEST);
+
+    {
+        let dispatched = harness.dispatcher.committed.lock().unwrap();
+        assert_eq!(dispatched.len(), 3);
+        let ledger = SqliteLedger::open(&harness.database).unwrap();
+        for committed in dispatched.iter() {
+            let facts = ledger.load_turn(&committed.turn_id).unwrap().facts;
+            let execution = facts
+                .iter()
+                .find(|fact| fact.kind.as_str() == "execution.started")
+                .unwrap();
+            assert_eq!(execution.position, committed.committed_position);
+            assert!(ledger
+                .read_facts(&committed.session_id, 0, committed.committed_position, None,)
+                .unwrap()
+                .iter()
+                .any(
+                    |fact| fact.kind.as_str() == "collaboration.assignee_started"
+                        && fact.position < execution.position
+                ));
+        }
+    }
+    let _ = shutdown_tx.send(());
+    task.await.unwrap().unwrap();
+}
+
+#[test]
 fn h2_read_limits_fail_closed_and_truncate_only_display_text() {
     let text_limits = HostReadLimits {
         max_user_text_bytes: 5,

@@ -21,19 +21,23 @@ difference is what loads the model port:
 |---|---|---|---|
 | `garive-host serve` | `desktop-v1.json` + keychain | Desktop built-ins + workspaces | Tauri Desktop companion |
 | `garive-host serve-stdin` | `desktop-v1.json` + stdin credential | Desktop built-ins + workspaces | Tauri-less one-shot |
-| `garive-headless` | `<config-dir>/garive-desktop.db::runtime_management_config` | None (model-only) | API-driven sessions |
+| `garive-headless` | `<config-dir>/garive-desktop.db::runtime_management_config` | Model-only, or five governed workspace tools when an explicit root is supplied | API-driven sessions |
 
 Argument grammar:
 
 ```
-garive-headless <config-dir> [127.0.0.1:8787]
+garive-headless <config-dir> [127.0.0.1:8787] [workspace-root]
 garive-headless setup <config-dir> <profile-id> <endpoint|-> \
   <target-id> <model-id> <definition-id> <deployment-id> <runtime-id>
 ```
 
 `<config-dir>` must contain `garive-desktop.db` with a committed singleton
 row (use `garive-headless setup ...`; the credential is read from stdin). The listen
-address defaults to `127.0.0.1:8787` and **must be loopback** —
+address defaults to `127.0.0.1:8787` and **must be loopback**. Supplying
+`workspace-root` freezes that exact directory capability and enables
+`read_text`, `list`, `search_text`, create-only `write_text`, and
+digest-bound `apply_patch`. Omitting it keeps the compatibility model-only
+surface. The workspace is never inferred from the process directory —
 non-loopback addresses are rejected with `listen_address_not_loopback` (exit 2).
 
 Failure modes (exit code 2):
@@ -56,22 +60,27 @@ Failure modes (exit code 2):
 | `management_resolution_failed` | Definition/registry/policy pipeline rejected the inputs |
 | `management_installation_invalid` | `RuntimeAgentInstallation::new` rejected the resolved snapshot |
 | `worker_construction_failed` | `LocalExecutionWorker::new` returned an error |
+| `workspace_construction_failed` | Workspace path, recovery path, catalogue, or governed executor binding was rejected |
+| `workspace_recovery_unavailable` | Private patch recovery directory could not be created |
 | `host_construction_failed` | `LiveHost::new_with_worker` returned an error |
 | `host_bind_failed` | `LiveHostServer::bind` failed |
 | `host_serve_failed` | `LiveHostServer::serve` returned an error |
 
 ## Definition allowlist
 
-The headless catalogue stays singular and tool-free. The only accepted
+The headless Agent-definition catalogue stays singular. The only accepted
 `definition_id` is `desktop.agent.v3`; the headless path installs it as
 `headless.agent.v1` so snapshot digests stay unambiguous across the two paths.
 Any other `definition_id` is rejected with `management_definition_unknown`
 before the SQLite row is re-read or the worker is constructed.
 
-The catalogue carries no tools, no capabilities, and no governance
-descriptors — a tool-bearing agent revision would fail at first dispatch
-because the headless worker has no `LocalGovernedExecutionFactory`. Adding
-tool-bearing agents requires the future slice described in R6 below.
+Without `workspace-root`, the capability snapshot is tool-free. With an
+explicit root, the snapshot freezes the exact five T1 workspace definitions,
+their Prepared-v3 schemas, exact-access resolver and filesystem requirements.
+Every Turn receives concrete authority, Safety, sandbox binding, descriptor-
+confined executors and effect receipts. The process tool remains excluded:
+headless has no configured Podman executable/socket/image lane and must not
+silently weaken that boundary.
 
 ## Recipe (token9 on `127.0.0.1:9527`)
 
@@ -83,7 +92,8 @@ printf '%s\n' 'token9-loopback' | garive-headless setup /tmp/garive-headless-run
     runtime-7e22bcbe-bfa4-4c8f-a0c3-94e07be8f363
 
 # 2. Start the headless driver.
-garive-headless /tmp/garive-headless-run 127.0.0.1:8787
+mkdir -p /tmp/garive-workspace
+garive-headless /tmp/garive-headless-run 127.0.0.1:8787 /tmp/garive-workspace
 
 # 3. From another shell, drive a session.
 SESSION=$(curl -sX POST http://127.0.0.1:8787/v1/sessions \
@@ -162,8 +172,38 @@ cargo test -p garive-runtime --test live_host_management
 cargo test -p garive-runtime --test headless_smoke
 ```
 
-All clean: 19 lib tests + 9 management tests + 7 headless smoke tests +
-remaining 30+ integration tests pass.
+The current real-provider/tool evidence and exact commands are recorded in
+[`evidence/headless-agent-tools-real-api-2026-09-03.md`](evidence/headless-agent-tools-real-api-2026-09-03.md).
+The same-Session ten-peer and non-blocking delegation run is recorded in
+[`evidence/headless-multi-agent-real-api-2026-09-03.md`](evidence/headless-multi-agent-real-api-2026-09-03.md).
+
+## Session collaboration API
+
+One H1 Session may contain at most ten equal named Agent instances. Creation
+accepts an optional `agent_name`; additional peers join through
+`POST /v1/sessions/{session}/agents`, and the roster is read from the matching
+GET route. Roster order and the founding-member marker do not grant authority.
+
+Durable peer messages use `GET/POST
+/v1/sessions/{session}/agent-messages`. A non-null
+`to_agent_instance_id` addresses one roster member; null broadcasts to all
+other members. Runtime rejects senders and recipients outside the Session.
+Addressed and broadcast messages are projected into the recipient's next
+model context with exact sender identity.
+
+`POST /v1/sessions/{session}/delegations` currently admits only the
+non-blocking `notify` policy and exactly three assignee selectors:
+
+```json
+{"kind":"named","agent_instance_id":"agent-..."}
+{"kind":"anonymous","agent_definition_id":"desktop.agent.v3"}
+{"kind":"fork_self"}
+```
+
+Runtime allocates a real assignee Turn/Execution, dispatches it without
+suspending the dispatcher, and publishes the terminal result as a durable
+addressed message. `await_before_final` and `suspend_execution` fail closed
+until their barrier/continuation implementations satisfy MA1 and MA0.
 
 ## Risks
 
@@ -177,7 +217,11 @@ caller of `read_with_credential()`.
 
 Same posture: loopback-only binding, no extra token.
 
-### R6 — Headless path has no governed ports (new)
+### R6 — Headless process execution remains disabled
+
+Workspace mode deliberately installs no `garive.process.run` definition.
+Enabling it requires explicit immutable Podman lane configuration and
+preflight, not reuse of the Runtime host process.
 
 The headless catalogue cannot run tool-bearing agents. A `definition_id`
 other than `desktop.agent.v3` is rejected at startup with
@@ -206,4 +250,8 @@ change in both paths. Documented here so the next agent who touches
   `LiveOutputHub`; a future slice can wire one)
 - Workspace bookmarks, memory binding, knowledge binding
 - Hot-swap of committed config (R4)
-- Multi-agent catalogue (the headless catalogue is intentionally singular)
+- Agent-callable `message_agent`, `delegate`, `collect_delegations`, and
+  `fork_self` capability tools. H1 currently exposes the governed operations;
+  provider-facing tool definitions are not yet installed.
+- `AwaitBeforeFinal`, explicit `SuspendExecution`, bounded concurrent fork
+  collection, and crash recovery of the result-delivery supervisor

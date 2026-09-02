@@ -108,6 +108,8 @@ struct SessionOpened {
     definition_revision: String,
     snapshot_digest: String,
     agent_instance_id: String,
+    #[serde(default, rename = "agent_name")]
+    _agent_name: Option<String>,
 }
 
 #[derive(Deserialize)]

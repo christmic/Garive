@@ -481,6 +481,82 @@ pub struct CreateSessionResponse {
     pub committed_position: u64,
 }
 
+/// One named equal Agent member in a durable Session roster.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct SessionAgentMember {
+    /// Runtime Agent Instance identity used for addressing and authorship.
+    pub agent_instance_id: String,
+    /// Session-unique product display name; never authority.
+    pub display_name: String,
+    /// Exact installed Agent Definition identity.
+    pub definition_id: String,
+    /// Exact immutable Definition revision.
+    pub definition_revision: String,
+    /// Whether this member came from `session.opened`.
+    pub founding_member: bool,
+}
+
+/// Complete bounded named-Agent roster for one Session.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct SessionAgentRoster {
+    /// Exact public Host API version.
+    pub api_version: &'static str,
+    /// Owning durable Session.
+    pub session_id: String,
+    /// Stable join order; order conveys no authority.
+    pub members: Vec<SessionAgentMember>,
+    /// Highest durable Session position observed.
+    pub observed_max_position: u64,
+}
+
+/// One durable addressed message between equal Session Agent peers.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct SessionAgentMessage {
+    /// Durable fact position used for ordering and replay.
+    pub position: u64,
+    /// Exact sender Agent Instance.
+    pub from_agent_instance_id: String,
+    /// Exact recipient, or absent for Session-roster broadcast.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub to_agent_instance_id: Option<String>,
+    /// Verified bounded UTF-8 content.
+    pub text: String,
+}
+
+/// Bounded message history for one Session.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct SessionAgentMessagePage {
+    /// Exact public Host API version.
+    pub api_version: &'static str,
+    /// Owning durable Session.
+    pub session_id: String,
+    /// Durable order, including addressed and broadcast messages.
+    pub messages: Vec<SessionAgentMessage>,
+    /// Highest durable Session position observed.
+    pub observed_max_position: u64,
+}
+
+/// Durable coordinates returned after one non-blocking MA1 dispatch.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct AgentDelegationResponse {
+    /// Owning shared Session.
+    pub session_id: String,
+    /// Stable temporary delegation edge.
+    pub delegation_id: String,
+    /// Equal named member that dispatched the task.
+    pub dispatcher_agent_instance_id: String,
+    /// Resolved real assignee Agent Instance.
+    pub assignee_agent_instance_id: String,
+    /// Independent assignee Turn.
+    pub assignee_turn_id: String,
+    /// First disposable assignee Execution.
+    pub assignee_execution_id: String,
+    /// Selected delivery policy.
+    pub delivery_policy: String,
+    /// Last durable position in the atomic dispatch transaction.
+    pub committed_position: u64,
+}
+
 /// Successful durable Turn mutation or exact replay.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct TurnCommandResponse {
@@ -825,6 +901,41 @@ impl Error for LiveHostError {}
 #[serde(deny_unknown_fields)]
 pub(crate) struct CreateSessionBody {
     pub agent_definition_id: String,
+    #[serde(default)]
+    pub agent_name: Option<String>,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct JoinSessionAgentBody {
+    pub agent_definition_id: String,
+    pub agent_name: String,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct SendSessionAgentMessageBody {
+    pub from_agent_instance_id: String,
+    #[serde(default)]
+    pub to_agent_instance_id: Option<String>,
+    pub text: String,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+pub(crate) enum DelegationAssigneeBody {
+    Named { agent_instance_id: String },
+    Anonymous { agent_definition_id: String },
+    ForkSelf,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct DispatchAgentTaskBody {
+    pub dispatcher_agent_instance_id: String,
+    pub assignee: DelegationAssigneeBody,
+    pub delivery_policy: String,
+    pub objective: String,
 }
 
 #[derive(Clone, Debug, Deserialize)]

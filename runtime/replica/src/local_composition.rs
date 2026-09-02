@@ -133,13 +133,12 @@ pub fn reconstruct_local_start(
     let session_watermark = ledger
         .session_watermark(&committed.session_id)
         .map_err(|_| LocalReconstructionError::DurabilityUnavailable)?;
-    let opened = exactly_one(&facts, |fact| fact.kind.as_str() == "session.opened")?;
+    exactly_one(&facts, |fact| fact.kind.as_str() == "session.opened")?;
     let execution = exactly_one(&facts, |fact| {
         fact.turn_id.as_ref() == Some(&committed.turn_id)
             && fact.execution_id.as_ref() == Some(&committed.execution_id)
             && fact.kind.as_str() == "execution.started"
     })?;
-    let opened_payload = payload(opened)?;
     let started = facts
         .iter()
         .filter(|fact| {
@@ -172,6 +171,26 @@ pub fn reconstruct_local_start(
         .ok_or(LocalReconstructionError::ReconstructionFailed)?;
     let input_payload = payload(input)?;
     let execution_payload = payload(execution)?;
+    let agent_bound = facts.iter().any(|fact| {
+        matches!(
+            fact.kind.as_str(),
+            "session.opened" | "session.agent_joined"
+        ) && payload(fact).is_ok_and(|binding| {
+            binding["agent_instance_id"] == started_payload["agent_instance_id"]
+                && binding["definition_id"] == started_payload["definition_id"]
+                && binding["definition_revision"] == started_payload["definition_revision"]
+                && binding["snapshot_digest"] == started_payload["snapshot_digest"]
+        })
+    }) || facts.iter().any(|fact| {
+        fact.kind.as_str() == "collaboration.assignee_started"
+            && payload(fact).is_ok_and(|binding| {
+                binding["assignee_agent_instance_id"] == started_payload["agent_instance_id"]
+                    && binding["assignee_turn_id"].as_str() == Some(committed.turn_id.as_str())
+                    && binding["definition_id"] == started_payload["definition_id"]
+                    && binding["definition_revision"] == started_payload["definition_revision"]
+                    && binding["snapshot_digest"] == started_payload["snapshot_digest"]
+            })
+    });
     let trusted_input = text(&input_payload, &["content", "inline_utf8"])?;
     let trusted_digest = text(&input_payload, &["content", "digest"])?;
     let planner_owned = input_payload["input_kind"] == "trusted_system"
@@ -196,10 +215,7 @@ pub fn reconstruct_local_start(
     };
     if !valid_input
         || digest(trusted_input.as_bytes()) != trusted_digest
-        || opened_payload["agent_instance_id"] != started_payload["agent_instance_id"]
-        || opened_payload["definition_id"] != started_payload["definition_id"]
-        || opened_payload["definition_revision"] != started_payload["definition_revision"]
-        || opened_payload["snapshot_digest"] != started_payload["snapshot_digest"]
+        || !agent_bound
         || execution_payload["snapshot_digest"] != started_payload["snapshot_digest"]
         || planner_owned && workspace_context.is_some()
     {

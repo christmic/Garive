@@ -11,6 +11,7 @@ use garive_ledger::{
     CommitDisposition, CommitResult, DurableFact, ExecutionId, FactDraft, FactId, FactKind,
     LedgerError, SessionId, TurnId,
 };
+use garive_multiagent::{NamedAgent, SessionRoster, MAX_NAMED_SESSION_AGENTS};
 use garive_plan::{PlanState, StepState};
 use serde::Deserialize;
 use serde_json::json;
@@ -29,14 +30,15 @@ use crate::{
 
 use super::{
     completion_text, internal_turn::InternalPlannerTurns, project_activities, project_fact,
-    AgentDefinitionPageV1, AgentDefinitionSummary, AgentDefinitionSummaryV1, CommittedTurn,
-    CreateSessionResponse, GoalCommandAuthority, GoalCommandAuthorityError, GoalCommandResponseV1,
-    GoalPageV1, GoalSummaryV1, HostArtifact, HostArtifactPage, HostClock, HostContinuationInput,
-    HostEventPage, HostReadLimits, HostWorkspaceAttachment, HostWorkspaceContextEntry,
-    HostWorkspaceDetachment, InstalledAgent, LiveHostError, LiveHostEvent, LiveHostLimits,
-    LiveHostState, PlanPageV1, PlanSummaryV1, SessionPageV1, SessionSummary, SessionViewV1,
-    TurnCommandResponse, TurnDispatcher, TurnSuspensionView, TurnTimelineItem, TurnTimelinePage,
-    TurnTimelinePageV1,
+    AgentDefinitionPageV1, AgentDefinitionSummary, AgentDefinitionSummaryV1,
+    AgentDelegationResponse, CommittedTurn, CreateSessionResponse, GoalCommandAuthority,
+    GoalCommandAuthorityError, GoalCommandResponseV1, GoalPageV1, GoalSummaryV1, HostArtifact,
+    HostArtifactPage, HostClock, HostContinuationInput, HostEventPage, HostReadLimits,
+    HostWorkspaceAttachment, HostWorkspaceContextEntry, HostWorkspaceDetachment, InstalledAgent,
+    LiveHostError, LiveHostEvent, LiveHostLimits, LiveHostState, PlanPageV1, PlanSummaryV1,
+    SessionAgentMember, SessionAgentMessage, SessionAgentMessagePage, SessionAgentRoster,
+    SessionPageV1, SessionSummary, SessionViewV1, TurnCommandResponse, TurnDispatcher,
+    TurnSuspensionView, TurnTimelineItem, TurnTimelinePage, TurnTimelinePageV1,
 };
 use super::{read_cursor, read_model, timeline_projection};
 
@@ -1226,7 +1228,18 @@ impl LiveHost {
         idempotency_key: &str,
         agent_definition_id: &str,
     ) -> Result<CreateSessionResponse, LiveHostError> {
+        self.create_named_session(idempotency_key, agent_definition_id, agent_definition_id)
+    }
+
+    /// Creates a Session whose founding peer has explicit display metadata.
+    pub fn create_named_session(
+        &self,
+        idempotency_key: &str,
+        agent_definition_id: &str,
+        agent_name: &str,
+    ) -> Result<CreateSessionResponse, LiveHostError> {
         validate_key(idempotency_key)?;
+        NamedAgent::new("founder", agent_name).map_err(|_| LiveHostError::InvalidRequest)?;
         let installed = self
             .state
             .installed
@@ -1264,6 +1277,7 @@ impl LiveHost {
             "definition_revision": installed.definition_revision,
             "snapshot_digest": installed.snapshot_digest,
             "agent_instance_id": agent_instance_id.as_str(),
+            "agent_name": agent_name,
         });
         let recorded_at = self.recorded_at()?;
         let fact = FactDraft {
@@ -1294,6 +1308,518 @@ impl LiveHost {
             agent_instance_id: agent_instance_id.as_str().to_owned(),
             committed_position: only_position(&committed.positions)?,
         })
+    }
+
+    /// Adds or exactly replays one equal named Agent member in a Session.
+    pub fn join_session_agent(
+        &self,
+        idempotency_key: &str,
+        session: &str,
+        agent_definition_id: &str,
+        agent_name: &str,
+    ) -> Result<SessionAgentRoster, LiveHostError> {
+        validate_key(idempotency_key)?;
+        let session_id = identity::<SessionId>(session)?;
+        let installed = self
+            .state
+            .installed
+            .get(agent_definition_id)
+            .ok_or(LiveHostError::NotFound)?;
+        let mut ledger = self.ledger()?;
+        let binding = self.load_session(&ledger, &session_id)?;
+        let facts = ledger
+            .read_facts(&session_id, 0, binding.max_position, None)
+            .map_err(map_sqlite)?;
+        if let Some(existing) = facts.iter().find(|fact| {
+            fact.kind.as_str() == "session.agent_joined"
+                && decode_payload::<JoinedAgent>(fact)
+                    .is_ok_and(|value| value.command_id == idempotency_key)
+        }) {
+            let value: JoinedAgent = decode_payload(existing)?;
+            if value.definition_id != agent_definition_id || value.agent_name != agent_name {
+                return Err(LiveHostError::CommandConflict);
+            }
+            return self.get_session_agents(session);
+        }
+        let current = roster_from_facts(&facts)?;
+        if current.members.len() >= MAX_NAMED_SESSION_AGENTS
+            || current
+                .members
+                .iter()
+                .any(|member| member.display_name == agent_name)
+        {
+            return Err(LiveHostError::PreconditionFailed);
+        }
+        let agent_instance_id = format!(
+            "agent-{}",
+            digest(
+                format!(
+                    "{}:{}:{}",
+                    session, agent_name, installed.definition_revision
+                )
+                .as_bytes()
+            )
+        );
+        NamedAgent::new(&agent_instance_id, agent_name)
+            .map_err(|_| LiveHostError::InvalidRequest)?;
+        let fact = FactDraft {
+            fact_id: FactId::try_from(format!("fact-{}", digest(format!("{session}:{idempotency_key}:join").as_bytes())).as_str())
+                .map_err(|_| LiveHostError::InvalidRequest)?,
+            turn_id: None,
+            execution_id: None,
+            model_request_id: None,
+            tool_invocation_id: None,
+            kind: FactKind::new("session.agent_joined").map_err(|_| LiveHostError::InvalidRequest)?,
+            schema_version: 1,
+            payload: CanonicalPayload::from_value(&json!({
+                "command_id":idempotency_key,"agent_instance_id":agent_instance_id,
+                "agent_name":agent_name,"definition_id":installed.definition_id,
+                "definition_revision":installed.definition_revision,"snapshot_digest":installed.snapshot_digest,
+            })).map_err(|_| LiveHostError::InvalidRequest)?,
+            recorded_at: self.recorded_at()?,
+        };
+        ledger
+            .commit(session_id, binding.session_version, vec![fact])
+            .map_err(map_sqlite)?;
+        self.get_session_agents(session)
+    }
+
+    /// Returns the bounded equal named-Agent roster reconstructed from facts.
+    pub fn get_session_agents(&self, session: &str) -> Result<SessionAgentRoster, LiveHostError> {
+        let session_id = identity::<SessionId>(session)?;
+        let ledger = self.ledger()?;
+        let binding = self.load_session(&ledger, &session_id)?;
+        let facts = ledger
+            .read_facts(&session_id, 0, binding.max_position, None)
+            .map_err(map_sqlite)?;
+        let members = roster_from_facts(&facts)?.members;
+        Ok(SessionAgentRoster {
+            api_version: "v1",
+            session_id: session.into(),
+            members,
+            observed_max_position: binding.max_position,
+        })
+    }
+
+    /// Commits an addressed or roster-broadcast peer message before publication.
+    pub fn send_session_agent_message(
+        &self,
+        idempotency_key: &str,
+        session: &str,
+        from_agent_instance_id: &str,
+        to_agent_instance_id: Option<&str>,
+        text: &str,
+    ) -> Result<SessionAgentMessagePage, LiveHostError> {
+        validate_key(idempotency_key)?;
+        validate_text(text, self.state.limits.max_command_bytes)?;
+        let session_id = identity::<SessionId>(session)?;
+        let mut ledger = self.ledger()?;
+        let binding = self.load_session(&ledger, &session_id)?;
+        let facts = ledger
+            .read_facts(&session_id, 0, binding.max_position, None)
+            .map_err(map_sqlite)?;
+        let roster = roster_from_facts(&facts)?;
+        if !roster
+            .members
+            .iter()
+            .any(|member| member.agent_instance_id == from_agent_instance_id)
+            || to_agent_instance_id.is_some_and(|target| {
+                target == from_agent_instance_id
+                    || !roster
+                        .members
+                        .iter()
+                        .any(|member| member.agent_instance_id == target)
+            })
+        {
+            return Err(LiveHostError::PreconditionFailed);
+        }
+        for fact in facts
+            .iter()
+            .filter(|fact| fact.kind.as_str() == "session.agent_message")
+        {
+            let message: AgentMessageFact = decode_payload(fact)?;
+            if message.command_id == idempotency_key {
+                if message.from_agent_instance_id != from_agent_instance_id
+                    || message.to_agent_instance_id.as_deref() != to_agent_instance_id
+                    || message.content.inline_utf8 != text
+                {
+                    return Err(LiveHostError::CommandConflict);
+                }
+                return self.get_session_agent_messages(session);
+            }
+        }
+        let fact = FactDraft {
+            fact_id: FactId::try_from(
+                format!(
+                    "fact-{}",
+                    digest(format!("{session}:{idempotency_key}:message").as_bytes())
+                )
+                .as_str(),
+            )
+            .map_err(|_| LiveHostError::InvalidRequest)?,
+            turn_id: None,
+            execution_id: None,
+            model_request_id: None,
+            tool_invocation_id: None,
+            kind: FactKind::new("session.agent_message")
+                .map_err(|_| LiveHostError::InvalidRequest)?,
+            schema_version: 1,
+            payload: CanonicalPayload::from_value(&json!({
+                "command_id":idempotency_key,"from_agent_instance_id":from_agent_instance_id,
+                "to_agent_instance_id":to_agent_instance_id,
+                "content":{"digest":digest(text.as_bytes()),"inline_utf8":text},
+            }))
+            .map_err(|_| LiveHostError::InvalidRequest)?,
+            recorded_at: self.recorded_at()?,
+        };
+        ledger
+            .commit(session_id, binding.session_version, vec![fact])
+            .map_err(map_sqlite)?;
+        self.get_session_agent_messages(session)
+    }
+
+    /// Reads the bounded durable peer-message stream for one Session.
+    pub fn get_session_agent_messages(
+        &self,
+        session: &str,
+    ) -> Result<SessionAgentMessagePage, LiveHostError> {
+        let session_id = identity::<SessionId>(session)?;
+        let ledger = self.ledger()?;
+        let binding = self.load_session(&ledger, &session_id)?;
+        let facts = ledger
+            .read_facts(&session_id, 0, binding.max_position, None)
+            .map_err(map_sqlite)?;
+        let messages = facts
+            .iter()
+            .filter(|fact| fact.kind.as_str() == "session.agent_message")
+            .map(|fact| {
+                let value: AgentMessageFact = decode_payload(fact)?;
+                if digest(value.content.inline_utf8.as_bytes()) != value.content.digest {
+                    return Err(LiveHostError::CorruptState);
+                }
+                Ok(SessionAgentMessage {
+                    position: fact.position,
+                    from_agent_instance_id: value.from_agent_instance_id,
+                    to_agent_instance_id: value.to_agent_instance_id,
+                    text: value.content.inline_utf8,
+                })
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(SessionAgentMessagePage {
+            api_version: "v1",
+            session_id: session.into(),
+            messages,
+            observed_max_position: binding.max_position,
+        })
+    }
+
+    /// Atomically dispatches one non-blocking MA1 task to a real assignee.
+    pub(crate) fn dispatch_agent_task(
+        &self,
+        idempotency_key: &str,
+        session: &str,
+        dispatcher_agent_instance_id: &str,
+        assignee: super::DelegationAssigneeBody,
+        delivery_policy: &str,
+        objective: &str,
+    ) -> Result<AgentDelegationResponse, LiveHostError> {
+        validate_key(idempotency_key)?;
+        validate_text(objective, self.state.limits.max_command_bytes)?;
+        if delivery_policy != "notify" {
+            return Err(LiveHostError::InvalidRequest);
+        }
+        let session_id = identity::<SessionId>(session)?;
+        let mut ledger = self.ledger()?;
+        let binding = self.load_session(&ledger, &session_id)?;
+        let facts = ledger
+            .read_facts(&session_id, 0, binding.max_position, None)
+            .map_err(map_sqlite)?;
+        let roster = roster_from_facts(&facts)?;
+        let dispatcher = roster
+            .members
+            .iter()
+            .find(|member| member.agent_instance_id == dispatcher_agent_instance_id)
+            .ok_or(LiveHostError::PreconditionFailed)?;
+        let (assignee_id, definition_id, definition_revision, snapshot_digest, target_kind) =
+            match assignee {
+                super::DelegationAssigneeBody::Named { agent_instance_id } => {
+                    let member = roster
+                        .members
+                        .iter()
+                        .find(|member| member.agent_instance_id == agent_instance_id)
+                        .ok_or(LiveHostError::PreconditionFailed)?;
+                    let installed = self.installed(&member.definition_id)?;
+                    (
+                        member.agent_instance_id.clone(),
+                        member.definition_id.clone(),
+                        member.definition_revision.clone(),
+                        installed.snapshot_digest.clone(),
+                        "named",
+                    )
+                }
+                super::DelegationAssigneeBody::Anonymous {
+                    agent_definition_id,
+                } => {
+                    let installed = self.installed(&agent_definition_id)?;
+                    (
+                        format!(
+                            "agent-anonymous-{}",
+                            digest(format!("{session}:{idempotency_key}:anonymous").as_bytes())
+                        ),
+                        installed.definition_id.clone(),
+                        installed.definition_revision.clone(),
+                        installed.snapshot_digest.clone(),
+                        "anonymous",
+                    )
+                }
+                super::DelegationAssigneeBody::ForkSelf => {
+                    let installed = self.installed(&dispatcher.definition_id)?;
+                    (
+                        format!(
+                            "agent-fork-{}",
+                            digest(format!("{session}:{idempotency_key}:fork").as_bytes())
+                        ),
+                        installed.definition_id.clone(),
+                        installed.definition_revision.clone(),
+                        installed.snapshot_digest.clone(),
+                        "fork_self",
+                    )
+                }
+            };
+        let delegation_id = format!(
+            "delegation-{}",
+            digest(format!("{session}:{idempotency_key}").as_bytes())
+        );
+        if let Some(requested) = facts.iter().find(|fact| {
+            fact.kind.as_str() == "collaboration.delegation_requested"
+                && serde_json::from_str::<serde_json::Value>(fact.payload.as_json()).is_ok_and(
+                    |value| {
+                        value.get("command_id").and_then(serde_json::Value::as_str)
+                            == Some(idempotency_key)
+                    },
+                )
+        }) {
+            let requested: DelegationRequestedFact = decode_payload(requested)?;
+            if requested.delegation_id != delegation_id
+                || requested.dispatcher_agent_instance_id != dispatcher_agent_instance_id
+                || requested.assignee_kind != target_kind
+                || requested.delivery_policy != delivery_policy
+                || requested.objective_digest != digest(objective.as_bytes())
+            {
+                return Err(LiveHostError::CommandConflict);
+            }
+            let started = facts
+                .iter()
+                .find(|fact| {
+                    fact.kind.as_str() == "collaboration.assignee_started"
+                        && serde_json::from_str::<serde_json::Value>(fact.payload.as_json())
+                            .is_ok_and(|value| {
+                                value
+                                    .get("delegation_id")
+                                    .and_then(serde_json::Value::as_str)
+                                    == Some(delegation_id.as_str())
+                            })
+                })
+                .ok_or(LiveHostError::CorruptState)?;
+            let started: DelegationStartedFact = decode_payload(started)?;
+            if started.delegation_id != delegation_id
+                || started.assignee_agent_instance_id != assignee_id
+                || started.dispatcher_agent_instance_id != dispatcher_agent_instance_id
+                || started.definition_id != definition_id
+                || started.definition_revision != definition_revision
+                || started.snapshot_digest != snapshot_digest
+                || started.delivery_policy != delivery_policy
+            {
+                return Err(LiveHostError::CommandConflict);
+            }
+            let execution = facts
+                .iter()
+                .find(|fact| {
+                    fact.kind.as_str() == "execution.started"
+                        && fact.turn_id.as_ref().map(TurnId::as_str)
+                            == Some(started.assignee_turn_id.as_str())
+                })
+                .ok_or(LiveHostError::CorruptState)?;
+            return Ok(AgentDelegationResponse {
+                session_id: session.into(),
+                delegation_id,
+                dispatcher_agent_instance_id: dispatcher_agent_instance_id.into(),
+                assignee_agent_instance_id: assignee_id,
+                assignee_turn_id: started.assignee_turn_id,
+                assignee_execution_id: execution
+                    .execution_id
+                    .as_ref()
+                    .ok_or(LiveHostError::CorruptState)?
+                    .as_str()
+                    .into(),
+                delivery_policy: delivery_policy.into(),
+                committed_position: execution.position,
+            });
+        }
+        let recorded_at = self.recorded_at()?;
+        let plan = plan_start_turn(
+            &StartTurnCommand {
+                command_id: RuntimeCommandId::new(format!("dispatch-{idempotency_key}"))
+                    .map_err(map_runtime)?,
+                session_id: session_id.clone(),
+                agent_instance_id: identity(&assignee_id)?,
+                definition_id: identity(&definition_id)?,
+                definition_revision: identity(&definition_revision)?,
+                snapshot_digest: snapshot_digest.clone(),
+                trusted_input: objective.to_owned(),
+                limits: self.installed(&definition_id)?.runtime_limits,
+                recorded_at: recorded_at.clone(),
+            },
+            binding.max_position,
+        )
+        .map_err(map_runtime)?;
+        let execution_id = plan
+            .execution_id
+            .clone()
+            .ok_or(LiveHostError::CorruptState)?;
+        let mut batch = vec![orchestration_fact(
+            idempotency_key,
+            "collaboration.delegation_requested",
+            json!({
+                "command_id":idempotency_key,"delegation_id":delegation_id,
+                "dispatcher_agent_instance_id":dispatcher_agent_instance_id,"assignee_kind":target_kind,
+                "delivery_policy":delivery_policy,"objective_digest":digest(objective.as_bytes()),
+            }),
+            &recorded_at,
+        )?];
+        batch.push(orchestration_fact(idempotency_key, "collaboration.assignee_started", json!({
+            "delegation_id":delegation_id,"dispatcher_agent_instance_id":dispatcher_agent_instance_id,
+            "assignee_agent_instance_id":assignee_id,"assignee_turn_id":plan.turn_id.as_str(),
+            "definition_id":definition_id,"definition_revision":definition_revision,
+            "snapshot_digest":snapshot_digest,"delivery_policy":delivery_policy,
+        }), &recorded_at)?);
+        batch.extend(plan.facts);
+        let committed = ledger
+            .commit(session_id.clone(), binding.session_version, batch)
+            .map_err(map_sqlite)?;
+        let last = last_position(&committed.positions)?;
+        if committed.disposition == CommitDisposition::Committed {
+            let _ = self.state.dispatcher.dispatch(&CommittedTurn {
+                session_id: session_id.clone(),
+                turn_id: plan.turn_id.clone(),
+                execution_id: execution_id.clone(),
+                definition_id: definition_id.clone(),
+                definition_revision: definition_revision.clone(),
+                snapshot_digest,
+                session_version: committed.session_version,
+                committed_position: last,
+            });
+        }
+        Ok(AgentDelegationResponse {
+            session_id: session.into(),
+            delegation_id,
+            dispatcher_agent_instance_id: dispatcher_agent_instance_id.into(),
+            assignee_agent_instance_id: assignee_id,
+            assignee_turn_id: plan.turn_id.as_str().into(),
+            assignee_execution_id: execution_id.as_str().into(),
+            delivery_policy: delivery_policy.into(),
+            committed_position: last,
+        })
+    }
+
+    /// Delivers one terminal MA1 result exactly once; returns false while active.
+    pub(crate) fn deliver_agent_task_result(
+        &self,
+        session: &str,
+        delegation_id: &str,
+    ) -> Result<bool, LiveHostError> {
+        let session_id = identity::<SessionId>(session)?;
+        let mut ledger = self.ledger()?;
+        let binding = self.load_session(&ledger, &session_id)?;
+        let facts = ledger
+            .read_facts(&session_id, 0, binding.max_position, None)
+            .map_err(map_sqlite)?;
+        if facts.iter().any(|fact| {
+            fact.kind.as_str() == "collaboration.result_delivered"
+                && serde_json::from_str::<serde_json::Value>(fact.payload.as_json())
+                    .ok()
+                    .and_then(|value| {
+                        value
+                            .get("delegation_id")
+                            .and_then(serde_json::Value::as_str)
+                            .map(str::to_owned)
+                    })
+                    .as_deref()
+                    == Some(delegation_id)
+        }) {
+            return Ok(true);
+        }
+        let started = facts
+            .iter()
+            .find(|fact| {
+                fact.kind.as_str() == "collaboration.assignee_started"
+                    && serde_json::from_str::<serde_json::Value>(fact.payload.as_json())
+                        .ok()
+                        .and_then(|value| {
+                            value
+                                .get("delegation_id")
+                                .and_then(serde_json::Value::as_str)
+                                .map(str::to_owned)
+                        })
+                        .as_deref()
+                        == Some(delegation_id)
+            })
+            .ok_or(LiveHostError::NotFound)?;
+        let started: DelegationStartedFact = decode_payload(started)?;
+        let terminal = facts.iter().find(|fact| {
+            fact.turn_id.as_ref().map(TurnId::as_str) == Some(started.assignee_turn_id.as_str())
+                && matches!(
+                    fact.kind.as_str(),
+                    "turn.completed" | "turn.stopped" | "turn.failed"
+                )
+        });
+        let Some(terminal) = terminal else {
+            return Ok(false);
+        };
+        let (state, text) = match terminal.kind.as_str() {
+            "turn.completed" => ("completed", completion_text(terminal)?),
+            "turn.stopped" => ("stopped", "[assignee stopped]".to_owned()),
+            "turn.failed" => ("failed", "[assignee failed]".to_owned()),
+            _ => unreachable!(),
+        };
+        let recorded_at = self.recorded_at()?;
+        let command = format!("deliver-{delegation_id}");
+        let content = json!({"digest":digest(text.as_bytes()),"inline_utf8":text});
+        let batch = vec![
+            orchestration_fact(
+                &command,
+                "collaboration.assignee_terminal",
+                json!({
+                    "delegation_id":delegation_id,"assignee_agent_instance_id":started.assignee_agent_instance_id,
+                    "assignee_turn_id":started.assignee_turn_id,"state":state,"result":content,
+                }),
+                &recorded_at,
+            )?,
+            orchestration_fact(
+                &command,
+                "collaboration.result_delivered",
+                json!({
+                    "delegation_id":delegation_id,"dispatcher_agent_instance_id":started.dispatcher_agent_instance_id,
+                    "assignee_agent_instance_id":started.assignee_agent_instance_id,"delivery_policy":started.delivery_policy,
+                    "result":content,
+                }),
+                &recorded_at,
+            )?,
+            orchestration_fact(
+                &command,
+                "session.agent_message",
+                json!({
+                    "command_id":command,"from_agent_instance_id":started.assignee_agent_instance_id,
+                    "to_agent_instance_id":started.dispatcher_agent_instance_id,
+                    "content":content,
+                }),
+                &recorded_at,
+            )?,
+        ];
+        ledger
+            .commit(session_id, binding.session_version, batch)
+            .map_err(map_sqlite)?;
+        Ok(true)
     }
 
     /// Starts or exactly replays one C6 Turn transaction, then dispatches only a new commit.
@@ -1359,6 +1885,91 @@ impl LiveHost {
                 definition_id: binding.definition_id.as_str().to_owned(),
                 definition_revision: binding.definition_revision.as_str().to_owned(),
                 snapshot_digest: binding.snapshot_digest.clone(),
+                session_version: committed.session_version,
+                committed_position: last,
+            });
+        }
+        Ok(turn_response(
+            &session_id,
+            &plan.turn_id,
+            Some(&execution_id),
+            last,
+        ))
+    }
+
+    /// Starts a Turn authored by one exact equal named Session member.
+    pub fn start_agent_turn(
+        &self,
+        idempotency_key: &str,
+        session: &str,
+        agent_instance: &str,
+        trusted_input: &str,
+    ) -> Result<TurnCommandResponse, LiveHostError> {
+        validate_key(idempotency_key)?;
+        validate_text(trusted_input, self.state.limits.max_command_bytes)?;
+        let session_id = identity::<SessionId>(session)?;
+        let agent_instance_id = identity::<AgentInstanceId>(agent_instance)?;
+        let mut ledger = self.ledger()?;
+        let session_binding = self.load_session(&ledger, &session_id)?;
+        let facts = ledger
+            .read_facts(&session_id, 0, session_binding.max_position, None)
+            .map_err(map_sqlite)?;
+        let member = roster_from_facts(&facts)?
+            .members
+            .into_iter()
+            .find(|member| member.agent_instance_id == agent_instance)
+            .ok_or(LiveHostError::NotFound)?;
+        let installed = self.installed(&member.definition_id)?;
+        if installed.definition_revision != member.definition_revision {
+            return Err(LiveHostError::CorruptState);
+        }
+        if let Some(response) = self.replay_start(
+            &ledger,
+            &session_id,
+            idempotency_key,
+            trusted_input,
+            session_binding.max_position,
+        )? {
+            return Ok(response);
+        }
+        if has_open_turn_for_agent(&facts, agent_instance)? {
+            return Err(LiveHostError::SessionBusy);
+        }
+        let plan = plan_start_turn(
+            &StartTurnCommand {
+                command_id: RuntimeCommandId::new(idempotency_key).map_err(map_runtime)?,
+                session_id: session_id.clone(),
+                agent_instance_id: agent_instance_id.clone(),
+                definition_id: identity(&member.definition_id)?,
+                definition_revision: identity(&member.definition_revision)?,
+                snapshot_digest: installed.snapshot_digest.clone(),
+                trusted_input: trusted_input.to_owned(),
+                limits: installed.runtime_limits,
+                recorded_at: self.recorded_at()?,
+            },
+            session_binding.max_position,
+        )
+        .map_err(map_runtime)?;
+        let execution_id = plan
+            .execution_id
+            .clone()
+            .ok_or(LiveHostError::CorruptState)?;
+        let committed = commit_planned_turn(
+            &mut ledger,
+            session_id.clone(),
+            session_binding.session_version,
+            &plan,
+        )
+        .map_err(map_runtime)?;
+        let last = last_position(&committed.positions)?;
+        if committed.disposition == CommitDisposition::Committed {
+            let _ = self.state.dispatcher.dispatch(&CommittedTurn {
+                session_id: session_id.clone(),
+                turn_id: plan.turn_id.clone(),
+                execution_id: execution_id.clone(),
+                definition_id: member.definition_id,
+                definition_revision: member.definition_revision,
+                snapshot_digest: installed.snapshot_digest.clone(),
                 session_version: committed.session_version,
                 committed_position: last,
             });
@@ -2287,6 +2898,37 @@ fn has_open_turn(facts: &[DurableFact]) -> bool {
     latest.values().any(|state| *state == "running")
 }
 
+fn has_open_turn_for_agent(
+    facts: &[DurableFact],
+    agent_instance_id: &str,
+) -> Result<bool, LiveHostError> {
+    let mut authors = std::collections::HashMap::<String, String>::new();
+    let mut terminal = std::collections::HashSet::<String>::new();
+    for fact in facts {
+        let Some(turn_id) = fact.turn_id.as_ref() else {
+            continue;
+        };
+        match fact.kind.as_str() {
+            "turn.started" => {
+                let started: StartedCommand = decode_payload(fact)?;
+                if started.kind == "start" {
+                    let author = started
+                        .agent_instance_id
+                        .ok_or(LiveHostError::CorruptState)?;
+                    authors.insert(turn_id.as_str().to_owned(), author);
+                }
+            }
+            "turn.completed" | "turn.stopped" | "turn.failed" => {
+                terminal.insert(turn_id.as_str().to_owned());
+            }
+            _ => {}
+        }
+    }
+    Ok(authors
+        .iter()
+        .any(|(turn, author)| author == agent_instance_id && !terminal.contains(turn)))
+}
+
 fn project_timeline(
     facts: &[DurableFact],
     max_text_bytes: usize,
@@ -2647,6 +3289,54 @@ struct SessionOpened {
     definition_revision: String,
     snapshot_digest: String,
     agent_instance_id: String,
+    #[serde(default)]
+    agent_name: Option<String>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct JoinedAgent {
+    command_id: String,
+    agent_instance_id: String,
+    agent_name: String,
+    definition_id: String,
+    definition_revision: String,
+    #[serde(rename = "snapshot_digest")]
+    _snapshot_digest: String,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct AgentMessageFact {
+    command_id: String,
+    from_agent_instance_id: String,
+    to_agent_instance_id: Option<String>,
+    content: InlineContent,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct DelegationRequestedFact {
+    #[serde(rename = "command_id")]
+    _command_id: String,
+    delegation_id: String,
+    dispatcher_agent_instance_id: String,
+    assignee_kind: String,
+    delivery_policy: String,
+    objective_digest: String,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct DelegationStartedFact {
+    delegation_id: String,
+    dispatcher_agent_instance_id: String,
+    assignee_agent_instance_id: String,
+    assignee_turn_id: String,
+    definition_id: String,
+    definition_revision: String,
+    snapshot_digest: String,
+    delivery_policy: String,
 }
 
 #[derive(Deserialize)]
@@ -2659,6 +3349,7 @@ struct StartedCommand {
     trusted_input_digest: String,
     prior_suspension_id: Option<String>,
     expected_session_version: Option<u64>,
+    agent_instance_id: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -2672,6 +3363,71 @@ struct TurnInput {
 struct InlineContent {
     digest: String,
     inline_utf8: String,
+}
+
+fn roster_from_facts(facts: &[DurableFact]) -> Result<SessionAgentRoster, LiveHostError> {
+    let opened = facts.first().ok_or(LiveHostError::CorruptState)?;
+    if opened.kind.as_str() != "session.opened" {
+        return Err(LiveHostError::CorruptState);
+    }
+    let founder: SessionOpened = decode_payload(opened)?;
+    let mut members = vec![SessionAgentMember {
+        agent_instance_id: founder.agent_instance_id,
+        display_name: founder
+            .agent_name
+            .unwrap_or_else(|| founder.definition_id.clone()),
+        definition_id: founder.definition_id,
+        definition_revision: founder.definition_revision,
+        founding_member: true,
+    }];
+    for fact in facts
+        .iter()
+        .filter(|fact| fact.kind.as_str() == "session.agent_joined")
+    {
+        let joined: JoinedAgent = decode_payload(fact)?;
+        members.push(SessionAgentMember {
+            agent_instance_id: joined.agent_instance_id,
+            display_name: joined.agent_name,
+            definition_id: joined.definition_id,
+            definition_revision: joined.definition_revision,
+            founding_member: false,
+        });
+    }
+    let portable = members
+        .iter()
+        .map(|member| NamedAgent::new(&member.agent_instance_id, &member.display_name))
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|_| LiveHostError::CorruptState)?;
+    SessionRoster::new(portable).map_err(|_| LiveHostError::CorruptState)?;
+    Ok(SessionAgentRoster {
+        api_version: "v1",
+        session_id: opened.session_id.as_str().to_owned(),
+        members,
+        observed_max_position: facts.last().map_or(0, |fact| fact.position),
+    })
+}
+
+fn orchestration_fact(
+    command_id: &str,
+    kind: &str,
+    payload: serde_json::Value,
+    recorded_at: &str,
+) -> Result<FactDraft, LiveHostError> {
+    Ok(FactDraft {
+        fact_id: FactId::try_from(
+            format!("fact-{}", digest(format!("{command_id}:{kind}").as_bytes())).as_str(),
+        )
+        .map_err(|_| LiveHostError::InvalidRequest)?,
+        turn_id: None,
+        execution_id: None,
+        model_request_id: None,
+        tool_invocation_id: None,
+        kind: FactKind::new(kind).map_err(|_| LiveHostError::InvalidRequest)?,
+        schema_version: 1,
+        payload: CanonicalPayload::from_value(&payload)
+            .map_err(|_| LiveHostError::InvalidRequest)?,
+        recorded_at: recorded_at.to_owned(),
+    })
 }
 
 #[derive(Deserialize)]
