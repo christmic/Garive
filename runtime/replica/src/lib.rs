@@ -191,8 +191,8 @@ pub use local_worker::{
     LocalWorkerShutdownReport,
 };
 pub use management::{
-    ManagementCommitBody, ManagementConfigError, ManagementConfigReceipt, ManagementConfigState,
-    ManagementConfigStore,
+    AllowAllValidator, ManagementCommitBody, ManagementConfigError, ManagementConfigReceipt,
+    ManagementConfigState, ManagementConfigStore, ManagementValidator,
 };
 pub use memory_control::{
     MemoryControlAction, MemoryControlGrant, MemoryControlProjection, MemoryControlRuntimeError,

@@ -55,6 +55,13 @@ impl LiveHostServer {
             .route("/v1/goals/:operation", post(mutate_goal))
             .route("/v1/turns/:operation", post(mutate_turn))
             .route("/v1/sessions/:session_id/events", get(events))
+            .route(
+                "/v1/management/setup",
+                get(super::management::read_setup)
+                    .post(super::management::commit_setup)
+                    .delete(super::management::clear_setup),
+            )
+            .route("/v1/management/health", get(super::management::health))
             .route("/internal/mobile/wake-snapshot", get(mobile_wake_snapshot));
         if host.live_output_hub().is_some() {
             app = app.route("/v1/sessions/:session_id/live", get(live_output));
@@ -409,7 +416,10 @@ async fn read_page(
         .map_err(|_| LiveHostError::DurabilityUnavailable)?
 }
 
-async fn decode_body<T: DeserializeOwned>(host: &LiveHost, body: Body) -> Result<T, LiveHostError> {
+pub(crate) async fn decode_body<T: DeserializeOwned>(
+    host: &LiveHost,
+    body: Body,
+) -> Result<T, LiveHostError> {
     let bytes = to_bytes(body, host.limits().max_command_bytes)
         .await
         .map_err(|_| LiveHostError::InvalidRequest)?;

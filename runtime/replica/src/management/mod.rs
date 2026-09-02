@@ -8,10 +8,13 @@
 mod digest;
 mod store;
 mod types;
+mod validator;
 
 #[allow(unused_imports)]
 pub use digest::{configuration_digest, receipt_digest, MANAGEMENT_CONFIG_CONTRACT};
 pub use store::ManagementConfigStore;
 pub use types::{
     ManagementCommitBody, ManagementConfigError, ManagementConfigReceipt, ManagementConfigState,
+    MANAGEMENT_COMMIT_BODY_SCHEMA_VERSION,
 };
+pub use validator::{AllowAllValidator, ManagementValidator};

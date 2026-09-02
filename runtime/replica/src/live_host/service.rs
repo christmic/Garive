@@ -200,6 +200,7 @@ impl LiveHost {
                 dispatcher,
                 live_output,
                 goal_authority: None,
+                management_validator: Arc::new(crate::management::AllowAllValidator),
             }),
         })
     }
@@ -216,8 +217,41 @@ impl LiveHost {
                 dispatcher: Arc::clone(&self.state.dispatcher),
                 live_output: self.state.live_output.clone(),
                 goal_authority: Some(authority),
+                management_validator: Arc::clone(&self.state.management_validator),
             }),
         }
+    }
+
+    /// Returns an equivalent Host whose management-port `POST /setup` calls
+    /// run [`crate::management::ManagementValidator::validate`] before the
+    /// DAO commit.
+    ///
+    /// Commit 3 default: the per-field DAO validation still runs, so a body
+    /// with an unknown `profile_id` is rejected with
+    /// `management_profile_unknown` once a Registry-backed validator is
+    /// attached (wired in by the `garive-host` binary in commit 4).
+    pub fn with_management_validator(
+        self,
+        validator: Arc<dyn crate::management::ManagementValidator>,
+    ) -> Self {
+        Self {
+            state: Arc::new(LiveHostState {
+                database_path: self.state.database_path.clone(),
+                installed: self.state.installed.clone(),
+                limits: self.state.limits,
+                read_limits: self.state.read_limits,
+                clock: Arc::clone(&self.state.clock),
+                dispatcher: Arc::clone(&self.state.dispatcher),
+                live_output: self.state.live_output.clone(),
+                goal_authority: self.state.goal_authority.clone(),
+                management_validator: validator,
+            }),
+        }
+    }
+
+    /// Borrows the active [`crate::management::ManagementValidator`].
+    pub(crate) fn management_validator(&self) -> &dyn crate::management::ManagementValidator {
+        self.state.management_validator.as_ref()
     }
 
     /// Returns the configured H4 hub for an explicitly shared worker composition.
@@ -1668,6 +1702,27 @@ impl LiveHost {
         chrono::DateTime::parse_from_rfc3339(&value)
             .map(|_| value)
             .map_err(|_| LiveHostError::InvalidRequest)
+    }
+
+    /// Returns a host-clock RFC 3339 timestamp suitable for the management
+    /// commit DAO. Same contract as [`Self::recorded_at`] but exposed for
+    /// the management-port handler.
+    pub(crate) fn recorded_at_string(&self) -> String {
+        match self.recorded_at() {
+            Ok(value) => value,
+            Err(_) => self.state.clock.recorded_at(),
+        }
+    }
+
+    /// Opens a fresh [`SqliteLedger`] bound to the same database path this
+    /// Host was constructed against. The returned Ledger is independent of
+    /// the Host's other operations; the management-port handler uses it
+    /// for read/write traffic on the singleton `runtime_management_config`
+    /// row.
+    pub(crate) fn open_management_ledger(
+        &self,
+    ) -> Result<crate::SqliteLedger, crate::LiveHostError> {
+        SqliteLedger::open(&self.state.database_path).map_err(map_sqlite)
     }
 
     fn installed(&self, definition_id: &str) -> Result<&InstalledAgent, LiveHostError> {

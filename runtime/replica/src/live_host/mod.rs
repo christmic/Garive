@@ -1,6 +1,7 @@
 mod activity_projection;
 mod http;
 mod internal_turn;
+mod management;
 mod projection;
 mod read_cursor;
 mod read_model;

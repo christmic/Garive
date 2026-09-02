@@ -887,4 +887,5 @@ pub(crate) struct LiveHostState {
     pub dispatcher: Arc<dyn TurnDispatcher>,
     pub live_output: Option<crate::LiveOutputHub>,
     pub goal_authority: Option<Arc<dyn GoalCommandAuthority>>,
+    pub management_validator: Arc<dyn crate::management::ManagementValidator>,
 }
