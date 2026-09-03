@@ -557,6 +557,19 @@ pub struct AgentDelegationResponse {
     pub committed_position: u64,
 }
 
+/// Bounded work recovered from durable delegation facts during Host startup.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct AgentTaskRecovery {
+    /// Non-terminal assignee Turns submitted again to the local worker queue.
+    pub redispatched: usize,
+    /// Terminal assignee results delivered to their dispatchers.
+    pub delivered: usize,
+    /// Active or suspended assignee Turns left to the core recovery protocol.
+    pub deferred: usize,
+    /// Assignee Turns left untouched because their exact immutable snapshot is unavailable.
+    pub unavailable: usize,
+}
+
 /// Successful durable Turn mutation or exact replay.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct TurnCommandResponse {

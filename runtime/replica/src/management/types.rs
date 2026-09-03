@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 
 /// Wire schema version stamped on every [`ManagementCommitBody`].
 ///
-/// The [`LiveHost`] layer rejects any body whose `schema_version` differs
+/// The [`crate::LiveHost`] layer rejects any body whose `schema_version` differs
 /// from this constant, forcing an explicit client rollover rather than
 /// silent drift.
 pub const MANAGEMENT_COMMIT_BODY_SCHEMA_VERSION: u32 = 1;
@@ -36,7 +36,7 @@ pub struct ManagementCommitBody {
     pub schema_version: u32,
     /// Built-in Provider profile id (e.g. `openai.responses.v1`).
     pub profile_id: String,
-    /// Optional Provider endpoint override; bounded by [`MAX_ENDPOINT_BYTES`].
+    /// Optional Provider endpoint override; bounded by `MAX_ENDPOINT_BYTES`.
     pub endpoint_override: Option<String>,
     /// Logical model-target id surfaced in receipts and durable facts.
     pub model_target_id: String,

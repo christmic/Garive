@@ -7,62 +7,93 @@ Model target: configured `deepseek-v4-flash` deployment
 
 ## Claim boundary
 
-This run proves that collaboration can originate inside the Agent loop. H1 was
-used only to create a Session, join AtlasAuto and BirchAuto, and submit the
-user input. The API caller did not submit a sender identity, peer message, or
-delegation command on the Agent's behalf.
+H1 was used only to create Sessions, join named Agents, and submit user Turns.
+The API caller never posted `/agent-messages` or `/delegations` in the
+autonomous runs. Each collaboration action originated as a real model Tool
+intent inside the Agent loop. Runtime derived the actor from `turn.started`,
+applied Prepared-v3/F0 governance, committed the effect receipt, and published
+the command from the durable outbox.
 
-The real model selected `garive.collaboration.message_agent`. Runtime derived
-AtlasAuto from the active `turn.started`, evaluated the Prepared-v3 call under
-F0, committed its receipt, and then published the addressed Session message.
+No credential or provider endpoint is included in this record.
 
-Two later real-provider delegation attempts ended at `model.uncertain` with
-`provider_state_unknown` before either produced a Tool intent. They are not
-counted as collaboration acceptance. Named autonomous delegation is covered by
-the deterministic end-to-end Runtime test, while a successful real-provider
-delegation and the ten-peer autonomous matrix remain open.
+## Real-provider acceptance matrix
 
-No credential is included in this record.
+| Scenario | Durable evidence | Result |
+|---|---|---|
+| addressed peer message | model chose `message_agent`; F0 actor matched active Agent; one `session.agent_message` | pass |
+| named delegation | parent completed before publication; Birch child completed; result delivered to Atlas | pass |
+| anonymous delegation | Runtime-created `agent-anonymous-*` completed and delivered | pass |
+| self fork | distinct `agent-fork-*` and child Turn completed and delivered | pass |
+| collect results | tool observation read all three delivered results before final synthesis | pass |
+| ten equal named Agents | ten model Tool intents produced a complete addressed ring in one Session | pass |
+| crash after `model.started` | restart classified `model.uncertain(runtime_lost)` and suspended without unsafe replay | pass, safe convergence |
 
-## Real autonomous message
+### Named, anonymous, fork and collect
+
+Primary Session:
+
+```text
+session-fd12eb26cc9621ac46a3bd51a9d0c183941982b42ec3cf2c552d98c75025bb5c
+```
+
+The named parent returned `PARENT_NAMED_120_OK` before
+`collaboration.delegation_requested`; the child returned
+`CHILD_NAMED_120_OK`. The anonymous and fork parents likewise returned
+`PARENT_ANONYMOUS_120_OK` and `PARENT_FORK_120_OK` without waiting, followed by
+delivered `CHILD_ANONYMOUS_120_OK` and `CHILD_FORK_120_OK` results.
+
+The later `collect_delegations(max_results=10)` observation contained exactly
+those three delegation records with `state = delivered`. Only after observing
+that tool result did the model return `COLLECT_THREE_120_OK`.
+
+### Ten-Agent autonomous ring
 
 Session:
 
 ```text
-session-8bb55ac3fe8c45d4f80c4e78cde9eb4dd5a37da117f56b154d459b13cf5112bb
+session-c56ca0725ca8760f81963ad1ac853c450ff0ee5ef4110a121a8fe7416ed7cd56
 ```
 
-The first real model response durably contained this Tool intent:
-
-```json
-{
-  "tool_name": "garive.collaboration.message_agent",
-  "arguments_json": "{\"recipient\":\"BirchAuto\",\"text\":\"REAL_AUTONOMOUS_HELLO\"}"
-}
-```
-
-F0 recorded the actor authority as the active Agent:
+The roster contained Atlas10, Birch10, Cinder10, Delta10, Ember10, Fjord10,
+Grove10, Harbor10, Iris10, and Juniper10 as equal named members. API calls only
+started their Turns. The model-selected messages formed this ring:
 
 ```text
-agent:agent-294c34b37103a5d3b8bf275c750fc5fe0e4b8347a2b29253ac43b3463fe1f231
+Atlas10 -> Birch10 -> Cinder10 -> Delta10 -> Ember10 -> Fjord10
+        -> Grove10 -> Harbor10 -> Iris10 -> Juniper10 -> Atlas10
 ```
 
-After the receipt and parent completion, Runtime appended exactly one
-`session.agent_message` with that AtlasAuto instance as sender, BirchAuto as
-recipient, and `REAL_AUTONOMOUS_HELLO` as content. The second real model call
-observed the successful tool result and completed with `REAL_MESSAGE_DONE`.
+An independent SQLite audit counted 10 matching `model.completed` Tool intents,
+10 completed parent Turns, and 10 `session.agent_message` facts. Every message
+command identity was `invocation-*`; zero ring messages had an API command
+identity. Sender and recipient Agent Instance IDs matched the roster edge at
+all ten positions.
+
+## Failure found and fixed
+
+The initial real delegation attempts stopped after 30 seconds with a body
+decode timeout while the streamed provider response was still active. The
+headless model request and Agent execution budgets are now the same explicit
+120,000 ms constant. The regression test asserts that the HTTP request timeout
+covers the Agent deadline. Named, anonymous, fork, collect, and the ten-Agent
+ring all passed after this change.
+
+Startup previously retained delegation delivery supervision only in process
+memory. The Host now reconstructs safe pre-dispatch assignee work, defers any
+request that crossed an external dispatch boundary, sweeps terminal undelivered
+results, and runs the existing C6/F0 startup recovery before listening. A real
+process kill after the child `model.started` proved the fail-closed branch:
+restart committed `model.uncertain` and `turn.suspended` instead of replaying an
+ambiguous provider request.
 
 ## Deterministic regression evidence
 
-`runtime/replica/tests/autonomous_collaboration.rs` proves:
+`runtime/replica/tests/autonomous_collaboration.rs` covers authenticated actor
+binding, addressed publication, missing-target rejection, receipt-committed
+outbox reconstruction, non-blocking named delegation, safe pre-dispatch child
+redispatch, and terminal result recovery. `engine/multiagent/tests` covers the
+exact four-tool Prepared-v3 schemas and rejects model-supplied actor forgery.
 
-- model-originated addressed messaging with no model-supplied actor field;
-- rejection of a missing named target before external dispatch;
-- reconstruction of a receipt-committed, unpublished message into a fresh
-  outbox, followed by exactly-once publication;
-- actor authority binding to the active Agent in `safety.decided`;
-- model-originated named delegation, parent completion without suspension,
-  real child Turn execution, and addressed result delivery to the dispatcher.
-
-`engine/multiagent/tests/collaboration_tools.rs` additionally proves the exact
-Prepared-v3 schemas, Runtime access lanes, and rejection of forged actor input.
+Still outside this acceptance claim: AwaitBeforeFinal, explicit
+SuspendExecution composition, authority/budget/fanout admission, and restoration
+of an unavailable historical immutable Agent snapshot.

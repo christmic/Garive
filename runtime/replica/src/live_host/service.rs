@@ -31,14 +31,14 @@ use crate::{
 use super::{
     completion_text, internal_turn::InternalPlannerTurns, project_activities, project_fact,
     AgentDefinitionPageV1, AgentDefinitionSummary, AgentDefinitionSummaryV1,
-    AgentDelegationResponse, CommittedTurn, CreateSessionResponse, GoalCommandAuthority,
-    GoalCommandAuthorityError, GoalCommandResponseV1, GoalPageV1, GoalSummaryV1, HostArtifact,
-    HostArtifactPage, HostClock, HostContinuationInput, HostEventPage, HostReadLimits,
-    HostWorkspaceAttachment, HostWorkspaceContextEntry, HostWorkspaceDetachment, InstalledAgent,
-    LiveHostError, LiveHostEvent, LiveHostLimits, LiveHostState, PlanPageV1, PlanSummaryV1,
-    SessionAgentMember, SessionAgentMessage, SessionAgentMessagePage, SessionAgentRoster,
-    SessionPageV1, SessionSummary, SessionViewV1, TurnCommandResponse, TurnDispatcher,
-    TurnSuspensionView, TurnTimelineItem, TurnTimelinePage, TurnTimelinePageV1,
+    AgentDelegationResponse, AgentTaskRecovery, CommittedTurn, CreateSessionResponse,
+    GoalCommandAuthority, GoalCommandAuthorityError, GoalCommandResponseV1, GoalPageV1,
+    GoalSummaryV1, HostArtifact, HostArtifactPage, HostClock, HostContinuationInput, HostEventPage,
+    HostReadLimits, HostWorkspaceAttachment, HostWorkspaceContextEntry, HostWorkspaceDetachment,
+    InstalledAgent, LiveHostError, LiveHostEvent, LiveHostLimits, LiveHostState, PlanPageV1,
+    PlanSummaryV1, SessionAgentMember, SessionAgentMessage, SessionAgentMessagePage,
+    SessionAgentRoster, SessionPageV1, SessionSummary, SessionViewV1, TurnCommandResponse,
+    TurnDispatcher, TurnSuspensionView, TurnTimelineItem, TurnTimelinePage, TurnTimelinePageV1,
 };
 use super::{read_cursor, read_model, timeline_projection};
 
@@ -1722,6 +1722,175 @@ impl LiveHost {
         })
     }
 
+    /// Delivers every terminal MA1 result that is still pending publication.
+    pub fn deliver_pending_agent_task_results(&self) -> Result<usize, LiveHostError> {
+        let ledger = self.ledger()?;
+        let mut pending = Vec::new();
+        for session_id in ledger.list_sessions().map_err(map_sqlite)? {
+            let watermark = ledger
+                .session_watermark(&session_id)
+                .map_err(map_sqlite)?
+                .ok_or(LiveHostError::CorruptState)?;
+            let facts = ledger
+                .read_facts(&session_id, 0, watermark.max_position, None)
+                .map_err(map_sqlite)?;
+            for fact in facts
+                .iter()
+                .filter(|fact| fact.kind.as_str() == "collaboration.assignee_started")
+            {
+                let started: DelegationStartedFact = decode_payload(fact)?;
+                let already_delivered = facts.iter().any(|candidate| {
+                    candidate.kind.as_str() == "collaboration.result_delivered"
+                        && payload_delegation_id(candidate).as_deref()
+                            == Some(started.delegation_id.as_str())
+                });
+                let terminal = facts.iter().any(|candidate| {
+                    candidate.turn_id.as_ref().map(TurnId::as_str)
+                        == Some(started.assignee_turn_id.as_str())
+                        && matches!(
+                            candidate.kind.as_str(),
+                            "turn.completed" | "turn.stopped" | "turn.failed"
+                        )
+                });
+                if terminal && !already_delivered {
+                    pending.push((session_id.as_str().to_owned(), started.delegation_id));
+                }
+            }
+        }
+        let mut delivered = 0;
+        for (session, delegation) in pending {
+            if self.deliver_agent_task_result(&session, &delegation)? {
+                delivered += 1;
+            }
+        }
+        Ok(delivered)
+    }
+
+    /// Replays safe unfinished MA1 work after a process restart.
+    pub fn recover_pending_agent_tasks(&self) -> Result<AgentTaskRecovery, LiveHostError> {
+        let ledger = self.ledger()?;
+        let sessions = ledger.list_sessions().map_err(map_sqlite)?;
+        let mut redispatch = Vec::new();
+        let mut delivery = Vec::new();
+        let mut unavailable = 0_usize;
+        let mut recovery_deferred = 0_usize;
+        for session_id in sessions {
+            let watermark = ledger
+                .session_watermark(&session_id)
+                .map_err(map_sqlite)?
+                .ok_or(LiveHostError::CorruptState)?;
+            let facts = ledger
+                .read_facts(&session_id, 0, watermark.max_position, None)
+                .map_err(map_sqlite)?;
+            for fact in facts
+                .iter()
+                .filter(|fact| fact.kind.as_str() == "collaboration.assignee_started")
+            {
+                let started: DelegationStartedFact = decode_payload(fact)?;
+                let delivered = facts.iter().any(|candidate| {
+                    candidate.kind.as_str() == "collaboration.result_delivered"
+                        && serde_json::from_str::<serde_json::Value>(candidate.payload.as_json())
+                            .ok()
+                            .and_then(|value| {
+                                value
+                                    .get("delegation_id")
+                                    .and_then(serde_json::Value::as_str)
+                                    .map(str::to_owned)
+                            })
+                            .as_deref()
+                            == Some(started.delegation_id.as_str())
+                });
+                if delivered {
+                    continue;
+                }
+                let terminal = facts.iter().any(|candidate| {
+                    candidate.turn_id.as_ref().map(TurnId::as_str)
+                        == Some(started.assignee_turn_id.as_str())
+                        && matches!(
+                            candidate.kind.as_str(),
+                            "turn.completed" | "turn.stopped" | "turn.failed"
+                        )
+                });
+                if terminal {
+                    delivery.push((session_id.as_str().to_owned(), started.delegation_id));
+                    continue;
+                }
+                let execution_count = facts
+                    .iter()
+                    .filter(|candidate| {
+                        candidate.kind.as_str() == "execution.started"
+                            && candidate.turn_id.as_ref().map(TurnId::as_str)
+                                == Some(started.assignee_turn_id.as_str())
+                    })
+                    .count();
+                let external_dispatch_crossed = facts.iter().any(|candidate| {
+                    candidate.turn_id.as_ref().map(TurnId::as_str)
+                        == Some(started.assignee_turn_id.as_str())
+                        && matches!(candidate.kind.as_str(), "model.started" | "effect.started")
+                });
+                let suspended = facts.iter().any(|candidate| {
+                    candidate.turn_id.as_ref().map(TurnId::as_str)
+                        == Some(started.assignee_turn_id.as_str())
+                        && candidate.kind.as_str() == "turn.suspended"
+                });
+                if execution_count > 1 || external_dispatch_crossed || suspended {
+                    recovery_deferred += 1;
+                    continue;
+                }
+                let execution = facts
+                    .iter()
+                    .rfind(|candidate| {
+                        candidate.kind.as_str() == "execution.started"
+                            && candidate.turn_id.as_ref().map(TurnId::as_str)
+                                == Some(started.assignee_turn_id.as_str())
+                    })
+                    .ok_or(LiveHostError::CorruptState)?;
+                let installed = self.installed(&started.definition_id).ok();
+                if installed.is_none_or(|installed| {
+                    installed.definition_revision != started.definition_revision
+                        || installed.snapshot_digest != started.snapshot_digest
+                }) {
+                    unavailable += 1;
+                    continue;
+                }
+                redispatch.push(CommittedTurn {
+                    session_id: session_id.clone(),
+                    turn_id: identity(&started.assignee_turn_id)?,
+                    execution_id: execution
+                        .execution_id
+                        .clone()
+                        .ok_or(LiveHostError::CorruptState)?,
+                    definition_id: started.definition_id,
+                    definition_revision: started.definition_revision,
+                    snapshot_digest: started.snapshot_digest,
+                    session_version: ledger
+                        .fact_commit_version(&execution.fact_id)
+                        .map_err(map_sqlite)?
+                        .ok_or(LiveHostError::CorruptState)?,
+                    committed_position: execution.position,
+                });
+            }
+        }
+        let mut recovery = AgentTaskRecovery {
+            deferred: recovery_deferred,
+            ..AgentTaskRecovery::default()
+        };
+        recovery.unavailable = unavailable;
+        for turn in redispatch {
+            self.state
+                .dispatcher
+                .dispatch(&turn)
+                .map_err(|_| LiveHostError::DurabilityUnavailable)?;
+            recovery.redispatched += 1;
+        }
+        for (session, delegation) in delivery {
+            if self.deliver_agent_task_result(&session, &delegation)? {
+                recovery.delivered += 1;
+            }
+        }
+        Ok(recovery)
+    }
+
     /// Delivers one terminal MA1 result exactly once; returns false while active.
     pub fn deliver_agent_task_result(
         &self,
@@ -1730,9 +1899,12 @@ impl LiveHost {
     ) -> Result<bool, LiveHostError> {
         let session_id = identity::<SessionId>(session)?;
         let mut ledger = self.ledger()?;
-        let binding = self.load_session(&ledger, &session_id)?;
+        let watermark = ledger
+            .session_watermark(&session_id)
+            .map_err(map_sqlite)?
+            .ok_or(LiveHostError::NotFound)?;
         let facts = ledger
-            .read_facts(&session_id, 0, binding.max_position, None)
+            .read_facts(&session_id, 0, watermark.max_position, None)
             .map_err(map_sqlite)?;
         if facts.iter().any(|fact| {
             fact.kind.as_str() == "collaboration.result_delivered"
@@ -1817,7 +1989,7 @@ impl LiveHost {
             )?,
         ];
         ledger
-            .commit(session_id, binding.session_version, batch)
+            .commit(session_id, watermark.session_version, batch)
             .map_err(map_sqlite)?;
         Ok(true)
     }
@@ -3548,6 +3720,14 @@ fn replay_input(kind: &str, input: ReplayInput<'_>) -> Result<String, LiveHostEr
 
 fn decode_payload<T: for<'de> Deserialize<'de>>(fact: &DurableFact) -> Result<T, LiveHostError> {
     serde_json::from_str(fact.payload.as_json()).map_err(|_| LiveHostError::CorruptState)
+}
+
+fn payload_delegation_id(fact: &DurableFact) -> Option<String> {
+    serde_json::from_str::<serde_json::Value>(fact.payload.as_json())
+        .ok()?
+        .get("delegation_id")?
+        .as_str()
+        .map(str::to_owned)
 }
 
 fn reject_other_command(facts: &[DurableFact], command_id: &str) -> Result<(), LiveHostError> {

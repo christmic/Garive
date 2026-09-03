@@ -27,7 +27,7 @@ const SELECT_COLUMNS_WITH_CREDENTIAL: &str =
 /// DAO over the singleton `runtime_management_config` row introduced in
 /// SQLite schema v9.
 ///
-/// Constructed via [`SqliteLedger::management_config_store`]; never owned
+/// Constructed via [`crate::SqliteLedger::management_config_store`]; never owned
 /// independently so the connection lifetime stays tied to the Ledger.
 pub struct ManagementConfigStore<'a> {
     connection: &'a mut Connection,

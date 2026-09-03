@@ -19,7 +19,7 @@ use std::{
     os::unix::fs::DirBuilderExt,
     path::{Path, PathBuf},
     sync::Arc,
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 use garive_runtime::headless::{
@@ -33,12 +33,16 @@ use garive_runtime::{
     CatalogueBoundGovernedExecutionFactory, CatalogueCapabilityPreparationFactory,
     DrivePendingOutcome, HeadlessWorkspaceExecutionFactory, HostClock, LiveHost, LiveHostLimits,
     LiveHostServer, LiveOutputHub, LiveOutputLimits, LocalExecutionWorker, ManagementCommitBody,
-    SqliteLedger, SqliteLedgerError, T1WorkspaceRuntimeConfig,
+    SqliteLedger, SqliteLedgerError, T1WorkspaceRuntimeConfig, TurnDispatcher,
     HEADLESS_WORKSPACE_EXECUTOR_REVISION, HEADLESS_WORKSPACE_POLICY_REVISION,
     MANAGEMENT_COMMIT_BODY_SCHEMA_VERSION,
 };
 
 const DEFAULT_LISTEN: &str = "127.0.0.1:8787";
+const STARTUP_MAX_RECOVERIES: u64 = 3;
+const STARTUP_MAX_TURNS: usize = 4_096;
+const STARTUP_MAX_ARGUMENT_BYTES: usize = 1_048_576;
+const RESULT_SWEEP_INTERVAL: Duration = Duration::from_secs(1);
 
 #[tokio::main]
 async fn main() {
@@ -158,23 +162,63 @@ async fn run() -> Result<(), String> {
     )
     .map_err(|_| "worker_construction_failed".to_owned())?
     .with_live_output(hub.clone());
+    let startup = worker
+        .recover_startup(
+            STARTUP_MAX_RECOVERIES,
+            STARTUP_MAX_TURNS,
+            STARTUP_MAX_ARGUMENT_BYTES,
+            &clock.recorded_at(),
+        )
+        .map_err(|_| "execution_recovery_failed".to_owned())?;
 
     let host = LiveHost::new_catalogue_with_live_output(
         &database_path,
         vec![installation.clone_installed_agent()],
         limits,
         clock,
-        dispatcher,
+        dispatcher.clone(),
         hub,
     )
     .map_err(|_| "host_construction_failed".to_owned())?
     .with_management_validator(Arc::new(AllowAllValidator));
+    let installed = installation.clone_installed_agent();
+    let mut recovered_executions = 0;
+    for turn in startup.dispatches {
+        if turn.definition_id == installed.definition_id
+            && turn.definition_revision == installed.definition_revision
+            && turn.snapshot_digest == installed.snapshot_digest
+        {
+            dispatcher
+                .dispatch(&turn)
+                .map_err(|_| "execution_recovery_queue_full".to_owned())?;
+            recovered_executions += 1;
+        }
+    }
+    if recovered_executions > 0 {
+        println!("garive-headless: recovered {recovered_executions} execution(s)");
+    }
 
     let recovered = collaboration_outbox
         .recover(&database_path)
         .map_err(|_| "collaboration_recovery_failed".to_owned())?;
     if recovered > 0 {
         println!("garive-headless: recovered {recovered} collaboration command(s)");
+    }
+    let agent_tasks = host
+        .recover_pending_agent_tasks()
+        .map_err(|error| format!("agent_task_recovery_failed: {error}"))?;
+    if agent_tasks.redispatched > 0
+        || agent_tasks.delivered > 0
+        || agent_tasks.deferred > 0
+        || agent_tasks.unavailable > 0
+    {
+        println!(
+            "garive-headless: recovered {} assignee turn(s), delivered {} result(s), deferred {} unsafe replay(s), skipped {} unavailable snapshot(s)",
+            agent_tasks.redispatched,
+            agent_tasks.delivered,
+            agent_tasks.deferred,
+            agent_tasks.unavailable
+        );
     }
 
     let worker_host = host.clone();
@@ -191,6 +235,7 @@ async fn run() -> Result<(), String> {
             let worker = Arc::new(worker);
             tokio::task::spawn_local(async move {
                 let mut pending_deliveries = Vec::<(String, String)>::new();
+                let mut last_result_sweep = Instant::now();
                 loop {
                     let attempt = headless_execution_attempt(headless_now_ms());
                     match drive_pending(&mut queue, worker.as_ref(), &attempt).await {
@@ -211,6 +256,10 @@ async fn run() -> Result<(), String> {
                             Ok(true)
                         )
                     });
+                    if last_result_sweep.elapsed() >= RESULT_SWEEP_INTERVAL {
+                        let _ = worker_host.deliver_pending_agent_task_results();
+                        last_result_sweep = Instant::now();
+                    }
                 }
             });
             let result = server.serve(std::future::pending()).await;

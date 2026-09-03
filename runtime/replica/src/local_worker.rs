@@ -715,7 +715,7 @@ pub struct LocalWorkerShutdownReport {
 
 /// Outcome of one [`drive_pending`] tick consumed by a headless binary caller.
 ///
-/// The four-way enum mirrors the [`crate::DesktopHost::drive_pending`] contract:
+/// The four-way enum mirrors the [`drive_pending`] contract:
 /// callers poll in a loop, sleeping on `Idle`, breaking on `Stopped`, and
 /// logging on `Failed` while continuing the loop.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

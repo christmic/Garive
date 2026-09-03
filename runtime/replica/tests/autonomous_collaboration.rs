@@ -533,17 +533,41 @@ async fn model_delegation_runs_child_without_suspending_parent_and_delivers_resu
     }));
 
     let drain = outbox.drain(&host);
-    let [(delegation_session, delegation_id)] = drain.delegation_ids.as_slice() else {
+    let [(_, delegation_id)] = drain.delegation_ids.as_slice() else {
         panic!("one autonomous delegation required")
     };
-    queue
+    drop(queue);
+    let (restarted, _, mut recovered_queue) = LiveHost::new_with_worker(
+        &database,
+        [installation.clone_installed_agent()],
+        LiveHostLimits {
+            max_command_bytes: 65_536,
+            event_batch_size: 64,
+            event_poll_interval_ms: 10,
+            activity: None,
+        },
+        Arc::new(FixedClock),
+        16,
+    )
+    .unwrap();
+    let recovery = restarted.recover_pending_agent_tasks().unwrap();
+    assert_eq!(recovery.redispatched, 1);
+    assert_eq!(recovery.delivered, 0);
+    assert_eq!(recovery.deferred, 0);
+    assert_eq!(recovery.unavailable, 0);
+    recovered_queue
         .try_run_next(&worker, &headless_execution_attempt(3_000))
         .await
         .unwrap();
-    assert!(host
-        .deliver_agent_task_result(delegation_session, delegation_id)
+    let recovery = restarted.recover_pending_agent_tasks().unwrap();
+    assert_eq!(recovery.redispatched, 0);
+    assert_eq!(recovery.delivered, 1);
+    assert_eq!(recovery.deferred, 0);
+    assert_eq!(recovery.unavailable, 0);
+    assert!(restarted
+        .deliver_agent_task_result(&session.session_id, delegation_id)
         .unwrap());
-    let messages = host
+    let messages = restarted
         .get_session_agent_messages(&session.session_id)
         .unwrap();
     assert_eq!(messages.messages.last().unwrap().text, "CHILD_RESULT");
