@@ -19,9 +19,10 @@ use garive_core::{
 use garive_ledger::{CanonicalPayload, FactDraft, FactId, FactKind, SessionId, ToolInvocationId};
 use garive_llm::{ModelItem, ModelOutputKind, ModelStreamEvent, TokenCount};
 use garive_runtime::{
-    plan_core_terminal, CommittedTurn, CoreTerminalContext, EffectiveRuntimeLimits, HostClock,
-    InstalledAgent, LiveHost, LiveHostLimits, LiveHostServer, LiveOutputEndReason, LiveOutputHub,
-    LiveOutputLimits, SqliteLedger, TurnDispatchError, TurnDispatcher,
+    plan_core_terminal, CommittedTurn, CoreTerminalContext, CreateAgentRequest,
+    EffectiveRuntimeLimits, HostClock, InstalledAgent, LiveHost, LiveHostLimits, LiveHostServer,
+    LiveOutputEndReason, LiveOutputHub, LiveOutputLimits, SqliteLedger, TurnDispatchError,
+    TurnDispatcher,
 };
 
 struct Clock {
@@ -392,6 +393,21 @@ async fn shipping_tui_round_trips_through_production_sqlite_runtime() {
             live_output,
         )
         .unwrap();
+        let working = temporary.path().join("agent");
+        fs::create_dir(&working).unwrap();
+        fs::write(working.join("AGENT.md"), "# Agent\n").unwrap();
+        host.create_agent(
+            "define-tui-agent",
+            &CreateAgentRequest {
+                agent_id: "definition-main".into(),
+                working_directory: working,
+                readonly_knowledge_directories: Vec::new(),
+                writable_knowledge_directory: None,
+            },
+        )
+        .unwrap();
+        host.activate_agent("activate-tui-agent", "definition-main")
+            .unwrap();
         let server = LiveHostServer::bind(host.clone(), "127.0.0.1:0".parse().unwrap())
             .await
             .unwrap();
