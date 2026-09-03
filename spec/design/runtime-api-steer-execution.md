@@ -38,7 +38,9 @@ by the context port. A successful terminal transaction is allowed only when no
 At each derive boundary Runtime projects, in ledger order:
 
 - the original trusted input;
-- prior model text/refusal output as assistant messages;
+- prior model output in its original semantic order, including non-display
+  opaque protocol continuation state followed by assistant text/refusal and
+  Tool intents;
 - each `turn.steered` payload as a user message;
 - existing governed effect observations.
 
@@ -46,6 +48,15 @@ The projection is bounded by `ContextRequest.through_position`; facts beyond
 that watermark cannot leak into the request. A steer advances the watermark
 only at the next derive boundary. Core consumes another iteration from the
 frozen Turn limit, so steering cannot create an unbounded loop.
+
+An adapter MUST retain every provider-issued block required to continue the
+same protocol conversation. For Messages-compatible extended thinking, the
+complete `thinking + signature` pair is encoded inside a versioned opaque
+reference, committed with `model.completed`, and decoded only by the matching
+provider adapter. Runtime and Core neither interpret it nor expose it as model
+visible reasoning. Unknown, malformed, cross-protocol, or partial opaque
+references fail before dispatch; silently dropping required continuation state
+is forbidden.
 
 ## Observable completion
 
@@ -62,3 +73,9 @@ signal that the invocation has started, accept steer through HTTP while still
 blocked, and then prove a later invocation contains the steer before the Turn
 becomes Completed. The test also proves a completed first Turn does not prevent
 a second Turn in the same Session.
+
+A separate real-provider acceptance run MUST prove the same ordering through
+the compiled H1 process. It records the first terminal, the second Turn's
+`model.started`, the acknowledged `turn.steered`, a later `model.completed`
+whose response follows the steer, and the final `turn.completed`. Credentials,
+secret headers, and provider endpoints are excluded from evidence.

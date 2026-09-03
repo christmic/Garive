@@ -25,8 +25,8 @@ use garive_core::{
 };
 use garive_llm::{
     InvokeOutcome, ModelCancellation, ModelCapability, ModelFuture, ModelItem, ModelObserver,
-    ModelPort, ModelRequest, ModelStreamEvent, ModelUsage, ObserverDecision, TokenCount,
-    UsageSource,
+    ModelPort, ModelRequest, ModelStreamEvent, ModelUsage, ObserverDecision, ReasoningContent,
+    TokenCount, UsageSource,
 };
 use garive_runtime::{
     drive_pending,
@@ -83,6 +83,9 @@ impl ModelPort for InFlightSteerModel {
                         .collect::<Vec<_>>()
                         .join("")
                 )),
+                garive_llm::ModelInputItem::ReasoningReference { reference } => {
+                    Some(format!("Reasoning:{reference}"))
+                }
                 _ => None,
             })
             .collect::<Vec<_>>()
@@ -93,10 +96,19 @@ impl ModelPort for InFlightSteerModel {
                 self.second_started.notify_one();
                 self.release_second.notified().await;
             }
+            let mut items = Vec::new();
+            if invocation == 2 {
+                items.push(ModelItem::Reasoning {
+                    content: ReasoningContent::OpaqueReference(
+                        r#"{"kind":"anthropic.messages.thinking.v1","thinking":"private chain","signature":"signed-chain"}"#.into(),
+                    ),
+                });
+            }
+            items.push(ModelItem::Text {
+                text: format!("response-{invocation}"),
+            });
             Ok(InvokeOutcome::Completed {
-                items: vec![ModelItem::Text {
-                    text: format!("response-{invocation}"),
-                }],
+                items,
                 usage: ModelUsage {
                     input_tokens: TokenCount::Known(1),
                     output_tokens: TokenCount::Known(1),
@@ -1001,6 +1013,7 @@ async fn runtime_api_completes_then_steers_an_in_flight_second_turn() {
     let requests = model.requests.lock().expect("requests mutex").clone();
     assert!(requests[2].contains("User:[steered] use this while running"));
     assert!(requests[2].contains("Assistant:response-2"));
+    assert!(requests[2].contains("anthropic.messages.thinking.v1"));
     let snapshot = SqliteLedger::open(&database_for_assert)
         .expect("reopen ledger")
         .load_turn(&garive_ledger::TurnId::try_from(second_turn_id.as_str()).expect("turn id"))

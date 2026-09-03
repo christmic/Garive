@@ -7,8 +7,8 @@ use garive_openai_responses as responses;
 use serde_json::{Map, Value};
 
 use crate::{
-    wire_tool_name, CompatibleProviderError, MessagesDeployment, MessagesMediaBinding,
-    ResponsesDeployment, ResponsesMediaBinding,
+    reasoning_reference, wire_tool_name, CompatibleProviderError, MessagesDeployment,
+    MessagesMediaBinding, ResponsesDeployment, ResponsesMediaBinding,
 };
 
 /// Maps one neutral request into the portable Responses protocol shape.
@@ -133,15 +133,10 @@ pub fn map_messages_request(
             }
             ModelInputItem::Message { role, content } => {
                 conversation_started = true;
-                turns.push(messages::Message::new(
-                    messages_role(*role)?,
-                    messages::MessageContent::Blocks(
-                        content
-                            .iter()
-                            .map(|part| messages_content(deployment, part))
-                            .collect::<Result<_, _>>()?,
-                    ),
-                ));
+                let role = messages_role(*role)?;
+                for part in content {
+                    push_message_block(&mut turns, role, messages_content(deployment, part)?);
+                }
             }
             ModelInputItem::ToolIntent {
                 model_call_id,
@@ -176,8 +171,13 @@ pub fn map_messages_request(
                     },
                 );
             }
-            ModelInputItem::ReasoningReference { .. } => {
-                return Err(CompatibleProviderError::UnsupportedInput)
+            ModelInputItem::ReasoningReference { reference } => {
+                conversation_started = true;
+                push_message_block(
+                    &mut turns,
+                    messages::MessageRole::Assistant,
+                    reasoning_reference::decode(reference)?,
+                );
             }
         }
     }

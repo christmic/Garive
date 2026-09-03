@@ -1,12 +1,14 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use garive_llm::{
-    ModelCapability, ModelInputContent, ModelInputItem, ModelOutputSettings, ModelRequest,
-    ModelRequestId, ModelRole, ModelTargetId, TextMode, ToolDescriptor,
+    InvokeOutcome, ModelCapability, ModelInputContent, ModelInputItem, ModelItem,
+    ModelOutputSettings, ModelRequest, ModelRequestId, ModelRole, ModelTargetId, ReasoningContent,
+    TextMode, ToolDescriptor,
 };
 use garive_provider_compatible::{
-    map_messages_request, map_responses_request, normalize_responses, wire_tool_name,
-    CompatibleProviderError, MessagesDeployment, ProtocolErrorPolicy, ResponsesDeployment,
+    map_messages_request, map_responses_request, normalize_messages, normalize_responses,
+    wire_tool_name, CompatibleProviderError, MessagesDeployment, ProtocolErrorPolicy,
+    ResponsesDeployment,
 };
 use serde_json::{json, Value};
 
@@ -181,6 +183,77 @@ fn shared_messages_request_case_uses_leading_system_and_default_limit() {
     assert_eq!(wire["system"][1]["text"], expected["system_blocks"][1]);
     assert_eq!(wire["messages"][1]["content"][0]["type"], "tool_result");
     assert_eq!(wire["output_config"]["format"]["type"], "json_schema");
+}
+
+#[test]
+fn messages_thinking_round_trips_as_one_ordered_assistant_turn() {
+    let fixture = fixture();
+    let response: garive_anthropic_messages::MessageResponse = serde_json::from_value(json!({
+        "id":"message-thinking",
+        "type":"message",
+        "role":"assistant",
+        "model":"fixture",
+        "content":[
+            {"type":"thinking","thinking":"private chain","signature":"signed-chain"},
+            {"type":"text","text":"draft"}
+        ],
+        "stop_reason":"end_turn",
+        "stop_sequence":null,
+        "usage":{"input_tokens":3,"output_tokens":4}
+    }))
+    .expect("official Messages response");
+    let InvokeOutcome::Completed { items, .. } = normalize_messages(&response, false).unwrap()
+    else {
+        panic!("completed outcome");
+    };
+    let reference = items
+        .iter()
+        .find_map(|item| match item {
+            ModelItem::Reasoning {
+                content: ReasoningContent::OpaqueReference(reference),
+            } => Some(reference.clone()),
+            _ => None,
+        })
+        .expect("opaque reasoning reference");
+
+    let mut request = neutral_request(&fixture["request_cases"][1]["request"]);
+    request.input_items = vec![
+        ModelInputItem::Message {
+            role: ModelRole::User,
+            content: vec![ModelInputContent::Text("initial".into())],
+        },
+        ModelInputItem::ReasoningReference { reference },
+        ModelInputItem::Message {
+            role: ModelRole::Assistant,
+            content: vec![ModelInputContent::Text("draft".into())],
+        },
+        ModelInputItem::Message {
+            role: ModelRole::User,
+            content: vec![ModelInputContent::Text("[steered] override".into())],
+        },
+    ];
+    let wire = serde_json::to_value(
+        map_messages_request(
+            &messages_deployment(&fixture["deployments"]["messages"]),
+            &request,
+        )
+        .expect("thinking replay maps"),
+    )
+    .unwrap();
+
+    assert_eq!(wire["messages"].as_array().unwrap().len(), 3);
+    assert_eq!(wire["messages"][1]["role"], "assistant");
+    assert_eq!(wire["messages"][1]["content"][0]["type"], "thinking");
+    assert_eq!(
+        wire["messages"][1]["content"][0]["thinking"],
+        "private chain"
+    );
+    assert_eq!(
+        wire["messages"][1]["content"][0]["signature"],
+        "signed-chain"
+    );
+    assert_eq!(wire["messages"][1]["content"][1]["type"], "text");
+    assert_eq!(wire["messages"][2]["role"], "user");
 }
 
 #[test]

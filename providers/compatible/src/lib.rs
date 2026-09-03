@@ -6,6 +6,7 @@
 mod deployment;
 mod error;
 mod outcome;
+mod reasoning_reference;
 mod request;
 mod stream;
 mod tool_name;

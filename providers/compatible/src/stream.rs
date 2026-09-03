@@ -8,7 +8,7 @@ use garive_llm::{
 use garive_openai_responses as responses;
 use serde_json::{Map, Value};
 
-use crate::{normalize_responses, CompatibleProviderError};
+use crate::{normalize_responses, reasoning_reference, CompatibleProviderError};
 
 /// Semantic events and optional terminal produced by one protocol stream event.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -559,11 +559,15 @@ impl MessagesStreamMapper {
                     content: ReasoningContent::ModelVisible(text),
                 }
             }
-            MessagesBlock::Thinking { signature, .. } => ModelItem::Reasoning {
-                content: ReasoningContent::OpaqueReference(signature),
+            MessagesBlock::Thinking { text, signature } => ModelItem::Reasoning {
+                content: ReasoningContent::OpaqueReference(reasoning_reference::encode_thinking(
+                    &text, &signature,
+                )?),
             },
             MessagesBlock::Redacted(data) => ModelItem::Reasoning {
-                content: ReasoningContent::OpaqueReference(data),
+                content: ReasoningContent::OpaqueReference(reasoning_reference::encode_redacted(
+                    &data,
+                )?),
             },
         };
         self.items.push(item.clone());

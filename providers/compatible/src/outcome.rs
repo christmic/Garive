@@ -7,7 +7,10 @@ use garive_llm::{
 };
 use garive_openai_responses as responses;
 
-use crate::{CompatibleProviderError, ErrorDisposition, ErrorSignature, ProtocolErrorPolicy};
+use crate::{
+    reasoning_reference, CompatibleProviderError, ErrorDisposition, ErrorSignature,
+    ProtocolErrorPolicy,
+};
 
 /// Classifies an exact typed protocol error without inspecting its message.
 pub fn classify_protocol_error(
@@ -185,10 +188,15 @@ fn messages_items(
                 })
             }
             messages::OutputBlock::Thinking(value) => Ok(ModelItem::Reasoning {
-                content: ReasoningContent::OpaqueReference(value.signature.clone()),
+                content: ReasoningContent::OpaqueReference(reasoning_reference::encode_thinking(
+                    &value.thinking,
+                    &value.signature,
+                )?),
             }),
             messages::OutputBlock::RedactedThinking(value) => Ok(ModelItem::Reasoning {
-                content: ReasoningContent::OpaqueReference(value.data.clone()),
+                content: ReasoningContent::OpaqueReference(reasoning_reference::encode_redacted(
+                    &value.data,
+                )?),
             }),
             messages::OutputBlock::ToolUse(value) => Ok(ModelItem::ToolIntent {
                 model_call_id: value.id.clone(),

@@ -715,30 +715,36 @@ fn completed_model_inputs(
     let values: serde_json::Value =
         serde_json::from_str(content.as_json()).map_err(|_| ContextPortError::PortFailure)?;
     let values = values.as_array().ok_or(ContextPortError::PortFailure)?;
-    let mut messages = Vec::new();
     let mut items = Vec::new();
     for value in values {
         match required_json_text(value, "kind")? {
-            "text" | "refusal" => messages.push(ModelInputContent::Text(
-                required_json_text(value, "text")?.to_owned(),
-            )),
+            "text" | "refusal" => {
+                let content =
+                    ModelInputContent::Text(required_json_text(value, "text")?.to_owned());
+                match items.last_mut() {
+                    Some(ModelInputItem::Message {
+                        role: ModelRole::Assistant,
+                        content: existing,
+                    }) => existing.push(content),
+                    _ => items.push(ModelInputItem::Message {
+                        role: ModelRole::Assistant,
+                        content: vec![content],
+                    }),
+                }
+            }
             "tool_intent" => items.push(ModelInputItem::ToolIntent {
                 model_call_id: required_json_text(value, "model_call_id")?.to_owned(),
                 tool_name: required_json_text(value, "tool_name")?.to_owned(),
                 arguments_json: required_json_text(value, "arguments_json")?.to_owned(),
             }),
+            "reasoning" if required_json_text(value, "visibility")? == "opaque_reference" => {
+                items.push(ModelInputItem::ReasoningReference {
+                    reference: required_json_text(value, "value")?.to_owned(),
+                });
+            }
             "reasoning" | "tool_observation" | "media_reference" => {}
             _ => return Err(ContextPortError::PortFailure),
         }
-    }
-    if !messages.is_empty() {
-        items.insert(
-            0,
-            ModelInputItem::Message {
-                role: ModelRole::Assistant,
-                content: messages,
-            },
-        );
     }
     Ok(items)
 }
