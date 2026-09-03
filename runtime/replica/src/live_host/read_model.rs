@@ -115,6 +115,9 @@ pub(super) fn project_session(
         api_version: "v1",
         session_id: session_id.as_str().to_owned(),
         agent_instance_id: binding.agent_instance_id,
+        agent_id: binding
+            .agent_id
+            .unwrap_or_else(|| binding.definition_id.clone()),
         definition_id: binding.definition_id,
         definition_revision: binding.definition_revision,
         opened_at: opened.recorded_at.clone(),
@@ -166,6 +169,8 @@ struct TurnProjection {
 #[serde(deny_unknown_fields)]
 struct SessionOpened {
     command_id: String,
+    #[serde(default)]
+    agent_id: Option<String>,
     definition_id: String,
     definition_revision: String,
     snapshot_digest: String,

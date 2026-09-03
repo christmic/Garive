@@ -394,19 +394,13 @@ impl LiveHostClient {
     pub async fn create_session(
         &self,
         command_id: &str,
-        definition_id: &str,
+        agent_id: &str,
     ) -> Result<CreateSessionResponse, HostClientError> {
-        if definition_id.is_empty() {
+        if agent_id.is_empty() {
             return Err(HostClientError::new(HostClientErrorCode::InvalidCommand));
         }
         let value = self
-            .post(
-                "v1/sessions",
-                command_id,
-                &SessionCommand {
-                    agent_definition_id: definition_id,
-                },
-            )
+            .post("v1/sessions", command_id, &SessionCommand { agent_id })
             .await?;
         validate_session_response(value)
     }
@@ -933,7 +927,7 @@ impl LiveHostClient {
 
 #[derive(Serialize)]
 struct SessionCommand<'a> {
-    agent_definition_id: &'a str,
+    agent_id: &'a str,
 }
 
 #[derive(Serialize)]

@@ -8,7 +8,7 @@ use prost::Message;
 #[test]
 fn generated_host_v1_round_trips_live_commands_events_and_responses() {
     let request = CreateSessionRequestV1 {
-        agent_definition_id: "definition-main".into(),
+        agent_id: "agent-main".into(),
     };
     assert_eq!(
         CreateSessionRequestV1::decode(request.encode_to_vec().as_slice()).unwrap(),
@@ -108,6 +108,7 @@ fn host_read_and_activity_tag_allocation_is_exact() {
         [1, 2]
     );
     let session = SessionSummaryV1 {
+        agent_id: "agent-main".into(),
         api_version: "v1".into(),
         session_id: "s".into(),
         agent_instance_id: "a".into(),
@@ -119,7 +120,7 @@ fn host_read_and_activity_tag_allocation_is_exact() {
         latest_turn_state: Some("future".into()),
         turn_count: 1,
     };
-    assert_eq!(top_level_tags(&session), (1..=10).collect::<Vec<_>>());
+    assert_eq!(top_level_tags(&session), (1..=11).collect::<Vec<_>>());
     assert_eq!(
         top_level_tags(&SessionPageV1 {
             api_version: "v1".into(),
@@ -216,6 +217,7 @@ fn generated_host_v1_round_trips_read_model_presence_and_max_positions() {
     );
 
     let session = SessionSummaryV1 {
+        agent_id: "agent-main".into(),
         api_version: "v1".into(),
         session_id: "session-1".into(),
         agent_instance_id: "agent-1".into(),

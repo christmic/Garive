@@ -220,6 +220,9 @@ pub struct SessionSummary {
     pub session_id: String,
     /// Runtime-owned Agent instance identity.
     pub agent_instance_id: String,
+    /// Stable registered Agent identity; empty only for legacy Host responses.
+    #[serde(default)]
+    pub agent_id: String,
     /// Immutable definition identity.
     pub definition_id: String,
     /// Immutable definition revision.

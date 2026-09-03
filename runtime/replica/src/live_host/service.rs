@@ -1319,18 +1319,54 @@ impl LiveHost {
         agent_definition_id: &str,
         agent_name: &str,
     ) -> Result<CreateSessionResponse, LiveHostError> {
-        validate_key(idempotency_key)?;
-        NamedAgent::new("founder", agent_name).map_err(|_| LiveHostError::InvalidRequest)?;
         let installed = self
             .state
             .installed
             .get(agent_definition_id)
             .ok_or(LiveHostError::NotFound)?;
+        self.create_bound_session(
+            idempotency_key,
+            agent_definition_id,
+            agent_name,
+            installed,
+            false,
+        )
+    }
+
+    /// Creates a Session for one active registered Agent.
+    pub fn create_registered_session(
+        &self,
+        idempotency_key: &str,
+        agent_id: &str,
+        agent_name: &str,
+    ) -> Result<CreateSessionResponse, LiveHostError> {
+        let installed = self.registered_installation(agent_id)?;
+        self.create_bound_session(idempotency_key, agent_id, agent_name, installed, true)
+    }
+
+    fn create_bound_session(
+        &self,
+        idempotency_key: &str,
+        agent_id: &str,
+        agent_name: &str,
+        installed: &InstalledAgent,
+        registered_identity: bool,
+    ) -> Result<CreateSessionResponse, LiveHostError> {
+        validate_key(idempotency_key)?;
+        NamedAgent::new("founder", agent_name).map_err(|_| LiveHostError::InvalidRequest)?;
         let session_id = SessionId::try_from(
             format!(
                 "session-{}",
                 digest(
-                    format!("{}:{idempotency_key}", installed.agent_instance_namespace).as_bytes()
+                    if registered_identity {
+                        format!(
+                            "{}:{agent_id}:{idempotency_key}",
+                            installed.agent_instance_namespace
+                        )
+                    } else {
+                        format!("{}:{idempotency_key}", installed.agent_instance_namespace)
+                    }
+                    .as_bytes()
                 )
             )
             .as_str(),
@@ -1343,7 +1379,7 @@ impl LiveHost {
                     format!(
                         "{}:{}:{}",
                         session_id.as_str(),
-                        installed.definition_id,
+                        agent_id,
                         installed.definition_revision
                     )
                     .as_bytes()
@@ -1354,6 +1390,7 @@ impl LiveHost {
         .map_err(|_| LiveHostError::InvalidRequest)?;
         let payload = json!({
             "command_id": idempotency_key,
+            "agent_id": agent_id,
             "definition_id": installed.definition_id,
             "definition_revision": installed.definition_revision,
             "snapshot_digest": installed.snapshot_digest,
@@ -1399,13 +1436,42 @@ impl LiveHost {
         agent_definition_id: &str,
         agent_name: &str,
     ) -> Result<SessionAgentRoster, LiveHostError> {
-        validate_key(idempotency_key)?;
-        let session_id = identity::<SessionId>(session)?;
         let installed = self
             .state
             .installed
             .get(agent_definition_id)
             .ok_or(LiveHostError::NotFound)?;
+        self.join_bound_session_agent(
+            idempotency_key,
+            session,
+            agent_definition_id,
+            agent_name,
+            installed,
+        )
+    }
+
+    /// Adds one active registered Agent as an equal named Session member.
+    pub fn join_registered_session_agent(
+        &self,
+        idempotency_key: &str,
+        session: &str,
+        agent_id: &str,
+        agent_name: &str,
+    ) -> Result<SessionAgentRoster, LiveHostError> {
+        let installed = self.registered_installation(agent_id)?;
+        self.join_bound_session_agent(idempotency_key, session, agent_id, agent_name, installed)
+    }
+
+    fn join_bound_session_agent(
+        &self,
+        idempotency_key: &str,
+        session: &str,
+        agent_id: &str,
+        agent_name: &str,
+        installed: &InstalledAgent,
+    ) -> Result<SessionAgentRoster, LiveHostError> {
+        validate_key(idempotency_key)?;
+        let session_id = identity::<SessionId>(session)?;
         let mut ledger = self.ledger()?;
         let binding = self.load_session(&ledger, &session_id)?;
         let facts = ledger
@@ -1417,7 +1483,9 @@ impl LiveHost {
                     .is_ok_and(|value| value.command_id == idempotency_key)
         }) {
             let value: JoinedAgent = decode_payload(existing)?;
-            if value.definition_id != agent_definition_id || value.agent_name != agent_name {
+            if value.agent_id.as_deref().unwrap_or(&value.definition_id) != agent_id
+                || value.agent_name != agent_name
+            {
                 return Err(LiveHostError::CommandConflict);
             }
             return self.get_session_agents(session);
@@ -1433,13 +1501,7 @@ impl LiveHost {
         }
         let agent_instance_id = format!(
             "agent-{}",
-            digest(
-                format!(
-                    "{}:{}:{}",
-                    session, agent_name, installed.definition_revision
-                )
-                .as_bytes()
-            )
+            digest(format!("{}:{}:{}", session, agent_id, agent_name).as_bytes())
         );
         NamedAgent::new(&agent_instance_id, agent_name)
             .map_err(|_| LiveHostError::InvalidRequest)?;
@@ -1454,7 +1516,7 @@ impl LiveHost {
             schema_version: 1,
             payload: CanonicalPayload::from_value(&json!({
                 "command_id":idempotency_key,"agent_instance_id":agent_instance_id,
-                "agent_name":agent_name,"definition_id":installed.definition_id,
+                "agent_id":agent_id,"agent_name":agent_name,"definition_id":installed.definition_id,
                 "definition_revision":installed.definition_revision,"snapshot_digest":installed.snapshot_digest,
             })).map_err(|_| LiveHostError::InvalidRequest)?,
             recorded_at: self.recorded_at()?,
@@ -2097,6 +2159,7 @@ impl LiveHost {
         )? {
             return Ok(response);
         }
+        self.validate_registered_agent_for_new_run(&binding.agent_id)?;
         let prior_facts = ledger
             .read_facts(&session_id, 0, binding.max_position, None)
             .map_err(map_sqlite)?;
@@ -2185,6 +2248,7 @@ impl LiveHost {
         )? {
             return Ok(response);
         }
+        self.validate_registered_agent_for_new_run(&member.agent_id)?;
         if has_open_turn_for_agent(&facts, agent_instance)? {
             return Err(LiveHostError::SessionBusy);
         }
@@ -2277,6 +2341,7 @@ impl LiveHost {
         )? {
             return Ok(response);
         }
+        self.validate_registered_agent_for_new_run(&binding.agent_id)?;
         if has_open_turn(&facts) {
             return Err(LiveHostError::SessionBusy);
         }
@@ -2704,6 +2769,35 @@ impl LiveHost {
             .ok_or(LiveHostError::CorruptState)
     }
 
+    fn registered_installation(&self, agent_id: &str) -> Result<&InstalledAgent, LiveHostError> {
+        self.require_active_agent(agent_id)?;
+        if let Some(installed) = self.state.installed.get(agent_id) {
+            return Ok(installed);
+        }
+        if self.state.installed.len() == 1 {
+            return self
+                .state
+                .installed
+                .values()
+                .next()
+                .ok_or(LiveHostError::CorruptState);
+        }
+        Err(LiveHostError::PreconditionFailed)
+    }
+
+    fn validate_registered_agent_for_new_run(&self, agent_id: &str) -> Result<(), LiveHostError> {
+        let mut ledger = self.ledger()?;
+        let registry = ledger.agent_registry_store();
+        match registry.get(agent_id) {
+            Ok(_) => registry
+                .require_active(agent_id)
+                .map(|_| ())
+                .map_err(map_agent_registry),
+            Err(AgentRegistryError::NotFound) => Ok(()),
+            Err(error) => Err(map_agent_registry(error)),
+        }
+    }
+
     fn installed_for_facts(&self, facts: &[DurableFact]) -> Result<&InstalledAgent, LiveHostError> {
         let opened = facts.first().ok_or(LiveHostError::CorruptState)?;
         if opened.position != 1 || opened.kind.as_str() != "session.opened" {
@@ -2763,6 +2857,7 @@ impl LiveHost {
             api_version: "v1",
             session_id: session_id.as_str().to_owned(),
             agent_instance_id: binding.agent_instance_id.as_str().to_owned(),
+            agent_id: binding.agent_id.clone(),
             definition_id: binding.definition_id.as_str().to_owned(),
             definition_revision: binding.definition_revision.as_str().to_owned(),
             opened_at,
@@ -2807,6 +2902,9 @@ impl LiveHost {
         Ok(SessionBinding {
             agent_instance_id: identity(&payload.agent_instance_id)
                 .map_err(|_| LiveHostError::CorruptState)?,
+            agent_id: payload
+                .agent_id
+                .unwrap_or_else(|| payload.definition_id.clone()),
             definition_id: identity(&payload.definition_id)
                 .map_err(|_| LiveHostError::CorruptState)?,
             definition_revision: identity(&payload.definition_revision)
@@ -2998,6 +3096,7 @@ impl LiveHost {
 
 struct SessionBinding {
     agent_instance_id: AgentInstanceId,
+    agent_id: String,
     definition_id: AgentDefinitionId,
     definition_revision: AgentDefinitionRevision,
     snapshot_digest: String,
@@ -3538,6 +3637,8 @@ struct ContinueReplay<'a> {
 #[serde(deny_unknown_fields)]
 struct SessionOpened {
     command_id: String,
+    #[serde(default)]
+    agent_id: Option<String>,
     definition_id: String,
     definition_revision: String,
     snapshot_digest: String,
@@ -3550,6 +3651,8 @@ struct SessionOpened {
 #[serde(deny_unknown_fields)]
 struct JoinedAgent {
     command_id: String,
+    #[serde(default)]
+    agent_id: Option<String>,
     agent_instance_id: String,
     agent_name: String,
     definition_id: String,
@@ -3629,6 +3732,9 @@ fn roster_from_facts(facts: &[DurableFact]) -> Result<SessionAgentRoster, LiveHo
         display_name: founder
             .agent_name
             .unwrap_or_else(|| founder.definition_id.clone()),
+        agent_id: founder
+            .agent_id
+            .unwrap_or_else(|| founder.definition_id.clone()),
         definition_id: founder.definition_id,
         definition_revision: founder.definition_revision,
         founding_member: true,
@@ -3641,6 +3747,9 @@ fn roster_from_facts(facts: &[DurableFact]) -> Result<SessionAgentRoster, LiveHo
         members.push(SessionAgentMember {
             agent_instance_id: joined.agent_instance_id,
             display_name: joined.agent_name,
+            agent_id: joined
+                .agent_id
+                .unwrap_or_else(|| joined.definition_id.clone()),
             definition_id: joined.definition_id,
             definition_revision: joined.definition_revision,
             founding_member: false,

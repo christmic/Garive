@@ -168,6 +168,8 @@ pub struct SessionSummaryV1 {
     pub session_id: String,
     /// Runtime-owned Agent instance identity.
     pub agent_instance_id: String,
+    /// Stable registered Agent identity.
+    pub agent_id: String,
     /// Immutable installed definition identity.
     pub definition_id: String,
     /// Immutable installed definition revision.
@@ -488,6 +490,8 @@ pub struct SessionAgentMember {
     pub agent_instance_id: String,
     /// Session-unique product display name; never authority.
     pub display_name: String,
+    /// Stable registered Agent identity.
+    pub agent_id: String,
     /// Exact installed Agent Definition identity.
     pub definition_id: String,
     /// Exact immutable Definition revision.
@@ -669,6 +673,8 @@ pub struct SessionSummary {
     pub session_id: String,
     /// Runtime-owned Agent instance bound to the Session.
     pub agent_instance_id: String,
+    /// Stable registered Agent identity.
+    pub agent_id: String,
     /// Immutable definition identity captured when the Session opened.
     pub definition_id: String,
     /// Immutable definition revision captured when the Session opened.
@@ -913,7 +919,10 @@ impl Error for LiveHostError {}
 #[derive(Clone, Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct CreateSessionBody {
-    pub agent_definition_id: String,
+    #[serde(default)]
+    pub agent_id: Option<String>,
+    #[serde(default)]
+    pub agent_definition_id: Option<String>,
     #[serde(default)]
     pub agent_name: Option<String>,
 }
@@ -921,7 +930,10 @@ pub(crate) struct CreateSessionBody {
 #[derive(Clone, Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct JoinSessionAgentBody {
-    pub agent_definition_id: String,
+    #[serde(default)]
+    pub agent_id: Option<String>,
+    #[serde(default)]
+    pub agent_definition_id: Option<String>,
     pub agent_name: String,
 }
 

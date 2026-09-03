@@ -104,6 +104,8 @@ struct Started {
 #[serde(deny_unknown_fields)]
 struct SessionOpened {
     command_id: String,
+    #[serde(default, rename = "agent_id")]
+    _agent_id: Option<String>,
     definition_id: String,
     definition_revision: String,
     snapshot_digest: String,

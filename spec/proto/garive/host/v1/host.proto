@@ -53,39 +53,57 @@ message CreateSessionRequestV1 {
 
 // Lifecycle of one registered Agent.
 enum AgentStatusV1 {
+  // Missing status is invalid on a materialized Agent.
   AGENT_STATUS_V1_UNSPECIFIED = 0;
+  // Defined but unavailable for new work.
   AGENT_STATUS_V1_INACTIVE = 1;
+  // Admitted for new Session membership and Runs.
   AGENT_STATUS_V1_ACTIVE = 2;
+  // Administratively retired until reactivation.
   AGENT_STATUS_V1_ARCHIVED = 3;
 }
 
 // Public metadata for one directory-backed Agent.
 message AgentV1 {
+  // Exact Host API version.
   string api_version = 1;
+  // Stable immutable Agent identity.
   string agent_id = 2;
+  // Immutable resource root and ordinary workspace.
   string working_directory = 3;
+  // Ordered read-only knowledge roots.
   repeated string readonly_knowledge_directories = 4;
+  // Optional single read/write knowledge root.
   optional string writable_knowledge_directory = 5;
+  // Current administrative lifecycle.
   AgentStatusV1 status = 6;
 }
 
 // Creates one inactive directory-backed Agent.
 message CreateAgentRequestV1 {
+  // Stable immutable Agent identity.
   string agent_id = 1;
+  // Immutable resource root and ordinary workspace.
   string working_directory = 2;
+  // Ordered read-only knowledge roots.
   repeated string readonly_knowledge_directories = 3;
+  // Optional single read/write knowledge root.
   optional string writable_knowledge_directory = 4;
 }
 
 // Atomically replaces the mutable knowledge-directory binding.
 message UpdateAgentKnowledgeRequestV1 {
+  // Complete replacement ordered read-only roots.
   repeated string readonly_knowledge_directories = 1;
+  // Complete replacement read/write root; absence clears it.
   optional string writable_knowledge_directory = 2;
 }
 
 // Stable bounded Agent registry page.
 message AgentPageV1 {
+  // Exact Host API version.
   string api_version = 1;
+  // Agents in stable ascending identity order.
   repeated AgentV1 agents = 2;
 }
 
@@ -189,6 +207,8 @@ message SessionSummaryV1 {
   optional string latest_turn_state = 9;
   // Count of verified first-start Turn facts in this Session.
   uint64 turn_count = 10;
+  // Stable registered Agent identity bound to the founding member.
+  string agent_id = 11;
 }
 
 // Reverse-opened bounded Session navigation page.

@@ -11,7 +11,7 @@
     {
       "name": "create-session",
       "idempotency_key": "create-1",
-      "body": {"agent_definition_id": "definition-main"},
+      "body": {"agent_id": "definition-main"},
       "expected_positions": [1],
       "expected_last_position": 1
     },

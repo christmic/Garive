@@ -343,13 +343,22 @@ async fn create_session(State(host): State<LiveHost>, headers: HeaderMap, body: 
     let result = async {
         let key = idempotency_key(&headers)?;
         let body: CreateSessionBody = decode_body(&host, body).await?;
-        host.create_named_session(
-            key,
-            &body.agent_definition_id,
-            body.agent_name
-                .as_deref()
-                .unwrap_or(&body.agent_definition_id),
-        )
+        match (
+            body.agent_id.as_deref(),
+            body.agent_definition_id.as_deref(),
+        ) {
+            (Some(agent_id), None) => host.create_registered_session(
+                key,
+                agent_id,
+                body.agent_name.as_deref().unwrap_or(agent_id),
+            ),
+            (None, Some(definition_id)) => host.create_named_session(
+                key,
+                definition_id,
+                body.agent_name.as_deref().unwrap_or(definition_id),
+            ),
+            _ => Err(LiveHostError::InvalidRequest),
+        }
     }
     .await;
     command_response(result)
@@ -364,12 +373,18 @@ async fn join_session_agent(
     let result = async {
         let key = idempotency_key(&headers)?;
         let body: JoinSessionAgentBody = decode_body(&host, body).await?;
-        host.join_session_agent(
-            key,
-            &session_id,
-            &body.agent_definition_id,
-            &body.agent_name,
-        )
+        match (
+            body.agent_id.as_deref(),
+            body.agent_definition_id.as_deref(),
+        ) {
+            (Some(agent_id), None) => {
+                host.join_registered_session_agent(key, &session_id, agent_id, &body.agent_name)
+            }
+            (None, Some(definition_id)) => {
+                host.join_session_agent(key, &session_id, definition_id, &body.agent_name)
+            }
+            _ => Err(LiveHostError::InvalidRequest),
+        }
     }
     .await;
     command_response(result)

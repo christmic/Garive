@@ -1,4 +1,5 @@
 use std::{
+    fs,
     net::{IpAddr, Ipv4Addr, SocketAddr},
     sync::Arc,
 };
@@ -9,9 +10,9 @@ use garive_host_client::{ClientLimits, HostTerminal, LiveHostClient};
 use garive_ledger::{ExecutionId, SessionId, TurnId};
 use garive_llm::{ModelItem, TokenCount};
 use garive_runtime::{
-    plan_core_terminal, CoreTerminalContext, EffectiveRuntimeLimits, GoalCommandAuthority,
-    GoalCommandAuthorityError, HostClock, InstalledAgent, LiveHost, LiveHostLimits, LiveHostServer,
-    SqliteLedger, TurnDispatchError, TurnDispatcher,
+    plan_core_terminal, CoreTerminalContext, CreateAgentRequest, EffectiveRuntimeLimits,
+    GoalCommandAuthority, GoalCommandAuthorityError, HostClock, InstalledAgent, LiveHost,
+    LiveHostLimits, LiveHostServer, SqliteLedger, TurnDispatchError, TurnDispatcher,
 };
 use tempfile::tempdir;
 use tokio::sync::oneshot;
@@ -87,6 +88,21 @@ async fn shared_client_completes_a_real_runtime_host_turn() {
     )
     .unwrap()
     .with_goal_authority(Arc::new(AllowGoalAuthority));
+    let working = directory.path().join("agent");
+    fs::create_dir(&working).unwrap();
+    fs::write(working.join("AGENT.md"), "# Agent\n").unwrap();
+    host.create_agent(
+        "define-agent",
+        &CreateAgentRequest {
+            agent_id: "definition-main".into(),
+            working_directory: working,
+            readonly_knowledge_directories: Vec::new(),
+            writable_knowledge_directory: None,
+        },
+    )
+    .unwrap();
+    host.activate_agent("activate-agent", "definition-main")
+        .unwrap();
     let server = LiveHostServer::bind(host, SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 0))
         .await
         .unwrap();

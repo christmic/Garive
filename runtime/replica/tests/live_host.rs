@@ -2184,6 +2184,19 @@ async fn agent_registry_http_persists_exact_metadata_and_lifecycle() {
         .unwrap();
     assert_eq!(forbidden.status(), reqwest::StatusCode::BAD_REQUEST);
 
+    let inactive_session = client
+        .post(format!("http://{address}/v1/sessions"))
+        .header("idempotency-key", "inactive-session")
+        .header("content-type", "application/json")
+        .body(r#"{"agent_id":"atlas"}"#)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(
+        inactive_session.status(),
+        reqwest::StatusCode::PRECONDITION_FAILED
+    );
+
     let active = client
         .post(format!("{base}/atlas/activate"))
         .header("idempotency-key", "agent-activate")
@@ -2197,6 +2210,43 @@ async fn agent_registry_http_persists_exact_metadata_and_lifecycle() {
         .unwrap();
     let active: Value = serde_json::from_slice(&active).unwrap();
     assert_eq!(active["status"], "active");
+    let session = client
+        .post(format!("http://{address}/v1/sessions"))
+        .header("idempotency-key", "active-session")
+        .header("content-type", "application/json")
+        .body(r#"{"agent_id":"atlas"}"#)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(session.status(), reqwest::StatusCode::OK);
+    let session: Value = serde_json::from_slice(&session.bytes().await.unwrap()).unwrap();
+    let session_view = client
+        .get(format!(
+            "http://{address}/v1/sessions/{}",
+            session["session_id"].as_str().unwrap()
+        ))
+        .send()
+        .await
+        .unwrap();
+    let session_view: Value = serde_json::from_slice(&session_view.bytes().await.unwrap()).unwrap();
+    assert_eq!(session_view["session"]["agent_id"], "atlas");
+    fs::remove_file(working.join("AGENT.md")).unwrap();
+    let invalid_run = client
+        .post(format!(
+            "http://{address}/v1/sessions/{}/turns",
+            session["session_id"].as_str().unwrap()
+        ))
+        .header("idempotency-key", "invalid-agent-run")
+        .header("content-type", "application/json")
+        .body(r#"{"text":"must not run"}"#)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(
+        invalid_run.status(),
+        reqwest::StatusCode::PRECONDITION_FAILED
+    );
+    fs::write(working.join("AGENT.md"), "# Atlas restored\n").unwrap();
     let archived = client
         .post(format!("{base}/atlas/archive"))
         .header("idempotency-key", "agent-archive")
@@ -2210,6 +2260,18 @@ async fn agent_registry_http_persists_exact_metadata_and_lifecycle() {
         .unwrap();
     let archived: Value = serde_json::from_slice(&archived).unwrap();
     assert_eq!(archived["status"], "archived");
+    let archived_session = client
+        .post(format!("http://{address}/v1/sessions"))
+        .header("idempotency-key", "archived-session")
+        .header("content-type", "application/json")
+        .body(r#"{"agent_id":"atlas"}"#)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(
+        archived_session.status(),
+        reqwest::StatusCode::PRECONDITION_FAILED
+    );
 
     let _ = shutdown_tx.send(());
     task.await.unwrap().unwrap();
