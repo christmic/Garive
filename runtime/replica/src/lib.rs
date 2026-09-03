@@ -4,6 +4,7 @@
 #![deny(missing_docs)]
 
 mod agent_installation;
+mod agent_registry;
 mod autonomous_collaboration;
 #[cfg(unix)]
 mod builtin_patch_executor;
@@ -73,6 +74,11 @@ mod t1_system_composition;
 pub use agent_installation::{
     CatalogueBoundGovernedExecutionFactory, RuntimeAgentCatalogue, RuntimeAgentInstallation,
     RuntimeAgentInstallationError, SnapshotBoundGovernedExecutionFactory,
+};
+pub use agent_registry::{
+    validate_active_binding, validate_create_request, validate_knowledge_update, AgentStatus,
+    CreateAgentRequest, RegisteredAgent, RegisteredAgentPage, UpdateAgentKnowledgeRequest,
+    MAX_AGENT_INSTRUCTION_BYTES,
 };
 pub use autonomous_collaboration::{
     AutonomousCollaborationDrain, AutonomousCollaborationExecutor, AutonomousCollaborationOrigin,
