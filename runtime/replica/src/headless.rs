@@ -66,11 +66,13 @@ pub const HEADLESS_LEGACY_AGENT_REVISION: &str = "headless.agent.v1";
 
 /// Default per-request output-token ceiling applied to every headless model port.
 pub const HEADLESS_DEFAULT_MAX_OUTPUT_TOKENS: u64 = 4_096;
+/// Default wall-clock budget for one headless Agent execution and model request.
+pub const HEADLESS_DEFAULT_DEADLINE_MS: u64 = 120_000;
 
 /// Default bounded HTTP limits applied to every headless model port.
 pub const HEADLESS_DEFAULT_HTTP_LIMITS: RuntimeHttpLimits = RuntimeHttpLimits {
     connect_timeout_ms: 1_000,
-    request_timeout_ms: 30_000,
+    request_timeout_ms: HEADLESS_DEFAULT_DEADLINE_MS,
     max_response_bytes: 1_048_576,
 };
 
@@ -300,8 +302,13 @@ fn build_headless_installation_inner(
         })
         .collect::<Result<Vec<_>, _>>()
         .map_err(|_| HeadlessConstructionError::ResolutionFailed)?;
-    let limits = DefaultLimits::new(8, Some(16_384), Some(4_096), Some(30_000))
-        .map_err(|_| HeadlessConstructionError::ResolutionFailed)?;
+    let limits = DefaultLimits::new(
+        8,
+        Some(16_384),
+        Some(4_096),
+        Some(HEADLESS_DEFAULT_DEADLINE_MS),
+    )
+    .map_err(|_| HeadlessConstructionError::ResolutionFailed)?;
     let governance = GovernancePolicy::new(
         "headless.governance",
         "headless.governance.v1",
@@ -543,6 +550,19 @@ mod tests {
             policy.recovery_policy_revision,
             HEADLESS_RECOVERY_POLICY_REVISION
         );
+    }
+
+    #[test]
+    fn model_timeout_covers_the_agent_execution_deadline() {
+        let configuration = sample_configuration();
+        let (installation, _) = build_headless_installation(&configuration).unwrap();
+        let deadline = installation
+            .clone_installed_agent()
+            .runtime_limits
+            .deadline_budget_ms
+            .expect("headless deadline");
+        assert!(deadline >= 120_000);
+        assert!(HEADLESS_DEFAULT_HTTP_LIMITS.request_timeout_ms >= deadline);
     }
 
     #[test]
