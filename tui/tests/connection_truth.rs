@@ -23,7 +23,11 @@ fn connection_hint_keeps_truth_and_safe_action_at_full_and_narrow_widths() {
         hint(&model, 100),
         "/reconnect resume events  ·  Updates paused · attempt 2/5"
     );
-    assert!(hint(&model, 40).starts_with("/reconnect resume events"));
+    let narrow = hint(&model, 40);
+    assert!(
+        narrow.starts_with("/reconnect resume events"),
+        "narrow footer: {narrow:?}"
+    );
 
     model.connection = ConnectionState::Reconnecting { attempt: 3 };
     assert_eq!(
@@ -84,8 +88,9 @@ fn hint(model: &AppModel, width: u16) -> String {
         &mut buffer,
         &mut view::RenderCache::default(),
     );
-    (0..width)
-        .map(|column| buffer[(column, height - 1)].symbol())
+    let hint = view::test_hint_area(model, area);
+    (hint.x..hint.right())
+        .map(|column| buffer[(column, hint.y)].symbol())
         .collect::<String>()
         .trim()
         .to_owned()

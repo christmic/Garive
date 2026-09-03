@@ -23,8 +23,9 @@ fn hint(model: &AppModel) -> String {
         &mut buffer,
         &mut view::RenderCache::default(),
     );
-    (0..area.width)
-        .map(|x| buffer[(x, area.height - 1)].symbol())
+    let hint = view::test_hint_area(model, area);
+    (hint.x..hint.right())
+        .map(|x| buffer[(x, hint.y)].symbol())
         .collect::<String>()
         .trim()
         .to_owned()

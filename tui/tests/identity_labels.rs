@@ -44,7 +44,8 @@ fn opaque_identities_use_neutral_visual_and_linear_labels() {
 
     model.overlay = None;
     let context = frame(&model, 100, 16);
-    assert!(context.contains("Session 1  ·  Agent"), "{context}");
+    assert!(context.contains("Session 1"), "{context}");
+    assert!(!context.contains("Agent"), "{context}");
     assert!(!context.contains(PRIVATE_DEFINITION), "{context}");
     assert!(!context.contains(PRIVATE_SESSION), "{context}");
 }

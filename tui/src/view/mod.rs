@@ -58,6 +58,12 @@ pub(crate) fn render_cached(
     render_cached_with_motion(model, theme, MotionFrame::reduced(), area, buffer, cache)
 }
 
+#[cfg(test)]
+#[allow(dead_code)]
+pub(crate) fn test_hint_area(model: &AppModel, area: Rect) -> Rect {
+    FrameLayout::resolve(model, area).hint
+}
+
 pub(crate) fn render_cached_with_motion(
     model: &AppModel,
     theme: Theme,
