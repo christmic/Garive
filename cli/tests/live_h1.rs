@@ -1,4 +1,5 @@
 use std::{
+    fs,
     io::{Read, Write},
     net::{IpAddr, Ipv4Addr, SocketAddr, TcpListener},
     path::PathBuf,
@@ -11,9 +12,9 @@ use garive_core::{AgentFailureReason, AgentOutcome, ExecutionReport, UsageSummar
 use garive_ledger::{ExecutionId, SessionId, TurnId};
 use garive_llm::{ModelItem, TokenCount};
 use garive_runtime::{
-    plan_core_terminal, CommittedTurn, CoreTerminalContext, EffectiveRuntimeLimits, HostClock,
-    InstalledAgent, LiveHost, LiveHostLimits, LiveHostServer, SqliteLedger, TurnDispatchError,
-    TurnDispatcher,
+    plan_core_terminal, CommittedTurn, CoreTerminalContext, CreateAgentRequest,
+    EffectiveRuntimeLimits, HostClock, InstalledAgent, LiveHost, LiveHostLimits, LiveHostServer,
+    SqliteLedger, TurnDispatchError, TurnDispatcher,
 };
 use tempfile::TempDir;
 use tokio::sync::oneshot;
@@ -160,6 +161,9 @@ impl TurnDispatcher for CompletingDispatcher {
 fn runtime_host(mode: TerminalMode) -> RuntimeHost {
     let directory = tempfile::tempdir().unwrap();
     let database = directory.path().join("host.sqlite3");
+    let working = directory.path().join("agent");
+    fs::create_dir(&working).unwrap();
+    fs::write(working.join("AGENT.md"), "# Agent\n").unwrap();
     let (ready_tx, ready_rx) = mpsc::channel();
     let task = thread::spawn(move || {
         tokio::runtime::Runtime::new()
@@ -181,6 +185,18 @@ fn runtime_host(mode: TerminalMode) -> RuntimeHost {
                     }),
                 )
                 .unwrap();
+                host.create_agent(
+                    "define-cli-agent",
+                    &CreateAgentRequest {
+                        agent_id: "definition-1".into(),
+                        working_directory: working,
+                        readonly_knowledge_directories: Vec::new(),
+                        writable_knowledge_directory: None,
+                    },
+                )
+                .unwrap();
+                host.activate_agent("activate-cli-agent", "definition-1")
+                    .unwrap();
                 let server =
                     LiveHostServer::bind(host, SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 0))
                         .await
