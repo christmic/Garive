@@ -168,9 +168,40 @@ pub fn validate_active_binding(
     }
     validate_instruction(&agent.working_directory.join("AGENT.md"), true)?;
     validate_instruction(&agent.working_directory.join("SOUL.md"), false)?;
-    let skills = agent.working_directory.join("skills");
-    if skills.exists() && (!skills.is_dir() || skills.symlink_metadata().is_err()) {
-        return Err(AgentRegistryValidationError::InvalidAgentResources);
+    validate_skills(&agent.working_directory.join("skills"))?;
+    Ok(())
+}
+
+fn validate_skills(root: &Path) -> Result<(), AgentRegistryValidationError> {
+    match fs::symlink_metadata(root) {
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(_) => return Err(AgentRegistryValidationError::InvalidAgentResources),
+        Ok(metadata) if metadata.file_type().is_symlink() || !metadata.is_dir() => {
+            return Err(AgentRegistryValidationError::InvalidAgentResources)
+        }
+        Ok(_) => {}
+    }
+    let mut pending = vec![root.to_owned()];
+    let mut entries = 0_usize;
+    while let Some(directory) = pending.pop() {
+        for entry in fs::read_dir(directory)
+            .map_err(|_| AgentRegistryValidationError::InvalidAgentResources)?
+        {
+            let entry = entry.map_err(|_| AgentRegistryValidationError::InvalidAgentResources)?;
+            entries += 1;
+            if entries > 4_096 {
+                return Err(AgentRegistryValidationError::InvalidAgentResources);
+            }
+            let kind = entry
+                .file_type()
+                .map_err(|_| AgentRegistryValidationError::InvalidAgentResources)?;
+            if kind.is_symlink() || (!kind.is_dir() && !kind.is_file()) {
+                return Err(AgentRegistryValidationError::InvalidAgentResources);
+            }
+            if kind.is_dir() {
+                pending.push(entry.path());
+            }
+        }
     }
     Ok(())
 }

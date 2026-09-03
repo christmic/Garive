@@ -341,3 +341,92 @@ const fn status_text(status: AgentStatus) -> &'static str {
         AgentStatus::Archived => "archived",
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::fs;
+
+    use super::*;
+    use crate::SqliteLedger;
+
+    #[test]
+    fn registry_survives_restart_and_enforces_lifecycle() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let working = temp.path().join("working");
+        let readonly = temp.path().join("readonly");
+        fs::create_dir(&working).expect("working");
+        fs::create_dir(&readonly).expect("readonly");
+        fs::write(working.join("AGENT.md"), "# Agent\n").expect("agent markdown");
+        let database = temp.path().join("runtime.db");
+        let request = CreateAgentRequest {
+            agent_id: "worker.one".into(),
+            working_directory: working,
+            readonly_knowledge_directories: Vec::new(),
+            writable_knowledge_directory: None,
+        };
+        let mut ledger = SqliteLedger::open(&database).expect("ledger");
+        let mut registry = ledger.agent_registry_store();
+        let created = registry.create("create-1", &request).expect("created");
+        assert_eq!(created.status, AgentStatus::Inactive);
+        assert_eq!(registry.create("create-1", &request).unwrap(), created);
+        assert_eq!(
+            registry
+                .activate("activate-1", "worker.one")
+                .unwrap()
+                .status,
+            AgentStatus::Active
+        );
+        registry.require_active("worker.one").expect("active");
+        let update = UpdateAgentKnowledgeRequest {
+            readonly_knowledge_directories: vec![readonly],
+            writable_knowledge_directory: None,
+        };
+        assert_eq!(
+            registry
+                .update_knowledge("update-1", "worker.one", &update)
+                .unwrap()
+                .readonly_knowledge_directories
+                .len(),
+            1
+        );
+        assert_eq!(
+            registry.archive("archive-1", "worker.one").unwrap().status,
+            AgentStatus::Archived
+        );
+        assert_eq!(
+            registry.require_active("worker.one"),
+            Err(AgentRegistryError::PreconditionFailed)
+        );
+        drop(registry);
+        drop(ledger);
+        let mut reopened = SqliteLedger::open(database).expect("reopened");
+        assert_eq!(
+            reopened
+                .agent_registry_store()
+                .get("worker.one")
+                .unwrap()
+                .status,
+            AgentStatus::Archived
+        );
+    }
+
+    #[test]
+    fn command_reuse_with_different_semantics_conflicts() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        fs::write(temp.path().join("AGENT.md"), "# Agent\n").expect("agent markdown");
+        let mut ledger = SqliteLedger::open(temp.path().join("runtime.db")).expect("ledger");
+        let mut registry = ledger.agent_registry_store();
+        let mut request = CreateAgentRequest {
+            agent_id: "worker.one".into(),
+            working_directory: temp.path().to_owned(),
+            readonly_knowledge_directories: Vec::new(),
+            writable_knowledge_directory: None,
+        };
+        registry.create("same-command", &request).expect("created");
+        request.agent_id = "worker.two".into();
+        assert_eq!(
+            registry.create("same-command", &request),
+            Err(AgentRegistryError::CommandConflict)
+        );
+    }
+}
