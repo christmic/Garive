@@ -28,7 +28,7 @@ pub enum AgentStatus {
 #[serde(deny_unknown_fields)]
 pub struct RegisteredAgent {
     /// Exact public API version.
-    pub api_version: &'static str,
+    pub api_version: String,
     /// Stable immutable Agent identity.
     pub agent_id: String,
     /// Immutable Agent resource root and ordinary workspace.
@@ -277,7 +277,7 @@ mod tests {
     fn activation_requires_agent_markdown() {
         let temp = tempfile::tempdir().expect("tempdir");
         let agent = RegisteredAgent {
-            api_version: "v1",
+            api_version: "v1".into(),
             agent_id: "agent-one".into(),
             working_directory: fs::canonicalize(temp.path()).unwrap(),
             readonly_knowledge_directories: Vec::new(),
