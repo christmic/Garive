@@ -21,11 +21,12 @@ use crate::{
     commit_goal_command, commit_planned_turn, get_turn,
     goal_recovery::reconstruct_goal_graph_from_facts, plan_cancel_turn, plan_continue_turn,
     plan_create_goal, plan_goal_transition, plan_start_turn, plan_steer_turn, reconstruct_goal,
-    reconstruct_plan_graph, reconstruct_suspended_turn, CancelReason, CancelTurnCommand,
-    ContinuationInput, ContinueTurnCommand, GetTurnQuery, GoalCommandContext, GoalRuntimeError,
-    GoalRuntimeTransition, InteractionInputRepresentation, LiveOutputHub, LiveOutputSubscriber,
-    RuntimeCommandError, RuntimeCommandId, RuntimeSuspensionKind, RuntimeTurnStatus, SqliteLedger,
-    SqliteLedgerError, StartTurnCommand, SteerTurnCommand,
+    reconstruct_plan_graph, reconstruct_suspended_turn, AgentRegistryError, CancelReason,
+    CancelTurnCommand, ContinuationInput, ContinueTurnCommand, CreateAgentRequest, GetTurnQuery,
+    GoalCommandContext, GoalRuntimeError, GoalRuntimeTransition, InteractionInputRepresentation,
+    LiveOutputHub, LiveOutputSubscriber, RegisteredAgent, RegisteredAgentPage, RuntimeCommandError,
+    RuntimeCommandId, RuntimeSuspensionKind, RuntimeTurnStatus, SqliteLedger, SqliteLedgerError,
+    StartTurnCommand, SteerTurnCommand, UpdateAgentKnowledgeRequest,
 };
 
 use super::{
@@ -342,6 +343,86 @@ impl LiveHost {
             return Err(LiveHostError::ReadBoundExceeded);
         }
         Ok(page)
+    }
+
+    /// Defines one inactive directory-backed Agent.
+    pub fn create_agent(
+        &self,
+        idempotency_key: &str,
+        request: &CreateAgentRequest,
+    ) -> Result<RegisteredAgent, LiveHostError> {
+        let mut ledger = self.ledger()?;
+        ledger
+            .agent_registry_store()
+            .create(idempotency_key, request)
+            .map_err(map_agent_registry)
+    }
+
+    /// Lists registered Agents in stable identity order.
+    pub fn list_agents(&self) -> Result<RegisteredAgentPage, LiveHostError> {
+        let mut ledger = self.ledger()?;
+        ledger
+            .agent_registry_store()
+            .list(self.state.read_limits.max_definitions)
+            .map_err(map_agent_registry)
+    }
+
+    /// Reads one exact registered Agent.
+    pub fn get_agent(&self, agent_id: &str) -> Result<RegisteredAgent, LiveHostError> {
+        let mut ledger = self.ledger()?;
+        ledger
+            .agent_registry_store()
+            .get(agent_id)
+            .map_err(map_agent_registry)
+    }
+
+    /// Replaces one Agent's mutable knowledge-directory binding.
+    pub fn update_agent_knowledge(
+        &self,
+        idempotency_key: &str,
+        agent_id: &str,
+        request: &UpdateAgentKnowledgeRequest,
+    ) -> Result<RegisteredAgent, LiveHostError> {
+        let mut ledger = self.ledger()?;
+        ledger
+            .agent_registry_store()
+            .update_knowledge(idempotency_key, agent_id, request)
+            .map_err(map_agent_registry)
+    }
+
+    /// Activates one valid registered Agent.
+    pub fn activate_agent(
+        &self,
+        idempotency_key: &str,
+        agent_id: &str,
+    ) -> Result<RegisteredAgent, LiveHostError> {
+        let mut ledger = self.ledger()?;
+        ledger
+            .agent_registry_store()
+            .activate(idempotency_key, agent_id)
+            .map_err(map_agent_registry)
+    }
+
+    /// Archives one registered Agent.
+    pub fn archive_agent(
+        &self,
+        idempotency_key: &str,
+        agent_id: &str,
+    ) -> Result<RegisteredAgent, LiveHostError> {
+        let mut ledger = self.ledger()?;
+        ledger
+            .agent_registry_store()
+            .archive(idempotency_key, agent_id)
+            .map_err(map_agent_registry)
+    }
+
+    /// Reopens one active Agent binding for new-work admission.
+    pub fn require_active_agent(&self, agent_id: &str) -> Result<RegisteredAgent, LiveHostError> {
+        let mut ledger = self.ledger()?;
+        ledger
+            .agent_registry_store()
+            .require_active(agent_id)
+            .map_err(map_agent_registry)
     }
 
     /// Reads one verified Session summary at an exact durable watermark.
@@ -4058,6 +4139,17 @@ fn map_sqlite_query(error: SqliteLedgerError) -> LiveHostError {
     match error {
         SqliteLedgerError::Domain(LedgerError::MissingReference) => LiveHostError::NotFound,
         other => map_sqlite(other),
+    }
+}
+
+fn map_agent_registry(error: AgentRegistryError) -> LiveHostError {
+    match error {
+        AgentRegistryError::InvalidRequest => LiveHostError::InvalidRequest,
+        AgentRegistryError::NotFound => LiveHostError::NotFound,
+        AgentRegistryError::CommandConflict => LiveHostError::CommandConflict,
+        AgentRegistryError::PreconditionFailed => LiveHostError::PreconditionFailed,
+        AgentRegistryError::StorageFailed => LiveHostError::DurabilityUnavailable,
+        AgentRegistryError::CorruptState => LiveHostError::CorruptState,
     }
 }
 

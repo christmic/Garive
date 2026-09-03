@@ -397,7 +397,6 @@ mod tests {
             registry.require_active("worker.one"),
             Err(AgentRegistryError::PreconditionFailed)
         );
-        drop(registry);
         drop(ledger);
         let mut reopened = SqliteLedger::open(database).expect("reopened");
         assert_eq!(

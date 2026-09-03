@@ -2089,6 +2089,133 @@ fn interaction_continuation_validates_schema_and_representation_before_commit() 
 }
 
 #[tokio::test]
+async fn agent_registry_http_persists_exact_metadata_and_lifecycle() {
+    let harness = Harness::new(64);
+    let working = harness._directory.path().join("agent-work");
+    let knowledge = harness._directory.path().join("knowledge");
+    fs::create_dir(&working).unwrap();
+    fs::create_dir(&knowledge).unwrap();
+    fs::write(working.join("AGENT.md"), "# Atlas\n").unwrap();
+    let server = LiveHostServer::bind(
+        harness.host.clone(),
+        SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 0),
+    )
+    .await
+    .unwrap();
+    let address = server.local_addr();
+    let (shutdown_tx, shutdown_rx) = oneshot::channel();
+    let task = tokio::spawn(server.serve(async move {
+        let _ = shutdown_rx.await;
+    }));
+    let client = reqwest::Client::new();
+    let base = format!("http://{address}/v1/agents");
+
+    let created = client
+        .post(&base)
+        .header("idempotency-key", "agent-create")
+        .header("content-type", "application/json")
+        .body(
+            serde_json::json!({
+                "agent_id":"atlas",
+                "working_directory":working,
+                "readonly_knowledge_directories":[],
+                "writable_knowledge_directory":null
+            })
+            .to_string(),
+        )
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(created.status(), reqwest::StatusCode::OK);
+    let created: Value = serde_json::from_slice(&created.bytes().await.unwrap()).unwrap();
+    assert_eq!(created["status"], "inactive");
+
+    let page = client
+        .get(&base)
+        .send()
+        .await
+        .unwrap()
+        .bytes()
+        .await
+        .unwrap();
+    let page: Value = serde_json::from_slice(&page).unwrap();
+    assert_eq!(page["agents"].as_array().unwrap().len(), 1);
+    let view = client
+        .get(format!("{base}/atlas"))
+        .send()
+        .await
+        .unwrap()
+        .bytes()
+        .await
+        .unwrap();
+    let view: Value = serde_json::from_slice(&view).unwrap();
+    assert_eq!(view["working_directory"], created["working_directory"]);
+
+    let updated = client
+        .patch(format!("{base}/atlas"))
+        .header("idempotency-key", "agent-update")
+        .header("content-type", "application/json")
+        .body(
+            serde_json::json!({
+                "readonly_knowledge_directories":[knowledge],
+                "writable_knowledge_directory":null
+            })
+            .to_string(),
+        )
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(updated.status(), reqwest::StatusCode::OK);
+
+    let forbidden = client
+        .patch(format!("{base}/atlas"))
+        .header("idempotency-key", "agent-forbidden")
+        .header("content-type", "application/json")
+        .body(
+            serde_json::json!({
+                "working_directory":working,
+                "readonly_knowledge_directories":[],
+                "writable_knowledge_directory":null
+            })
+            .to_string(),
+        )
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(forbidden.status(), reqwest::StatusCode::BAD_REQUEST);
+
+    let active = client
+        .post(format!("{base}/atlas/activate"))
+        .header("idempotency-key", "agent-activate")
+        .header("content-type", "application/json")
+        .body("{}")
+        .send()
+        .await
+        .unwrap()
+        .bytes()
+        .await
+        .unwrap();
+    let active: Value = serde_json::from_slice(&active).unwrap();
+    assert_eq!(active["status"], "active");
+    let archived = client
+        .post(format!("{base}/atlas/archive"))
+        .header("idempotency-key", "agent-archive")
+        .header("content-type", "application/json")
+        .body("{}")
+        .send()
+        .await
+        .unwrap()
+        .bytes()
+        .await
+        .unwrap();
+    let archived: Value = serde_json::from_slice(&archived).unwrap();
+    assert_eq!(archived["status"], "archived");
+
+    let _ = shutdown_tx.send(());
+    task.await.unwrap().unwrap();
+}
+
+#[tokio::test]
 async fn real_loopback_http_has_stable_errors_commands_and_sse_replay() {
     let harness = Harness::new(64);
     let server = LiveHostServer::bind(

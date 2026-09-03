@@ -12,7 +12,7 @@ use axum::{
     Json, Router,
 };
 use futures::stream;
-use serde::de::DeserializeOwned;
+use serde::{de::DeserializeOwned, Deserialize};
 use tokio::net::TcpListener;
 
 use super::{
@@ -21,7 +21,9 @@ use super::{
     LiveHostError, LiveHostEvent, ReviseGoalBody, SendSessionAgentMessageBody, StartTurnBody,
     SteerTurnBody,
 };
-use crate::{LiveOutputReceiveError, LiveOutputSubscriber};
+use crate::{
+    CreateAgentRequest, LiveOutputReceiveError, LiveOutputSubscriber, UpdateAgentKnowledgeRequest,
+};
 
 const IDEMPOTENCY_KEY: &str = "idempotency-key";
 
@@ -43,6 +45,10 @@ impl LiveHostServer {
             .map_err(LiveHostServerError::Io)?;
         let local_addr = listener.local_addr().map_err(LiveHostServerError::Io)?;
         let mut app = Router::new()
+            .route("/v1/agents", post(create_agent).get(agent_page))
+            .route("/v1/agents/:agent_id", get(agent_view).patch(update_agent))
+            .route("/v1/agents/:agent_id/activate", post(activate_agent))
+            .route("/v1/agents/:agent_id/archive", post(archive_agent))
             .route("/v1/agent-definitions", get(agent_definitions))
             .route("/v1/sessions", post(create_session).get(session_page))
             .route("/v1/sessions/:session_id", get(session_view))
@@ -143,6 +149,81 @@ async fn next_live_output(
 async fn agent_definitions(State(host): State<LiveHost>) -> Response {
     command_response(host.list_agent_definitions())
 }
+
+async fn agent_page(State(host): State<LiveHost>) -> Response {
+    command_response(host.list_agents())
+}
+
+async fn agent_view(State(host): State<LiveHost>, Path(agent_id): Path<String>) -> Response {
+    command_response(host.get_agent(&agent_id))
+}
+
+async fn create_agent(State(host): State<LiveHost>, headers: HeaderMap, body: Body) -> Response {
+    let result = async {
+        let key = idempotency_key(&headers)?;
+        let request: CreateAgentRequest = decode_body(&host, body).await?;
+        host.create_agent(key, &request)
+    }
+    .await;
+    command_response(result)
+}
+
+async fn update_agent(
+    State(host): State<LiveHost>,
+    Path(agent_id): Path<String>,
+    headers: HeaderMap,
+    body: Body,
+) -> Response {
+    let result = async {
+        let key = idempotency_key(&headers)?;
+        let request: UpdateAgentKnowledgeRequest = decode_body(&host, body).await?;
+        host.update_agent_knowledge(key, &agent_id, &request)
+    }
+    .await;
+    command_response(result)
+}
+
+async fn activate_agent(
+    State(host): State<LiveHost>,
+    Path(agent_id): Path<String>,
+    headers: HeaderMap,
+    body: Body,
+) -> Response {
+    lifecycle_agent(host, agent_id, headers, body, true).await
+}
+
+async fn archive_agent(
+    State(host): State<LiveHost>,
+    Path(agent_id): Path<String>,
+    headers: HeaderMap,
+    body: Body,
+) -> Response {
+    lifecycle_agent(host, agent_id, headers, body, false).await
+}
+
+async fn lifecycle_agent(
+    host: LiveHost,
+    agent_id: String,
+    headers: HeaderMap,
+    body: Body,
+    activate: bool,
+) -> Response {
+    let result = async {
+        let key = idempotency_key(&headers)?;
+        let _: EmptyBody = decode_body(&host, body).await?;
+        if activate {
+            host.activate_agent(key, &agent_id)
+        } else {
+            host.archive_agent(key, &agent_id)
+        }
+    }
+    .await;
+    command_response(result)
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct EmptyBody {}
 
 async fn session_view(State(host): State<LiveHost>, Path(session_id): Path<String>) -> Response {
     let result = tokio::task::spawn_blocking(move || host.get_session(&session_id))
