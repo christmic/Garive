@@ -5,6 +5,7 @@
 
 mod agent_installation;
 mod agent_registry;
+mod agent_registry_store;
 mod autonomous_collaboration;
 #[cfg(unix)]
 mod builtin_patch_executor;
@@ -80,6 +81,7 @@ pub use agent_registry::{
     CreateAgentRequest, RegisteredAgent, RegisteredAgentPage, UpdateAgentKnowledgeRequest,
     MAX_AGENT_INSTRUCTION_BYTES,
 };
+pub use agent_registry_store::{AgentRegistryError, AgentRegistryStore};
 pub use autonomous_collaboration::{
     AutonomousCollaborationDrain, AutonomousCollaborationExecutor, AutonomousCollaborationOrigin,
     AutonomousCollaborationOutbox, AutonomousCollaborationPreparation, COLLABORATION_EXECUTOR_ID,

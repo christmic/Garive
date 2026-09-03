@@ -698,6 +698,11 @@ impl SqliteLedger {
     pub fn management_config_store(&mut self) -> crate::management::ManagementConfigStore<'_> {
         crate::management::ManagementConfigStore::new(&mut self.connection)
     }
+
+    /// Returns a durable Agent registry borrowing this Ledger connection.
+    pub fn agent_registry_store(&mut self) -> crate::AgentRegistryStore<'_> {
+        crate::AgentRegistryStore::new(&mut self.connection)
+    }
 }
 
 fn commit_transaction(
