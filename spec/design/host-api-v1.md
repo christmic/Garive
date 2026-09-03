@@ -21,7 +21,16 @@ Every path, database location, installed Agent value, clock value, limit and
 poll interval enters through construction. H1 reads no environment variables
 or configuration files.
 
-## Installed Agent binding
+## Registered Agent admission and execution binding
+
+Public Agent identity and directory admission follow A0. The six
+`/v1/agents` registry operations are part of H1. Session creation and Agent
+join accept an active `agent_id`; callers do not select a definition revision
+or snapshot digest.
+
+The immutable binding below is an internal per-Run execution artifact. Runtime
+resolves it from the registered Agent's current directory content before a new
+Run and freezes it for that Run. It is not a public Agent version.
 
 One immutable `InstalledAgent` supplied by Runtime composition contains:
 
@@ -33,12 +42,12 @@ agent_instance_namespace
 effective Runtime/Core limits and model target policy
 ```
 
-`POST /v1/sessions` accepts only an admitted `agent_definition_id`. Session
+`POST /v1/sessions` accepts only an admitted active `agent_id`. Session
 creation derives stable opaque `session_id` and `agent_instance_id` values from
-the idempotency key plus the installed binding, then atomically commits one
-`session.opened` fact. Its canonical payload binds the command ID, definition,
-revision, snapshot digest and Agent instance. An HTTP success before this commit
-is forbidden.
+the idempotency key plus the resolved binding, then atomically commits one
+`session.opened` fact. Its canonical payload binds the command ID, Agent ID,
+internal snapshot coordinates and Agent instance. An HTTP success before this
+commit is forbidden.
 
 The Host reconstructs this binding from position one before accepting a Turn;
 caller fields can never replace the installed revision, snapshot or instance.
@@ -47,7 +56,7 @@ caller fields can never replace the installed revision, snapshot or instance.
 
 | Method and path | Body | Required condition | Durable effect |
 |---|---|---|---|
-| `POST /v1/sessions` | `CreateSessionRequestV1` | known installed definition | `session.opened` |
+| `POST /v1/sessions` | `CreateSessionRequestV1` | known active Agent | `session.opened` |
 | `POST /v1/sessions/{session_id}/turns` | `StartTurnRequestV1` | open owned Session | C6 start transaction |
 | `POST /v1/turns/{turn_id}:cancel` | `CancelTurnRequestV1` | non-terminal owned Turn | `turn.cancel_requested` |
 | `POST /v1/turns/{turn_id}:continue` | `ContinueTurnRequestV1` | exact current suspension and Session version | C6 continuation transaction |

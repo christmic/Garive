@@ -43,10 +43,50 @@ message HostActivityV1 {
   optional string safe_code = 8;
 }
 
-// Creates one durable Session for an installed Agent definition.
+// Creates one durable Session for an active registered Agent.
 message CreateSessionRequestV1 {
-  // Installed definition selected by the caller.
-  string agent_definition_id = 1;
+  reserved 1;
+  reserved "agent_definition_id";
+  // Registered Agent selected by the caller.
+  string agent_id = 2;
+}
+
+// Lifecycle of one registered Agent.
+enum AgentStatusV1 {
+  AGENT_STATUS_V1_UNSPECIFIED = 0;
+  AGENT_STATUS_V1_INACTIVE = 1;
+  AGENT_STATUS_V1_ACTIVE = 2;
+  AGENT_STATUS_V1_ARCHIVED = 3;
+}
+
+// Public metadata for one directory-backed Agent.
+message AgentV1 {
+  string api_version = 1;
+  string agent_id = 2;
+  string working_directory = 3;
+  repeated string readonly_knowledge_directories = 4;
+  optional string writable_knowledge_directory = 5;
+  AgentStatusV1 status = 6;
+}
+
+// Creates one inactive directory-backed Agent.
+message CreateAgentRequestV1 {
+  string agent_id = 1;
+  string working_directory = 2;
+  repeated string readonly_knowledge_directories = 3;
+  optional string writable_knowledge_directory = 4;
+}
+
+// Atomically replaces the mutable knowledge-directory binding.
+message UpdateAgentKnowledgeRequestV1 {
+  repeated string readonly_knowledge_directories = 1;
+  optional string writable_knowledge_directory = 2;
+}
+
+// Stable bounded Agent registry page.
+message AgentPageV1 {
+  string api_version = 1;
+  repeated AgentV1 agents = 2;
 }
 
 // Durable result of Session creation or exact idempotent replay.
