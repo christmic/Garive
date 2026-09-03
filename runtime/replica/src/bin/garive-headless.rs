@@ -29,12 +29,13 @@ use garive_runtime::headless::{
     HeadlessConstructionError,
 };
 use garive_runtime::{
-    drive_pending, local_dispatch_queue, AllowAllValidator, CatalogueBoundGovernedExecutionFactory,
-    CatalogueCapabilityPreparationFactory, DrivePendingOutcome, HeadlessWorkspaceExecutionFactory,
-    HostClock, LiveHost, LiveHostLimits, LiveHostServer, LiveOutputHub, LiveOutputLimits,
-    LocalExecutionWorker, ManagementCommitBody, SqliteLedger, SqliteLedgerError,
-    T1WorkspaceRuntimeConfig, HEADLESS_WORKSPACE_EXECUTOR_REVISION,
-    HEADLESS_WORKSPACE_POLICY_REVISION, MANAGEMENT_COMMIT_BODY_SCHEMA_VERSION,
+    drive_pending, local_dispatch_queue, AllowAllValidator, AutonomousCollaborationOutbox,
+    CatalogueBoundGovernedExecutionFactory, CatalogueCapabilityPreparationFactory,
+    DrivePendingOutcome, HeadlessWorkspaceExecutionFactory, HostClock, LiveHost, LiveHostLimits,
+    LiveHostServer, LiveOutputHub, LiveOutputLimits, LocalExecutionWorker, ManagementCommitBody,
+    SqliteLedger, SqliteLedgerError, T1WorkspaceRuntimeConfig,
+    HEADLESS_WORKSPACE_EXECUTOR_REVISION, HEADLESS_WORKSPACE_POLICY_REVISION,
+    MANAGEMENT_COMMIT_BODY_SCHEMA_VERSION,
 };
 
 const DEFAULT_LISTEN: &str = "127.0.0.1:8787";
@@ -91,6 +92,7 @@ async fn run() -> Result<(), String> {
     );
 
     let model = build_headless_model_port(&configuration).map_err(map_construction_error)?;
+    let collaboration_outbox = AutonomousCollaborationOutbox::default();
     let workspace_config = workspace
         .map(|root| headless_workspace_config(&directory, root))
         .transpose()?;
@@ -133,25 +135,27 @@ async fn run() -> Result<(), String> {
 
     let (dispatcher, mut queue) =
         local_dispatch_queue(64).map_err(|_| "queue_construction_failed".to_owned())?;
-    let worker = match workspace_config {
-        Some(config) => {
-            let governed = Arc::new(
-                HeadlessWorkspaceExecutionFactory::new(config, "headless-workspace")
-                    .map_err(|_| "workspace_construction_failed".to_owned())?,
-            );
-            LocalExecutionWorker::new_governed(
-                &database_path,
-                policy,
-                model,
-                Arc::new(CatalogueBoundGovernedExecutionFactory::new(
-                    catalogue.clone(),
-                    governed,
-                )),
-                preparation,
-            )
-        }
-        None => LocalExecutionWorker::new(&database_path, policy, model, preparation),
+    let governed = match workspace_config {
+        Some(config) => HeadlessWorkspaceExecutionFactory::new(config, "headless-workspace")
+            .and_then(|factory| {
+                factory.with_autonomous_collaboration(&database_path, collaboration_outbox.clone())
+            }),
+        None => HeadlessWorkspaceExecutionFactory::collaboration_only(
+            &database_path,
+            collaboration_outbox.clone(),
+        ),
     }
+    .map_err(|_| "agent_tool_construction_failed".to_owned())?;
+    let worker = LocalExecutionWorker::new_governed(
+        &database_path,
+        policy,
+        model,
+        Arc::new(CatalogueBoundGovernedExecutionFactory::new(
+            catalogue.clone(),
+            Arc::new(governed),
+        )),
+        preparation,
+    )
     .map_err(|_| "worker_construction_failed".to_owned())?
     .with_live_output(hub.clone());
 
@@ -166,6 +170,14 @@ async fn run() -> Result<(), String> {
     .map_err(|_| "host_construction_failed".to_owned())?
     .with_management_validator(Arc::new(AllowAllValidator));
 
+    let recovered = collaboration_outbox
+        .recover(&database_path)
+        .map_err(|_| "collaboration_recovery_failed".to_owned())?;
+    if recovered > 0 {
+        println!("garive-headless: recovered {recovered} collaboration command(s)");
+    }
+
+    let worker_host = host.clone();
     let server = LiveHostServer::bind(host, address)
         .await
         .map_err(|error| format!("host_bind_failed: {error}"))?;
@@ -178,6 +190,7 @@ async fn run() -> Result<(), String> {
         .run_until(async move {
             let worker = Arc::new(worker);
             tokio::task::spawn_local(async move {
+                let mut pending_deliveries = Vec::<(String, String)>::new();
                 loop {
                     let attempt = headless_execution_attempt(headless_now_ms());
                     match drive_pending(&mut queue, worker.as_ref(), &attempt).await {
@@ -190,6 +203,14 @@ async fn run() -> Result<(), String> {
                             tokio::time::sleep(Duration::from_millis(100)).await
                         }
                     }
+                    let drained = collaboration_outbox.drain(&worker_host);
+                    pending_deliveries.extend(drained.delegation_ids);
+                    pending_deliveries.retain(|(session, delegation)| {
+                        !matches!(
+                            worker_host.deliver_agent_task_result(session, delegation),
+                            Ok(true)
+                        )
+                    });
                 }
             });
             let result = server.serve(std::future::pending()).await;

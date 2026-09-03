@@ -121,6 +121,8 @@ pub trait SafetyPort: Send {
 
 /// Exact inputs used to select and prove one concrete Sandbox binding.
 pub struct SandboxAdmissionRequest<'a> {
+    /// Exact Prepared-v3 call whose concrete resources are being bound.
+    pub prepared: &'a PreparedToolCall,
     /// Safety request whose exact resources must be enforceable.
     pub safety_request: &'a SafetyRequestV1,
     /// Safety decision committed before grant conversion.

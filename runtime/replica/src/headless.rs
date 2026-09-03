@@ -10,21 +10,12 @@
 //! - [`build_headless_model_port`] — turns the committed `ManagementConfigState`
 //!   into an `Arc<dyn ModelPort>` using only the runtime provider crates.
 //! - [`build_headless_installation`] — turns the committed `definition_id`
-//!   into one tool-free `InstalledAgent` and its backing
+//!   into one collaboration-capable `InstalledAgent` and its backing
 //!   `RuntimeAgentCatalogue`.
 //!
 //! Both functions return explicit error codes so the binary can map them
 //! 1-1 to the management-port stable wire codes (`management_*`).
 //!
-//! ## Why no Tool catalogue
-//!
-//! The headless binary is intentionally tool-free. The committed
-//! `runtime_management_config` row carries no `LocalGovernedExecutionFactory`
-//! wiring and no capability descriptors; a definition that requests tools
-//! would fail at first dispatch because the worker cannot project them.
-//! The `definition_id` allowlist is therefore capped to the legacy
-//! built-in Desktop revision (see [`headless_revision_for`]).
-
 use std::{
     collections::{BTreeMap, BTreeSet},
     sync::Arc,
@@ -40,6 +31,7 @@ use garive_core::{
     TerminalRecoveryAction,
 };
 use garive_llm::{ModelCapability, ModelOutputSettings, ModelPort, TextMode};
+use garive_multiagent::CollaborationToolCatalogue;
 use garive_provider_anthropic::build_profile as build_anthropic_profile;
 use garive_provider_compatible::{MessagesDeployment, ProtocolErrorPolicy, ResponsesDeployment};
 use garive_provider_openai::build_profile as build_openai_profile;
@@ -98,6 +90,8 @@ pub const HEADLESS_AGENT_NAMESPACE: &str = "headless-ns";
 pub const HEADLESS_AGENT_CAPABILITY: &str = "model_only";
 /// Stable public capability label for an explicitly bound Workspace.
 pub const HEADLESS_WORKSPACE_CAPABILITY: &str = "workspace";
+/// Stable public capability label for autonomous Session collaboration.
+pub const HEADLESS_COLLABORATION_CAPABILITY: &str = "collaboration";
 
 /// Stable failure codes emitted by the headless wiring helpers.
 ///
@@ -238,7 +232,7 @@ pub fn headless_revision_for(definition_id: &str) -> Option<&'static str> {
     }
 }
 
-/// Builds the singular tool-free installation + catalogue for the headless binary.
+/// Builds the singular autonomous-collaboration installation and catalogue.
 ///
 /// Returns both the [`RuntimeAgentInstallation`] (used to derive the
 /// `InstalledAgent` view passed to `LiveHost`) and the
@@ -246,7 +240,14 @@ pub fn headless_revision_for(definition_id: &str) -> Option<&'static str> {
 pub fn build_headless_installation(
     config: &HeadlessConfiguration,
 ) -> Result<(RuntimeAgentInstallation, Arc<RuntimeAgentCatalogue>), HeadlessConstructionError> {
-    build_headless_installation_inner(config, Vec::new(), vec![HEADLESS_AGENT_CAPABILITY.into()])
+    build_headless_installation_inner(
+        config,
+        collaboration_tools()?,
+        vec![
+            HEADLESS_COLLABORATION_CAPABILITY.into(),
+            HEADLESS_AGENT_CAPABILITY.into(),
+        ],
+    )
 }
 
 /// Builds a headless installation that freezes one exact Workspace tool set.
@@ -254,14 +255,24 @@ pub fn build_headless_workspace_installation(
     config: &HeadlessConfiguration,
     tools: &AgentToolCapabilities,
 ) -> Result<(RuntimeAgentInstallation, Arc<RuntimeAgentCatalogue>), HeadlessConstructionError> {
+    let mut definitions = tools.definitions.clone();
+    definitions.extend(collaboration_tools()?);
+    definitions.sort_by(|left, right| left.name().cmp(right.name()));
     build_headless_installation_inner(
         config,
-        tools.definitions.clone(),
+        definitions,
         vec![
+            HEADLESS_COLLABORATION_CAPABILITY.into(),
             HEADLESS_AGENT_CAPABILITY.into(),
             HEADLESS_WORKSPACE_CAPABILITY.into(),
         ],
     )
+}
+
+fn collaboration_tools() -> Result<Vec<garive_tools::ToolDefinition>, HeadlessConstructionError> {
+    CollaborationToolCatalogue::new(crate::COLLABORATION_POLICY_REVISION)
+        .map(|catalogue| catalogue.definitions().to_vec())
+        .map_err(|_| HeadlessConstructionError::ResolutionFailed)
 }
 
 fn build_headless_installation_inner(
@@ -361,7 +372,11 @@ pub fn headless_execution_policy(config: &HeadlessConfiguration) -> LocalExecuti
         model_target_id: config.state.model_target_id.clone(),
         deployment_id: config.state.deployment_id.clone(),
         recovery_policy_revision: HEADLESS_RECOVERY_POLICY_REVISION.to_owned(),
-        required_capabilities: vec![ModelCapability::Text, ModelCapability::Streaming],
+        required_capabilities: vec![
+            ModelCapability::Text,
+            ModelCapability::Streaming,
+            ModelCapability::Tools,
+        ],
         model_output: ModelOutputSettings {
             max_output_tokens: Some(HEADLESS_DEFAULT_MAX_OUTPUT_TOKENS),
             text_mode: TextMode::Plain,
@@ -382,9 +397,7 @@ pub fn headless_execution_policy(config: &HeadlessConfiguration) -> LocalExecuti
 
 /// Adds neutral tool calling to the normal headless model requirements.
 pub fn headless_workspace_execution_policy(config: &HeadlessConfiguration) -> LocalExecutionPolicy {
-    let mut policy = headless_execution_policy(config);
-    policy.required_capabilities.push(ModelCapability::Tools);
-    policy
+    headless_execution_policy(config)
 }
 
 /// Returns the current Unix epoch milliseconds using the system clock.

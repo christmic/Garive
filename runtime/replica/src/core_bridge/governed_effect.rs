@@ -399,6 +399,7 @@ impl<'a> SqliteGovernedEffectPort<'a> {
                     .as_deref_mut()
                     .ok_or(GovernedRuntimePortError::InvalidBinding)?
                     .admit(SandboxAdmissionRequest {
+                        prepared,
                         safety_request: &request,
                         decision: &evaluation.decision,
                         grant: &grant,
@@ -580,6 +581,7 @@ impl<'a> SqliteGovernedEffectPort<'a> {
                     .as_deref_mut()
                     .ok_or(GovernedRuntimePortError::InvalidBinding)?
                     .admit(SandboxAdmissionRequest {
+                        prepared: &prepared,
                         safety_request: &request,
                         decision: &evaluation.decision,
                         grant: &grant,

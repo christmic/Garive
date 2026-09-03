@@ -205,7 +205,7 @@ fn seed_management_row(database: &std::path::Path, api_key: &str) {
 }
 
 #[test]
-fn workspace_mode_freezes_five_tools_and_requires_model_tool_use() {
+fn workspace_mode_freezes_workspace_and_collaboration_tools() {
     let directory = tempdir().unwrap();
     let workspace = directory.path().join("workspace");
     let recovery = directory.path().join("recovery");
@@ -227,7 +227,7 @@ fn workspace_mode_freezes_five_tools_and_requires_model_tool_use() {
     };
     let (installation, _) =
         build_headless_workspace_installation(&configuration, execution.capabilities()).unwrap();
-    assert_eq!(installation.tool_capabilities().definitions.len(), 5);
+    assert_eq!(installation.tool_capabilities().definitions.len(), 9);
     assert!(headless_workspace_execution_policy(&configuration)
         .required_capabilities
         .contains(&ModelCapability::Tools));

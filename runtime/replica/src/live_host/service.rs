@@ -1723,7 +1723,7 @@ impl LiveHost {
     }
 
     /// Delivers one terminal MA1 result exactly once; returns false while active.
-    pub(crate) fn deliver_agent_task_result(
+    pub fn deliver_agent_task_result(
         &self,
         session: &str,
         delegation_id: &str,

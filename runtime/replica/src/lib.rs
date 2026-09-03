@@ -4,6 +4,7 @@
 #![deny(missing_docs)]
 
 mod agent_installation;
+mod autonomous_collaboration;
 #[cfg(unix)]
 mod builtin_patch_executor;
 #[cfg(unix)]
@@ -72,6 +73,11 @@ mod t1_system_composition;
 pub use agent_installation::{
     CatalogueBoundGovernedExecutionFactory, RuntimeAgentCatalogue, RuntimeAgentInstallation,
     RuntimeAgentInstallationError, SnapshotBoundGovernedExecutionFactory,
+};
+pub use autonomous_collaboration::{
+    AutonomousCollaborationDrain, AutonomousCollaborationExecutor, AutonomousCollaborationOrigin,
+    AutonomousCollaborationOutbox, AutonomousCollaborationPreparation, COLLABORATION_EXECUTOR_ID,
+    COLLABORATION_EXECUTOR_REVISION, COLLABORATION_POLICY_REVISION,
 };
 #[cfg(unix)]
 pub use builtin_patch_executor::{BuiltinPatchExecutor, T1_PATCH_EXECUTOR_ID};

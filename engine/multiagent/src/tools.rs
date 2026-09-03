@@ -19,8 +19,7 @@ pub const COLLECT_DELEGATIONS_TOOL: &str = "garive.collaboration.collect_delegat
 /// Immutable revision shared by the first autonomous collaboration tools.
 pub const COLLABORATION_TOOL_REVISION: &str = "1";
 /// Pure Runtime-lane resolver revision.
-pub const COLLABORATION_ACCESS_RESOLVER_REVISION: &str =
-    "garive.collaboration.access.v1";
+pub const COLLABORATION_ACCESS_RESOLVER_REVISION: &str = "garive.collaboration.access.v1";
 
 const MESSAGE_LANE: &str = "session_messages";
 const DELEGATION_LANE: &str = "session_delegations";
@@ -61,7 +60,7 @@ impl CollaborationToolCatalogue {
             definition(
                 FORK_SELF_TOOL,
                 "Fork this Agent for one independent Notify task.",
-                json!({"type":"object","properties":{"objective":{"type":"string","minLength":1,"maxLength":MAX_TEXT_BYTES},"branch_name":{"type":"string","minLength":1,"maxLength":64}},"required":["objective"],"additionalProperties":false}),
+                json!({"type":"object","properties":{"objective":{"type":"string","minLength":1,"maxLength":MAX_TEXT_BYTES}},"required":["objective"],"additionalProperties":false}),
                 ReplayClass::Idempotent,
                 DELEGATION_LANE,
                 AccessMode::Write,
@@ -140,12 +139,7 @@ fn definition(
         1,
         MAX_RESULT_BYTES,
     )?;
-    let sandbox = SandboxRequirementsV1::new(
-        [],
-        [SandboxControl::ResourceLimits],
-        None,
-        1,
-    )?;
+    let sandbox = SandboxRequirementsV1::new([], [SandboxControl::ResourceLimits], None, 1)?;
     ToolDefinition::new_v3(
         name,
         COLLABORATION_TOOL_REVISION,

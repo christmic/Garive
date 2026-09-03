@@ -493,6 +493,8 @@ impl ContextPort for DurableContextPort<'_, '_> {
             "turn.steered",
             "model.completed",
             "session.agent_message",
+            "session.opened",
+            "session.agent_joined",
         ]
         .into_iter()
         .map(FactKind::new)
@@ -520,8 +522,12 @@ impl ContextPort for DurableContextPort<'_, '_> {
                 fact.turn_id.as_ref() == Some(self.turn_id)
                     || (fact.kind.as_str() == "session.agent_message"
                         && message_visible_to(fact, self.agent_instance_id))
+                    || matches!(
+                        fact.kind.as_str(),
+                        "session.opened" | "session.agent_joined"
+                    )
             })
-            .map(|fact| durable_context_candidate(request, &fact))
+            .map(|fact| durable_context_candidate(request, &fact, self.agent_instance_id))
             .collect::<Result<Vec<_>, _>>()?
             .into_iter()
             .flatten()
@@ -543,6 +549,7 @@ impl ContextPort for DurableContextPort<'_, '_> {
 fn durable_context_candidate(
     request: &ContextRequest,
     fact: &garive_ledger::DurableFact,
+    active_agent_instance_id: &str,
 ) -> Result<Option<ContextCandidate>, ContextPortError> {
     let value: serde_json::Value =
         serde_json::from_str(fact.payload.as_json()).map_err(|_| ContextPortError::PortFailure)?;
@@ -582,6 +589,39 @@ fn durable_context_candidate(
                     content: vec![ModelInputContent::Text(format!(
                         "[agent message from {from}] {text}"
                     ))],
+                }],
+            )
+        }
+        "session.opened" | "session.agent_joined" => {
+            let Some(agent_instance_id) = value
+                .get("agent_instance_id")
+                .and_then(serde_json::Value::as_str)
+            else {
+                return Ok(None);
+            };
+            let Some(definition_id) = value
+                .get("definition_id")
+                .and_then(serde_json::Value::as_str)
+            else {
+                return Ok(None);
+            };
+            let display_name = value
+                .get("agent_name")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or(definition_id);
+            (
+                CandidateKind::Instruction,
+                vec![ModelInputItem::Message {
+                    role: ModelRole::Developer,
+                    content: vec![ModelInputContent::Text(
+                        json!({
+                            "type":"garive.session_agent",
+                            "display_name":display_name,
+                            "agent_instance_id":agent_instance_id,
+                            "self":agent_instance_id == active_agent_instance_id,
+                        })
+                        .to_string(),
+                    )],
                 }],
             )
         }

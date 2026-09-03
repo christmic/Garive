@@ -22,7 +22,7 @@ fn catalogue_prepares_all_agent_collaboration_commands() {
         ),
         (
             FORK_SELF_TOOL,
-            r#"{"objective":"explore another approach","branch_name":"alternative"}"#,
+            r#"{"objective":"explore another approach"}"#,
             ReplayClass::Idempotent,
             AccessMode::Write,
         ),
