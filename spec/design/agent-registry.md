@@ -58,10 +58,11 @@ knowledge roots to satisfy their declared read/write authority. If `skills/`
 exists it must be a directory and its traversed resources must remain confined
 to the working root.
 
-`active` admits new Session membership and new Runs. `inactive` and `archived`
-do not. Archive prevents new work but does not corrupt or abruptly discard a
-Run already executing; that Run reaches a normal terminal state. An archived
-Agent may be activated again after validation.
+Session membership is metadata and may reference an Agent in any lifecycle
+state, or an identity that will be registered later. `active` admits new Runs;
+`inactive` and `archived` do not. Archive prevents new work but does not
+corrupt or abruptly discard a Run already executing; that Run reaches a normal
+terminal state. An archived Agent may be activated again after validation.
 
 Because users may edit directories after activation, Runtime reopens and
 validates the binding at each new Run. Missing, unreadable, oversized,
@@ -96,12 +97,13 @@ failure remains `durability_unavailable`.
 
 ## Session and execution binding
 
-Session creation and Agent join accept `agent_id`, not definition identity.
-The Agent must exist and be active. Durable Session membership records the
-stable `agent_id`. Before each new Run, Runtime resolves the current directory
-binding into its internal immutable Effective Agent Snapshot and durably binds
-the snapshot digest to that Run. The snapshot is an audit/execution coordinate,
-not a user-visible Agent version and does not prevent direct directory edits.
+Session creation and Agent membership accept `agent_id`, not definition
+identity. Durable Session membership records the stable `agent_id` without
+loading or validating the Agent. Before each new Run, Runtime requires current
+membership, resolves the active directory binding into its internal immutable
+Effective Agent Snapshot, and durably binds the snapshot digest to that Run.
+The snapshot is an audit/execution coordinate, not a user-visible Agent version
+and does not prevent direct directory edits.
 
 Existing Sessions retain membership when an Agent is archived, but cannot
 start another Run for that Agent until it is active again. Anonymous/forked
@@ -113,7 +115,8 @@ active named Agent.
 1. Registry state survives Runtime restart in the same SQLite database.
 2. API rejects attempts to mutate identity, working directory, or status by
    PATCH and rejects unknown JSON fields.
-3. Session creation/join and new Run reject missing or non-active Agents.
+3. Session membership accepts syntactically valid identities independently of
+   Agent state; a new Run rejects missing or non-active Agents.
 4. Editing `AGENT.md` between Runs changes only the later Run snapshot.
 5. Directory escape, root symlink, overlap, missing required content, invalid
    UTF-8, and incorrect write authority fail before execution.
