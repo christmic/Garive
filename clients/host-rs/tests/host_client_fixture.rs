@@ -723,6 +723,58 @@ async fn mutation_methods_use_exact_h1_paths_and_bodies() {
     assert!(requests[2].contains("\"input_json\":\"{\\\"approved\\\":true}\""));
 }
 
+#[tokio::test]
+async fn membership_and_broadcast_use_explicit_session_contracts() {
+    let fixture = fixture();
+    let roster = r#"{"api_version":"v1","session_id":"session-client","members":[{"agent_id":"alpha","joined_position":2}],"observed_max_position":2}"#;
+    let broadcast = r#"{"api_version":"v1","session_id":"session-client","delivery":"broadcast","turns":[{"agent_id":"alpha","turn_id":"turn-alpha","execution_id":"execution-alpha","committed_position":5}]}"#;
+    let requests = Arc::new(Mutex::new(Vec::new()));
+    let (base_url, server) = serve(
+        vec![
+            http_json(200, roster),
+            http_json(200, roster),
+            http_json(200, roster),
+            http_json(200, broadcast),
+        ],
+        Arc::clone(&requests),
+    )
+    .await;
+    let client = LiveHostClient::new(&base_url, limits(&fixture)).expect("client");
+
+    assert_eq!(
+        client
+            .get_session_membership("session-client")
+            .await
+            .unwrap()
+            .members[0]
+            .agent_id,
+        "alpha"
+    );
+    client
+        .add_session_agent("join-alpha", "session-client", "alpha")
+        .await
+        .unwrap();
+    client
+        .remove_session_agent("leave-alpha", "session-client", "alpha")
+        .await
+        .unwrap();
+    let started = client
+        .start_turn_broadcast("broadcast-alpha", "session-client", "hello")
+        .await
+        .unwrap();
+    assert_eq!(started.turns[0].agent_id, "alpha");
+    server.await.unwrap();
+
+    let requests = requests.lock().await;
+    assert!(requests[0].starts_with("GET /v1/sessions/session-client/agents HTTP/1.1\r\n"));
+    assert!(requests[1].starts_with("POST /v1/sessions/session-client/agents HTTP/1.1\r\n"));
+    assert!(requests[1].contains("\"agent_id\":\"alpha\""));
+    assert!(requests[2]
+        .starts_with("POST /v1/sessions/session-client/agents/alpha/remove HTTP/1.1\r\n"));
+    assert!(requests[3].contains("\"delivery\":\"broadcast\""));
+    assert!(!requests[3].contains("\"agent_id\""));
+}
+
 fn goal_definition_json(goal_id: &str, objective: &str, session_id: &str) -> String {
     serde_jcs::to_string(&serde_json::json!({
         "bounds":{"duration_budget_ms":null,"max_attempts":1,"max_child_goals":1,"max_plan_revisions":1,"token_budget":null},
