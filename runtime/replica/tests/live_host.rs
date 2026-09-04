@@ -265,143 +265,6 @@ fn one_session_admits_ten_equal_named_agents_and_concurrent_turns() {
     assert_ne!(dispatched[0].turn_id, dispatched[1].turn_id);
 }
 
-#[tokio::test]
-async fn notify_delegation_dispatches_named_anonymous_and_fork_assignees() {
-    let harness = Harness::new(64);
-    let session = harness
-        .host
-        .create_named_session("delegation-team", "definition-main", "Atlas")
-        .unwrap();
-    let roster = harness
-        .host
-        .join_session_agent(
-            "delegation-peer",
-            &session.session_id,
-            "definition-main",
-            "Birch",
-        )
-        .unwrap();
-    let atlas = &roster.members[0].agent_instance_id;
-    let birch = &roster.members[1].agent_instance_id;
-    let server = LiveHostServer::bind(
-        harness.host.clone(),
-        SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 0),
-    )
-    .await
-    .unwrap();
-    let address = server.local_addr();
-    let (shutdown_tx, shutdown_rx) = oneshot::channel();
-    let task = tokio::spawn(server.serve(async move {
-        let _ = shutdown_rx.await;
-    }));
-    let client = reqwest::Client::new();
-    let url = format!(
-        "http://{address}/v1/sessions/{}/delegations",
-        session.session_id
-    );
-    for (key, assignee) in [
-        (
-            "delegate-named",
-            serde_json::json!({"kind":"named","agent_instance_id":birch}),
-        ),
-        (
-            "delegate-anonymous",
-            serde_json::json!({"kind":"anonymous","agent_definition_id":"definition-main"}),
-        ),
-        ("delegate-fork", serde_json::json!({"kind":"fork_self"})),
-    ] {
-        let body = serde_json::json!({
-            "dispatcher_agent_instance_id":atlas,
-            "assignee":assignee,
-            "delivery_policy":"notify",
-            "objective":format!("objective-{key}"),
-        })
-        .to_string();
-        let response = client
-            .post(&url)
-            .header("idempotency-key", key)
-            .header("content-type", "application/json")
-            .body(body.clone())
-            .send()
-            .await
-            .unwrap();
-        assert_eq!(response.status(), reqwest::StatusCode::OK);
-        let value: Value = serde_json::from_slice(&response.bytes().await.unwrap()).unwrap();
-        assert_eq!(value["delivery_policy"], "notify");
-        let replay = client
-            .post(&url)
-            .header("idempotency-key", key)
-            .header("content-type", "application/json")
-            .body(body)
-            .send()
-            .await
-            .unwrap();
-        assert_eq!(replay.status(), reqwest::StatusCode::OK);
-        assert_eq!(
-            serde_json::from_slice::<Value>(&replay.bytes().await.unwrap()).unwrap(),
-            value
-        );
-    }
-    let conflict = client
-        .post(&url)
-        .header("idempotency-key", "delegate-named")
-        .header("content-type", "application/json")
-        .body(
-            serde_json::json!({
-                "dispatcher_agent_instance_id":atlas,
-                "assignee":{"kind":"named","agent_instance_id":birch},
-                "delivery_policy":"notify",
-                "objective":"changed objective",
-            })
-            .to_string(),
-        )
-        .send()
-        .await
-        .unwrap();
-    assert_eq!(conflict.status(), reqwest::StatusCode::CONFLICT);
-    let unsupported = client
-        .post(&url)
-        .header("idempotency-key", "delegate-await")
-        .header("content-type", "application/json")
-        .body(
-            serde_json::json!({
-                "dispatcher_agent_instance_id":atlas,
-                "assignee":{"kind":"named","agent_instance_id":birch},
-                "delivery_policy":"await_before_final",
-                "objective":"not implemented",
-            })
-            .to_string(),
-        )
-        .send()
-        .await
-        .unwrap();
-    assert_eq!(unsupported.status(), reqwest::StatusCode::BAD_REQUEST);
-
-    {
-        let dispatched = harness.dispatcher.committed.lock().unwrap();
-        assert_eq!(dispatched.len(), 3);
-        let ledger = SqliteLedger::open(&harness.database).unwrap();
-        for committed in dispatched.iter() {
-            let facts = ledger.load_turn(&committed.turn_id).unwrap().facts;
-            let execution = facts
-                .iter()
-                .find(|fact| fact.kind.as_str() == "execution.started")
-                .unwrap();
-            assert_eq!(execution.position, committed.committed_position);
-            assert!(ledger
-                .read_facts(&committed.session_id, 0, committed.committed_position, None,)
-                .unwrap()
-                .iter()
-                .any(
-                    |fact| fact.kind.as_str() == "collaboration.assignee_started"
-                        && fact.position < execution.position
-                ));
-        }
-    }
-    let _ = shutdown_tx.send(());
-    task.await.unwrap().unwrap();
-}
-
 #[test]
 fn h2_read_limits_fail_closed_and_truncate_only_display_text() {
     let text_limits = HostReadLimits {
@@ -943,15 +806,18 @@ fn steer_endpoint_returns_structured_command_response() {
             let _ = shutdown_rx.await;
         }));
         let url = format!(
-            "http://{}/v1/sessions/{}/turns/{}/steer",
-            listener_addr, session.session_id, started.turn_id
+            "http://{}/v1/turns/{}/events",
+            listener_addr, started.turn_id
         );
         let client = reqwest::Client::new();
         let response = client
             .post(&url)
             .header("Idempotency-Key", "steer-http-1")
             .header("Content-Type", "application/json")
-            .body(r#"{"text":"hello from steer"}"#)
+            .body(format!(
+                r#"{{"kind":"steer","session_id":"{}","text":"hello from steer"}}"#,
+                session.session_id
+            ))
             .send()
             .await
             .unwrap();
@@ -2635,7 +2501,7 @@ async fn real_loopback_http_has_stable_errors_commands_and_sse_replay() {
         ),
     ] {
         let response = client
-            .post(format!("{base}/v1/turns/turn-x:continue"))
+            .post(format!("{base}/v1/turns/turn-x/continue"))
             .header("idempotency-key", key)
             .header("content-type", "application/json")
             .body(body)
@@ -2744,9 +2610,18 @@ async fn real_loopback_http_has_stable_errors_commands_and_sse_replay() {
         .unwrap();
     assert_eq!(bad_wake.status(), reqwest::StatusCode::BAD_REQUEST);
 
+    let started_payload = started
+        .bytes()
+        .await
+        .map(|bytes| serde_json::from_slice::<Value>(&bytes).unwrap())
+        .unwrap();
+    let started_turn_id = started_payload["turns"][0]["turn_id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
     let response = client
         .get(format!(
-            "{base}/v1/sessions/{session_id}/events?after_position=0"
+            "{base}/v1/turns/{started_turn_id}/events?after_position=0"
         ))
         .send()
         .await
@@ -2756,7 +2631,7 @@ async fn real_loopback_http_has_stable_errors_commands_and_sse_replay() {
     let first = bytes.next().await.unwrap().unwrap();
     let text = String::from_utf8(first.to_vec()).unwrap();
     assert!(text.contains("event: host"));
-    assert!(text.contains("session.created"));
+    assert!(text.contains("turn.started"));
     assert!(text.contains(r#""api_version":"v1""#));
     drop(bytes);
 

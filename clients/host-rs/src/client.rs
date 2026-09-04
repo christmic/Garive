@@ -558,6 +558,30 @@ impl LiveHostClient {
         })
     }
 
+    /// Injects one mid-Turn steer input into an Open Turn's next derive
+    /// iteration. The session identity travels in the body so the Host can
+    /// validate ownership against the supplied Turn.
+    pub async fn steer_turn(
+        &self,
+        command_id: &str,
+        session_id: &str,
+        turn_id: &str,
+        text: &str,
+    ) -> Result<TurnCommandResponse, HostClientError> {
+        if session_id.is_empty() || turn_id.is_empty() || text.is_empty() {
+            return Err(HostClientError::new(HostClientErrorCode::InvalidCommand));
+        }
+        let path = format!("v1/turns/{}/events", encode_segment(turn_id));
+        let value = self
+            .post(
+                &path,
+                command_id,
+                &SteerCommand { session_id, text },
+            )
+            .await?;
+        validate_owned_turn_response(value, session_id, turn_id)
+    }
+
     /// Requests durable Turn cancellation through an observed position.
     pub async fn cancel_turn(
         &self,
@@ -569,7 +593,7 @@ impl LiveHostClient {
         if session_id.is_empty() || turn_id.is_empty() || requested_through_position == 0 {
             return Err(HostClientError::new(HostClientErrorCode::InvalidCommand));
         }
-        let path = format!("v1/turns/{}:cancel", encode_segment(turn_id));
+        let path = format!("v1/turns/{}/cancel", encode_segment(turn_id));
         let value = self
             .post(
                 &path,
@@ -601,7 +625,7 @@ impl LiveHostClient {
         {
             return Err(HostClientError::new(HostClientErrorCode::InvalidCommand));
         }
-        let path = format!("v1/turns/{}:continue", encode_segment(turn_id));
+        let path = format!("v1/turns/{}/continue", encode_segment(turn_id));
         let value = self
             .post(
                 &path,
@@ -641,7 +665,7 @@ impl LiveHostClient {
         if canonical != input_json {
             return Err(HostClientError::new(HostClientErrorCode::InvalidCommand));
         }
-        let path = format!("v1/turns/{}:continue", encode_segment(turn_id));
+        let path = format!("v1/turns/{}/continue", encode_segment(turn_id));
         let value = self
             .post(
                 &path,
@@ -657,27 +681,27 @@ impl LiveHostClient {
         validate_owned_turn_response(value, session_id, turn_id)
     }
 
-    /// Follows committed events until an explicit durable terminal event.
+    /// Follows committed Turn events until an explicit durable terminal event.
     pub async fn follow_until_terminal(
         &self,
-        session_id: &str,
+        turn_id: &str,
         after_position: u64,
     ) -> Result<HostView, HostClientError> {
-        self.follow_until_terminal_with(session_id, after_position, |_| {})
+        self.follow_until_terminal_with(turn_id, after_position, |_| {})
             .await
     }
 
-    /// Follows validated semantic events into a bounded asynchronous sink.
+    /// Follows validated Turn semantic events into a bounded asynchronous sink.
     pub async fn follow_events(
         &self,
-        session_id: &str,
+        turn_id: &str,
         after_position: u64,
         sink: tokio::sync::mpsc::Sender<HostEvent>,
     ) -> Result<(), HostClientError> {
-        if session_id.is_empty() {
+        if turn_id.is_empty() {
             return Err(HostClientError::new(HostClientErrorCode::InvalidCommand));
         }
-        let operation = self.follow_events_inner(session_id, after_position, sink);
+        let operation = self.follow_events_inner(turn_id, after_position, sink);
         timeout(
             Duration::from_millis(self.limits.follow_deadline_ms),
             operation,
@@ -781,13 +805,13 @@ impl LiveHostClient {
 
     async fn follow_events_inner(
         &self,
-        session_id: &str,
+        turn_id: &str,
         after_position: u64,
         sink: tokio::sync::mpsc::Sender<HostEvent>,
     ) -> Result<(), HostClientError> {
         let path = format!(
-            "v1/sessions/{}/events?after_position={after_position}",
-            encode_segment(session_id)
+            "v1/turns/{}/events?after_position={after_position}",
+            encode_segment(turn_id)
         );
         let response = self
             .http
@@ -847,7 +871,7 @@ impl LiveHostClient {
                 let event: HostEvent = serde_json::from_slice(&data)
                     .map_err(|_| HostClientError::new(HostClientErrorCode::InvalidEvent))?;
                 if event.api_version != "v1"
-                    || event.session_id != session_id
+                    || event.turn_id != turn_id
                     || event.position <= cursor
                     || match (&event.activity, event.event.starts_with("agent.activity.")) {
                         (Some(activity), true) => {
@@ -870,20 +894,21 @@ impl LiveHostClient {
         Err(HostClientError::new(HostClientErrorCode::TransportFailure))
     }
 
-    /// Follows until terminal and observes each newly applied durable event.
+    /// Follows a Turn's events until terminal and observes each newly applied
+    /// durable event.
     pub async fn follow_until_terminal_with<F>(
         &self,
-        session_id: &str,
+        turn_id: &str,
         after_position: u64,
         observer: F,
     ) -> Result<HostView, HostClientError>
     where
         F: FnMut(&HostEvent),
     {
-        if session_id.is_empty() {
+        if turn_id.is_empty() {
             return Err(HostClientError::new(HostClientErrorCode::InvalidCommand));
         }
-        let operation = self.follow(session_id, after_position, observer);
+        let operation = self.follow(turn_id, after_position, observer);
         timeout(
             Duration::from_millis(self.limits.follow_deadline_ms),
             operation,
@@ -894,7 +919,7 @@ impl LiveHostClient {
 
     async fn follow<F>(
         &self,
-        session_id: &str,
+        turn_id: &str,
         after_position: u64,
         mut observer: F,
     ) -> Result<HostView, HostClientError>
@@ -902,8 +927,8 @@ impl LiveHostClient {
         F: FnMut(&HostEvent),
     {
         let path = format!(
-            "v1/sessions/{}/events?after_position={after_position}",
-            encode_segment(session_id)
+            "v1/turns/{}/events?after_position={after_position}",
+            encode_segment(turn_id)
         );
         let response = self
             .http
@@ -941,6 +966,7 @@ impl LiveHostClient {
         let mut pending = Vec::new();
         let mut count = 0usize;
         let mut view = HostView::at_cursor(after_position);
+        let mut known_session_id = String::new();
         while let Some(chunk) = stream.next().await {
             let chunk =
                 chunk.map_err(|_| HostClientError::new(HostClientErrorCode::TransportFailure))?;
@@ -969,9 +995,17 @@ impl LiveHostClient {
                 }
                 let event: HostEvent = serde_json::from_slice(&data)
                     .map_err(|_| HostClientError::new(HostClientErrorCode::InvalidEvent))?;
+                if event.api_version != "v1" || event.turn_id != turn_id {
+                    return Err(HostClientError::new(
+                        HostClientErrorCode::EventOrderViolation,
+                    ));
+                }
+                if known_session_id.is_empty() {
+                    known_session_id = event.session_id.clone();
+                }
                 let previous_cursor = view.cursor;
                 view = reduce_host_events(
-                    session_id,
+                    &known_session_id,
                     std::slice::from_ref(&event),
                     view,
                     self.limits.max_events,
@@ -1121,6 +1155,12 @@ struct RoutedTurnCommand<'a> {
     delivery: &'static str,
     #[serde(skip_serializing_if = "Option::is_none")]
     agent_id: Option<&'a str>,
+}
+
+#[derive(Serialize)]
+struct SteerCommand<'a> {
+    session_id: &'a str,
+    text: &'a str,
 }
 
 #[derive(Serialize)]

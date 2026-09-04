@@ -234,6 +234,8 @@ pub(crate) fn start_turn(
 pub(crate) fn follow(
     client: LiveHostClient,
     subscription_id: SubscriptionId,
+    // TODO(turn-scope): pass turn_id once the TUI tracks the active Turn per
+    // Session; the new turn-scoped Host SSE no longer accepts session_id.
     session_id: String,
     after_position: u64,
     sender: mpsc::Sender<HostMessage>,

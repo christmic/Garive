@@ -196,6 +196,12 @@ fn shared_fixture_mutations_have_exact_failures() {
 async fn live_client_round_trips_real_http_and_sse() {
     let fixture = fixture();
     let bodies = Arc::new(Mutex::new(Vec::new()));
+    let turn_stream: Vec<HostEvent> = fixture
+        .valid_stream
+        .iter()
+        .filter(|event| !event.turn_id.is_empty())
+        .cloned()
+        .collect();
     let responses = vec![
         http_json(
             201,
@@ -205,7 +211,7 @@ async fn live_client_round_trips_real_http_and_sse() {
             202,
             r#"{"api_version":"v1","session_id":"session-client","delivery":"direct","turns":[{"agent_id":"definition-1","turn_id":"turn-client","execution_id":"execution-client","committed_position":2}]}"#,
         ),
-        http_sse(&fixture.valid_stream),
+        http_sse(&turn_stream),
     ];
     let (base_url, server) = serve(responses, Arc::clone(&bodies)).await;
     let client = LiveHostClient::new(&base_url, limits(&fixture)).expect("client");
@@ -223,7 +229,7 @@ async fn live_client_round_trips_real_http_and_sse() {
         .await
         .expect("start");
     let view = client
-        .follow_until_terminal(&session.session_id, 0)
+        .follow_until_terminal(&turn.turns[0].turn_id, 0)
         .await
         .expect("follow");
     server.await.expect("server task");
@@ -236,7 +242,7 @@ async fn live_client_round_trips_real_http_and_sse() {
     assert!(requests[0].contains("idempotency-key: create-stable-1"));
     assert!(requests[1].starts_with("POST /v1/sessions/session-client/turns HTTP/1.1\r\n"));
     assert!(requests[2]
-        .starts_with("GET /v1/sessions/session-client/events?after_position=0 HTTP/1.1\r\n"));
+        .starts_with("GET /v1/turns/turn-client/events?after_position=0 HTTP/1.1\r\n"));
 }
 
 #[tokio::test]
@@ -714,9 +720,9 @@ async fn mutation_methods_use_exact_h1_paths_and_bodies() {
         .expect("continue JSON");
     server.await.expect("server task");
     let requests = requests.lock().await;
-    assert!(requests[0].starts_with("POST /v1/turns/turn-client:cancel HTTP/1.1\r\n"));
+    assert!(requests[0].starts_with("POST /v1/turns/turn-client/cancel HTTP/1.1\r\n"));
     assert!(requests[0].contains("\"requested_through_position\":9"));
-    assert!(requests[1].starts_with("POST /v1/turns/turn-client:continue HTTP/1.1\r\n"));
+    assert!(requests[1].starts_with("POST /v1/turns/turn-client/continue HTTP/1.1\r\n"));
     assert!(requests[1].contains("\"expected_session_version\":4"));
     assert!(requests[1].contains("\"suspension_id\":\"suspension-client\""));
     assert!(requests[1].contains("\"input\":\"approved input\""));

@@ -61,9 +61,10 @@ caller fields can never replace the installed revision, snapshot or instance.
 | `POST /v1/sessions/{session_id}/agents` | `AddSessionAgentRequestV1` | open Session | `session.agent_joined` |
 | `DELETE /v1/sessions/{session_id}/agents/{agent_id}` | none | open Session | `session.agent_left` |
 | `POST /v1/sessions/{session_id}/turns` | `StartTurnRequestV1` | open Session; explicit valid delivery | atomic direct/broadcast start transaction |
-| `POST /v1/turns/{turn_id}:cancel` | `CancelTurnRequestV1` | non-terminal owned Turn | `turn.cancel_requested` |
-| `POST /v1/turns/{turn_id}:continue` | `ContinueTurnRequestV1` | exact current suspension and Session version | C6 continuation transaction |
-| `GET /v1/sessions/{session_id}/events?after_position=N` | none | existing Session; `N` may be zero | replay then follow |
+| `POST /v1/turns/{turn_id}/events` | `TurnEventRequestV1` | non-terminal owned Turn | mid-turn input (V1 admits `kind: "steer"`; future approval/ask/supplement extend) |
+| `POST /v1/turns/{turn_id}/cancel` | `CancelTurnRequestV1` | non-terminal owned Turn | `turn.cancel_requested` |
+| `POST /v1/turns/{turn_id}/continue` | `ContinueTurnRequestV1` | exact current suspension and Session version | C6 continuation transaction |
+| `GET /v1/turns/{turn_id}/events?after_position=N` | none | existing Turn; `N` may be zero | replay then follow turn-scoped events |
 
 Every mutation requires exactly one `Idempotency-Key` header containing 1–128
 visible ASCII characters. The key becomes the C6 Runtime command identity.
@@ -144,7 +145,13 @@ Failures must not disclose whether an identity exists in a different Session.
 ## Durable event projection
 
 The SSE endpoint replays a fixed SQLite prefix, then follows later committed
-facts. Each record is:
+facts. The endpoint is **turn-scoped** at `/v1/turns/{turn_id}/events`; H1 no
+longer exposes a Session-wide SSE stream. Only events whose committed fact
+carries the requested `turn_id` are returned; session-lifecycle events
+(`session.created`) live on the durable Session view and are not delivered to
+the turn stream.
+
+Each record is:
 
 ```text
 id: {durable Session position}
@@ -172,7 +179,7 @@ The v1 projection is deliberately small:
 
 | Durable fact | Host event | Public text |
 |---|---|---|
-| `session.opened` | `session.created` | absent |
+| `session.opened` | `session.created` (session view only; not in turn SSE) | absent |
 | first `turn.started(kind=start)` | `turn.started` | absent |
 | `turn.completed` | `turn.completed` | redacted display text derived from committed response items |
 | `turn.suspended` | `turn.suspended` | absent |

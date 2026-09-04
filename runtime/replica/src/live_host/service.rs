@@ -3015,6 +3015,30 @@ impl LiveHost {
         })
     }
 
+    /// Scans one bounded durable position range and projects admitted public
+    /// events owned by the given Turn. Resolves the owning Session from the
+    /// durable Turn prefix so the public URL can stay session-free.
+    pub fn read_turn_event_page(
+        &self,
+        turn: &str,
+        after_position: u64,
+    ) -> Result<HostEventPage, LiveHostError> {
+        if after_position > MAX_SAFE_JSON_INTEGER {
+            return Err(LiveHostError::InvalidRequest);
+        }
+        let turn_id = identity::<TurnId>(turn)?;
+        let ledger = self.ledger()?;
+        let snapshot = ledger.load_turn(&turn_id).map_err(map_sqlite)?;
+        let session_id = snapshot
+            .facts
+            .first()
+            .map(|fact| fact.session_id.clone())
+            .ok_or(LiveHostError::NotFound)?;
+        let mut page = self.read_event_page(session_id.as_str(), after_position)?;
+        page.events.retain(|event| event.turn_id == turn_id.as_str());
+        Ok(page)
+    }
+
     fn ledger(&self) -> Result<SqliteLedger, LiveHostError> {
         SqliteLedger::open(&self.state.database_path).map_err(map_sqlite)
     }

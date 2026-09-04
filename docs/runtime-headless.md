@@ -107,7 +107,7 @@ curl -sX POST "http://127.0.0.1:8787/v1/sessions/$SESSION/turns" \
   -d '{"text":"say hi in one sentence"}'
 
 # 4. Read the model's output.
-curl -sN "http://127.0.0.1:8787/v1/sessions/$SESSION/events?after_position=0"
+curl -sN "http://127.0.0.1:8787/v1/turns/$TURN/events?after_position=0"
 ```
 
 ## Why the SQLite row is enough

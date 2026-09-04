@@ -32,7 +32,7 @@ pub(crate) use projection::{completion_text, project_fact};
 pub(crate) use service::validate_key;
 pub(crate) use types::{
     CancelGoalBody, CancelTurnBody, ContinueTurnBody, CreateGoalBody, CreateSessionBody,
-    DelegationAssigneeBody, DispatchAgentTaskBody, ErrorBody, JoinSessionAgentBody, LiveHostState,
-    MobileWakeObservation, MobileWakePage, ReviseGoalBody, SendSessionAgentMessageBody,
-    StartTurnBody, SteerTurnBody, TurnDeliveryBody,
+    DelegationAssigneeBody, ErrorBody, JoinSessionAgentBody, LiveHostState,
+    MobileWakeObservation, MobileWakePage, ReviseGoalBody, StartTurnBody,
+    TurnDeliveryBody, TurnEventBody,
 };

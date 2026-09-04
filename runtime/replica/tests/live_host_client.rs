@@ -238,7 +238,7 @@ async fn shared_client_completes_a_real_runtime_host_turn() {
         .unwrap();
 
     let view = client
-        .follow_until_terminal(&session.session_id, 0)
+        .follow_until_terminal(&started.turn_id, 0)
         .await
         .unwrap();
     assert_eq!(view.terminal, Some(HostTerminal::Completed));

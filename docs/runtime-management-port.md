@@ -247,7 +247,7 @@ in the runtime crate:
 | Mode     | Path                                                    | Purpose                                                              |
 | -------- | ------------------------------------------------------- | -------------------------------------------------------------------- |
 | Queue    | `POST /v1/sessions/:session_id/turns`                   | Submit a new Turn; rejected with `session_busy` while one is Open.   |
-| Steer    | `POST /v1/sessions/:session_id/turns/:turn_id/steer`    | Inject new user input into the next derive iteration of an Open Turn. |
+| Steer    | `POST /v1/turns/:turn_id/events` (body `{"kind":"steer","session_id":"...","text":"..."}`) | Inject new user input into the next derive iteration of an Open Turn. |
 
 Queue mode is the only path that creates a new Turn. Steer mode is purely
 ledger-driven: it commits a `turn.steered` fact under the targeted `turn_id`,

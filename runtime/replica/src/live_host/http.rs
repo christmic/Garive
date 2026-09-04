@@ -17,10 +17,9 @@ use tokio::net::TcpListener;
 
 use super::{
     validate_key, CancelGoalBody, CancelTurnBody, ContinueTurnBody, CreateGoalBody,
-    CreateSessionBody, DeliveredTurnResponse, DispatchAgentTaskBody, ErrorBody,
-    JoinSessionAgentBody, LiveHost, LiveHostError, LiveHostEvent, ReviseGoalBody,
-    SendSessionAgentMessageBody, StartTurnBody, StartTurnsResponse, SteerTurnBody,
-    TurnDeliveryBody,
+    CreateSessionBody, DeliveredTurnResponse, ErrorBody, JoinSessionAgentBody, LiveHost,
+    LiveHostError, LiveHostEvent, ReviseGoalBody, StartTurnBody, StartTurnsResponse,
+    TurnDeliveryBody, TurnEventBody,
 };
 use crate::{
     CreateAgentRequest, LiveOutputReceiveError, LiveOutputSubscriber, UpdateAgentKnowledgeRequest,
@@ -61,31 +60,16 @@ impl LiveHostServer {
                 delete(remove_session_agent),
             )
             .route(
-                "/v1/sessions/:session_id/agents/:agent_instance_id/turns",
-                post(start_agent_turn),
-            )
-            .route(
-                "/v1/sessions/:session_id/agent-messages",
-                get(session_agent_messages).post(send_session_agent_message),
-            )
-            .route(
-                "/v1/sessions/:session_id/delegations",
-                post(dispatch_agent_task),
-            )
-            .route(
                 "/v1/sessions/:session_id/goals",
                 post(create_goal).get(goal_page),
             )
             .route("/v1/sessions/:session_id/plans", get(plan_page))
             .route("/v1/sessions/:session_id/timeline", get(turn_timeline))
             .route("/v1/sessions/:session_id/turns", post(start_turn))
-            .route(
-                "/v1/sessions/:session_id/turns/:turn_id/steer",
-                post(steer_turn_http),
-            )
+            .route("/v1/turns/:turn_id/events", post(turn_event_input).get(turn_events))
+            .route("/v1/turns/:turn_id/cancel", post(cancel_turn_http))
+            .route("/v1/turns/:turn_id/continue", post(continue_turn_http))
             .route("/v1/goals/:operation", post(mutate_goal))
-            .route("/v1/turns/:operation", post(mutate_turn))
-            .route("/v1/sessions/:session_id/events", get(events))
             .route(
                 "/v1/management/setup",
                 get(super::management::read_setup)
@@ -241,17 +225,6 @@ async fn session_agents(State(host): State<LiveHost>, Path(session_id): Path<Str
     command_response(result)
 }
 
-async fn session_agent_messages(
-    State(host): State<LiveHost>,
-    Path(session_id): Path<String>,
-) -> Response {
-    let result = tokio::task::spawn_blocking(move || host.get_session_agent_messages(&session_id))
-        .await
-        .map_err(|_| LiveHostError::DurabilityUnavailable)
-        .and_then(|result| result);
-    command_response(result)
-}
-
 async fn goal_page(State(host): State<LiveHost>, Path(session_id): Path<String>) -> Response {
     let result = tokio::task::spawn_blocking(move || host.get_goals(&session_id))
         .await
@@ -394,72 +367,6 @@ async fn remove_session_agent(
     command_response(result)
 }
 
-async fn send_session_agent_message(
-    State(host): State<LiveHost>,
-    Path(session_id): Path<String>,
-    headers: HeaderMap,
-    body: Body,
-) -> Response {
-    let result = async {
-        let key = idempotency_key(&headers)?;
-        let body: SendSessionAgentMessageBody = decode_body(&host, body).await?;
-        host.send_session_agent_message(
-            key,
-            &session_id,
-            &body.from_agent_instance_id,
-            body.to_agent_instance_id.as_deref(),
-            &body.text,
-        )
-    }
-    .await;
-    command_response(result)
-}
-
-async fn dispatch_agent_task(
-    State(host): State<LiveHost>,
-    Path(session_id): Path<String>,
-    headers: HeaderMap,
-    body: Body,
-) -> Response {
-    let result = async {
-        let key = idempotency_key(&headers)?;
-        let body: DispatchAgentTaskBody = decode_body(&host, body).await?;
-        host.dispatch_agent_task(
-            key,
-            &session_id,
-            &body.dispatcher_agent_instance_id,
-            body.assignee,
-            &body.delivery_policy,
-            &body.objective,
-        )
-    }
-    .await;
-    match result {
-        Ok(response) => {
-            let background_host = host;
-            let session_id = response.session_id.clone();
-            let delegation_id = response.delegation_id.clone();
-            tokio::spawn(async move {
-                for _ in 0..6_000 {
-                    let host = background_host.clone();
-                    let session = session_id.clone();
-                    let delegation = delegation_id.clone();
-                    let delivered = tokio::task::spawn_blocking(move || {
-                        host.deliver_agent_task_result(&session, &delegation)
-                    })
-                    .await;
-                    match delivered {
-                        Ok(Ok(true)) | Ok(Err(_)) | Err(_) => break,
-                        Ok(Ok(false)) => tokio::time::sleep(Duration::from_millis(100)).await,
-                    }
-                }
-            });
-            command_response(Ok(response))
-        }
-        Err(error) => error_response(error),
-    }
-}
-
 async fn create_goal(
     State(host): State<LiveHost>,
     Path(session_id): Path<String>,
@@ -521,70 +428,67 @@ enum StartTurnHttpResponse {
     Routed(StartTurnsResponse),
 }
 
-async fn start_agent_turn(
+async fn turn_event_input(
     State(host): State<LiveHost>,
-    Path((session_id, agent_instance_id)): Path<(String, String)>,
+    Path(turn_id): Path<String>,
     headers: HeaderMap,
     body: Body,
 ) -> Response {
     let result = async {
         let key = idempotency_key(&headers)?;
-        let body: StartTurnBody = decode_body(&host, body).await?;
-        host.start_agent_turn(key, &session_id, &agent_instance_id, &body.text)
-    }
-    .await;
-    command_response(result)
-}
-
-async fn steer_turn_http(
-    State(host): State<LiveHost>,
-    Path((session_id, turn_id)): Path<(String, String)>,
-    headers: HeaderMap,
-    body: Body,
-) -> Response {
-    let result = async {
-        let key = idempotency_key(&headers)?;
-        let body: SteerTurnBody = decode_body(&host, body).await?;
-        host.steer_turn(key, &session_id, &turn_id, &body.text)
-    }
-    .await;
-    command_response(result)
-}
-
-async fn mutate_turn(
-    State(host): State<LiveHost>,
-    Path(operation): Path<String>,
-    headers: HeaderMap,
-    body: Body,
-) -> Response {
-    let result = async {
-        let key = idempotency_key(&headers)?;
-        if let Some(turn_id) = operation.strip_suffix(":cancel") {
-            let body: CancelTurnBody = decode_body(&host, body).await?;
-            host.cancel_turn(
-                key,
-                &body.session_id,
-                turn_id,
-                body.requested_through_position,
-            )
-        } else if let Some(turn_id) = operation.strip_suffix(":continue") {
-            let body: ContinueTurnBody = decode_body(&host, body).await?;
-            let input = match (&body.input, &body.input_json) {
-                (Some(value), None) => super::HostContinuationInput::String(value),
-                (None, Some(value)) => super::HostContinuationInput::Json(value),
-                _ => return Err(LiveHostError::InvalidRequest),
-            };
-            host.continue_turn(
-                key,
-                &body.session_id,
-                turn_id,
-                &body.suspension_id,
-                body.expected_session_version,
-                input,
-            )
-        } else {
-            Err(LiveHostError::InvalidRequest)
+        let event: TurnEventBody = decode_body(&host, body).await?;
+        match event {
+            TurnEventBody::Steer { session_id, text } => {
+                host.steer_turn(key, &session_id, &turn_id, &text)
+            }
         }
+    }
+    .await;
+    command_response(result)
+}
+
+async fn cancel_turn_http(
+    State(host): State<LiveHost>,
+    Path(turn_id): Path<String>,
+    headers: HeaderMap,
+    body: Body,
+) -> Response {
+    let result = async {
+        let key = idempotency_key(&headers)?;
+        let body: CancelTurnBody = decode_body(&host, body).await?;
+        host.cancel_turn(
+            key,
+            &body.session_id,
+            &turn_id,
+            body.requested_through_position,
+        )
+    }
+    .await;
+    command_response(result)
+}
+
+async fn continue_turn_http(
+    State(host): State<LiveHost>,
+    Path(turn_id): Path<String>,
+    headers: HeaderMap,
+    body: Body,
+) -> Response {
+    let result = async {
+        let key = idempotency_key(&headers)?;
+        let body: ContinueTurnBody = decode_body(&host, body).await?;
+        let input = match (&body.input, &body.input_json) {
+            (Some(value), None) => super::HostContinuationInput::String(value),
+            (None, Some(value)) => super::HostContinuationInput::Json(value),
+            _ => return Err(LiveHostError::InvalidRequest),
+        };
+        host.continue_turn(
+            key,
+            &body.session_id,
+            &turn_id,
+            &body.suspension_id,
+            body.expected_session_version,
+            input,
+        )
     }
     .await;
     command_response(result)
@@ -627,23 +531,23 @@ async fn mutate_goal(
     command_response(result)
 }
 
-async fn events(
+async fn turn_events(
     State(host): State<LiveHost>,
-    Path(session_id): Path<String>,
+    Path(turn_id): Path<String>,
     RawQuery(query): RawQuery,
 ) -> Response {
     let after_position = match parse_event_query(query.as_deref()) {
         Ok(value) => value,
         Err(error) => return error_response(error),
     };
-    let first = match read_page(host.clone(), session_id.clone(), after_position).await {
+    let first = match read_turn_page(host.clone(), turn_id.clone(), after_position).await {
         Ok(page) => page,
         Err(error) => return error_response(error),
     };
     let poll = Duration::from_millis(host.limits().event_poll_interval_ms);
     let state = EventStreamState {
         host,
-        session_id,
+        turn_id,
         cursor: first.scanned_through_position,
         pending: first.events.into(),
         poll,
@@ -660,7 +564,7 @@ async fn events(
 
 struct EventStreamState {
     host: LiveHost,
-    session_id: String,
+    turn_id: String,
     cursor: u64,
     pending: VecDeque<LiveHostEvent>,
     poll: Duration,
@@ -681,7 +585,7 @@ async fn next_event(
                 .data(data);
             return Some((Ok(event), state));
         }
-        match read_page(state.host.clone(), state.session_id.clone(), state.cursor).await {
+        match read_turn_page(state.host.clone(), state.turn_id.clone(), state.cursor).await {
             Ok(page) => {
                 state.cursor = page.scanned_through_position;
                 state.pending = page.events.into();
@@ -694,12 +598,12 @@ async fn next_event(
     }
 }
 
-async fn read_page(
+async fn read_turn_page(
     host: LiveHost,
-    session_id: String,
+    turn_id: String,
     after_position: u64,
 ) -> Result<super::HostEventPage, LiveHostError> {
-    tokio::task::spawn_blocking(move || host.read_event_page(&session_id, after_position))
+    tokio::task::spawn_blocking(move || host.read_turn_event_page(&turn_id, after_position))
         .await
         .map_err(|_| LiveHostError::DurabilityUnavailable)?
 }

@@ -982,29 +982,11 @@ pub(crate) struct JoinSessionAgentBody {
 }
 
 #[derive(Clone, Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct SendSessionAgentMessageBody {
-    pub from_agent_instance_id: String,
-    #[serde(default)]
-    pub to_agent_instance_id: Option<String>,
-    pub text: String,
-}
-
-#[derive(Clone, Debug, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub(crate) enum DelegationAssigneeBody {
     Named { agent_instance_id: String },
     Anonymous { agent_definition_id: String },
     ForkSelf,
-}
-
-#[derive(Clone, Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct DispatchAgentTaskBody {
-    pub dispatcher_agent_instance_id: String,
-    pub assignee: DelegationAssigneeBody,
-    pub delivery_policy: String,
-    pub objective: String,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -1024,10 +1006,16 @@ pub(crate) enum TurnDeliveryBody {
     Broadcast,
 }
 
+/// One mid-Turn user input event admitted by `POST /v1/turns/:turn_id/events`.
+///
+/// V1 only admits the `steer` variant; future approval, ask-reply, and
+/// supplemental inputs will extend this enum without breaking existing clients
+/// because serde rejects unknown fields and the field is tagged.
 #[derive(Clone, Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct SteerTurnBody {
-    pub text: String,
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+pub(crate) enum TurnEventBody {
+    /// Inject new trusted-user input into the next derive iteration.
+    Steer { session_id: String, text: String },
 }
 
 #[derive(Clone, Debug, Deserialize)]

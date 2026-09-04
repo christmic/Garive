@@ -105,7 +105,7 @@ async fn run_turn(
         .next()
         .expect("direct response contains exactly one Turn");
     let view = client
-        .follow_until_terminal(&session_id, turn.committed_position)
+        .follow_until_terminal(&turn.turn_id, turn.committed_position)
         .await?;
     let terminal = view
         .terminal
