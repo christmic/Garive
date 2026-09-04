@@ -770,7 +770,7 @@ async fn membership_and_broadcast_use_explicit_session_contracts() {
     assert!(requests[1].starts_with("POST /v1/sessions/session-client/agents HTTP/1.1\r\n"));
     assert!(requests[1].contains("\"agent_id\":\"alpha\""));
     assert!(requests[2]
-        .starts_with("POST /v1/sessions/session-client/agents/alpha/remove HTTP/1.1\r\n"));
+        .starts_with("DELETE /v1/sessions/session-client/agents/alpha HTTP/1.1\r\n"));
     assert!(requests[3].contains("\"delivery\":\"broadcast\""));
     assert!(!requests[3].contains("\"agent_id\""));
 }

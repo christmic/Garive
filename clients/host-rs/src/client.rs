@@ -449,11 +449,11 @@ impl LiveHostClient {
             return Err(HostClientError::new(HostClientErrorCode::InvalidCommand));
         }
         let path = format!(
-            "v1/sessions/{}/agents/{}/remove",
+            "v1/sessions/{}/agents/{}",
             encode_segment(session_id),
             encode_segment(agent_id)
         );
-        let value = self.post(&path, command_id, &EmptyCommand {}).await?;
+        let value = self.delete(&path, command_id).await?;
         validate_membership(decode(value)?, session_id, self.limits.max_events)
     }
 
@@ -1052,6 +1052,34 @@ impl LiveHostClient {
         serde_json::from_slice(&bytes).map_err(|_| invalid_event())
     }
 
+    async fn delete(&self, path: &str, command_id: &str) -> Result<Value, HostClientError> {
+        if !valid_command_id(command_id) {
+            return Err(HostClientError::new(HostClientErrorCode::InvalidCommand));
+        }
+        let response = self
+            .http
+            .delete(self.join(path)?)
+            .header("Idempotency-Key", command_id)
+            .send()
+            .await
+            .map_err(|_| HostClientError::new(HostClientErrorCode::TransportFailure))?;
+        let status = response.status();
+        if status.is_redirection() {
+            return Err(HostClientError::new(HostClientErrorCode::TransportFailure));
+        }
+        let bytes = response
+            .bytes()
+            .await
+            .map_err(|_| HostClientError::new(HostClientErrorCode::TransportFailure))?;
+        if !status.is_success() {
+            return Err(classify_host_error(status, &bytes));
+        }
+        if bytes.len() > self.limits.max_event_bytes {
+            return Err(invalid_event());
+        }
+        serde_json::from_slice(&bytes).map_err(|_| invalid_event())
+    }
+
     fn join(&self, path: &str) -> Result<Url, HostClientError> {
         self.base_url
             .join(path)
@@ -1094,9 +1122,6 @@ struct RoutedTurnCommand<'a> {
     #[serde(skip_serializing_if = "Option::is_none")]
     agent_id: Option<&'a str>,
 }
-
-#[derive(Serialize)]
-struct EmptyCommand {}
 
 #[derive(Serialize)]
 struct CancelCommand<'a> {

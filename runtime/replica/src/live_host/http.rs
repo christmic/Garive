@@ -8,7 +8,7 @@ use axum::{
     extract::{Path, RawQuery, State},
     http::{HeaderMap, StatusCode},
     response::{sse::Event, IntoResponse, Response, Sse},
-    routing::{get, post},
+    routing::{delete, get, post},
     Json, Router,
 };
 use futures::stream;
@@ -50,7 +50,6 @@ impl LiveHostServer {
             .route("/v1/agents/:agent_id", get(agent_view).patch(update_agent))
             .route("/v1/agents/:agent_id/activate", post(activate_agent))
             .route("/v1/agents/:agent_id/archive", post(archive_agent))
-            .route("/v1/agent-definitions", get(agent_definitions))
             .route("/v1/sessions", post(create_session).get(session_page))
             .route("/v1/sessions/:session_id", get(session_view))
             .route(
@@ -58,8 +57,8 @@ impl LiveHostServer {
                 get(session_agents).post(join_session_agent),
             )
             .route(
-                "/v1/sessions/:session_id/agents/:agent_id/remove",
-                post(remove_session_agent),
+                "/v1/sessions/:session_id/agents/:agent_id",
+                delete(remove_session_agent),
             )
             .route(
                 "/v1/sessions/:session_id/agents/:agent_instance_id/turns",
@@ -149,10 +148,6 @@ async fn next_live_output(
     let data = serde_json::to_string(&value).ok()?;
     let event = Event::default().event("live").data(data);
     Some((Ok(event), subscriber))
-}
-
-async fn agent_definitions(State(host): State<LiveHost>) -> Response {
-    command_response(host.list_agent_definitions())
 }
 
 async fn agent_page(State(host): State<LiveHost>) -> Response {

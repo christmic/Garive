@@ -59,7 +59,7 @@ caller fields can never replace the installed revision, snapshot or instance.
 | `POST /v1/sessions` | `CreateSessionRequestV1` | known active Agent | `session.opened` |
 | `GET /v1/sessions/{session_id}/agents` | none | existing Session | current membership metadata |
 | `POST /v1/sessions/{session_id}/agents` | `AddSessionAgentRequestV1` | open Session | `session.agent_joined` |
-| `POST /v1/sessions/{session_id}/agents/{agent_id}/remove` | `{}` | open Session | `session.agent_left` |
+| `DELETE /v1/sessions/{session_id}/agents/{agent_id}` | none | open Session | `session.agent_left` |
 | `POST /v1/sessions/{session_id}/turns` | `StartTurnRequestV1` | open Session; explicit valid delivery | atomic direct/broadcast start transaction |
 | `POST /v1/turns/{turn_id}:cancel` | `CancelTurnRequestV1` | non-terminal owned Turn | `turn.cancel_requested` |
 | `POST /v1/turns/{turn_id}:continue` | `ContinueTurnRequestV1` | exact current suspension and Session version | C6 continuation transaction |

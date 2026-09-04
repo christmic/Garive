@@ -2328,10 +2328,8 @@ async fn session_membership_is_metadata_and_replays_join_remove_rejoin() {
     );
 
     let removed = client
-        .post(format!("{base}/future-agent/remove"))
+        .delete(format!("{base}/future-agent"))
         .header("idempotency-key", "remove-future")
-        .header("content-type", "application/json")
-        .body("{}")
         .send()
         .await
         .unwrap();
@@ -2409,10 +2407,8 @@ async fn session_membership_is_metadata_and_replays_join_remove_rejoin() {
     assert_eq!(direct_turn["turns"].as_array().unwrap().len(), 1);
     assert_eq!(direct_turn["turns"][0]["agent_id"], "active-member");
     let removed_while_running = client
-        .post(format!("{base}/active-member/remove"))
+        .delete(format!("{base}/active-member"))
         .header("idempotency-key", "remove-active")
-        .header("content-type", "application/json")
-        .body("{}")
         .send()
         .await
         .unwrap();
@@ -2498,10 +2494,8 @@ async fn explicit_broadcast_resolves_the_whole_roster_and_commits_atomically() {
     ] {
         let base = format!("http://{address}/v1/sessions/{target}/agents");
         let removed = client
-            .post(format!("{base}/definition-main/remove"))
+            .delete(format!("{base}/definition-main"))
             .header("idempotency-key", format!("{prefix}-remove-founder"))
-            .header("content-type", "application/json")
-            .body("{}")
             .send()
             .await
             .unwrap();

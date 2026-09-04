@@ -44,7 +44,7 @@ Every mutation requires `Idempotency-Key`. Bodies reject unknown fields.
 |---|---|---|
 | `GET /v1/sessions/{session_id}/agents` | none | current members in join order |
 | `POST /v1/sessions/{session_id}/agents` | `{"agent_id":"reviewer"}` | add metadata |
-| `POST /v1/sessions/{session_id}/agents/{agent_id}/remove` | empty JSON object | remove metadata |
+| `DELETE /v1/sessions/{session_id}/agents/{agent_id}` | none | remove metadata |
 
 Add and remove validate Session existence, Session lifecycle, Agent identity
 syntax, the configured roster bound, and command idempotency. They do not
