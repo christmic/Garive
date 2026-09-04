@@ -18,7 +18,7 @@ use serde_json::json;
 use sha2::{Digest, Sha256};
 
 use crate::{
-    commit_goal_command, commit_planned_turn, get_turn,
+    agent_registry::validate_agent_id, commit_goal_command, commit_planned_turn, get_turn,
     goal_recovery::reconstruct_goal_graph_from_facts, plan_cancel_turn, plan_continue_turn,
     plan_create_goal, plan_goal_transition, plan_start_turn, plan_steer_turn, reconstruct_goal,
     reconstruct_plan_graph, reconstruct_suspended_turn, AgentRegistryError, CancelReason,
@@ -38,8 +38,9 @@ use super::{
     HostReadLimits, HostWorkspaceAttachment, HostWorkspaceContextEntry, HostWorkspaceDetachment,
     InstalledAgent, LiveHostError, LiveHostEvent, LiveHostLimits, LiveHostState, PlanPageV1,
     PlanSummaryV1, SessionAgentMember, SessionAgentMessage, SessionAgentMessagePage,
-    SessionAgentRoster, SessionPageV1, SessionSummary, SessionViewV1, TurnCommandResponse,
-    TurnDispatcher, TurnSuspensionView, TurnTimelineItem, TurnTimelinePage, TurnTimelinePageV1,
+    SessionAgentRoster, SessionMembershipMember, SessionMembershipRoster, SessionPageV1,
+    SessionSummary, SessionViewV1, TurnCommandResponse, TurnDispatcher, TurnSuspensionView,
+    TurnTimelineItem, TurnTimelinePage, TurnTimelinePageV1,
 };
 use super::{read_cursor, read_model, timeline_projection};
 
@@ -1542,6 +1543,119 @@ impl LiveHost {
             members,
             observed_max_position: binding.max_position,
         })
+    }
+
+    /// Adds one Agent identity to Session metadata without execution admission.
+    pub fn add_session_agent(
+        &self,
+        idempotency_key: &str,
+        session: &str,
+        agent_id: &str,
+    ) -> Result<SessionMembershipRoster, LiveHostError> {
+        self.mutate_session_membership(idempotency_key, session, agent_id, true)
+    }
+
+    /// Removes one Agent identity from Session metadata without cancelling work.
+    pub fn remove_session_agent(
+        &self,
+        idempotency_key: &str,
+        session: &str,
+        agent_id: &str,
+    ) -> Result<SessionMembershipRoster, LiveHostError> {
+        self.mutate_session_membership(idempotency_key, session, agent_id, false)
+    }
+
+    /// Returns the public metadata-only Session roster.
+    pub fn get_session_membership(
+        &self,
+        session: &str,
+    ) -> Result<SessionMembershipRoster, LiveHostError> {
+        let session_id = identity::<SessionId>(session)?;
+        let ledger = self.ledger()?;
+        let binding = self.load_session(&ledger, &session_id)?;
+        let facts = ledger
+            .read_facts(&session_id, 0, binding.max_position, None)
+            .map_err(map_sqlite)?;
+        membership_from_facts(&facts)
+    }
+
+    fn mutate_session_membership(
+        &self,
+        idempotency_key: &str,
+        session: &str,
+        agent_id: &str,
+        add: bool,
+    ) -> Result<SessionMembershipRoster, LiveHostError> {
+        validate_key(idempotency_key)?;
+        validate_agent_id(agent_id).map_err(|_| LiveHostError::InvalidRequest)?;
+        let session_id = identity::<SessionId>(session)?;
+        let mut ledger = self.ledger()?;
+        let binding = self.load_session(&ledger, &session_id)?;
+        let facts = ledger
+            .read_facts(&session_id, 0, binding.max_position, None)
+            .map_err(map_sqlite)?;
+        let expected_kind = if add {
+            "session.agent_joined"
+        } else {
+            "session.agent_left"
+        };
+        if let Some(fact) = facts.iter().find(|fact| {
+            matches!(
+                fact.kind.as_str(),
+                "session.agent_joined" | "session.agent_left"
+            ) && membership_command(fact).is_ok_and(|command| command.command_id == idempotency_key)
+        }) {
+            let command = membership_command(fact)?;
+            if fact.kind.as_str() != expected_kind || command.agent_id != agent_id {
+                return Err(LiveHostError::CommandConflict);
+            }
+            let replay_facts = facts
+                .iter()
+                .take_while(|candidate| candidate.position <= fact.position)
+                .cloned()
+                .collect::<Vec<_>>();
+            return membership_from_facts(&replay_facts);
+        }
+        let current = membership_from_facts(&facts)?;
+        let present = current
+            .members
+            .iter()
+            .any(|member| member.agent_id == agent_id);
+        if (add && (present || current.members.len() >= MAX_NAMED_SESSION_AGENTS))
+            || (!add && !present)
+        {
+            return Err(LiveHostError::PreconditionFailed);
+        }
+        let fact = FactDraft {
+            fact_id: FactId::try_from(
+                format!(
+                    "fact-{}",
+                    digest(format!("{session}:{idempotency_key}:{expected_kind}").as_bytes())
+                )
+                .as_str(),
+            )
+            .map_err(|_| LiveHostError::InvalidRequest)?,
+            turn_id: None,
+            execution_id: None,
+            model_request_id: None,
+            tool_invocation_id: None,
+            kind: FactKind::new(expected_kind).map_err(|_| LiveHostError::InvalidRequest)?,
+            schema_version: 2,
+            payload: CanonicalPayload::from_value(&json!({
+                "agent_id": agent_id,
+                "command_id": idempotency_key,
+            }))
+            .map_err(|_| LiveHostError::InvalidRequest)?,
+            recorded_at: self.recorded_at()?,
+        };
+        let committed = ledger
+            .commit(session_id.clone(), binding.session_version, vec![fact])
+            .map_err(map_sqlite)?;
+        let committed_position = only_position(&committed.positions)?;
+        let facts = ledger
+            .read_facts(&session_id, 0, committed_position, None)
+            .map_err(map_sqlite)?;
+        membership_from_facts(&facts)
     }
 
     /// Commits an addressed or roster-broadcast peer message before publication.
@@ -3662,6 +3776,15 @@ struct JoinedAgent {
 }
 
 #[derive(Deserialize)]
+struct MembershipCommand {
+    command_id: String,
+    #[serde(default)]
+    agent_id: Option<String>,
+    #[serde(default)]
+    definition_id: Option<String>,
+}
+
+#[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct AgentMessageFact {
     command_id: String,
@@ -3762,6 +3885,63 @@ fn roster_from_facts(facts: &[DurableFact]) -> Result<SessionAgentRoster, LiveHo
         .map_err(|_| LiveHostError::CorruptState)?;
     SessionRoster::new(portable).map_err(|_| LiveHostError::CorruptState)?;
     Ok(SessionAgentRoster {
+        api_version: "v1",
+        session_id: opened.session_id.as_str().to_owned(),
+        members,
+        observed_max_position: facts.last().map_or(0, |fact| fact.position),
+    })
+}
+
+fn membership_command(fact: &DurableFact) -> Result<ResolvedMembershipCommand, LiveHostError> {
+    let command: MembershipCommand = decode_payload(fact)?;
+    let agent_id = command
+        .agent_id
+        .or(command.definition_id)
+        .ok_or(LiveHostError::CorruptState)?;
+    validate_agent_id(&agent_id).map_err(|_| LiveHostError::CorruptState)?;
+    if command.command_id.is_empty() {
+        return Err(LiveHostError::CorruptState);
+    }
+    Ok(ResolvedMembershipCommand {
+        command_id: command.command_id,
+        agent_id,
+    })
+}
+
+struct ResolvedMembershipCommand {
+    command_id: String,
+    agent_id: String,
+}
+
+fn membership_from_facts(facts: &[DurableFact]) -> Result<SessionMembershipRoster, LiveHostError> {
+    let opened = facts.first().ok_or(LiveHostError::CorruptState)?;
+    if opened.kind.as_str() != "session.opened" {
+        return Err(LiveHostError::CorruptState);
+    }
+    let founder: SessionOpened = decode_payload(opened)?;
+    let founder_agent_id = founder.agent_id.unwrap_or(founder.definition_id);
+    validate_agent_id(&founder_agent_id).map_err(|_| LiveHostError::CorruptState)?;
+    let mut members = vec![SessionMembershipMember {
+        agent_id: founder_agent_id,
+        joined_position: opened.position,
+    }];
+    for fact in facts.iter().skip(1) {
+        match fact.kind.as_str() {
+            "session.agent_joined" => {
+                let command = membership_command(fact)?;
+                members.push(SessionMembershipMember {
+                    agent_id: command.agent_id,
+                    joined_position: fact.position,
+                });
+            }
+            "session.agent_left" => {
+                let command = membership_command(fact)?;
+                members.retain(|member| member.agent_id != command.agent_id);
+            }
+            _ => {}
+        }
+    }
+    Ok(SessionMembershipRoster {
         api_version: "v1",
         session_id: opened.session_id.as_str().to_owned(),
         members,

@@ -21,9 +21,10 @@ pub use types::{
     HostWorkspaceContextEntry, HostWorkspaceDetachment, InstalledActivityCatalogue,
     InstalledActivityDescriptor, InstalledAgent, LiveHostError, LiveHostEvent, LiveHostLimits,
     PlanPageV1, PlanSummaryV1, SessionAgentMember, SessionAgentMessage, SessionAgentMessagePage,
-    SessionAgentRoster, SessionPageV1, SessionSummary, SessionSummaryV1, SessionViewV1,
-    SuspensionViewV1, TurnCommandResponse, TurnDispatchError, TurnDispatcher, TurnSuspensionView,
-    TurnTimelineItem, TurnTimelineItemV1, TurnTimelinePage, TurnTimelinePageV1,
+    SessionAgentRoster, SessionMembershipMember, SessionMembershipRoster, SessionPageV1,
+    SessionSummary, SessionSummaryV1, SessionViewV1, SuspensionViewV1, TurnCommandResponse,
+    TurnDispatchError, TurnDispatcher, TurnSuspensionView, TurnTimelineItem, TurnTimelineItemV1,
+    TurnTimelinePage, TurnTimelinePageV1,
 };
 
 pub(crate) use activity_projection::project_activities;

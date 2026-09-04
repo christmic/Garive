@@ -57,6 +57,10 @@ impl LiveHostServer {
                 get(session_agents).post(join_session_agent),
             )
             .route(
+                "/v1/sessions/:session_id/agents/:agent_id/remove",
+                post(remove_session_agent),
+            )
+            .route(
                 "/v1/sessions/:session_id/agents/:agent_instance_id/turns",
                 post(start_agent_turn),
             )
@@ -234,7 +238,7 @@ async fn session_view(State(host): State<LiveHost>, Path(session_id): Path<Strin
 }
 
 async fn session_agents(State(host): State<LiveHost>, Path(session_id): Path<String>) -> Response {
-    let result = tokio::task::spawn_blocking(move || host.get_session_agents(&session_id))
+    let result = tokio::task::spawn_blocking(move || host.get_session_membership(&session_id))
         .await
         .map_err(|_| LiveHostError::DurabilityUnavailable)
         .and_then(|result| result);
@@ -373,18 +377,22 @@ async fn join_session_agent(
     let result = async {
         let key = idempotency_key(&headers)?;
         let body: JoinSessionAgentBody = decode_body(&host, body).await?;
-        match (
-            body.agent_id.as_deref(),
-            body.agent_definition_id.as_deref(),
-        ) {
-            (Some(agent_id), None) => {
-                host.join_registered_session_agent(key, &session_id, agent_id, &body.agent_name)
-            }
-            (None, Some(definition_id)) => {
-                host.join_session_agent(key, &session_id, definition_id, &body.agent_name)
-            }
-            _ => Err(LiveHostError::InvalidRequest),
-        }
+        host.add_session_agent(key, &session_id, &body.agent_id)
+    }
+    .await;
+    command_response(result)
+}
+
+async fn remove_session_agent(
+    State(host): State<LiveHost>,
+    Path((session_id, agent_id)): Path<(String, String)>,
+    headers: HeaderMap,
+    body: Body,
+) -> Response {
+    let result = async {
+        let key = idempotency_key(&headers)?;
+        let _: EmptyBody = decode_body(&host, body).await?;
+        host.remove_session_agent(key, &session_id, &agent_id)
     }
     .await;
     command_response(result)

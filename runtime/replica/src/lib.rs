@@ -186,9 +186,10 @@ pub use live_host::{
     HostWorkspaceDetachment, InstalledActivityCatalogue, InstalledActivityDescriptor,
     InstalledAgent, LiveHost, LiveHostError, LiveHostEvent, LiveHostLimits, LiveHostServer,
     LiveHostServerError, PlanPageV1, PlanSummaryV1, SessionAgentMember, SessionAgentMessage,
-    SessionAgentMessagePage, SessionAgentRoster, SessionPageV1, SessionSummary, SessionSummaryV1,
-    SessionViewV1, SuspensionViewV1, TurnCommandResponse, TurnDispatchError, TurnDispatcher,
-    TurnSuspensionView, TurnTimelineItem, TurnTimelineItemV1, TurnTimelinePage, TurnTimelinePageV1,
+    SessionAgentMessagePage, SessionAgentRoster, SessionMembershipMember, SessionMembershipRoster,
+    SessionPageV1, SessionSummary, SessionSummaryV1, SessionViewV1, SuspensionViewV1,
+    TurnCommandResponse, TurnDispatchError, TurnDispatcher, TurnSuspensionView, TurnTimelineItem,
+    TurnTimelineItemV1, TurnTimelinePage, TurnTimelinePageV1,
 };
 pub use live_output::{
     LiveOutputEndReason, LiveOutputError, LiveOutputEvent, LiveOutputEventKind, LiveOutputHub,

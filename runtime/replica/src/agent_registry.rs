@@ -172,6 +172,15 @@ pub fn validate_active_binding(
     Ok(())
 }
 
+/// Validates one Agent identity without reading registry or directory state.
+pub(crate) fn validate_agent_id(agent_id: &str) -> Result<(), AgentRegistryValidationError> {
+    if valid_agent_id(agent_id) {
+        Ok(())
+    } else {
+        Err(AgentRegistryValidationError::InvalidAgentId)
+    }
+}
+
 fn validate_skills(root: &Path) -> Result<(), AgentRegistryValidationError> {
     match fs::symlink_metadata(root) {
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),

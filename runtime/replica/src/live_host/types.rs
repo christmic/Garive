@@ -513,6 +513,28 @@ pub struct SessionAgentRoster {
     pub observed_max_position: u64,
 }
 
+/// One Agent identity in the current Session metadata roster.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct SessionMembershipMember {
+    /// Stable registered Agent identity.
+    pub agent_id: String,
+    /// Durable position of the join currently establishing membership.
+    pub joined_position: u64,
+}
+
+/// Current bounded Session membership reconstructed from durable facts.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct SessionMembershipRoster {
+    /// Exact public Host API version.
+    pub api_version: &'static str,
+    /// Owning durable Session.
+    pub session_id: String,
+    /// Current members in stable join order.
+    pub members: Vec<SessionMembershipMember>,
+    /// Highest durable position included in this projection.
+    pub observed_max_position: u64,
+}
+
 /// One durable addressed message between equal Session Agent peers.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct SessionAgentMessage {
@@ -930,11 +952,7 @@ pub(crate) struct CreateSessionBody {
 #[derive(Clone, Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct JoinSessionAgentBody {
-    #[serde(default)]
-    pub agent_id: Option<String>,
-    #[serde(default)]
-    pub agent_definition_id: Option<String>,
-    pub agent_name: String,
+    pub agent_id: String,
 }
 
 #[derive(Clone, Debug, Deserialize)]

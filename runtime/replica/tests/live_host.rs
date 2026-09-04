@@ -2278,6 +2278,94 @@ async fn agent_registry_http_persists_exact_metadata_and_lifecycle() {
 }
 
 #[tokio::test]
+async fn session_membership_is_metadata_and_replays_join_remove_rejoin() {
+    let harness = Harness::new(64);
+    let session = harness
+        .host
+        .create_session("create-membership", "definition-main")
+        .unwrap();
+    let server = LiveHostServer::bind(
+        harness.host.clone(),
+        SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 0),
+    )
+    .await
+    .unwrap();
+    let address = server.local_addr();
+    let (shutdown_tx, shutdown_rx) = oneshot::channel();
+    let task = tokio::spawn(server.serve(async move {
+        let _ = shutdown_rx.await;
+    }));
+    let client = reqwest::Client::new();
+    let base = format!("http://{address}/v1/sessions/{}/agents", session.session_id);
+
+    let joined = client
+        .post(&base)
+        .header("idempotency-key", "join-future")
+        .header("content-type", "application/json")
+        .body(r#"{"agent_id":"future-agent"}"#)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(joined.status(), reqwest::StatusCode::OK);
+    let joined: Value = serde_json::from_slice(&joined.bytes().await.unwrap()).unwrap();
+    assert_eq!(joined["members"].as_array().unwrap().len(), 2);
+    assert_eq!(joined["members"][1]["agent_id"], "future-agent");
+    assert!(joined["members"][1].get("definition_id").is_none());
+    let first_join_position = joined["members"][1]["joined_position"].as_u64().unwrap();
+
+    let replay = client
+        .post(&base)
+        .header("idempotency-key", "join-future")
+        .header("content-type", "application/json")
+        .body(r#"{"agent_id":"future-agent"}"#)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(replay.status(), reqwest::StatusCode::OK);
+    assert_eq!(
+        serde_json::from_slice::<Value>(&replay.bytes().await.unwrap()).unwrap(),
+        joined
+    );
+
+    let removed = client
+        .post(format!("{base}/future-agent/remove"))
+        .header("idempotency-key", "remove-future")
+        .header("content-type", "application/json")
+        .body("{}")
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(removed.status(), reqwest::StatusCode::OK);
+    let removed: Value = serde_json::from_slice(&removed.bytes().await.unwrap()).unwrap();
+    assert_eq!(removed["members"].as_array().unwrap().len(), 1);
+
+    let rejoined = client
+        .post(&base)
+        .header("idempotency-key", "rejoin-future")
+        .header("content-type", "application/json")
+        .body(r#"{"agent_id":"future-agent"}"#)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(rejoined.status(), reqwest::StatusCode::OK);
+    let rejoined: Value = serde_json::from_slice(&rejoined.bytes().await.unwrap()).unwrap();
+    assert!(rejoined["members"][1]["joined_position"].as_u64().unwrap() > first_join_position);
+
+    let conflict = client
+        .post(&base)
+        .header("idempotency-key", "rejoin-future")
+        .header("content-type", "application/json")
+        .body(r#"{"agent_id":"another-agent"}"#)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(conflict.status(), reqwest::StatusCode::CONFLICT);
+
+    let _ = shutdown_tx.send(());
+    task.await.unwrap().unwrap();
+}
+
+#[tokio::test]
 async fn real_loopback_http_has_stable_errors_commands_and_sse_replay() {
     let harness = Harness::new(64);
     let server = LiveHostServer::bind(
