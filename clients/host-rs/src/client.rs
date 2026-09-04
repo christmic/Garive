@@ -12,8 +12,8 @@ use crate::{
     reduce_host_events, reducer::validate_activity, AgentDefinitionPage, ClientLimits,
     CreateSessionResponse, GoalCommandResponse, GoalPage, GoalSummary, HostClientError,
     HostClientErrorCode, HostEvent, HostView, LiveOutputEndReason, LiveOutputEvent,
-    LiveOutputEventKind, PlanPage, PlanSummary, SessionPage, SessionSummary, SessionView,
-    SuspensionView, TurnCommandResponse, TurnTimelinePage,
+    LiveOutputEventKind, PlanPage, PlanSummary, SessionMembership, SessionPage, SessionSummary,
+    SessionView, StartTurnsResponse, SuspensionView, TurnCommandResponse, TurnTimelinePage,
 };
 
 const KNOWN_HOST_ERRORS: [&str; 8] = [
@@ -405,7 +405,116 @@ impl LiveHostClient {
         validate_session_response(value)
     }
 
-    /// Starts one Turn using a caller-owned stable command identity.
+    /// Reads the complete current Session membership metadata.
+    pub async fn get_session_membership(
+        &self,
+        session_id: &str,
+    ) -> Result<SessionMembership, HostClientError> {
+        if session_id.is_empty() {
+            return Err(HostClientError::new(HostClientErrorCode::InvalidCommand));
+        }
+        let path = format!("v1/sessions/{}/agents", encode_segment(session_id));
+        validate_membership(
+            decode(self.get(&path).await?)?,
+            session_id,
+            self.limits.max_events,
+        )
+    }
+
+    /// Adds one Agent identity to Session membership metadata.
+    pub async fn add_session_agent(
+        &self,
+        command_id: &str,
+        session_id: &str,
+        agent_id: &str,
+    ) -> Result<SessionMembership, HostClientError> {
+        if session_id.is_empty() || agent_id.is_empty() {
+            return Err(HostClientError::new(HostClientErrorCode::InvalidCommand));
+        }
+        let path = format!("v1/sessions/{}/agents", encode_segment(session_id));
+        let value = self
+            .post(&path, command_id, &SessionCommand { agent_id })
+            .await?;
+        validate_membership(decode(value)?, session_id, self.limits.max_events)
+    }
+
+    /// Removes one Agent identity from Session membership metadata.
+    pub async fn remove_session_agent(
+        &self,
+        command_id: &str,
+        session_id: &str,
+        agent_id: &str,
+    ) -> Result<SessionMembership, HostClientError> {
+        if session_id.is_empty() || agent_id.is_empty() {
+            return Err(HostClientError::new(HostClientErrorCode::InvalidCommand));
+        }
+        let path = format!(
+            "v1/sessions/{}/agents/{}/remove",
+            encode_segment(session_id),
+            encode_segment(agent_id)
+        );
+        let value = self.post(&path, command_id, &EmptyCommand {}).await?;
+        validate_membership(decode(value)?, session_id, self.limits.max_events)
+    }
+
+    /// Starts exactly one current Session member Turn.
+    pub async fn start_turn_direct(
+        &self,
+        command_id: &str,
+        session_id: &str,
+        agent_id: &str,
+        text: &str,
+    ) -> Result<StartTurnsResponse, HostClientError> {
+        if session_id.is_empty() || agent_id.is_empty() || text.is_empty() {
+            return Err(HostClientError::new(HostClientErrorCode::InvalidCommand));
+        }
+        let path = format!("v1/sessions/{}/turns", encode_segment(session_id));
+        let value = self
+            .post(
+                &path,
+                command_id,
+                &RoutedTurnCommand {
+                    text,
+                    delivery: "direct",
+                    agent_id: Some(agent_id),
+                },
+            )
+            .await?;
+        validate_start_turns(decode(value)?, session_id, "direct", Some(agent_id), 1)
+    }
+
+    /// Atomically starts one Turn for every current Session member.
+    pub async fn start_turn_broadcast(
+        &self,
+        command_id: &str,
+        session_id: &str,
+        text: &str,
+    ) -> Result<StartTurnsResponse, HostClientError> {
+        if session_id.is_empty() || text.is_empty() {
+            return Err(HostClientError::new(HostClientErrorCode::InvalidCommand));
+        }
+        let path = format!("v1/sessions/{}/turns", encode_segment(session_id));
+        let value = self
+            .post(
+                &path,
+                command_id,
+                &RoutedTurnCommand {
+                    text,
+                    delivery: "broadcast",
+                    agent_id: None,
+                },
+            )
+            .await?;
+        validate_start_turns(
+            decode(value)?,
+            session_id,
+            "broadcast",
+            None,
+            self.limits.max_events,
+        )
+    }
+
+    /// Starts the founding Agent Turn for compatibility with single-Agent Apps.
     pub async fn start_turn(
         &self,
         command_id: &str,
@@ -415,13 +524,38 @@ impl LiveHostClient {
         if session_id.is_empty() || text.is_empty() {
             return Err(HostClientError::new(HostClientErrorCode::InvalidCommand));
         }
-        let path = format!("v1/sessions/{}/turns", encode_segment(session_id));
-        let value = self.post(&path, command_id, &TurnCommand { text }).await?;
-        let response = validate_turn_response(value)?;
-        if response.session_id != session_id {
-            return Err(HostClientError::new(HostClientErrorCode::InvalidEvent));
+        let path = format!("v1/sessions/{}", encode_segment(session_id));
+        let value = self.get(&path).await?;
+        let agent_id = value
+            .get("session")
+            .and_then(Value::as_object)
+            .and_then(|session| session.get("agent_id"))
+            .and_then(Value::as_str)
+            .filter(|agent_id| !agent_id.is_empty())
+            .ok_or_else(invalid_event)?
+            .to_owned();
+        let view: SessionView = decode(value)?;
+        if view.api_version != "v1"
+            || view.session.session_id != session_id
+            || view.observed_max_position != view.session.latest_position
+            || !valid_session(&view.session)
+        {
+            return Err(invalid_event());
         }
-        Ok(response)
+        let response = self
+            .start_turn_direct(command_id, session_id, &agent_id, text)
+            .await?;
+        let turn = response
+            .turns
+            .into_iter()
+            .next()
+            .ok_or_else(invalid_event)?;
+        Ok(TurnCommandResponse {
+            session_id: response.session_id,
+            turn_id: turn.turn_id,
+            execution_id: turn.execution_id,
+            committed_position: turn.committed_position,
+        })
     }
 
     /// Requests durable Turn cancellation through an observed position.
@@ -954,9 +1088,15 @@ struct ReviseGoalCommand<'a> {
 }
 
 #[derive(Serialize)]
-struct TurnCommand<'a> {
+struct RoutedTurnCommand<'a> {
     text: &'a str,
+    delivery: &'static str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    agent_id: Option<&'a str>,
 }
+
+#[derive(Serialize)]
+struct EmptyCommand {}
 
 #[derive(Serialize)]
 struct CancelCommand<'a> {
@@ -1038,6 +1178,60 @@ fn validate_turn_response(value: Value) -> Result<TurnCommandResponse, HostClien
         return Err(HostClientError::new(HostClientErrorCode::InvalidEvent));
     }
     Ok(response)
+}
+
+fn validate_membership(
+    value: SessionMembership,
+    session_id: &str,
+    max_members: usize,
+) -> Result<SessionMembership, HostClientError> {
+    let mut identities = BTreeSet::new();
+    if value.api_version != "v1"
+        || value.session_id != session_id
+        || value.members.len() > max_members
+        || value.observed_max_position == 0
+        || value.members.iter().any(|member| {
+            member.agent_id.is_empty()
+                || member.joined_position == 0
+                || member.joined_position > value.observed_max_position
+                || !identities.insert(member.agent_id.as_str())
+        })
+        || value
+            .members
+            .windows(2)
+            .any(|pair| pair[0].joined_position >= pair[1].joined_position)
+    {
+        return Err(invalid_event());
+    }
+    Ok(value)
+}
+
+fn validate_start_turns(
+    value: StartTurnsResponse,
+    session_id: &str,
+    delivery: &str,
+    direct_agent_id: Option<&str>,
+    max_turns: usize,
+) -> Result<StartTurnsResponse, HostClientError> {
+    let mut identities = BTreeSet::new();
+    if value.api_version != "v1"
+        || value.session_id != session_id
+        || value.delivery != delivery
+        || value.turns.is_empty()
+        || value.turns.len() > max_turns
+        || value.turns.iter().any(|turn| {
+            turn.agent_id.is_empty()
+                || turn.turn_id.is_empty()
+                || turn.execution_id.is_empty()
+                || turn.committed_position == 0
+                || !identities.insert(turn.agent_id.as_str())
+        })
+        || direct_agent_id
+            .is_some_and(|agent_id| value.turns.len() != 1 || value.turns[0].agent_id != agent_id)
+    {
+        return Err(invalid_event());
+    }
+    Ok(value)
 }
 
 fn validate_owned_turn_response(

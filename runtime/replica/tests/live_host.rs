@@ -2404,8 +2404,7 @@ async fn session_membership_is_metadata_and_replays_join_remove_rejoin() {
         .await
         .unwrap();
     assert_eq!(direct_turn.status(), reqwest::StatusCode::OK);
-    let direct_turn: Value =
-        serde_json::from_slice(&direct_turn.bytes().await.unwrap()).unwrap();
+    let direct_turn: Value = serde_json::from_slice(&direct_turn.bytes().await.unwrap()).unwrap();
     assert_eq!(direct_turn["delivery"], "direct");
     assert_eq!(direct_turn["turns"].as_array().unwrap().len(), 1);
     assert_eq!(direct_turn["turns"][0]["agent_id"], "active-member");

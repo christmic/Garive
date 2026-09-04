@@ -189,6 +189,54 @@ pub struct TurnCommandResponse {
     pub committed_position: u64,
 }
 
+/// One Agent-specific Turn accepted by explicit delivery routing.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
+pub struct DeliveredTurnResponse {
+    /// Registered Agent recipient resolved at admission.
+    pub agent_id: String,
+    /// Stable durable Turn identity.
+    pub turn_id: String,
+    /// Fresh Execution identity.
+    pub execution_id: String,
+    /// Last position committed for this recipient.
+    pub committed_position: u64,
+}
+
+/// Atomic result of one explicit direct or broadcast delivery.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
+pub struct StartTurnsResponse {
+    /// Exact Host API version.
+    pub api_version: String,
+    /// Owning Session identity.
+    pub session_id: String,
+    /// Exact `direct` or `broadcast` selector.
+    pub delivery: String,
+    /// Recipient Turns in stable Session join order.
+    pub turns: Vec<DeliveredTurnResponse>,
+}
+
+/// One current Session member metadata value.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
+pub struct SessionMember {
+    /// Stable Agent registry identity.
+    pub agent_id: String,
+    /// Durable position of the current join edge.
+    pub joined_position: u64,
+}
+
+/// Complete current Session membership projection.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
+pub struct SessionMembership {
+    /// Exact Host API version.
+    pub api_version: String,
+    /// Owning Session identity.
+    pub session_id: String,
+    /// Members in stable join order.
+    pub members: Vec<SessionMember>,
+    /// Highest durable Session position observed.
+    pub observed_max_position: u64,
+}
+
 /// One installed immutable Agent definition safe for discovery.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
 pub struct AgentDefinitionSummary {

@@ -56,7 +56,7 @@ fn cli_reuses_an_explicit_session_without_creating_another() {
     let server = thread::spawn(move || {
         let responses = [
             json_response(
-                r#"{"session_id":"session-1","turn_id":"turn-1","execution_id":"execution-1","committed_position":2}"#,
+                r#"{"api_version":"v1","session_id":"session-1","delivery":"direct","turns":[{"agent_id":"definition-1","turn_id":"turn-1","execution_id":"execution-1","committed_position":2}]}"#,
             ),
             sse_response("turn.completed", "reused answer"),
         ];
@@ -73,6 +73,8 @@ fn cli_reuses_an_explicit_session_without_creating_another() {
             &format!("http://{address}/"),
             "--session",
             "session-1",
+            "--agent",
+            "definition-1",
             "again",
         ])
         .output()

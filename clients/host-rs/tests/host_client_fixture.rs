@@ -203,7 +203,7 @@ async fn live_client_round_trips_real_http_and_sse() {
         ),
         http_json(
             202,
-            r#"{"session_id":"session-client","turn_id":"turn-client","execution_id":"execution-client","committed_position":2}"#,
+            r#"{"api_version":"v1","session_id":"session-client","delivery":"direct","turns":[{"agent_id":"definition-1","turn_id":"turn-client","execution_id":"execution-client","committed_position":2}]}"#,
         ),
         http_sse(&fixture.valid_stream),
     ];
@@ -214,7 +214,12 @@ async fn live_client_round_trips_real_http_and_sse() {
         .await
         .expect("create");
     let turn = client
-        .start_turn("turn-stable-1", &session.session_id, "private command")
+        .start_turn_direct(
+            "turn-stable-1",
+            &session.session_id,
+            "definition-1",
+            "private command",
+        )
         .await
         .expect("start");
     let view = client
@@ -223,7 +228,7 @@ async fn live_client_round_trips_real_http_and_sse() {
         .expect("follow");
     server.await.expect("server task");
 
-    assert_eq!(turn.execution_id, "execution-client");
+    assert_eq!(turn.turns[0].execution_id, "execution-client");
     assert_eq!(view.terminal, Some(HostTerminal::Completed));
     assert_eq!(view.text, "durable answer");
     let requests = bodies.lock().await;

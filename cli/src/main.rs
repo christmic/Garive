@@ -18,14 +18,21 @@ async fn main() {
             definition_id,
             message,
         },
-        [host_url, flag, session_id, message] if flag == "--session" => CommandTarget::Reuse {
-            host_url,
-            session_id,
-            message,
-        },
+        [host_url, flag, session_id, target_flag, agent_id, message]
+            if flag == "--session" && target_flag == "--agent" =>
+        {
+            CommandTarget::Reuse {
+                host_url,
+                session_id,
+                agent_id,
+                message,
+            }
+        }
         _ => {
             eprintln!("usage: garive <host-url> <definition-id> <message>");
-            eprintln!("       garive <host-url> --session <session-id> <message>");
+            eprintln!(
+                "       garive <host-url> --session <session-id> --agent <agent-id> <message>"
+            );
             std::process::exit(2);
         }
     };
@@ -50,6 +57,7 @@ enum CommandTarget<'a> {
     Reuse {
         host_url: &'a str,
         session_id: &'a str,
+        agent_id: &'a str,
         message: &'a str,
     },
 }
@@ -57,7 +65,7 @@ enum CommandTarget<'a> {
 async fn run(
     command: CommandTarget<'_>,
 ) -> Result<HostTerminal, garive_host_client::HostClientError> {
-    let (host_url, session_id, message) = match command {
+    let (host_url, session_id, agent_id, message) = match command {
         CommandTarget::Create {
             host_url,
             definition_id,
@@ -68,28 +76,34 @@ async fn run(
             let session = client
                 .create_session(&format!("create-{identity}"), definition_id)
                 .await?;
-            return run_turn(client, session.session_id, message, identity).await;
+            return run_turn(client, session.session_id, definition_id, message, identity).await;
         }
         CommandTarget::Reuse {
             host_url,
             session_id,
+            agent_id,
             message,
-        } => (host_url, session_id.to_owned(), message),
+        } => (host_url, session_id.to_owned(), agent_id, message),
     };
     let client = LiveHostClient::new(host_url, LIMITS)?;
     let identity = command_identity();
-    run_turn(client, session_id, message, identity).await
+    run_turn(client, session_id, agent_id, message, identity).await
 }
 
 async fn run_turn(
     client: LiveHostClient,
     session_id: String,
+    agent_id: &str,
     message: &str,
     identity: String,
 ) -> Result<HostTerminal, garive_host_client::HostClientError> {
     let turn = client
-        .start_turn(&format!("turn-{identity}"), &session_id, message)
-        .await?;
+        .start_turn_direct(&format!("turn-{identity}"), &session_id, agent_id, message)
+        .await?
+        .turns
+        .into_iter()
+        .next()
+        .expect("direct response contains exactly one Turn");
     let view = client
         .follow_until_terminal(&session_id, turn.committed_position)
         .await?;
