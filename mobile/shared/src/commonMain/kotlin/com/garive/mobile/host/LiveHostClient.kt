@@ -1,10 +1,15 @@
 package com.garive.mobile.host
 
 import com.garive.host.v1.CreateSessionResponseV1
+import com.garive.host.v1.DeliveredTurnResponseV1
 import com.garive.host.v1.AgentDefinitionPageV1
 import com.garive.host.v1.HostEventV1
 import com.garive.host.v1.SessionPageV1
 import com.garive.host.v1.SessionViewV1
+import com.garive.host.v1.SessionMemberV1
+import com.garive.host.v1.SessionMembershipV1
+import com.garive.host.v1.StartTurnsResponseV1
+import com.garive.host.v1.TurnDeliveryV1
 import com.garive.host.v1.TurnCommandResponseV1
 import com.garive.host.v1.TurnTimelinePageV1
 import io.ktor.client.HttpClient
@@ -34,6 +39,7 @@ import kotlinx.io.readByteArray
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.long
@@ -135,10 +141,100 @@ public class LiveHostClient private constructor(
     @Throws(HostClientException::class, CancellationException::class)
     override suspend fun startTurn(commandId: String, sessionId: String, text: String): TurnCommandResponseV1 {
         if (sessionId.isEmpty() || text.isEmpty()) fail(HostClientError.INVALID_COMMAND)
-        return postTurn(
-            "/v1/sessions/${sessionId.encodeURLPathPart()}/turns", commandId, sessionId, null,
-            buildJsonObject { put("text", text) },
+        val agentId = session(sessionId).session?.agent_id.orEmpty()
+        if (agentId.isEmpty()) fail(HostClientError.INVALID_EVENT)
+        val routed = startTurnDirect(commandId, sessionId, agentId, text)
+        val turn = routed.turns.singleOrNull() ?: fail(HostClientError.INVALID_EVENT)
+        return TurnCommandResponseV1(
+            session_id = routed.session_id,
+            turn_id = turn.turn_id,
+            execution_id = turn.execution_id,
+            committed_position = turn.committed_position,
         )
+    }
+
+    /** Reads complete current Session membership metadata. */
+    @Throws(HostClientException::class, CancellationException::class)
+    public suspend fun sessionMembership(sessionId: String): SessionMembershipV1 {
+        if (sessionId.isEmpty()) fail(HostClientError.INVALID_COMMAND)
+        return decodeMembership(
+            read("/v1/sessions/${sessionId.encodeURLPathPart()}/agents"),
+            sessionId,
+            limits.maxEvents,
+        )
+    }
+
+    /** Adds one Agent identity to Session membership metadata. */
+    @Throws(HostClientException::class, CancellationException::class)
+    public suspend fun addSessionAgent(
+        commandId: String,
+        sessionId: String,
+        agentId: String,
+    ): SessionMembershipV1 {
+        if (sessionId.isEmpty() || agentId.isEmpty()) fail(HostClientError.INVALID_COMMAND)
+        return decodeMembership(
+            post(
+                "/v1/sessions/${sessionId.encodeURLPathPart()}/agents",
+                commandId,
+                buildJsonObject { put("agent_id", agentId) },
+            ),
+            sessionId,
+            limits.maxEvents,
+        )
+    }
+
+    /** Removes one Agent identity from Session membership metadata. */
+    @Throws(HostClientException::class, CancellationException::class)
+    public suspend fun removeSessionAgent(
+        commandId: String,
+        sessionId: String,
+        agentId: String,
+    ): SessionMembershipV1 {
+        if (sessionId.isEmpty() || agentId.isEmpty()) fail(HostClientError.INVALID_COMMAND)
+        return decodeMembership(
+            post(
+                "/v1/sessions/${sessionId.encodeURLPathPart()}/agents/${agentId.encodeURLPathPart()}/remove",
+                commandId,
+                buildJsonObject {},
+            ),
+            sessionId,
+            limits.maxEvents,
+        )
+    }
+
+    /** Starts exactly one current Session member Turn. */
+    @Throws(HostClientException::class, CancellationException::class)
+    public suspend fun startTurnDirect(
+        commandId: String,
+        sessionId: String,
+        agentId: String,
+        text: String,
+    ): StartTurnsResponseV1 {
+        if (sessionId.isEmpty() || agentId.isEmpty() || text.isEmpty()) fail(HostClientError.INVALID_COMMAND)
+        val value = post(
+            "/v1/sessions/${sessionId.encodeURLPathPart()}/turns",
+            commandId,
+            buildJsonObject {
+                put("text", text); put("delivery", "direct"); put("agent_id", agentId)
+            },
+        )
+        return decodeStartTurns(value, sessionId, "direct", agentId, limits.maxEvents)
+    }
+
+    /** Atomically starts one Turn for every current Session member. */
+    @Throws(HostClientException::class, CancellationException::class)
+    public suspend fun startTurnBroadcast(
+        commandId: String,
+        sessionId: String,
+        text: String,
+    ): StartTurnsResponseV1 {
+        if (sessionId.isEmpty() || text.isEmpty()) fail(HostClientError.INVALID_COMMAND)
+        val value = post(
+            "/v1/sessions/${sessionId.encodeURLPathPart()}/turns",
+            commandId,
+            buildJsonObject { put("text", text); put("delivery", "broadcast") },
+        )
+        return decodeStartTurns(value, sessionId, "broadcast", null, limits.maxEvents)
     }
 
     /** Requests cancellation through one observed durable position. */
@@ -291,6 +387,64 @@ internal fun defaultHostHttpClient(): HttpClient = HttpClient(CIO) {
     followRedirects = false
     install(HttpTimeout)
     install(SSE)
+}
+
+private fun decodeMembership(value: JsonObject, sessionId: String, maxMembers: Int): SessionMembershipV1 {
+    val rawMembers = value["members"]?.jsonArray ?: fail(HostClientError.INVALID_EVENT)
+    if (rawMembers.size > maxMembers) fail(HostClientError.INVALID_EVENT)
+    val members = rawMembers.map { raw ->
+        val member = raw.jsonObject
+        SessionMemberV1(
+            agent_id = member.requiredText("agent_id"),
+            joined_position = member.requiredPosition("joined_position"),
+        )
+    }
+    val observed = value.requiredPosition("observed_max_position")
+    if (value.requiredText("api_version") != "v1" || value.requiredText("session_id") != sessionId ||
+        members.map { it.agent_id }.toSet().size != members.size ||
+        members.any { it.joined_position > observed } ||
+        members.zipWithNext().any { (left, right) -> left.joined_position >= right.joined_position }
+    ) fail(HostClientError.INVALID_EVENT)
+    return SessionMembershipV1(
+        api_version = "v1",
+        session_id = sessionId,
+        members = members,
+        observed_max_position = observed,
+    )
+}
+
+private fun decodeStartTurns(
+    value: JsonObject,
+    sessionId: String,
+    delivery: String,
+    directAgentId: String?,
+    maxTurns: Int,
+): StartTurnsResponseV1 {
+    val rawTurns = value["turns"]?.jsonArray ?: fail(HostClientError.INVALID_EVENT)
+    if (rawTurns.isEmpty() || rawTurns.size > maxTurns) fail(HostClientError.INVALID_EVENT)
+    val turns = rawTurns.map { raw ->
+        val turn = raw.jsonObject
+        DeliveredTurnResponseV1(
+            agent_id = turn.requiredText("agent_id"),
+            turn_id = turn.requiredText("turn_id"),
+            execution_id = turn.requiredText("execution_id"),
+            committed_position = turn.requiredPosition("committed_position"),
+        )
+    }
+    if (value.requiredText("api_version") != "v1" || value.requiredText("session_id") != sessionId ||
+        value.requiredText("delivery") != delivery || turns.map { it.agent_id }.toSet().size != turns.size ||
+        directAgentId != null && (turns.size != 1 || turns.single().agent_id != directAgentId)
+    ) fail(HostClientError.INVALID_EVENT)
+    return StartTurnsResponseV1(
+        api_version = "v1",
+        session_id = sessionId,
+        delivery = if (delivery == "direct") {
+            TurnDeliveryV1.TURN_DELIVERY_V1_DIRECT
+        } else {
+            TurnDeliveryV1.TURN_DELIVERY_V1_BROADCAST
+        },
+        turns = turns,
+    )
 }
 
 private const val IDEMPOTENCY_KEY: String = "Idempotency-Key"

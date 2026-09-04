@@ -1,6 +1,7 @@
 package com.garive.mobile.host
 
 import com.garive.host.v1.HostEventV1
+import com.garive.host.v1.TurnDeliveryV1
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.respond
@@ -99,7 +100,7 @@ public class LiveHostClientTest {
             seen += "${exchange.requestMethod} ${exchange.requestURI.path} ${exchange.requestHeaders.getFirst("Idempotency-Key").orEmpty()}"
             val (contentType, body) = when (call.getAndIncrement()) {
                 0 -> "application/json" to """{"session_id":"session-client","agent_instance_id":"agent-1","committed_position":1}"""
-                1 -> "application/json" to """{"session_id":"session-client","turn_id":"turn-client","execution_id":"execution-client","committed_position":2}"""
+                1 -> "application/json" to """{"api_version":"v1","session_id":"session-client","delivery":"direct","turns":[{"agent_id":"definition-main","turn_id":"turn-client","execution_id":"execution-client","committed_position":2}]}"""
                 else -> "text/event-stream" to events.joinToString("") {
                     "id: ${it.position}\nevent: host\ndata: ${it.toJson()}\n\n"
                 }
@@ -113,9 +114,9 @@ public class LiveHostClientTest {
         try {
             val client = LiveHostClient("http://127.0.0.1:${server.address.port}/", limits())
             val session = client.createSession("create-stable", "definition-main")
-            val turn = client.startTurn("turn-stable", session.session_id, "hello")
+            val turn = client.startTurnDirect("turn-stable", session.session_id, "definition-main", "hello")
             val view =
-            client.followUntilTerminal(session.session_id, turn.committed_position)
+            client.followUntilTerminal(session.session_id, turn.turns.single().committed_position)
             assertEquals(HostTerminalKind.COMPLETED, view.terminal)
             assertEquals("durable answer", view.text)
             assertEquals(listOf(
@@ -260,16 +261,50 @@ public class LiveHostClientTest {
         val engine = MockEngine { request ->
             encodedBytes = (request.body as TextContent).text.encodeToByteArray().size
             respondJson(
-                """{"session_id":"session-client","turn_id":"turn-client","execution_id":"execution-client","committed_position":2}""",
+                """{"api_version":"v1","session_id":"session-client","delivery":"direct","turns":[{"agent_id":"definition-main","turn_id":"turn-client","execution_id":"execution-client","committed_position":2}]}""",
             )
         }
         val mobileLimits = HostClientLimits(65_536, 65_536, 1_024, 120_000)
         val client = LiveHostClient("http://127.0.0.1:4317/", mobileLimits, HttpClient(engine))
 
-        client.startTurn("turn-stable", "session-client", input)
+        client.startTurnDirect("turn-stable", "session-client", "definition-main", input)
 
         assertTrue(encodedBytes > input.length)
         assertTrue(encodedBytes <= mobileLimits.maxCommandBytes)
+    }
+
+    @Test
+    public fun membershipAndBroadcastUseTheExplicitSessionContract(): Unit = runBlocking {
+        val paths = mutableListOf<String>()
+        val bodies = mutableListOf<String>()
+        var call = 0
+        val roster =
+            """{"api_version":"v1","session_id":"session-client","members":[{"agent_id":"alpha","joined_position":2}],"observed_max_position":2}"""
+        val broadcast =
+            """{"api_version":"v1","session_id":"session-client","delivery":"broadcast","turns":[{"agent_id":"alpha","turn_id":"turn-alpha","execution_id":"execution-alpha","committed_position":5}]}"""
+        val engine = MockEngine { request ->
+            paths += request.url.encodedPath
+            if (request.body is TextContent) bodies += (request.body as TextContent).text
+            respondJson(if (call++ < 3) roster else broadcast)
+        }
+        val client = LiveHostClient("http://127.0.0.1:4317/", limits(), HttpClient(engine))
+
+        assertEquals("alpha", client.sessionMembership("session-client").members.single().agent_id)
+        client.addSessionAgent("join-alpha", "session-client", "alpha")
+        client.removeSessionAgent("leave-alpha", "session-client", "alpha")
+        val started = client.startTurnBroadcast("broadcast-alpha", "session-client", "hello")
+
+        assertEquals(TurnDeliveryV1.TURN_DELIVERY_V1_BROADCAST, started.delivery)
+        assertEquals(
+            listOf(
+                "/v1/sessions/session-client/agents",
+                "/v1/sessions/session-client/agents",
+                "/v1/sessions/session-client/agents/alpha/remove",
+                "/v1/sessions/session-client/turns",
+            ),
+            paths,
+        )
+        assertTrue(bodies.last().contains("\"delivery\":\"broadcast\""))
     }
 
     private fun mutation(name: String, source: List<HostEventV1>): List<HostEventV1> = when (name) {
