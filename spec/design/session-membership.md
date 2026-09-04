@@ -77,8 +77,25 @@ invalid; Runtime never infers a target from roster size or join order.
 For each resolved recipient, Turn admission then requires the registered Agent
 to exist, be active, and pass current directory/resource validation. A removed,
 missing, inactive, archived, or invalid Agent fails before its execution
-starts. The later Turn contract will define broadcast atomicity and its
-multi-recipient response shape before broadcast execution is implemented.
+starts.
+
+The HTTP request is exactly one of:
+
+```json
+{"text":"review this","delivery":"direct","agent_id":"reviewer"}
+{"text":"review this","delivery":"broadcast"}
+```
+
+An explicit delivery returns `StartTurnsResponseV1` with the admitted selector
+and one `DeliveredTurnResponseV1` per resolved recipient. Direct therefore has
+exactly one result. Broadcast preserves current membership join order.
+
+Broadcast admission is atomic against one fixed Session prefix. Runtime first
+resolves and validates the complete roster and confirms that no recipient has
+an open Turn. It then commits the broadcast anchor and all recipient Turn start
+batches in one Ledger transaction. Any validation or commit failure starts no
+recipient. Dispatch happens only after that transaction commits. Exact command
+replay returns the original recipient set even if membership later changes.
 
 ### Durable projection
 
@@ -102,6 +119,8 @@ those fields and public responses do not expose them.
 5. Roster reads reconstruct joins, removals, and rejoins in stable order.
 6. New membership responses contain no definition revision, snapshot digest,
    display alias, directory content, or execution authority.
+7. Broadcast either durably starts every resolved recipient in join order or
+   starts none; exact replay never re-resolves a changed roster.
 
 ## See also
 

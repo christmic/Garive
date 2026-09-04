@@ -117,10 +117,74 @@ message CreateSessionResponseV1 {
   uint64 committed_position = 3;
 }
 
-// Starts one durable Turn in an existing Session.
+// Adds one Agent identity to Session membership metadata.
+message AddSessionAgentRequestV1 {
+  // Stable Agent registry identity; resolution is deferred until Turn admission.
+  string agent_id = 1;
+}
+
+// One current Session membership metadata value.
+message SessionMemberV1 {
+  // Stable Agent registry identity.
+  string agent_id = 1;
+  // Durable position of the current join edge.
+  uint64 joined_position = 2;
+}
+
+// Complete current Session membership projection.
+message SessionMembershipV1 {
+  // Exact Host API version.
+  string api_version = 1;
+  // Owning Session identity.
+  string session_id = 2;
+  // Current members in stable join order.
+  repeated SessionMemberV1 members = 3;
+  // Highest durable Session position observed.
+  uint64 observed_max_position = 4;
+}
+
+// Closed user-message delivery selector.
+enum TurnDeliveryV1 {
+  // Invalid at the public command boundary.
+  TURN_DELIVERY_V1_UNSPECIFIED = 0;
+  // Deliver to exactly one current member named by agent_id.
+  TURN_DELIVERY_V1_DIRECT = 1;
+  // Deliver atomically to the complete current member roster.
+  TURN_DELIVERY_V1_BROADCAST = 2;
+}
+
+// Starts one or more durable Agent Turns in an existing Session.
 message StartTurnRequestV1 {
   // Trusted user text admitted by the local Host.
   string text = 1;
+  // Mandatory direct or broadcast selector.
+  TurnDeliveryV1 delivery = 2;
+  // Required only for direct delivery and forbidden for broadcast.
+  optional string agent_id = 3;
+}
+
+// One Agent-specific Turn created by explicit delivery routing.
+message DeliveredTurnResponseV1 {
+  // Registered Agent recipient resolved at admission.
+  string agent_id = 1;
+  // Stable durable Turn identity.
+  string turn_id = 2;
+  // Fresh disposable Execution identity.
+  string execution_id = 3;
+  // Last position committed for this recipient's start batch.
+  uint64 committed_position = 4;
+}
+
+// Atomic result of one explicit direct or broadcast command.
+message StartTurnsResponseV1 {
+  // Exact Host API version.
+  string api_version = 1;
+  // Owning Session identity.
+  string session_id = 2;
+  // Exact admitted delivery selector.
+  TurnDeliveryV1 delivery = 3;
+  // Recipient Turns in stable Session join order.
+  repeated DeliveredTurnResponseV1 turns = 4;
 }
 
 // Requests cancellation of one Turn under its owning Session.

@@ -2238,7 +2238,7 @@ async fn agent_registry_http_persists_exact_metadata_and_lifecycle() {
         ))
         .header("idempotency-key", "invalid-agent-run")
         .header("content-type", "application/json")
-        .body(r#"{"text":"must not run"}"#)
+        .body(r#"{"text":"must not run","delivery":"direct","agent_id":"atlas"}"#)
         .send()
         .await
         .unwrap();
@@ -2351,6 +2351,89 @@ async fn session_membership_is_metadata_and_replays_join_remove_rejoin() {
     let rejoined: Value = serde_json::from_slice(&rejoined.bytes().await.unwrap()).unwrap();
     assert!(rejoined["members"][1]["joined_position"].as_u64().unwrap() > first_join_position);
 
+    let unresolved_turn = client
+        .post(format!(
+            "http://{address}/v1/sessions/{}/turns",
+            session.session_id
+        ))
+        .header("idempotency-key", "turn-future")
+        .header("content-type", "application/json")
+        .body(r#"{"text":"hello","delivery":"direct","agent_id":"future-agent"}"#)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(unresolved_turn.status(), reqwest::StatusCode::NOT_FOUND);
+
+    let working = harness._directory.path().join("active-member");
+    fs::create_dir(&working).unwrap();
+    fs::write(working.join("AGENT.md"), "# Active member\n").unwrap();
+    harness
+        .host
+        .create_agent(
+            "create-active-member",
+            &garive_runtime::CreateAgentRequest {
+                agent_id: "active-member".into(),
+                working_directory: working,
+                readonly_knowledge_directories: Vec::new(),
+                writable_knowledge_directory: None,
+            },
+        )
+        .unwrap();
+    harness
+        .host
+        .activate_agent("activate-member", "active-member")
+        .unwrap();
+    let active_join = client
+        .post(&base)
+        .header("idempotency-key", "join-active")
+        .header("content-type", "application/json")
+        .body(r#"{"agent_id":"active-member"}"#)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(active_join.status(), reqwest::StatusCode::OK);
+    let direct_turn = client
+        .post(format!(
+            "http://{address}/v1/sessions/{}/turns",
+            session.session_id
+        ))
+        .header("idempotency-key", "turn-active")
+        .header("content-type", "application/json")
+        .body(r#"{"text":"hello","delivery":"direct","agent_id":"active-member"}"#)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(direct_turn.status(), reqwest::StatusCode::OK);
+    let direct_turn: Value =
+        serde_json::from_slice(&direct_turn.bytes().await.unwrap()).unwrap();
+    assert_eq!(direct_turn["delivery"], "direct");
+    assert_eq!(direct_turn["turns"].as_array().unwrap().len(), 1);
+    assert_eq!(direct_turn["turns"][0]["agent_id"], "active-member");
+    let removed_while_running = client
+        .post(format!("{base}/active-member/remove"))
+        .header("idempotency-key", "remove-active")
+        .header("content-type", "application/json")
+        .body("{}")
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(removed_while_running.status(), reqwest::StatusCode::OK);
+    let removed_turn = client
+        .post(format!(
+            "http://{address}/v1/sessions/{}/turns",
+            session.session_id
+        ))
+        .header("idempotency-key", "turn-removed")
+        .header("content-type", "application/json")
+        .body(r#"{"text":"hello","delivery":"direct","agent_id":"active-member"}"#)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(
+        removed_turn.status(),
+        reqwest::StatusCode::PRECONDITION_FAILED
+    );
+
     let conflict = client
         .post(&base)
         .header("idempotency-key", "rejoin-future")
@@ -2360,6 +2443,161 @@ async fn session_membership_is_metadata_and_replays_join_remove_rejoin() {
         .await
         .unwrap();
     assert_eq!(conflict.status(), reqwest::StatusCode::CONFLICT);
+
+    let _ = shutdown_tx.send(());
+    task.await.unwrap().unwrap();
+}
+
+#[tokio::test]
+async fn explicit_broadcast_resolves_the_whole_roster_and_commits_atomically() {
+    let harness = Harness::new(64);
+    for agent_id in ["broadcast-alpha", "broadcast-beta"] {
+        let working = harness._directory.path().join(agent_id);
+        fs::create_dir(&working).unwrap();
+        fs::write(working.join("AGENT.md"), format!("# {agent_id}\n")).unwrap();
+        harness
+            .host
+            .create_agent(
+                &format!("create-{agent_id}"),
+                &garive_runtime::CreateAgentRequest {
+                    agent_id: agent_id.into(),
+                    working_directory: working,
+                    readonly_knowledge_directories: Vec::new(),
+                    writable_knowledge_directory: None,
+                },
+            )
+            .unwrap();
+        harness
+            .host
+            .activate_agent(&format!("activate-{agent_id}"), agent_id)
+            .unwrap();
+    }
+    let session = harness
+        .host
+        .create_session("create-broadcast", "definition-main")
+        .unwrap();
+    let invalid_session = harness
+        .host
+        .create_session("create-invalid-broadcast", "definition-main")
+        .unwrap();
+    let server = LiveHostServer::bind(
+        harness.host.clone(),
+        SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 0),
+    )
+    .await
+    .unwrap();
+    let address = server.local_addr();
+    let (shutdown_tx, shutdown_rx) = oneshot::channel();
+    let task = tokio::spawn(server.serve(async move {
+        let _ = shutdown_rx.await;
+    }));
+    let client = reqwest::Client::new();
+
+    for (target, prefix) in [
+        (&session.session_id, "broadcast"),
+        (&invalid_session.session_id, "invalid"),
+    ] {
+        let base = format!("http://{address}/v1/sessions/{target}/agents");
+        let removed = client
+            .post(format!("{base}/definition-main/remove"))
+            .header("idempotency-key", format!("{prefix}-remove-founder"))
+            .header("content-type", "application/json")
+            .body("{}")
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(removed.status(), reqwest::StatusCode::OK);
+        for agent_id in ["broadcast-alpha", "broadcast-beta"] {
+            let joined = client
+                .post(&base)
+                .header("idempotency-key", format!("{prefix}-join-{agent_id}"))
+                .header("content-type", "application/json")
+                .body(format!(r#"{{"agent_id":"{agent_id}"}}"#))
+                .send()
+                .await
+                .unwrap();
+            assert_eq!(joined.status(), reqwest::StatusCode::OK);
+        }
+    }
+    let invalid_base = format!(
+        "http://{address}/v1/sessions/{}/agents",
+        invalid_session.session_id
+    );
+    let missing = client
+        .post(&invalid_base)
+        .header("idempotency-key", "invalid-join-missing")
+        .header("content-type", "application/json")
+        .body(r#"{"agent_id":"missing-agent"}"#)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(missing.status(), reqwest::StatusCode::OK);
+
+    let turns = format!("http://{address}/v1/sessions/{}/turns", session.session_id);
+    let response = client
+        .post(&turns)
+        .header("idempotency-key", "broadcast-turn")
+        .header("content-type", "application/json")
+        .body(r#"{"text":"hello all","delivery":"broadcast"}"#)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), reqwest::StatusCode::OK);
+    let response: Value = serde_json::from_slice(&response.bytes().await.unwrap()).unwrap();
+    assert_eq!(response["delivery"], "broadcast");
+    assert_eq!(response["turns"].as_array().unwrap().len(), 2);
+    assert_eq!(response["turns"][0]["agent_id"], "broadcast-alpha");
+    assert_eq!(response["turns"][1]["agent_id"], "broadcast-beta");
+    assert_eq!(harness.dispatcher.committed.lock().unwrap().len(), 2);
+
+    let replay: Value = serde_json::from_slice(
+        &client
+            .post(&turns)
+            .header("idempotency-key", "broadcast-turn")
+            .header("content-type", "application/json")
+            .body(r#"{"text":"hello all","delivery":"broadcast"}"#)
+            .send()
+            .await
+            .unwrap()
+            .bytes()
+            .await
+            .unwrap(),
+    )
+    .unwrap();
+    assert_eq!(replay, response);
+    assert_eq!(harness.dispatcher.committed.lock().unwrap().len(), 2);
+
+    let invalid = client
+        .post(format!(
+            "http://{address}/v1/sessions/{}/turns",
+            invalid_session.session_id
+        ))
+        .header("idempotency-key", "invalid-broadcast-turn")
+        .header("content-type", "application/json")
+        .body(r#"{"text":"must be atomic","delivery":"broadcast"}"#)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(invalid.status(), reqwest::StatusCode::NOT_FOUND);
+    assert_eq!(harness.dispatcher.committed.lock().unwrap().len(), 2);
+
+    for (key, body) in [
+        ("invalid-shape-absent", r#"{"text":"ambiguous"}"#),
+        (
+            "invalid-shape-mixed",
+            r#"{"text":"mixed","delivery":"broadcast","agent_id":"broadcast-alpha"}"#,
+        ),
+    ] {
+        let ambiguous = client
+            .post(&turns)
+            .header("idempotency-key", key)
+            .header("content-type", "application/json")
+            .body(body)
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(ambiguous.status(), reqwest::StatusCode::BAD_REQUEST);
+    }
 
     let _ = shutdown_tx.send(());
     task.await.unwrap().unwrap();
@@ -2460,7 +2698,7 @@ async fn real_loopback_http_has_stable_errors_commands_and_sse_replay() {
         .post(format!("{base}/v1/sessions/{session_id}/turns"))
         .header("idempotency-key", "start-http")
         .header("content-type", "application/json")
-        .body(r#"{"text":"hello"}"#)
+        .body(r#"{"text":"hello","delivery":"direct","agent_id":"definition-main"}"#)
         .send()
         .await
         .unwrap();

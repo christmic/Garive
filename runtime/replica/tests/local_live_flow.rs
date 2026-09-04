@@ -141,7 +141,7 @@ async fn loopback_host_to_protocol_flow_commits_terminal() {
         .post(format!("http://{address}/v1/sessions/{session_id}/turns"))
         .header("Idempotency-Key", "start-live")
         .header("Content-Type", "application/json")
-        .body(r#"{"text":"hello over H1"}"#)
+        .body(r#"{"text":"hello over H1","delivery":"direct","agent_id":"definition-main"}"#)
         .send()
         .await
         .expect("start request")

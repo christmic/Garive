@@ -57,7 +57,10 @@ caller fields can never replace the installed revision, snapshot or instance.
 | Method and path | Body | Required condition | Durable effect |
 |---|---|---|---|
 | `POST /v1/sessions` | `CreateSessionRequestV1` | known active Agent | `session.opened` |
-| `POST /v1/sessions/{session_id}/turns` | `StartTurnRequestV1` | open owned Session | C6 start transaction |
+| `GET /v1/sessions/{session_id}/agents` | none | existing Session | current membership metadata |
+| `POST /v1/sessions/{session_id}/agents` | `AddSessionAgentRequestV1` | open Session | `session.agent_joined` |
+| `POST /v1/sessions/{session_id}/agents/{agent_id}/remove` | `{}` | open Session | `session.agent_left` |
+| `POST /v1/sessions/{session_id}/turns` | `StartTurnRequestV1` | open Session; explicit valid delivery | atomic direct/broadcast start transaction |
 | `POST /v1/turns/{turn_id}:cancel` | `CancelTurnRequestV1` | non-terminal owned Turn | `turn.cancel_requested` |
 | `POST /v1/turns/{turn_id}:continue` | `ContinueTurnRequestV1` | exact current suspension and Session version | C6 continuation transaction |
 | `GET /v1/sessions/{session_id}/events?after_position=N` | none | existing Session; `N` may be zero | replay then follow |
@@ -77,6 +80,13 @@ back the command; C6 recovery owns the resulting open Execution.
 
 Cancellation is only a durable request. HTTP success does not claim that a
 running model or effect has stopped.
+
+`StartTurnRequestV1.delivery` is mandatory at the public API boundary. `direct`
+requires exactly one `agent_id`; `broadcast` forbids it. Membership mutation
+does not resolve the Agent. Turn admission resolves every recipient against the
+current Agent registry and active directory state. `StartTurnsResponseV1`
+returns recipient Turns in stable Session join order; broadcast validation and
+Ledger commit are all-or-nothing.
 
 H2 exposes `TurnTimelineItemV1.cancellation_requested` as an additive boolean.
 It is true only while the fixed durable prefix contains

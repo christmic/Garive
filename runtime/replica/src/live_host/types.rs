@@ -609,6 +609,32 @@ pub struct TurnCommandResponse {
     pub committed_position: u64,
 }
 
+/// One Agent-specific Turn created by explicit delivery routing.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct DeliveredTurnResponse {
+    /// Registered Agent recipient resolved at admission.
+    pub agent_id: String,
+    /// Durable Turn identity.
+    pub turn_id: String,
+    /// Fresh Execution identity.
+    pub execution_id: String,
+    /// Last position committed for this recipient's start batch.
+    pub committed_position: u64,
+}
+
+/// Result of one explicit direct or broadcast Turn delivery command.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct StartTurnsResponse {
+    /// Exact public Host API version.
+    pub api_version: &'static str,
+    /// Owning durable Session.
+    pub session_id: String,
+    /// Exact admitted delivery selector.
+    pub delivery: &'static str,
+    /// Recipient Turns in stable Session join order.
+    pub turns: Vec<DeliveredTurnResponse>,
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 /// Exactly one public value representation supplied to a continuation command.
 pub enum HostContinuationInput<'a> {
@@ -985,6 +1011,17 @@ pub(crate) struct DispatchAgentTaskBody {
 #[serde(deny_unknown_fields)]
 pub(crate) struct StartTurnBody {
     pub text: String,
+    #[serde(default)]
+    pub delivery: Option<TurnDeliveryBody>,
+    #[serde(default)]
+    pub agent_id: Option<String>,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum TurnDeliveryBody {
+    Direct,
+    Broadcast,
 }
 
 #[derive(Clone, Debug, Deserialize)]

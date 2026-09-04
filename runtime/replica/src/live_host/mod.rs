@@ -15,16 +15,16 @@ pub use service::LiveHost;
 pub use types::{
     ActivityProjectionLimits, AgentDefinitionPageV1, AgentDefinitionSummary,
     AgentDefinitionSummaryV1, AgentDelegationResponse, AgentTaskRecovery, CommittedTurn,
-    CreateSessionResponse, GoalCommandAuthority, GoalCommandAuthorityError, GoalCommandResponseV1,
-    GoalPageV1, GoalSummaryV1, HostActivity, HostArtifact, HostArtifactPage, HostClock,
-    HostContinuationInput, HostEventPage, HostReadLimits, HostWorkspaceAttachment,
+    CreateSessionResponse, DeliveredTurnResponse, GoalCommandAuthority, GoalCommandAuthorityError,
+    GoalCommandResponseV1, GoalPageV1, GoalSummaryV1, HostActivity, HostArtifact, HostArtifactPage,
+    HostClock, HostContinuationInput, HostEventPage, HostReadLimits, HostWorkspaceAttachment,
     HostWorkspaceContextEntry, HostWorkspaceDetachment, InstalledActivityCatalogue,
     InstalledActivityDescriptor, InstalledAgent, LiveHostError, LiveHostEvent, LiveHostLimits,
     PlanPageV1, PlanSummaryV1, SessionAgentMember, SessionAgentMessage, SessionAgentMessagePage,
     SessionAgentRoster, SessionMembershipMember, SessionMembershipRoster, SessionPageV1,
-    SessionSummary, SessionSummaryV1, SessionViewV1, SuspensionViewV1, TurnCommandResponse,
-    TurnDispatchError, TurnDispatcher, TurnSuspensionView, TurnTimelineItem, TurnTimelineItemV1,
-    TurnTimelinePage, TurnTimelinePageV1,
+    SessionSummary, SessionSummaryV1, SessionViewV1, StartTurnsResponse, SuspensionViewV1,
+    TurnCommandResponse, TurnDispatchError, TurnDispatcher, TurnSuspensionView, TurnTimelineItem,
+    TurnTimelineItemV1, TurnTimelinePage, TurnTimelinePageV1,
 };
 
 pub(crate) use activity_projection::project_activities;
@@ -34,5 +34,5 @@ pub(crate) use types::{
     CancelGoalBody, CancelTurnBody, ContinueTurnBody, CreateGoalBody, CreateSessionBody,
     DelegationAssigneeBody, DispatchAgentTaskBody, ErrorBody, JoinSessionAgentBody, LiveHostState,
     MobileWakeObservation, MobileWakePage, ReviseGoalBody, SendSessionAgentMessageBody,
-    StartTurnBody, SteerTurnBody,
+    StartTurnBody, SteerTurnBody, TurnDeliveryBody,
 };

@@ -12,14 +12,15 @@ use axum::{
     Json, Router,
 };
 use futures::stream;
-use serde::{de::DeserializeOwned, Deserialize};
+use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use tokio::net::TcpListener;
 
 use super::{
     validate_key, CancelGoalBody, CancelTurnBody, ContinueTurnBody, CreateGoalBody,
-    CreateSessionBody, DispatchAgentTaskBody, ErrorBody, JoinSessionAgentBody, LiveHost,
-    LiveHostError, LiveHostEvent, ReviseGoalBody, SendSessionAgentMessageBody, StartTurnBody,
-    SteerTurnBody,
+    CreateSessionBody, DeliveredTurnResponse, DispatchAgentTaskBody, ErrorBody,
+    JoinSessionAgentBody, LiveHost, LiveHostError, LiveHostEvent, ReviseGoalBody,
+    SendSessionAgentMessageBody, StartTurnBody, StartTurnsResponse, SteerTurnBody,
+    TurnDeliveryBody,
 };
 use crate::{
     CreateAgentRequest, LiveOutputReceiveError, LiveOutputSubscriber, UpdateAgentKnowledgeRequest,
@@ -493,10 +494,36 @@ async fn start_turn(
     let result = async {
         let key = idempotency_key(&headers)?;
         let body: StartTurnBody = decode_body(&host, body).await?;
-        host.start_turn(key, &session_id, &body.text)
+        match (body.delivery, body.agent_id.as_deref()) {
+            (Some(TurnDeliveryBody::Direct), Some(agent_id)) => host
+                .start_registered_agent_turn(key, &session_id, agent_id, &body.text)
+                .map(|turn| {
+                    StartTurnHttpResponse::Routed(StartTurnsResponse {
+                        api_version: "v1",
+                        session_id: session_id.clone(),
+                        delivery: "direct",
+                        turns: vec![DeliveredTurnResponse {
+                            agent_id: agent_id.to_owned(),
+                            turn_id: turn.turn_id,
+                            execution_id: turn.execution_id,
+                            committed_position: turn.committed_position,
+                        }],
+                    })
+                }),
+            (Some(TurnDeliveryBody::Broadcast), None) => host
+                .start_broadcast_turns(key, &session_id, &body.text)
+                .map(StartTurnHttpResponse::Routed),
+            _ => Err(LiveHostError::InvalidRequest),
+        }
     }
     .await;
     command_response(result)
+}
+
+#[derive(Serialize)]
+#[serde(untagged)]
+enum StartTurnHttpResponse {
+    Routed(StartTurnsResponse),
 }
 
 async fn start_agent_turn(

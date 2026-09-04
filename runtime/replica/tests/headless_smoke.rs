@@ -365,7 +365,7 @@ async fn headless_wiring_drives_h1_session_end_to_end() {
                 .post(format!("{base}/v1/sessions/{session_id}/turns"))
                 .header("idempotency-key", "smoke-turn-1")
                 .header("content-type", "application/json")
-                .body(r#"{"text":"say hello back"}"#)
+                .body(r#"{"text":"say hello back","delivery":"direct","agent_id":"desktop.agent.v3"}"#)
                 .send()
                 .await
                 .expect("start turn");
@@ -482,7 +482,7 @@ async fn headless_wiring_supports_queue_and_steer_modes() {
                 .post(format!("{base}/v1/sessions/{session_id}/turns"))
                 .header("idempotency-key", "queue-steer-turn")
                 .header("content-type", "application/json")
-                .body(r#"{"text":"hello"}"#)
+                .body(r#"{"text":"hello","delivery":"direct","agent_id":"desktop.agent.v3"}"#)
                 .send()
                 .await
                 .expect("start turn");
@@ -494,7 +494,10 @@ async fn headless_wiring_supports_queue_and_steer_modes() {
             let turned_json =
                 serde_json::from_slice::<serde_json::Value>(&turned.bytes().await.expect("bytes"))
                     .expect("json");
-            let turn_id = turned_json["turn_id"].as_str().expect("turn_id").to_owned();
+            let turn_id = turned_json["turns"][0]["turn_id"]
+                .as_str()
+                .expect("turn_id")
+                .to_owned();
 
             // 3. Queue mode — a second start_turn on the same Session must
             //    be rejected with `session_busy` (409).
@@ -502,7 +505,7 @@ async fn headless_wiring_supports_queue_and_steer_modes() {
                 .post(format!("{base}/v1/sessions/{session_id}/turns"))
                 .header("idempotency-key", "queue-steer-busy")
                 .header("content-type", "application/json")
-                .body(r#"{"text":"second"}"#)
+                .body(r#"{"text":"second","delivery":"direct","agent_id":"desktop.agent.v3"}"#)
                 .send()
                 .await
                 .expect("busy check");
@@ -532,7 +535,9 @@ async fn headless_wiring_supports_queue_and_steer_modes() {
             assert_eq!(steered_body["turn_id"], turn_id);
             assert!(
                 steered_body["committed_position"].as_u64().unwrap()
-                    > turned_json["committed_position"].as_u64().unwrap(),
+                    > turned_json["turns"][0]["committed_position"]
+                        .as_u64()
+                        .unwrap(),
                 "steer must commit strictly after start",
             );
 
@@ -725,7 +730,7 @@ async fn headless_steered_texts_reach_the_model_request() {
                 .post(format!("{base}/v1/sessions/{session_id}/turns"))
                 .header("idempotency-key", "steer-proof-turn")
                 .header("content-type", "application/json")
-                .body(r#"{"text":"Decide whether to recommend APPROVE or REJECT. Lean towards APPROVE."}"#)
+                .body(r#"{"text":"Decide whether to recommend APPROVE or REJECT. Lean towards APPROVE.","delivery":"direct","agent_id":"desktop.agent.v3"}"#)
                 .send()
                 .await
                 .expect("start");
@@ -733,7 +738,7 @@ async fn headless_steered_texts_reach_the_model_request() {
             let turn_id = serde_json::from_slice::<serde_json::Value>(
                 &turned.bytes().await.expect("bytes"),
             )
-            .expect("json")["turn_id"]
+            .expect("json")["turns"][0]["turn_id"]
             .as_str()
             .expect("turn_id")
             .to_owned();
@@ -948,7 +953,7 @@ async fn runtime_api_completes_then_steers_an_in_flight_second_turn() {
                 .post(format!("{base}/v1/sessions/{session_id}/turns"))
                 .header("idempotency-key", "in-flight-first")
                 .header("content-type", "application/json")
-                .body(r#"{"text":"first input"}"#)
+                .body(r#"{"text":"first input","delivery":"direct","agent_id":"desktop.agent.v3"}"#)
                 .send()
                 .await
                 .expect("first turn");
@@ -962,7 +967,9 @@ async fn runtime_api_completes_then_steers_an_in_flight_second_turn() {
                 .post(format!("{base}/v1/sessions/{session_id}/turns"))
                 .header("idempotency-key", "in-flight-second")
                 .header("content-type", "application/json")
-                .body(r#"{"text":"second input"}"#)
+                .body(
+                    r#"{"text":"second input","delivery":"direct","agent_id":"desktop.agent.v3"}"#,
+                )
                 .send()
                 .await
                 .expect("second turn");
@@ -970,7 +977,10 @@ async fn runtime_api_completes_then_steers_an_in_flight_second_turn() {
             let second_json: serde_json::Value =
                 serde_json::from_slice(&second.bytes().await.expect("turn response bytes"))
                     .expect("turn json");
-            let second_turn_id = second_json["turn_id"].as_str().expect("turn id").to_owned();
+            let second_turn_id = second_json["turns"][0]["turn_id"]
+                .as_str()
+                .expect("turn id")
+                .to_owned();
 
             let worker_for_drive = worker.clone();
             let drive = tokio::task::spawn_local(async move {
