@@ -517,7 +517,7 @@ async fn headless_wiring_supports_queue_and_steer_modes() {
             // 4. Steer mode — commit additional input to the same Open Turn.
             let steered = client
                 .post(format!(
-                    "{base}/v1/turns/{turn_id}/events"
+                    "{base}/v1/sessions/{session_id}/turns/{turn_id}/events"
                 ))
                 .header("idempotency-key", "queue-steer-steer")
                 .header("content-type", "application/json")
@@ -546,7 +546,7 @@ async fn headless_wiring_supports_queue_and_steer_modes() {
             // 5. Replay — same idempotency key returns the original position.
             let replay = client
                 .post(format!(
-                    "{base}/v1/turns/{turn_id}/events"
+                    "{base}/v1/sessions/{session_id}/turns/{turn_id}/events"
                 ))
                 .header("idempotency-key", "queue-steer-steer")
                 .header("content-type", "application/json")
@@ -756,7 +756,7 @@ async fn headless_steered_texts_reach_the_model_request() {
             for (key, text) in steers {
                 let resp = client
                     .post(format!(
-                        "{base}/v1/turns/{turn_id}/events"
+                        "{base}/v1/sessions/{session_id}/turns/{turn_id}/events"
                     ))
                     .header("idempotency-key", key)
                     .header("content-type", "application/json")
@@ -1006,7 +1006,7 @@ async fn runtime_api_completes_then_steers_an_in_flight_second_turn() {
 
             let steer = client
                 .post(format!(
-                    "{base}/v1/turns/{second_turn_id}/events"
+                    "{base}/v1/sessions/{session_id}/turns/{second_turn_id}/events"
                 ))
                 .header("idempotency-key", "in-flight-steer")
                 .header("content-type", "application/json")

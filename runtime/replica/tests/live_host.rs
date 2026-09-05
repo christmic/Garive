@@ -2653,6 +2653,639 @@ async fn server_rejects_non_loopback_addresses() {
     ));
 }
 
+/// Commits the effect.prepared + interaction.requested facts and a
+/// `turn.suspended` terminal, returning the suspension_id the runtime will
+/// reconstruct. Used by the session-scoped events endpoint tests to drive
+/// one Turn into a known suspended shape before sending events.
+///
+/// `prefix` is mixed into every fact identity so the same harness can drive
+/// multiple sessions without colliding on tool_invocation_id or fact_id.
+#[allow(clippy::too_many_arguments)]
+fn suspend_turn_with_interaction(
+    harness: &Harness,
+    prefix: &str,
+    session_id: &str,
+    turn_id: &str,
+    execution_id: &str,
+    suspension_id: &str,
+    interaction_id: &str,
+    suspension_reason: &str,
+    interaction_kind: &str,
+    response_schema_inline: &str,
+    response_schema_digest: &str,
+) {
+    let session_id_obj = SessionId::try_from(session_id).unwrap();
+    let turn_id_obj = garive_ledger::TurnId::try_from(turn_id).unwrap();
+    let execution_id_obj = garive_ledger::ExecutionId::try_from(execution_id).unwrap();
+    let invocation_id = format!("inv-{prefix}");
+    let mut ledger = SqliteLedger::open(&harness.database).unwrap();
+    ledger
+        .commit(
+            session_id_obj.clone(),
+            2,
+            vec![
+                FactDraft {
+                    fact_id: FactId::try_from(format!("effect-prepared-{prefix}").as_str()).unwrap(),
+                    turn_id: Some(turn_id_obj.clone()),
+                    execution_id: Some(execution_id_obj.clone()),
+                    model_request_id: None,
+                    tool_invocation_id: Some(ToolInvocationId::try_from(invocation_id.as_str()).unwrap()),
+                    kind: FactKind::new("effect.prepared").unwrap(),
+                    schema_version: 1,
+                    payload: CanonicalPayload::from_value(&serde_json::json!({
+                        "prepared_digest": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+                        "tool_name": "tool",
+                        "tool_revision": "revision",
+                        "replay_class": "never_replay",
+                        "model_call_id": format!("call-{prefix}")
+                    }))
+                    .unwrap(),
+                    recorded_at: NOW.into(),
+                },
+                FactDraft {
+                    fact_id: FactId::try_from(format!("interaction-requested-{prefix}").as_str()).unwrap(),
+                    turn_id: Some(turn_id_obj.clone()),
+                    execution_id: Some(execution_id_obj.clone()),
+                    model_request_id: None,
+                    tool_invocation_id: Some(ToolInvocationId::try_from(invocation_id.as_str()).unwrap()),
+                    kind: FactKind::new("interaction.requested").unwrap(),
+                    schema_version: 1,
+                    payload: CanonicalPayload::from_value(&serde_json::json!({
+                        "interaction_id": interaction_id,
+                        "suspension_id": suspension_id,
+                        "prepared_digest": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+                        "kind": interaction_kind,
+                        "prompt": {"digest": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855", "inline_utf8": ""},
+                        "response_schema": {"digest": response_schema_digest, "inline_utf8": response_schema_inline},
+                        "response_schema_digest": response_schema_digest,
+                        "expiry_code": "none"
+                    }))
+                    .unwrap(),
+                    recorded_at: NOW.into(),
+                },
+            ],
+        )
+        .unwrap();
+    let suspension_reason_typed = match suspension_reason {
+        "approval_required" => SuspensionReason::ApprovalRequired,
+        "external_input_required" => SuspensionReason::ExternalInputRequired,
+        other => panic!("unsupported suspension reason {other}"),
+    };
+    let terminal = plan_core_terminal(
+        &CoreTerminalContext {
+            turn_id: turn_id_obj.clone(),
+            execution_id: execution_id_obj,
+            recorded_at: NOW.into(),
+        },
+        &ExecutionReport {
+            outcome: AgentOutcome::Suspended {
+                reason: suspension_reason_typed,
+                partial_items: vec![],
+                last_durable_position: 6,
+                governed_binding: Some(GovernedSuspensionBinding::Interaction {
+                    suspension_id: suspension_id.into(),
+                    interaction_id: interaction_id.into(),
+                    invocation_id: invocation_id.clone(),
+                    prepared_digest:
+                        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855".into(),
+                }),
+            },
+            completed_iterations: 1,
+            usage: UsageSummary {
+                input_tokens: TokenCount::Known(1),
+                output_tokens: TokenCount::Known(1),
+                estimated: false,
+            },
+        },
+    )
+    .unwrap();
+    ledger.commit(session_id_obj, 3, terminal).unwrap();
+}
+
+/// Commits a `turn.suspended` terminal without an `interaction.requested`
+/// fact, used to drive a Turn into an untyped `PartialOutput` shape.
+/// Returns the runtime-generated suspension_id so the caller can build a
+/// matching `external_input` event body.
+fn suspend_turn_partial(
+    harness: &Harness,
+    session_id: &str,
+    turn_id: &str,
+    execution_id: &str,
+) -> String {
+    let session_id_obj = SessionId::try_from(session_id).unwrap();
+    let turn_id_obj = garive_ledger::TurnId::try_from(turn_id).unwrap();
+    let execution_id_obj = garive_ledger::ExecutionId::try_from(execution_id).unwrap();
+    let terminal = plan_core_terminal(
+        &CoreTerminalContext {
+            turn_id: turn_id_obj,
+            execution_id: execution_id_obj,
+            recorded_at: NOW.into(),
+        },
+        &ExecutionReport {
+            outcome: AgentOutcome::Suspended {
+                reason: SuspensionReason::PartialOutput,
+                partial_items: vec![ModelItem::Text {
+                    text: "partial".into(),
+                }],
+                last_durable_position: 4,
+                governed_binding: None,
+            },
+            completed_iterations: 1,
+            usage: UsageSummary {
+                input_tokens: TokenCount::Known(1),
+                output_tokens: TokenCount::Known(1),
+                estimated: false,
+            },
+        },
+    )
+    .unwrap();
+    SqliteLedger::open(&harness.database)
+        .unwrap()
+        .commit(session_id_obj, 2, terminal)
+        .unwrap();
+    harness.host.get_timeline(session_id, 0, 10).unwrap().items[0]
+        .suspension
+        .as_ref()
+        .unwrap()
+        .suspension_id
+        .clone()
+}
+
+/// Spawns one loopback server and returns its local address plus a
+/// shutdown sender the caller can use to terminate it.
+async fn spawn_loopback(
+    host: LiveHost,
+) -> (
+    SocketAddr,
+    tokio::sync::oneshot::Sender<()>,
+    tokio::task::JoinHandle<Result<(), garive_runtime::LiveHostServerError>>,
+) {
+    let server = LiveHostServer::bind(host, SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 0))
+        .await
+        .unwrap();
+    let address = server.local_addr();
+    let (shutdown_tx, shutdown_rx) = oneshot::channel();
+    let handle = tokio::spawn(server.serve(async move {
+        let _ = shutdown_rx.await;
+    }));
+    (address, shutdown_tx, handle)
+}
+
+#[tokio::test]
+async fn session_scoped_events_endpoint_dispatches_all_four_kinds() {
+    // One Harness, four Turns, four event kinds, four successful POSTs.
+    let harness = Harness::new(64);
+
+    // 1. Open Turn → steer (text-only, against an Open Turn).
+    let steer_session = harness
+        .host
+        .create_session("create-steer", "definition-main")
+        .unwrap();
+    let steer_started = harness
+        .host
+        .start_turn("start-steer", &steer_session.session_id, "first")
+        .unwrap();
+
+    // 2. ApprovalRequired suspension → approval kind (canonical "true").
+    let approval_session = harness
+        .host
+        .create_session("create-approval", "definition-main")
+        .unwrap();
+    let approval_started = harness
+        .host
+        .start_turn("start-approval", &approval_session.session_id, "first")
+        .unwrap();
+    suspend_turn_with_interaction(
+        &harness,
+        "approval",
+        &approval_session.session_id,
+        &approval_started.turn_id,
+        &approval_started.execution_id,
+        "suspension-approval",
+        "interaction-approval",
+        "approval_required",
+        "approval",
+        "{\"type\":\"boolean\"}",
+        "7cb541e84f226754a46c21c79f131fa2898354e1242456e6fd1c162bce319553",
+    );
+
+    // 3. ExternalInputRequired + typed schema → ask_reply (RFC 8785 JSON).
+    let ask_session = harness
+        .host
+        .create_session("create-ask", "definition-main")
+        .unwrap();
+    let ask_started = harness
+        .host
+        .start_turn("start-ask", &ask_session.session_id, "first")
+        .unwrap();
+    suspend_turn_with_interaction(
+        &harness,
+        "ask",
+        &ask_session.session_id,
+        &ask_started.turn_id,
+        &ask_started.execution_id,
+        "suspension-ask",
+        "interaction-ask",
+        "external_input_required",
+        "external_input",
+        "{\"type\":\"boolean\"}",
+        "7cb541e84f226754a46c21c79f131fa2898354e1242456e6fd1c162bce319553",
+    );
+
+    // 4. PartialOutput (untyped) → external_input (plain text).
+    let partial_session = harness
+        .host
+        .create_session("create-partial", "definition-main")
+        .unwrap();
+    let partial_started = harness
+        .host
+        .start_turn("start-partial", &partial_session.session_id, "first")
+        .unwrap();
+    suspend_turn_partial(
+        &harness,
+        &partial_session.session_id,
+        &partial_started.turn_id,
+        &partial_started.execution_id,
+    );
+
+    let (address, shutdown_tx, _handle) = spawn_loopback(harness.host.clone()).await;
+    let client = reqwest::Client::new();
+    let base = format!("http://{address}");
+
+    // 1. steer
+    let steer_resp = client
+        .post(format!(
+            "{base}/v1/sessions/{}/turns/{}/events",
+            steer_session.session_id, steer_started.turn_id
+        ))
+        .header("idempotency-key", "events-steer")
+        .header("content-type", "application/json")
+        .body(format!(
+            r#"{{"kind":"steer","session_id":"{}","text":"more context"}}"#,
+            steer_session.session_id
+        ))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(
+        steer_resp.status(),
+        reqwest::StatusCode::OK,
+        "steer on Open Turn must succeed"
+    );
+    let steer_body: Value = serde_json::from_slice(&steer_resp.bytes().await.unwrap()).unwrap();
+    assert_eq!(steer_body["session_id"], steer_session.session_id);
+    assert_eq!(steer_body["turn_id"], steer_started.turn_id);
+    assert!(steer_body["committed_position"].as_u64().unwrap() > 1);
+
+    // 2. approval
+    let approval_resp = client
+        .post(format!(
+            "{base}/v1/sessions/{}/turns/{}/events",
+            approval_session.session_id, approval_started.turn_id
+        ))
+        .header("idempotency-key", "events-approval")
+        .header("content-type", "application/json")
+        .body(format!(
+            r#"{{"kind":"approval","session_id":"{}","suspension_id":"suspension-approval","expected_session_version":4,"decision":"approve"}}"#,
+            approval_session.session_id
+        ))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(
+        approval_resp.status(),
+        reqwest::StatusCode::OK,
+        "approval kind on ApprovalRequired must succeed"
+    );
+    let approval_body: Value =
+        serde_json::from_slice(&approval_resp.bytes().await.unwrap()).unwrap();
+    assert_eq!(approval_body["session_id"], approval_session.session_id);
+
+    // 3. ask_reply
+    let ask_resp = client
+        .post(format!(
+            "{base}/v1/sessions/{}/turns/{}/events",
+            ask_session.session_id, ask_started.turn_id
+        ))
+        .header("idempotency-key", "events-ask")
+        .header("content-type", "application/json")
+        .body(format!(
+            r#"{{"kind":"ask_reply","session_id":"{}","suspension_id":"suspension-ask","expected_session_version":4,"input_json":"true"}}"#,
+            ask_session.session_id
+        ))
+        .send()
+        .await
+        .unwrap();
+    if ask_resp.status() != reqwest::StatusCode::OK {
+        let status = ask_resp.status();
+        let body = ask_resp.bytes().await.unwrap();
+        panic!(
+            "ask_reply returned {status}: {}",
+            String::from_utf8_lossy(&body)
+        );
+    }
+    assert_eq!(
+        ask_resp.status(),
+        reqwest::StatusCode::OK,
+        "ask_reply on typed ExternalInputRequired must succeed"
+    );
+
+    // 4. external_input (against untyped PartialOutput)
+    let partial_suspension_id = suspend_turn_partial(
+        &harness,
+        &partial_session.session_id,
+        &partial_started.turn_id,
+        &partial_started.execution_id,
+    );
+    let partial_resp = client
+        .post(format!(
+            "{base}/v1/sessions/{}/turns/{}/events",
+            partial_session.session_id, partial_started.turn_id
+        ))
+        .header("idempotency-key", "events-external")
+        .header("content-type", "application/json")
+        .body(format!(
+            r#"{{"kind":"external_input","session_id":"{}","suspension_id":"{}","expected_session_version":3,"text":"more content"}}"#,
+            partial_session.session_id, partial_suspension_id
+        ))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(
+        partial_resp.status(),
+        reqwest::StatusCode::OK,
+        "external_input on untyped suspension must succeed"
+    );
+
+    shutdown_tx.send(()).unwrap();
+}
+
+#[tokio::test]
+async fn session_scoped_events_replay_with_different_payload_returns_command_conflict() {
+    // Replay binds (command_id, suspension_id, expected_session_version,
+    // canonical bytes). Same key + different payload must commit nothing
+    // and return command_conflict on the second call.
+    let harness = Harness::new(64);
+    let session = harness
+        .host
+        .create_session("create-replay", "definition-main")
+        .unwrap();
+    let started = harness
+        .host
+        .start_turn("start-replay", &session.session_id, "first")
+        .unwrap();
+    suspend_turn_with_interaction(
+        &harness,
+        "replay",
+        &session.session_id,
+        &started.turn_id,
+        &started.execution_id,
+        "suspension-replay",
+        "interaction-replay",
+        "approval_required",
+        "approval",
+        "{\"type\":\"boolean\"}",
+        "7cb541e84f226754a46c21c79f131fa2898354e1242456e6fd1c162bce319553",
+    );
+    let (address, shutdown_tx, _handle) = spawn_loopback(harness.host.clone()).await;
+    let client = reqwest::Client::new();
+    let base = format!("http://{address}");
+    let url = format!(
+        "{base}/v1/sessions/{}/turns/{}/events",
+        session.session_id, started.turn_id
+    );
+
+    // First call: approve
+    let first = client
+        .post(&url)
+        .header("idempotency-key", "replay-key")
+        .header("content-type", "application/json")
+        .body(format!(
+            r#"{{"kind":"approval","session_id":"{}","suspension_id":"suspension-replay","expected_session_version":4,"decision":"approve"}}"#,
+            session.session_id
+        ))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(first.status(), reqwest::StatusCode::OK);
+
+    // Replay with same key + different payload (deny instead of approve).
+    let replay = client
+        .post(&url)
+        .header("idempotency-key", "replay-key")
+        .header("content-type", "application/json")
+        .body(format!(
+            r#"{{"kind":"approval","session_id":"{}","suspension_id":"suspension-replay","expected_session_version":4,"decision":"deny"}}"#,
+            session.session_id
+        ))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(
+        replay.status(),
+        reqwest::StatusCode::CONFLICT,
+        "replay with same key but different decision must return 409"
+    );
+    let body: Value = serde_json::from_slice(&replay.bytes().await.unwrap()).unwrap();
+    assert_eq!(body["code"], "command_conflict");
+
+    shutdown_tx.send(()).unwrap();
+}
+
+#[tokio::test]
+async fn session_scoped_events_owner_mismatch_returns_invalid_request() {
+    // Body session_id must equal path session_id; the handler enforces
+    // owner-equivalence as defence in depth even when the path resolves
+    // a real Turn.
+    let harness = Harness::new(64);
+    let session = harness
+        .host
+        .create_session("create-mismatch", "definition-main")
+        .unwrap();
+    let started = harness
+        .host
+        .start_turn("start-mismatch", &session.session_id, "first")
+        .unwrap();
+    let (address, shutdown_tx, _handle) = spawn_loopback(harness.host.clone()).await;
+    let client = reqwest::Client::new();
+    let base = format!("http://{address}");
+    let url = format!(
+        "{base}/v1/sessions/{}/turns/{}/events",
+        session.session_id, started.turn_id
+    );
+
+    // Steer with body session_id pointing at a phantom session.
+    let steer = client
+        .post(&url)
+        .header("idempotency-key", "mismatch-steer")
+        .header("content-type", "application/json")
+        .body(r#"{"kind":"steer","session_id":"phantom","text":"x"}"#.to_owned())
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(
+        steer.status(),
+        reqwest::StatusCode::BAD_REQUEST,
+        "steer body session_id must match path session_id"
+    );
+    let body: Value = serde_json::from_slice(&steer.bytes().await.unwrap()).unwrap();
+    assert_eq!(body["code"], "invalid_request");
+
+    // Approval kind, same mismatch.
+    let approval = client
+        .post(&url)
+        .header("idempotency-key", "mismatch-approval")
+        .header("content-type", "application/json")
+        .body(
+            r#"{"kind":"approval","session_id":"phantom","suspension_id":"s","expected_session_version":3,"decision":"approve"}"#
+                .to_owned(),
+        )
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(
+        approval.status(),
+        reqwest::StatusCode::BAD_REQUEST,
+        "approval body session_id must match path session_id"
+    );
+
+    shutdown_tx.send(()).unwrap();
+}
+
+#[tokio::test]
+async fn session_scoped_cancel_endpoint_reads_session_id_from_path() {
+    // The session-scoped cancel route resolves session_id from the path,
+    // not from the request body; a phantom body session_id is harmless.
+    let harness = Harness::new(64);
+    let session = harness
+        .host
+        .create_session("create-cancel", "definition-main")
+        .unwrap();
+    let started = harness
+        .host
+        .start_turn("start-cancel", &session.session_id, "first")
+        .unwrap();
+    let (address, shutdown_tx, _handle) = spawn_loopback(harness.host.clone()).await;
+    let client = reqwest::Client::new();
+    let base = format!("http://{address}");
+    let resp = client
+        .post(format!(
+            "{base}/v1/sessions/{}/turns/{}/cancel",
+            session.session_id, started.turn_id
+        ))
+        .header("idempotency-key", "events-cancel")
+        .header("content-type", "application/json")
+        .body(format!(
+            r#"{{"session_id":"{}","requested_through_position":{}}}"#,
+            session.session_id, started.committed_position
+        ))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(
+        resp.status(),
+        reqwest::StatusCode::OK,
+        "session-scoped cancel must accept path session_id"
+    );
+    let body: Value = serde_json::from_slice(&resp.bytes().await.unwrap()).unwrap();
+    assert_eq!(body["session_id"], session.session_id);
+    assert_eq!(body["turn_id"], started.turn_id);
+
+    shutdown_tx.send(()).unwrap();
+}
+
+#[tokio::test]
+async fn legacy_turn_events_route_admits_steer_only() {
+    // While the legacy /v1/turns/:turn_id/events route is still registered
+    // (Batch B retention; removed in Batch F) it must accept steer-only and
+    // reject the three non-steer kinds with invalid_request.
+    let harness = Harness::new(64);
+    let session = harness
+        .host
+        .create_session("create-legacy", "definition-main")
+        .unwrap();
+    let started = harness
+        .host
+        .start_turn("start-legacy", &session.session_id, "first")
+        .unwrap();
+    let (address, shutdown_tx, _handle) = spawn_loopback(harness.host.clone()).await;
+    let client = reqwest::Client::new();
+    let base = format!("http://{address}");
+    let url = format!("{base}/v1/turns/{}/events", started.turn_id);
+
+    // steer → 200
+    let steer = client
+        .post(&url)
+        .header("idempotency-key", "legacy-steer")
+        .header("content-type", "application/json")
+        .body(format!(
+            r#"{{"kind":"steer","session_id":"{}","text":"legacy"}}"#,
+            session.session_id
+        ))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(steer.status(), reqwest::StatusCode::OK);
+
+    // approval → 400 invalid_request (legacy disallows it).
+    let approval = client
+        .post(&url)
+        .header("idempotency-key", "legacy-approval")
+        .header("content-type", "application/json")
+        .body(format!(
+            r#"{{"kind":"approval","session_id":"{}","suspension_id":"s","expected_session_version":1,"decision":"approve"}}"#,
+            session.session_id
+        ))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(
+        approval.status(),
+        reqwest::StatusCode::BAD_REQUEST,
+        "legacy events endpoint must reject approval kind"
+    );
+    let body: Value = serde_json::from_slice(&approval.bytes().await.unwrap()).unwrap();
+    assert_eq!(body["code"], "invalid_request");
+
+    // ask_reply → 400 invalid_request
+    let ask = client
+        .post(&url)
+        .header("idempotency-key", "legacy-ask")
+        .header("content-type", "application/json")
+        .body(format!(
+            r#"{{"kind":"ask_reply","session_id":"{}","suspension_id":"s","expected_session_version":1,"input_json":"true"}}"#,
+            session.session_id
+        ))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(
+        ask.status(),
+        reqwest::StatusCode::BAD_REQUEST,
+        "legacy events endpoint must reject ask_reply kind"
+    );
+
+    // external_input → 400 invalid_request
+    let external = client
+        .post(&url)
+        .header("idempotency-key", "legacy-external")
+        .header("content-type", "application/json")
+        .body(format!(
+            r#"{{"kind":"external_input","session_id":"{}","suspension_id":"s","expected_session_version":1,"text":"x"}}"#,
+            session.session_id
+        ))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(
+        external.status(),
+        reqwest::StatusCode::BAD_REQUEST,
+        "legacy events endpoint must reject external_input kind"
+    );
+
+    shutdown_tx.send(()).unwrap();
+}
+
 fn goal_definition(
     goal_id: &str,
     objective: &str,
