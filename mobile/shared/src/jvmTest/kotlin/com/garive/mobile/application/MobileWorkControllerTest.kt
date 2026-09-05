@@ -304,17 +304,49 @@ private class FakeMobileHost(
         requestedThroughPosition: Long,
     ): TurnCommandResponseV1 = TurnCommandResponseV1(sessionId, turnId, "execution-1", 10)
 
-    override suspend fun continueTurn(
+    override suspend fun steerTurn(
+        commandId: String,
+        sessionId: String,
+        turnId: String,
+        text: String,
+    ): TurnCommandResponseV1 = TurnCommandResponseV1(sessionId, turnId, "execution-steered", 9)
+
+    override suspend fun approvalEvent(
         commandId: String,
         sessionId: String,
         turnId: String,
         suspensionId: String,
         expectedSessionVersion: Long,
-        input: String,
-        inputJson: Boolean,
+        approve: Boolean,
     ): TurnCommandResponseV1 {
-        continuationInput = input
-        continuationIsJson = inputJson
+        continuationInput = if (approve) "true" else "false"
+        continuationIsJson = true
+        return TurnCommandResponseV1(sessionId, turnId, "execution-2", 10)
+    }
+
+    override suspend fun askReplyEvent(
+        commandId: String,
+        sessionId: String,
+        turnId: String,
+        suspensionId: String,
+        expectedSessionVersion: Long,
+        inputJson: String,
+    ): TurnCommandResponseV1 {
+        continuationInput = inputJson
+        continuationIsJson = true
+        return TurnCommandResponseV1(sessionId, turnId, "execution-2", 10)
+    }
+
+    override suspend fun externalInputEvent(
+        commandId: String,
+        sessionId: String,
+        turnId: String,
+        suspensionId: String,
+        expectedSessionVersion: Long,
+        text: String,
+    ): TurnCommandResponseV1 {
+        continuationInput = text
+        continuationIsJson = false
         return TurnCommandResponseV1(sessionId, turnId, "execution-2", 10)
     }
 

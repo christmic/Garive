@@ -246,36 +246,99 @@ public class LiveHostClient private constructor(
             fail(HostClientError.INVALID_COMMAND)
         }
         return postTurn(
-            "/v1/turns/${turnId.encodeURLPathPart()}:cancel", commandId, sessionId, turnId,
+            eventsCancelPath(sessionId, turnId), commandId, sessionId, turnId,
+            buildJsonObject { put("requested_through_position", requestedThroughPosition) },
+        )
+    }
+
+    /** Steers one Open Turn with plain-text input. */
+    @Throws(HostClientException::class, CancellationException::class)
+    override suspend fun steerTurn(
+        commandId: String, sessionId: String, turnId: String, text: String,
+    ): TurnCommandResponseV1 {
+        if (sessionId.isEmpty() || turnId.isEmpty() || text.isEmpty()) fail(HostClientError.INVALID_COMMAND)
+        return postTurn(
+            eventsInputPath(sessionId, turnId), commandId, sessionId, turnId,
             buildJsonObject {
-                put("session_id", sessionId); put("requested_through_position", requestedThroughPosition)
+                put("kind", "steer"); put("session_id", sessionId); put("text", text)
             },
         )
     }
 
-    /** Continues one exact durable suspension. */
+    /** Submits an operator decision against one ApprovalRequired suspension. */
     @Throws(HostClientException::class, CancellationException::class)
-    override suspend fun continueTurn(
+    override suspend fun approvalEvent(
         commandId: String,
         sessionId: String,
         turnId: String,
         suspensionId: String,
         expectedSessionVersion: Long,
-        input: String,
-        inputJson: Boolean,
+        approve: Boolean,
     ): TurnCommandResponseV1 {
-        if (sessionId.isEmpty() || turnId.isEmpty() || suspensionId.isEmpty() ||
-            expectedSessionVersion <= 0 || input.isEmpty()
-        ) fail(HostClientError.INVALID_COMMAND)
+        if (sessionId.isEmpty() || turnId.isEmpty() || suspensionId.isEmpty() || expectedSessionVersion <= 0) {
+            fail(HostClientError.INVALID_COMMAND)
+        }
         return postTurn(
-            "/v1/turns/${turnId.encodeURLPathPart()}:continue", commandId, sessionId, turnId,
+            eventsInputPath(sessionId, turnId), commandId, sessionId, turnId,
             buildJsonObject {
-                put("session_id", sessionId); put("suspension_id", suspensionId)
-                put("expected_session_version", expectedSessionVersion)
-                if (inputJson) put("input_json", input) else put("input", input)
+                put("kind", "approval"); put("session_id", sessionId)
+                put("suspension_id", suspensionId); put("expected_session_version", expectedSessionVersion)
+                put("decision", if (approve) "approve" else "deny")
             },
         )
     }
+
+    /** Submits an RFC 8785 typed JSON reply against a schema-bound ExternalInputRequired. */
+    @Throws(HostClientException::class, CancellationException::class)
+    override suspend fun askReplyEvent(
+        commandId: String,
+        sessionId: String,
+        turnId: String,
+        suspensionId: String,
+        expectedSessionVersion: Long,
+        inputJson: String,
+    ): TurnCommandResponseV1 {
+        if (sessionId.isEmpty() || turnId.isEmpty() || suspensionId.isEmpty() ||
+            expectedSessionVersion <= 0 || inputJson.isEmpty()
+        ) fail(HostClientError.INVALID_COMMAND)
+        return postTurn(
+            eventsInputPath(sessionId, turnId), commandId, sessionId, turnId,
+            buildJsonObject {
+                put("kind", "ask_reply"); put("session_id", sessionId)
+                put("suspension_id", suspensionId); put("expected_session_version", expectedSessionVersion)
+                put("input_json", inputJson)
+            },
+        )
+    }
+
+    /** Submits plain-text input against a schema-less ExternalInputRequired or PartialOutput. */
+    @Throws(HostClientException::class, CancellationException::class)
+    override suspend fun externalInputEvent(
+        commandId: String,
+        sessionId: String,
+        turnId: String,
+        suspensionId: String,
+        expectedSessionVersion: Long,
+        text: String,
+    ): TurnCommandResponseV1 {
+        if (sessionId.isEmpty() || turnId.isEmpty() || suspensionId.isEmpty() ||
+            expectedSessionVersion <= 0 || text.isEmpty()
+        ) fail(HostClientError.INVALID_COMMAND)
+        return postTurn(
+            eventsInputPath(sessionId, turnId), commandId, sessionId, turnId,
+            buildJsonObject {
+                put("kind", "external_input"); put("session_id", sessionId)
+                put("suspension_id", suspensionId); put("expected_session_version", expectedSessionVersion)
+                put("text", text)
+            },
+        )
+    }
+
+    private fun eventsInputPath(sessionId: String, turnId: String): String =
+        "/v1/sessions/${sessionId.encodeURLPathPart()}/turns/${turnId.encodeURLPathPart()}/events"
+
+    private fun eventsCancelPath(sessionId: String, turnId: String): String =
+        "/v1/sessions/${sessionId.encodeURLPathPart()}/turns/${turnId.encodeURLPathPart()}/cancel"
 
     /** Follows committed events until an explicit durable terminal. */
     @Throws(HostClientException::class, CancellationException::class)

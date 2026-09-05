@@ -244,14 +244,41 @@ public class LiveHostClientTest {
     @Test
     public fun turnMutationsUseExactH1Paths(): Unit = runBlocking {
         val paths = mutableListOf<String>()
+        val bodies = mutableListOf<String>()
         val response = """{"session_id":"session-client","turn_id":"turn-client","execution_id":"execution-client","committed_position":12}"""
-        val engine = MockEngine { request -> paths += request.url.encodedPath; respondJson(response) }
+        val engine = MockEngine { request ->
+            paths += request.url.encodedPath
+            if (request.body is TextContent) bodies += (request.body as TextContent).text
+            respondJson(response)
+        }
         val client = LiveHostClient("http://127.0.0.1:4317/", limits(), HttpClient(engine))
         client.cancelTurn("cancel-stable", "session-client", "turn-client", 9)
-        client.continueTurn(
-            "continue-stable", "session-client", "turn-client", "suspension-client", 4, "approved input", false,
+        client.steerTurn("steer-stable", "session-client", "turn-client", "follow-up input")
+        client.approvalEvent(
+            "approval-stable", "session-client", "turn-client", "suspension-client", 4, true,
         )
-        assertEquals(listOf("/v1/turns/turn-client:cancel", "/v1/turns/turn-client:continue"), paths)
+        client.externalInputEvent(
+            "external-input-stable", "session-client", "turn-client", "suspension-client", 4, "approved input",
+        )
+        client.askReplyEvent(
+            "ask-reply-stable", "session-client", "turn-client", "suspension-client", 4, """{"approved":true}""",
+        )
+        assertEquals(
+            listOf(
+                "/v1/sessions/session-client/turns/turn-client/cancel",
+                "/v1/sessions/session-client/turns/turn-client/events",
+                "/v1/sessions/session-client/turns/turn-client/events",
+                "/v1/sessions/session-client/turns/turn-client/events",
+                "/v1/sessions/session-client/turns/turn-client/events",
+            ),
+            paths,
+        )
+        assertTrue("\"session_id\"" !in bodies[0], "cancel body must drop session_id, got ${bodies[0]}")
+        assertTrue("\"requested_through_position\":9" in bodies[0], "cancel body must carry requested_through_position, got ${bodies[0]}")
+        assertTrue("\"kind\":\"steer\"" in bodies[1], "steer body must carry kind=steer, got ${bodies[1]}")
+        assertTrue("\"kind\":\"approval\"" in bodies[2] && "\"decision\":\"approve\"" in bodies[2], "approval body must carry kind=approval + decision=approve, got ${bodies[2]}")
+        assertTrue("\"kind\":\"external_input\"" in bodies[3] && "\"text\":\"approved input\"" in bodies[3], "external_input body must carry text, got ${bodies[3]}")
+        assertTrue("\"kind\":\"ask_reply\"" in bodies[4] && "input_json" in bodies[4] && "approved" in bodies[4], "ask_reply body must carry canonical input_json bytes, got ${bodies[4]}")
     }
 
     @Test

@@ -273,14 +273,38 @@ private object JourneyHost : MobileHost {
         return TurnCommandResponseV1(sessionId, turnId, "execution-${turns.size}", position)
     }
 
-    override suspend fun continueTurn(
+    override suspend fun steerTurn(
+        commandId: String,
+        sessionId: String,
+        turnId: String,
+        text: String,
+    ): TurnCommandResponseV1 = unsupported()
+
+    override suspend fun approvalEvent(
         commandId: String,
         sessionId: String,
         turnId: String,
         suspensionId: String,
         expectedSessionVersion: Long,
-        input: String,
-        inputJson: Boolean,
+        approve: Boolean,
+    ): TurnCommandResponseV1 = unsupported()
+
+    override suspend fun askReplyEvent(
+        commandId: String,
+        sessionId: String,
+        turnId: String,
+        suspensionId: String,
+        expectedSessionVersion: Long,
+        inputJson: String,
+    ): TurnCommandResponseV1 = unsupported()
+
+    override suspend fun externalInputEvent(
+        commandId: String,
+        sessionId: String,
+        turnId: String,
+        suspensionId: String,
+        expectedSessionVersion: Long,
+        text: String,
     ): TurnCommandResponseV1 = unsupported()
 
     override suspend fun followUntilTerminal(sessionId: String, afterPosition: Long): HostView = unsupported()

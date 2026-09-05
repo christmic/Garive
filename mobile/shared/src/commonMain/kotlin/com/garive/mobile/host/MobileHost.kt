@@ -43,16 +43,46 @@ public interface MobileHost {
         requestedThroughPosition: Long,
     ): TurnCommandResponseV1
 
-    /** Continues one exact durable suspension. */
+    /** Submits plain-text input for one Open Turn (no suspension). */
     @Throws(HostClientException::class, CancellationException::class)
-    public suspend fun continueTurn(
+    public suspend fun steerTurn(
+        commandId: String,
+        sessionId: String,
+        turnId: String,
+        text: String,
+    ): TurnCommandResponseV1
+
+    /** Submits an operator decision against one ApprovalRequired suspension. */
+    @Throws(HostClientException::class, CancellationException::class)
+    public suspend fun approvalEvent(
         commandId: String,
         sessionId: String,
         turnId: String,
         suspensionId: String,
         expectedSessionVersion: Long,
-        input: String,
-        inputJson: Boolean,
+        approve: Boolean,
+    ): TurnCommandResponseV1
+
+    /** Submits an RFC 8785 typed JSON reply against a schema-bound ExternalInputRequired. */
+    @Throws(HostClientException::class, CancellationException::class)
+    public suspend fun askReplyEvent(
+        commandId: String,
+        sessionId: String,
+        turnId: String,
+        suspensionId: String,
+        expectedSessionVersion: Long,
+        inputJson: String,
+    ): TurnCommandResponseV1
+
+    /** Submits plain-text input against a schema-less ExternalInputRequired or PartialOutput. */
+    @Throws(HostClientException::class, CancellationException::class)
+    public suspend fun externalInputEvent(
+        commandId: String,
+        sessionId: String,
+        turnId: String,
+        suspensionId: String,
+        expectedSessionVersion: Long,
+        text: String,
     ): TurnCommandResponseV1
 
     /** Follows committed events until a durable terminal. */

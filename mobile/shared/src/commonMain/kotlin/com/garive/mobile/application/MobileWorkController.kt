@@ -313,15 +313,26 @@ public class MobileWorkController(
                     operation.turnId,
                     operation.position,
                 )
-                is PendingOperation.Continue -> host.continueTurn(
-                    operation.commandId,
-                    operation.sessionId,
-                    operation.turnId,
-                    operation.suspensionId,
-                    operation.sessionVersion,
-                    operation.input,
-                    operation.inputJson,
-                )
+                is PendingOperation.Continue -> if (operation.inputJson) {
+                    val approve = operation.input == "true"
+                    host.approvalEvent(
+                        operation.commandId,
+                        operation.sessionId,
+                        operation.turnId,
+                        operation.suspensionId,
+                        operation.sessionVersion,
+                        approve,
+                    )
+                } else {
+                    host.externalInputEvent(
+                        operation.commandId,
+                        operation.sessionId,
+                        operation.turnId,
+                        operation.suspensionId,
+                        operation.sessionVersion,
+                        operation.input,
+                    )
+                }
             }
             if (operation is PendingOperation.Continue) {
                 sessionDrafts.remove(operation.sessionId)
