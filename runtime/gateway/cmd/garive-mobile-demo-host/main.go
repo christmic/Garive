@@ -158,38 +158,67 @@ func (d *demoHost) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		item.UserText, item.State, item.Completion = body.Text, "running", ""
 		item.Position += 2
 		d.turnResponse(w, item)
-	case r.Method == http.MethodPost && strings.HasPrefix(path, "/v1/turns/") && strings.HasSuffix(path, ":continue"):
-		item := d.byTurn(strings.TrimSuffix(strings.TrimPrefix(path, "/v1/turns/"), ":continue"))
-		if item == nil {
+	case r.Method == http.MethodPost && strings.Contains(path, "/turns/") && strings.HasSuffix(path, "/events"):
+		item, ok := d.byTurnScoped(path)
+		if !ok {
 			d.error(w, http.StatusNotFound, "not_found")
 			return
 		}
 		var body struct {
-			InputJSON string `json:"input_json"`
-			Input     string `json:"input"`
+			Kind                   string `json:"kind"`
+			SessionID              string `json:"session_id"`
+			Text                   string `json:"text"`
+			InputJSON              string `json:"input_json"`
+			Decision               string `json:"decision"`
+			SuspensionID           string `json:"suspension_id"`
+			ExpectedSessionVersion uint64 `json:"expected_session_version"`
 		}
-		if json.NewDecoder(r.Body).Decode(&body) != nil || item.Suspension == nil {
-			d.error(w, http.StatusBadRequest, "invalid_suspension_response")
+		if json.NewDecoder(r.Body).Decode(&body) != nil || body.SessionID != item.ID {
+			d.error(w, http.StatusBadRequest, "invalid_request")
 			return
 		}
-		completion := ""
-		if item.Suspension.Kind == "input_required" && body.Input != "" && len(body.Input) <= 16_384 {
-			completion = fmt.Sprintf("Response committed for %s. The agent resumed the handoff.", body.Input)
-		} else if item.Suspension.Kind == "approval_required" && body.InputJSON == "true" {
-			completion = "Approved. The agent resumed on the server and completed the release checks."
-		} else if item.Suspension.Kind == "approval_required" && body.InputJSON == "false" {
-			completion = "Declined. The protected action was skipped and the decision was committed."
-		} else {
-			d.error(w, http.StatusBadRequest, "invalid_suspension_response")
+		switch body.Kind {
+		case "steer":
+			if body.Text == "" {
+				d.error(w, http.StatusBadRequest, "invalid_request")
+				return
+			}
+			item.Turns++
+			item.TurnID = fmt.Sprintf("turn-%s-%d", item.ID, item.Turns)
+			item.UserText, item.State, item.Completion = body.Text, "running", ""
+			item.Position += 2
+		case "approval":
+			if item.Suspension == nil || item.Suspension.Kind != "approval_required" {
+				d.error(w, http.StatusBadRequest, "invalid_suspension_response")
+				return
+			}
+			switch body.Decision {
+			case "approve":
+				item.State, item.Completion = "completed", "Approved. The agent resumed on the server and completed the release checks."
+			case "deny":
+				item.State, item.Completion = "completed", "Declined. The protected action was skipped and the decision was committed."
+			default:
+				d.error(w, http.StatusBadRequest, "invalid_suspension_response")
+				return
+			}
+			item.Suspension = nil
+			item.Position++
+		case "external_input":
+			if item.Suspension == nil || item.Suspension.Kind != "input_required" || body.Text == "" || len(body.Text) > 16_384 {
+				d.error(w, http.StatusBadRequest, "invalid_suspension_response")
+				return
+			}
+			item.State, item.Completion = "completed", fmt.Sprintf("Response committed for %s. The agent resumed the handoff.", body.Text)
+			item.Suspension = nil
+			item.Position++
+		default:
+			d.error(w, http.StatusBadRequest, "invalid_request")
 			return
 		}
-		item.State, item.Completion = "completed", completion
-		item.Suspension = nil
-		item.Position++
 		d.turnResponse(w, item)
-	case r.Method == http.MethodPost && strings.HasPrefix(path, "/v1/turns/") && strings.HasSuffix(path, ":cancel"):
-		item := d.byTurn(strings.TrimSuffix(strings.TrimPrefix(path, "/v1/turns/"), ":cancel"))
-		if item == nil {
+	case r.Method == http.MethodPost && strings.Contains(path, "/turns/") && strings.HasSuffix(path, "/cancel"):
+		item, ok := d.byTurnScoped(path)
+		if !ok {
 			d.error(w, http.StatusNotFound, "not_found")
 			return
 		}
@@ -285,6 +314,31 @@ func (d *demoHost) byTurn(id string) *session {
 		}
 	}
 	return nil
+}
+func (d *demoHost) byTurnScoped(path string) (*session, bool) {
+	const prefix = "/v1/sessions/"
+	if !strings.HasPrefix(path, prefix) {
+		return nil, false
+	}
+	rest := strings.TrimPrefix(path, prefix)
+	slash := strings.Index(rest, "/turns/")
+	if slash < 0 {
+		return nil, false
+	}
+	sessionID := rest[:slash]
+	afterTurns := rest[slash+len("/turns/"):]
+	for _, item := range d.sessions {
+		if item.ID != sessionID {
+			continue
+		}
+		if strings.HasPrefix(afterTurns, item.TurnID+"/events") ||
+			strings.HasPrefix(afterTurns, item.TurnID+"/cancel") ||
+			afterTurns == item.TurnID+"/events" ||
+			afterTurns == item.TurnID+"/cancel" {
+			return item, true
+		}
+	}
+	return nil, false
 }
 func (d *demoHost) turnResponse(w http.ResponseWriter, item *session) {
 	d.write(w, map[string]any{"session_id": item.ID, "turn_id": item.TurnID, "execution_id": "demo-execution", "committed_position": item.Position})

@@ -19,7 +19,7 @@ import (
 
 const apiVersion = "v1"
 
-var admittedRoute = regexp.MustCompile(`^/v1/(agent-definitions|sessions(?:/[A-Za-z0-9_-]+(?:/timeline|/events|/turns)?)?|turns/[A-Za-z0-9_-]+:(?:cancel|continue))$`)
+var admittedRoute = regexp.MustCompile(`^/v1/(agent-definitions|sessions(?:/[A-Za-z0-9_-]+(?:/timeline|/events|/turns(?:/[A-Za-z0-9_-]+(?:/events|/cancel))?)?)?)$`)
 
 type Config struct {
 	RuntimeOrigin *url.URL

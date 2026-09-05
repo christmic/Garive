@@ -23,20 +23,20 @@ func TestWalkthroughSeedsIndependentApprovalDecisions(t *testing.T) {
 
 func TestApprovalWalkthroughCommitsBothDecisions(t *testing.T) {
 	tests := []struct {
-		input string
-		want  string
+		decision string
+		want     string
 	}{
-		{input: "true", want: "Approved."},
-		{input: "false", want: "Declined."},
+		{decision: "approve", want: "Approved."},
+		{decision: "deny", want: "Declined."},
 	}
 	for _, test := range tests {
-		t.Run(test.input, func(t *testing.T) {
+		t.Run(test.decision, func(t *testing.T) {
 			item := &session{ID: "release-approval", TurnID: "turn-approval", State: "suspended", Position: 12, Suspension: approvalSuspension}
 			host := &demoHost{sessions: []*session{item}}
 			request := httptest.NewRequest(
 				http.MethodPost,
-				"/v1/turns/turn-approval:continue",
-				strings.NewReader(`{"input_json":"`+test.input+`"}`),
+				"/v1/sessions/release-approval/turns/turn-approval/events",
+				strings.NewReader(`{"kind":"approval","session_id":"release-approval","suspension_id":"suspension-x","expected_session_version":4,"decision":"`+test.decision+`"}`),
 			)
 			response := httptest.NewRecorder()
 
@@ -55,7 +55,11 @@ func TestApprovalWalkthroughCommitsBothDecisions(t *testing.T) {
 func TestTextSuspensionCommitsTheExactPublicResponse(t *testing.T) {
 	item := &session{ID: "clarification-input", TurnID: "turn-clarification", State: "suspended", Position: 14, Suspension: inputSuspension}
 	host := &demoHost{sessions: []*session{item}}
-	request := httptest.NewRequest(http.MethodPost, "/v1/turns/turn-clarification:continue", strings.NewReader(`{"input":"Release managers"}`))
+	request := httptest.NewRequest(
+		http.MethodPost,
+		"/v1/sessions/clarification-input/turns/turn-clarification/events",
+		strings.NewReader(`{"kind":"external_input","session_id":"clarification-input","suspension_id":"suspension-y","expected_session_version":5,"text":"Release managers"}`),
+	)
 	response := httptest.NewRecorder()
 
 	host.ServeHTTP(response, request)

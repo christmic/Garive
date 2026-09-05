@@ -131,38 +131,49 @@ pub(crate) fn continue_turn(
     sender: mpsc::Sender<HostMessage>,
 ) {
     tokio::spawn(async move {
-        let canonical_json = match &request.input {
+        let result = match &request.input {
+            ContinuationInput::Text(input) => {
+                client
+                    .external_input_event(
+                        &request.command_id,
+                        &request.session_id,
+                        &request.turn_id,
+                        &request.suspension_id,
+                        request.expected_session_version,
+                        input,
+                    )
+                    .await
+            }
+            ContinuationInput::Json(Value::Bool(approve)) => {
+                client
+                    .approval_event(
+                        &request.command_id,
+                        &request.session_id,
+                        &request.turn_id,
+                        &request.suspension_id,
+                        request.expected_session_version,
+                        if *approve {
+                            garive_host_client::ApprovalDecision::Approve
+                        } else {
+                            garive_host_client::ApprovalDecision::Deny
+                        },
+                    )
+                    .await
+            }
             ContinuationInput::Json(input) => {
-                Some(serde_jcs::to_string(input).unwrap_or_else(|_| input.to_string()))
-            }
-            ContinuationInput::Text(_) => None,
-        };
-        let result = match (&request.input, canonical_json.as_deref()) {
-            (ContinuationInput::Text(input), _) => {
+                let canonical =
+                    serde_jcs::to_string(input).unwrap_or_else(|_| input.to_string());
                 client
-                    .continue_turn(
+                    .ask_reply_event(
                         &request.command_id,
                         &request.session_id,
                         &request.turn_id,
                         &request.suspension_id,
                         request.expected_session_version,
-                        input,
+                        &canonical,
                     )
                     .await
             }
-            (ContinuationInput::Json(_), Some(input)) => {
-                client
-                    .continue_turn_json(
-                        &request.command_id,
-                        &request.session_id,
-                        &request.turn_id,
-                        &request.suspension_id,
-                        request.expected_session_version,
-                        input,
-                    )
-                    .await
-            }
-            (ContinuationInput::Json(_), None) => unreachable!("JSON input always has text"),
         };
         let submitted_text = match request.input {
             ContinuationInput::Text(value) => value,

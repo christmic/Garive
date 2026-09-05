@@ -197,6 +197,29 @@ func TestRouteAndMethodAdmission(t *testing.T) {
 	assertError(t, serve(server, http.MethodDelete, "/v1/sessions", "", grant), http.StatusNotFound, "route_not_admitted")
 }
 
+func TestSessionScopedTurnRoutesAreAdmitted(t *testing.T) {
+	server := newServer(t, okTransport(), time.Now)
+	grant, _ := pair(t, server)
+	for _, path := range []string{
+		"/v1/sessions/session_1/turns/turn_1/events",
+		"/v1/sessions/session_1/turns/turn_1/cancel",
+	} {
+		for _, method := range []string{http.MethodPost, http.MethodGet} {
+			if got := serve(server, method, path, `{"kind":"steer","session_id":"session_1","text":"x"}`, grant); got.Code != http.StatusOK {
+				t.Fatalf("admit %s %s: code=%d", method, path, got.Code)
+			}
+		}
+	}
+	for _, path := range []string{
+		"/v1/turns/turn_1:cancel",
+		"/v1/turns/turn_1:continue",
+		"/v1/turns/turn_1/events",
+		"/v1/turns/turn_1/cancel",
+	} {
+		assertError(t, serve(server, http.MethodPost, path, `{}`, grant), http.StatusNotFound, "route_not_admitted")
+	}
+}
+
 func newServer(t *testing.T, transport http.RoundTripper, now func() time.Time) *Server {
 	t.Helper()
 	runtime, _ := url.Parse("http://127.0.0.1:4317")
