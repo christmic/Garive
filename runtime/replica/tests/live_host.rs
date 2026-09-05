@@ -806,8 +806,8 @@ fn steer_endpoint_returns_structured_command_response() {
             let _ = shutdown_rx.await;
         }));
         let url = format!(
-            "http://{}/v1/turns/{}/events",
-            listener_addr, started.turn_id
+            "http://{}/v1/sessions/{}/turns/{}/events",
+            listener_addr, session.session_id, started.turn_id
         );
         let client = reqwest::Client::new();
         let response = client
@@ -2490,26 +2490,16 @@ async fn real_loopback_http_has_stable_errors_commands_and_sse_replay() {
     let missing: Value = serde_json::from_slice(&missing.bytes().await.unwrap()).unwrap();
     assert_eq!(missing["code"], "invalid_request");
 
-    for (key, body) in [
-        (
-            "continue-absent",
-            r#"{"session_id":"session-x","suspension_id":"suspension-x","expected_session_version":1}"#,
-        ),
-        (
-            "continue-dual",
-            r#"{"session_id":"session-x","suspension_id":"suspension-x","expected_session_version":1,"input":"yes","input_json":"true"}"#,
-        ),
-    ] {
-        let response = client
-            .post(format!("{base}/v1/turns/turn-x/continue"))
-            .header("idempotency-key", key)
-            .header("content-type", "application/json")
-            .body(body)
-            .send()
-            .await
-            .unwrap();
-        assert_eq!(response.status(), reqwest::StatusCode::BAD_REQUEST);
-    }
+    // Legacy /v1/turns/{tid}/continue route is dropped; new path returns 404.
+    let legacy_continue = client
+        .post(format!("{base}/v1/turns/turn-x/continue"))
+        .header("idempotency-key", "legacy-continue")
+        .header("content-type", "application/json")
+        .body(r#"{"session_id":"session-x","suspension_id":"suspension-x","expected_session_version":1,"input":"yes"}"#)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(legacy_continue.status(), reqwest::StatusCode::NOT_FOUND);
 
     let created = client
         .post(format!("{base}/v1/sessions"))
@@ -2524,6 +2514,24 @@ async fn real_loopback_http_has_stable_errors_commands_and_sse_replay() {
         .map(|bytes| serde_json::from_slice::<Value>(&bytes).unwrap())
         .unwrap();
     let session_id = created["session_id"].as_str().unwrap();
+
+    // Session-scoped events endpoint rejects bodies missing the session_id
+    // discriminator with 400 invalid_request (deny_unknown_fields on the
+    // request body envelope).
+    let session_scoped_bad = client
+        .post(format!(
+            "{base}/v1/sessions/{session_id}/turns/turn-x/events"
+        ))
+        .header("idempotency-key", "scoped-bad")
+        .header("content-type", "application/json")
+        .body(r#"{"suspension_id":"suspension-x","expected_session_version":1,"input":"yes"}"#)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(
+        session_scoped_bad.status(),
+        reqwest::StatusCode::BAD_REQUEST
+    );
     let session_view = client
         .get(format!("{base}/v1/sessions/{session_id}"))
         .send()
@@ -2621,7 +2629,7 @@ async fn real_loopback_http_has_stable_errors_commands_and_sse_replay() {
         .to_owned();
     let response = client
         .get(format!(
-            "{base}/v1/turns/{started_turn_id}/events?after_position=0"
+            "{base}/v1/sessions/{session_id}/turns/{started_turn_id}/events?after_position=0"
         ))
         .send()
         .await
@@ -3176,8 +3184,8 @@ async fn session_scoped_cancel_endpoint_reads_session_id_from_path() {
         .header("idempotency-key", "events-cancel")
         .header("content-type", "application/json")
         .body(format!(
-            r#"{{"session_id":"{}","requested_through_position":{}}}"#,
-            session.session_id, started.committed_position
+            r#"{{"requested_through_position":{}}}"#,
+            started.committed_position
         ))
         .send()
         .await
@@ -3195,10 +3203,9 @@ async fn session_scoped_cancel_endpoint_reads_session_id_from_path() {
 }
 
 #[tokio::test]
-async fn legacy_turn_events_route_admits_steer_only() {
-    // While the legacy /v1/turns/:turn_id/events route is still registered
-    // (Batch B retention; removed in Batch F) it must accept steer-only and
-    // reject the three non-steer kinds with invalid_request.
+async fn legacy_turn_routes_are_fully_dropped() {
+    // After Batch F: /v1/turns/{tid}/{events,cancel,continue} are gone.
+    // Every shape (steer body, raw {input}, colon-suffix, slash path) must 404.
     let harness = Harness::new(64);
     let session = harness
         .host
@@ -3211,77 +3218,68 @@ async fn legacy_turn_events_route_admits_steer_only() {
     let (address, shutdown_tx, _handle) = spawn_loopback(harness.host.clone()).await;
     let client = reqwest::Client::new();
     let base = format!("http://{address}");
-    let url = format!("{base}/v1/turns/{}/events", started.turn_id);
+    let sid = session.session_id;
+    let tid = started.turn_id;
 
-    // steer → 200
-    let steer = client
-        .post(&url)
-        .header("idempotency-key", "legacy-steer")
+    let cases: &[(&str, &str, &str)] = &[
+        (
+            "POST",
+            &format!("{base}/v1/turns/{tid}/events"),
+            r#"{"kind":"steer","session_id":"x","text":"legacy"}"#,
+        ),
+        ("GET", &format!("{base}/v1/turns/{tid}/events"), ""),
+        (
+            "POST",
+            &format!("{base}/v1/turns/{tid}/cancel"),
+            r#"{"session_id":"x","requested_through_position":1}"#,
+        ),
+        (
+            "POST",
+            &format!("{base}/v1/turns/{tid}:cancel"),
+            r#"{"session_id":"x","requested_through_position":1}"#,
+        ),
+        (
+            "POST",
+            &format!("{base}/v1/turns/{tid}:continue"),
+            r#"{"session_id":"x","suspension_id":"s","expected_session_version":1,"input":"x"}"#,
+        ),
+        (
+            "POST",
+            &format!("{base}/v1/turns/{tid}/continue"),
+            r#"{"session_id":"x","suspension_id":"s","expected_session_version":1,"input":"x"}"#,
+        ),
+    ];
+    for &(method, url, body) in cases {
+        let mut request = match method {
+            "GET" => client.get(url),
+            _ => client.post(url),
+        };
+        if method != "GET" {
+            request = request
+                .header("idempotency-key", format!("legacy-{sid}-{tid}"))
+                .header("content-type", "application/json")
+                .body(body.to_owned());
+        }
+        let response = request.send().await.unwrap();
+        assert_eq!(
+            response.status(),
+            reqwest::StatusCode::NOT_FOUND,
+            "legacy path {method} {url} must 404, got {}",
+            response.status()
+        );
+    }
+    // session-scoped path still works (regression check).
+    let session_scoped = client
+        .post(format!("{base}/v1/sessions/{sid}/turns/{tid}/events"))
+        .header("idempotency-key", "session-scoped-still-200")
         .header("content-type", "application/json")
         .body(format!(
-            r#"{{"kind":"steer","session_id":"{}","text":"legacy"}}"#,
-            session.session_id
+            r#"{{"kind":"steer","session_id":"{sid}","text":"now"}}"#
         ))
         .send()
         .await
         .unwrap();
-    assert_eq!(steer.status(), reqwest::StatusCode::OK);
-
-    // approval → 400 invalid_request (legacy disallows it).
-    let approval = client
-        .post(&url)
-        .header("idempotency-key", "legacy-approval")
-        .header("content-type", "application/json")
-        .body(format!(
-            r#"{{"kind":"approval","session_id":"{}","suspension_id":"s","expected_session_version":1,"decision":"approve"}}"#,
-            session.session_id
-        ))
-        .send()
-        .await
-        .unwrap();
-    assert_eq!(
-        approval.status(),
-        reqwest::StatusCode::BAD_REQUEST,
-        "legacy events endpoint must reject approval kind"
-    );
-    let body: Value = serde_json::from_slice(&approval.bytes().await.unwrap()).unwrap();
-    assert_eq!(body["code"], "invalid_request");
-
-    // ask_reply → 400 invalid_request
-    let ask = client
-        .post(&url)
-        .header("idempotency-key", "legacy-ask")
-        .header("content-type", "application/json")
-        .body(format!(
-            r#"{{"kind":"ask_reply","session_id":"{}","suspension_id":"s","expected_session_version":1,"input_json":"true"}}"#,
-            session.session_id
-        ))
-        .send()
-        .await
-        .unwrap();
-    assert_eq!(
-        ask.status(),
-        reqwest::StatusCode::BAD_REQUEST,
-        "legacy events endpoint must reject ask_reply kind"
-    );
-
-    // external_input → 400 invalid_request
-    let external = client
-        .post(&url)
-        .header("idempotency-key", "legacy-external")
-        .header("content-type", "application/json")
-        .body(format!(
-            r#"{{"kind":"external_input","session_id":"{}","suspension_id":"s","expected_session_version":1,"text":"x"}}"#,
-            session.session_id
-        ))
-        .send()
-        .await
-        .unwrap();
-    assert_eq!(
-        external.status(),
-        reqwest::StatusCode::BAD_REQUEST,
-        "legacy events endpoint must reject external_input kind"
-    );
+    assert_eq!(session_scoped.status(), reqwest::StatusCode::OK);
 
     shutdown_tx.send(()).unwrap();
 }

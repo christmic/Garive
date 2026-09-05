@@ -239,27 +239,54 @@ The Desktop path (`FileDesktopConfigurationProvider::load`) is unchanged and
 still reads only `desktop-v1.json`; merging the SQLite row into the Desktop
 loader remains the separate R3 follow-up.
 
-## Turn-mode wire contract (queue + steer)
+## Turn-mode wire contract (queue + 4-kind events)
 
 The H1 surface offers two complementary turn-mode shapes, both implemented
 in the runtime crate:
 
-| Mode     | Path                                                    | Purpose                                                              |
-| -------- | ------------------------------------------------------- | -------------------------------------------------------------------- |
-| Queue    | `POST /v1/sessions/:session_id/turns`                   | Submit a new Turn; rejected with `session_busy` while one is Open.   |
-| Steer    | `POST /v1/turns/:turn_id/events` (body `{"kind":"steer","session_id":"...","text":"..."}`) | Inject new user input into the next derive iteration of an Open Turn. |
+| Mode     | Path                                                                      | Purpose                                                              |
+| -------- | ------------------------------------------------------------------------- | -------------------------------------------------------------------- |
+| Queue    | `POST /v1/sessions/:session_id/turns`                                     | Submit a new Turn; rejected with `session_busy` while one is Open.   |
+| Events   | `POST /v1/sessions/:session_id/turns/:turn_id/events` (4-kind envelope)   | Inject operator input — `steer` (Open) or `approval` / `ask_reply` / `external_input` (Suspended). |
+| Cancel   | `POST /v1/sessions/:session_id/turns/:turn_id/cancel`                     | Stop a Turn; body carries `requested_through_position` only — `session_id` is read from the path. |
 
-Queue mode is the only path that creates a new Turn. Steer mode is purely
-ledger-driven: it commits a `turn.steered` fact under the targeted `turn_id`,
+Queue mode is the only path that creates a new Turn. Events mode is purely
+ledger-driven: it commits a `turn.steered` fact under the targeted `turn_id`
+(steer kind) or a typed interaction fact (the three suspend kinds),
 position-ordered naturally with whatever `plan.*` events the worker emits
 around it. No abort, no in-memory inbox.
 
-### Steer mode
+### Events mode (4-kind envelope)
 
-Request body (`deny_unknown_fields`):
+The `kind` field discriminates the four valid request bodies; the
+envelope rejects unknown kinds via `deny_unknown_fields`. `session_id`
+in each body variant must equal the session in the path (mismatch →
+`invalid_request`).
+
+| `kind`           | Extra body fields                                                              | Suspension kind it answers                                |
+| ---------------- | ------------------------------------------------------------------------------ | --------------------------------------------------------- |
+| `steer`          | `text: string`                                                                 | (no suspension — Open Turn)                               |
+| `approval`       | `suspension_id`, `expected_session_version`, `decision: "approve" \| "deny"`   | `ApprovalRequired` — Host canonicalises to RFC 8785 `true` / `false` |
+| `ask_reply`      | `suspension_id`, `expected_session_version`, `input_json: string` (RFC 8785 bytes) | `ExternalInputRequired` with `response_schema`        |
+| `external_input` | `suspension_id`, `expected_session_version`, `text: string`                    | `ExternalInputRequired` without schema, or `PartialOutput` |
+
+Steer request body example:
 
 ```json
-{ "text": "additional context for the running Turn" }
+{ "kind": "steer", "session_id": "<sid>", "text": "additional context for the running Turn" }
+```
+
+Approval request body example:
+
+```json
+{ "kind": "approval", "session_id": "<sid>", "suspension_id": "<sid>",
+  "expected_session_version": 7, "decision": "approve" }
+```
+
+Cancel request body:
+
+```json
+{ "requested_through_position": 7 }
 ```
 
 Success (`200 OK`):
@@ -277,24 +304,24 @@ Failure wire codes:
 
 | Status | code                    | When                                                       |
 | ------ | ----------------------- | ---------------------------------------------------------- |
-| `400`  | `invalid_request`       | body missing, malformed, or exceeds `max_command_bytes`.   |
+| `400`  | `invalid_request`       | body missing, malformed, kind unknown, body session_id != path session_id, or exceeds `max_command_bytes`. |
 | `404`  | `not_found`             | session or turn does not exist.                            |
-| `409`  | `command_conflict`      | same idempotency-key replay but the inline text drifted.  |
-| `412`  | `precondition_failed`   | the targeted Turn is no longer Open (Suspended/Completed/Stopped/Failed). |
+| `409`  | `command_conflict`      | same idempotency-key replay but the body drifted.          |
+| `412`  | `precondition_failed`   | the targeted Turn is not in the right state for the chosen kind. |
 
 ### Ordering guarantee under one `turn_id`
 
-Steer commits share the same `turn_id` as the active Turn. Because every
+All four variants share the same `turn_id` as the active Turn. Because every
 fact is assigned a strictly increasing Session-local position at commit
-time, a sequence of steers interleaves with the worker's own facts in
-the order the runtime receives them. The next derive iteration of the
-worker observes the new fact at the start of its scan and surfaces the
-inline text as a user message on the next model call.
+time, a sequence of steers / approvals / typed replies interleaves with the
+worker's own facts in the order the runtime receives them. The next derive
+iteration of the worker observes the new fact at the start of its scan and
+surfaces the inline text as a user message on the next model call.
 
-Replay safety: a steer command with the same `Idempotency-Key` is detected
+Replay safety: a command with the same `Idempotency-Key` is detected
 before planning; the original `TurnCommandResponse` is returned without
 writing a second fact. A different `Idempotency-Key` against the same
-Open Turn produces a fresh `turn.steered` fact.
+Open Turn produces a fresh fact.
 
 ## Risks (carried verbatim from the design plan)
 

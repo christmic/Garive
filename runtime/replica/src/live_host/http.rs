@@ -16,10 +16,9 @@ use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use tokio::net::TcpListener;
 
 use super::{
-    validate_key, CancelGoalBody, CancelTurnBody, ContinueTurnBody, CreateGoalBody,
-    CreateSessionBody, DeliveredTurnResponse, ErrorBody, JoinSessionAgentBody, LiveHost,
-    LiveHostError, LiveHostEvent, ReviseGoalBody, StartTurnBody, StartTurnsResponse,
-    TurnDeliveryBody, TurnEventBody,
+    validate_key, CancelGoalBody, CancelTurnBody, CreateGoalBody, CreateSessionBody,
+    DeliveredTurnResponse, ErrorBody, JoinSessionAgentBody, LiveHost, LiveHostError, LiveHostEvent,
+    ReviseGoalBody, StartTurnBody, StartTurnsResponse, TurnDeliveryBody, TurnEventBody,
 };
 use crate::{
     CreateAgentRequest, LiveOutputReceiveError, LiveOutputSubscriber, UpdateAgentKnowledgeRequest,
@@ -74,12 +73,6 @@ impl LiveHostServer {
                 "/v1/sessions/:session_id/turns/:turn_id/cancel",
                 post(session_scoped_cancel_turn_http),
             )
-            .route(
-                "/v1/turns/:turn_id/events",
-                post(turn_event_input).get(turn_events),
-            )
-            .route("/v1/turns/:turn_id/cancel", post(cancel_turn_http))
-            .route("/v1/turns/:turn_id/continue", post(continue_turn_http))
             .route("/v1/goals/:operation", post(mutate_goal))
             .route(
                 "/v1/management/setup",
@@ -439,30 +432,6 @@ enum StartTurnHttpResponse {
     Routed(StartTurnsResponse),
 }
 
-async fn turn_event_input(
-    State(host): State<LiveHost>,
-    Path(turn_id): Path<String>,
-    headers: HeaderMap,
-    body: Body,
-) -> Response {
-    let result = async {
-        let key = idempotency_key(&headers)?;
-        let event: TurnEventBody = decode_body(&host, body).await?;
-        match event {
-            TurnEventBody::Steer { session_id, text } => {
-                host.steer_turn(key, &session_id, &turn_id, &text)
-            }
-            // Legacy `/v1/turns/:turn_id/events` route only admits `steer`;
-            // the four-kind union is reserved for the session-scoped route.
-            TurnEventBody::Approval { .. }
-            | TurnEventBody::AskReply { .. }
-            | TurnEventBody::ExternalInput { .. } => Err(LiveHostError::InvalidRequest),
-        }
-    }
-    .await;
-    command_response(result)
-}
-
 async fn session_scoped_turn_event_input(
     State(host): State<LiveHost>,
     Path((session_id, turn_id)): Path<(String, String)>,
@@ -542,26 +511,6 @@ async fn session_scoped_turn_event_input(
     command_response(result)
 }
 
-async fn cancel_turn_http(
-    State(host): State<LiveHost>,
-    Path(turn_id): Path<String>,
-    headers: HeaderMap,
-    body: Body,
-) -> Response {
-    let result = async {
-        let key = idempotency_key(&headers)?;
-        let body: CancelTurnBody = decode_body(&host, body).await?;
-        host.cancel_turn(
-            key,
-            &body.session_id,
-            &turn_id,
-            body.requested_through_position,
-        )
-    }
-    .await;
-    command_response(result)
-}
-
 async fn session_scoped_cancel_turn_http(
     State(host): State<LiveHost>,
     Path((session_id, turn_id)): Path<(String, String)>,
@@ -572,33 +521,6 @@ async fn session_scoped_cancel_turn_http(
         let key = idempotency_key(&headers)?;
         let body: CancelTurnBody = decode_body(&host, body).await?;
         host.cancel_turn(key, &session_id, &turn_id, body.requested_through_position)
-    }
-    .await;
-    command_response(result)
-}
-
-async fn continue_turn_http(
-    State(host): State<LiveHost>,
-    Path(turn_id): Path<String>,
-    headers: HeaderMap,
-    body: Body,
-) -> Response {
-    let result = async {
-        let key = idempotency_key(&headers)?;
-        let body: ContinueTurnBody = decode_body(&host, body).await?;
-        let input = match (&body.input, &body.input_json) {
-            (Some(value), None) => super::HostContinuationInput::String(value),
-            (None, Some(value)) => super::HostContinuationInput::Json(value),
-            _ => return Err(LiveHostError::InvalidRequest),
-        };
-        host.continue_turn(
-            key,
-            &body.session_id,
-            &turn_id,
-            &body.suspension_id,
-            body.expected_session_version,
-            input,
-        )
     }
     .await;
     command_response(result)
@@ -639,37 +561,6 @@ async fn mutate_goal(
     }
     .await;
     command_response(result)
-}
-
-async fn turn_events(
-    State(host): State<LiveHost>,
-    Path(turn_id): Path<String>,
-    RawQuery(query): RawQuery,
-) -> Response {
-    let after_position = match parse_event_query(query.as_deref()) {
-        Ok(value) => value,
-        Err(error) => return error_response(error),
-    };
-    let first = match read_turn_page(host.clone(), turn_id.clone(), after_position).await {
-        Ok(page) => page,
-        Err(error) => return error_response(error),
-    };
-    let poll = Duration::from_millis(host.limits().event_poll_interval_ms);
-    let state = EventStreamState {
-        host,
-        turn_id,
-        cursor: first.scanned_through_position,
-        pending: first.events.into(),
-        poll,
-    };
-    let events = stream::unfold(state, next_event);
-    Sse::new(events)
-        .keep_alive(
-            axum::response::sse::KeepAlive::new()
-                .interval(poll)
-                .text("keepalive"),
-        )
-        .into_response()
 }
 
 async fn session_scoped_turn_events(

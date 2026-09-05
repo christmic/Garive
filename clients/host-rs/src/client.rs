@@ -723,24 +723,26 @@ impl LiveHostClient {
     /// Follows committed Turn events until an explicit durable terminal event.
     pub async fn follow_until_terminal(
         &self,
+        session_id: &str,
         turn_id: &str,
         after_position: u64,
     ) -> Result<HostView, HostClientError> {
-        self.follow_until_terminal_with(turn_id, after_position, |_| {})
+        self.follow_until_terminal_with(session_id, turn_id, after_position, |_| {})
             .await
     }
 
     /// Follows validated Turn semantic events into a bounded asynchronous sink.
     pub async fn follow_events(
         &self,
+        session_id: &str,
         turn_id: &str,
         after_position: u64,
         sink: tokio::sync::mpsc::Sender<HostEvent>,
     ) -> Result<(), HostClientError> {
-        if turn_id.is_empty() {
+        if session_id.is_empty() || turn_id.is_empty() {
             return Err(HostClientError::new(HostClientErrorCode::InvalidCommand));
         }
-        let operation = self.follow_events_inner(turn_id, after_position, sink);
+        let operation = self.follow_events_inner(session_id, turn_id, after_position, sink);
         timeout(
             Duration::from_millis(self.limits.follow_deadline_ms),
             operation,
@@ -844,14 +846,13 @@ impl LiveHostClient {
 
     async fn follow_events_inner(
         &self,
+        session_id: &str,
         turn_id: &str,
         after_position: u64,
         sink: tokio::sync::mpsc::Sender<HostEvent>,
     ) -> Result<(), HostClientError> {
-        let path = format!(
-            "v1/turns/{}/events?after_position={after_position}",
-            encode_segment(turn_id)
-        );
+        let base = session_scoped_turns_events_path(session_id, turn_id);
+        let path = format!("{base}?after_position={after_position}");
         let response = self
             .http
             .get(self.join(&path)?)
@@ -937,6 +938,7 @@ impl LiveHostClient {
     /// durable event.
     pub async fn follow_until_terminal_with<F>(
         &self,
+        session_id: &str,
         turn_id: &str,
         after_position: u64,
         observer: F,
@@ -944,10 +946,10 @@ impl LiveHostClient {
     where
         F: FnMut(&HostEvent),
     {
-        if turn_id.is_empty() {
+        if session_id.is_empty() || turn_id.is_empty() {
             return Err(HostClientError::new(HostClientErrorCode::InvalidCommand));
         }
-        let operation = self.follow(turn_id, after_position, observer);
+        let operation = self.follow(session_id, turn_id, after_position, observer);
         timeout(
             Duration::from_millis(self.limits.follow_deadline_ms),
             operation,
@@ -958,6 +960,7 @@ impl LiveHostClient {
 
     async fn follow<F>(
         &self,
+        session_id: &str,
         turn_id: &str,
         after_position: u64,
         mut observer: F,
@@ -965,10 +968,8 @@ impl LiveHostClient {
     where
         F: FnMut(&HostEvent),
     {
-        let path = format!(
-            "v1/turns/{}/events?after_position={after_position}",
-            encode_segment(turn_id)
-        );
+        let base = session_scoped_turns_events_path(session_id, turn_id);
+        let path = format!("{base}?after_position={after_position}");
         let response = self
             .http
             .get(self.join(&path)?)

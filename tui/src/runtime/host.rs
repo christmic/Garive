@@ -161,8 +161,7 @@ pub(crate) fn continue_turn(
                     .await
             }
             ContinuationInput::Json(input) => {
-                let canonical =
-                    serde_jcs::to_string(input).unwrap_or_else(|_| input.to_string());
+                let canonical = serde_jcs::to_string(input).unwrap_or_else(|_| input.to_string());
                 client
                     .ask_reply_event(
                         &request.command_id,
@@ -245,15 +244,18 @@ pub(crate) fn start_turn(
 pub(crate) fn follow(
     client: LiveHostClient,
     subscription_id: SubscriptionId,
-    // TODO(turn-scope): pass turn_id once the TUI tracks the active Turn per
-    // Session; the new turn-scoped Host SSE no longer accepts session_id.
     session_id: String,
+    // TODO(turn-scope): drive `turn_id` from the TUI's active-Turn tracker; the
+    // session+turn-scoped Host SSE requires a Turn identity, so callers without
+    // one yet pass `""` and the client returns `InvalidCommand` until tracking
+    // lands.
+    turn_id: String,
     after_position: u64,
     sender: mpsc::Sender<HostMessage>,
 ) -> JoinHandle<()> {
     tokio::spawn(async move {
         let (event_sender, events) = mpsc::channel(256);
-        let follow = client.follow_events(&session_id, after_position, event_sender);
+        let follow = client.follow_events(&session_id, &turn_id, after_position, event_sender);
         let Some(code) = relay_follow(events, follow, &sender, |event| HostMessage::Event {
             subscription_id,
             event,

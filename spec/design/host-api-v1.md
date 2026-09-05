@@ -163,8 +163,9 @@ Failures must not disclose whether an identity exists in a different Session.
 ## Durable event projection
 
 The SSE endpoint replays a fixed SQLite prefix, then follows later committed
-facts. The endpoint is **turn-scoped** at `/v1/turns/{turn_id}/events`; H1 no
-longer exposes a Session-wide SSE stream. Only events whose committed fact
+facts. The endpoint is **session-scoped** at `/v1/sessions/{session_id}/turns/{turn_id}/events`;
+H1 no longer exposes a Session-wide SSE stream and the legacy
+`/v1/turns/{turn_id}/events` route is dropped. Only events whose committed fact
 carries the requested `turn_id` are returned; session-lifecycle events
 (`session.created`) live on the durable Session view and are not delivered to
 the turn stream.

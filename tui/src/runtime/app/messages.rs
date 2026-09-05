@@ -253,6 +253,7 @@ pub(super) fn handle_host(message: HostMessage, state: &mut RuntimeState) {
                 state.client.clone(),
                 subscription_id,
                 session_id,
+                String::new(),
                 state.model.observed_position,
                 state.sender.clone(),
             ));
@@ -283,6 +284,7 @@ pub(super) fn handle_host(message: HostMessage, state: &mut RuntimeState) {
                 state.client.clone(),
                 subscription_id,
                 session_id,
+                String::new(),
                 background.observed_position,
                 state.sender.clone(),
             ));
@@ -422,6 +424,7 @@ pub(super) fn apply_snapshot_completion(state: &mut RuntimeState) {
         state.client.clone(),
         subscription_id,
         session_id.clone(),
+        String::new(),
         snapshot.follow_position,
         state.sender.clone(),
     ));

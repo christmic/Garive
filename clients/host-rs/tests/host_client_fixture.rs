@@ -229,7 +229,7 @@ async fn live_client_round_trips_real_http_and_sse() {
         .await
         .expect("start");
     let view = client
-        .follow_until_terminal(&turn.turns[0].turn_id, 0)
+        .follow_until_terminal(&session.session_id, &turn.turns[0].turn_id, 0)
         .await
         .expect("follow");
     server.await.expect("server task");
@@ -241,8 +241,9 @@ async fn live_client_round_trips_real_http_and_sse() {
     assert!(requests[0].starts_with("POST /v1/sessions HTTP/1.1\r\n"));
     assert!(requests[0].contains("idempotency-key: create-stable-1"));
     assert!(requests[1].starts_with("POST /v1/sessions/session-client/turns HTTP/1.1\r\n"));
-    assert!(requests[2]
-        .starts_with("GET /v1/turns/turn-client/events?after_position=0 HTTP/1.1\r\n"));
+    assert!(requests[2].starts_with(
+        "GET /v1/sessions/session-client/turns/turn-client/events?after_position=0 HTTP/1.1\r\n"
+    ));
 }
 
 #[tokio::test]
@@ -733,16 +734,14 @@ async fn mutation_methods_use_exact_h1_paths_and_bodies() {
     server.await.expect("server task");
     let requests = requests.lock().await;
     assert!(
-        requests[0].starts_with(
-            "POST /v1/sessions/session-client/turns/turn-client/cancel HTTP/1.1\r\n"
-        ),
+        requests[0]
+            .starts_with("POST /v1/sessions/session-client/turns/turn-client/cancel HTTP/1.1\r\n"),
         "cancel path must be session-scoped, got: {}",
         requests[0]
     );
     assert!(requests[0].contains("\"requested_through_position\":9"));
-    assert!(requests[1].starts_with(
-        "POST /v1/sessions/session-client/turns/turn-client/events HTTP/1.1\r\n"
-    ));
+    assert!(requests[1]
+        .starts_with("POST /v1/sessions/session-client/turns/turn-client/events HTTP/1.1\r\n"));
     assert!(requests[1].contains("\"kind\":\"approval\""));
     assert!(requests[1].contains("\"expected_session_version\":4"));
     assert!(requests[1].contains("\"suspension_id\":\"suspension-client\""));
@@ -804,8 +803,7 @@ async fn membership_and_broadcast_use_explicit_session_contracts() {
     assert!(requests[0].starts_with("GET /v1/sessions/session-client/agents HTTP/1.1\r\n"));
     assert!(requests[1].starts_with("POST /v1/sessions/session-client/agents HTTP/1.1\r\n"));
     assert!(requests[1].contains("\"agent_id\":\"alpha\""));
-    assert!(requests[2]
-        .starts_with("DELETE /v1/sessions/session-client/agents/alpha HTTP/1.1\r\n"));
+    assert!(requests[2].starts_with("DELETE /v1/sessions/session-client/agents/alpha HTTP/1.1\r\n"));
     assert!(requests[3].contains("\"delivery\":\"broadcast\""));
     assert!(!requests[3].contains("\"agent_id\""));
 }

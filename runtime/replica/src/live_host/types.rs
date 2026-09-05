@@ -1076,20 +1076,7 @@ impl ApprovalDecision {
 #[derive(Clone, Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct CancelTurnBody {
-    pub session_id: String,
     pub requested_through_position: u64,
-}
-
-#[derive(Clone, Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct ContinueTurnBody {
-    pub session_id: String,
-    pub suspension_id: String,
-    pub expected_session_version: u64,
-    #[serde(default)]
-    pub input: Option<String>,
-    #[serde(default)]
-    pub input_json: Option<String>,
 }
 
 #[derive(Clone, Debug, Deserialize)]

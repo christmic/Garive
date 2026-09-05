@@ -3035,7 +3035,8 @@ impl LiveHost {
             .map(|fact| fact.session_id.clone())
             .ok_or(LiveHostError::NotFound)?;
         let mut page = self.read_event_page(session_id.as_str(), after_position)?;
-        page.events.retain(|event| event.turn_id == turn_id.as_str());
+        page.events
+            .retain(|event| event.turn_id == turn_id.as_str());
         Ok(page)
     }
 

@@ -372,19 +372,25 @@ fn turn_event_request_v1_tag_allocation_is_exact() {
     }
     assert_eq!(
         single_top_tag(&TurnEventRequestV1 {
-            body: Some(turn_event_request_v1::Body::Steer(TurnSteerEventV1::default())),
+            body: Some(turn_event_request_v1::Body::Steer(
+                TurnSteerEventV1::default()
+            )),
         }),
         vec![1]
     );
     assert_eq!(
         single_top_tag(&TurnEventRequestV1 {
-            body: Some(turn_event_request_v1::Body::Approval(TurnApprovalEventV1::default())),
+            body: Some(turn_event_request_v1::Body::Approval(
+                TurnApprovalEventV1::default()
+            )),
         }),
         vec![2]
     );
     assert_eq!(
         single_top_tag(&TurnEventRequestV1 {
-            body: Some(turn_event_request_v1::Body::AskReply(TurnAskReplyEventV1::default())),
+            body: Some(turn_event_request_v1::Body::AskReply(
+                TurnAskReplyEventV1::default()
+            )),
         }),
         vec![3]
     );
