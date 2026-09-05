@@ -61,10 +61,15 @@ caller fields can never replace the installed revision, snapshot or instance.
 | `POST /v1/sessions/{session_id}/agents` | `AddSessionAgentRequestV1` | open Session | `session.agent_joined` |
 | `DELETE /v1/sessions/{session_id}/agents/{agent_id}` | none | open Session | `session.agent_left` |
 | `POST /v1/sessions/{session_id}/turns` | `StartTurnRequestV1` | open Session; explicit valid delivery | atomic direct/broadcast start transaction |
-| `POST /v1/turns/{turn_id}/events` | `TurnEventRequestV1` | non-terminal owned Turn | mid-turn input (V1 admits `kind: "steer"`; future approval/ask/supplement extend) |
-| `POST /v1/turns/{turn_id}/cancel` | `CancelTurnRequestV1` | non-terminal owned Turn | `turn.cancel_requested` |
-| `POST /v1/turns/{turn_id}/continue` | `ContinueTurnRequestV1` | exact current suspension and Session version | C6 continuation transaction |
-| `GET /v1/turns/{turn_id}/events?after_position=N` | none | existing Turn; `N` may be zero | replay then follow turn-scoped events |
+| `POST /v1/sessions/{session_id}/turns/{turn_id}/events` | `TurnEventRequestV1` (tagged union — see [Turn-event envelope](#turn-event-envelope)) | owned Turn | mid-turn input — `steer` against Open Turn; `approval` / `ask_reply` / `external_input` against Suspended Turn |
+| `POST /v1/sessions/{session_id}/turns/{turn_id}/cancel` | `CancelTurnRequestV1` (path is authoritative owner) | non-terminal owned Turn | `turn.cancel_requested` |
+| `GET /v1/sessions/{session_id}/turns/{turn_id}/events?after_position=N` | none | existing Turn; `N` may be zero | replay then follow turn-scoped events |
+
+The standalone `/v1/turns/{turn_id}/continue` route is **removed**; suspended-Turn
+inputs are dispatched as one of the three non-`steer` `TurnEventRequestV1`
+kinds. The path `session_id` is the authoritative owner check; the body's
+`session_id` field in every event-kind variant is a defence-in-depth echo
+that must match the path or the request fails with `invalid_request`.
 
 Every mutation requires exactly one `Idempotency-Key` header containing 1–128
 visible ASCII characters. The key becomes the C6 Runtime command identity.
@@ -98,24 +103,37 @@ stopped/completed/failed/suspended state before presenting terminal truth.
 
 ### Typed continuation value amendment
 
-The shipped Proto `ContinueTurnRequestV1.input = 4` remains a raw UTF-8 string.
-The coordinated H2 wire slice additively assigns
-`optional string input_json = 5`. Exactly one field is present for an
-approval/external-input interaction:
+V1 admits three suspended-Turn `TurnEventRequestV1` kinds in addition to the
+Open-Turn `steer` kind:
 
-- `input` is allowed only when the durable portable response schema admits a
-  JSON string; Runtime canonical-JSON encodes that string before validation;
-- `input_json` contains exact RFC 8785 JSON text for any admitted root value.
+| `kind` | Suspension precondition | Payload | Wire encoding |
+|---|---|---|---|
+| `steer` | `RuntimeTurnStatus::Open` | `TurnSteerEventV1` | `{ kind, session_id, text }` |
+| `approval` | `ApprovalRequired` | `TurnApprovalEventV1` | `{ kind, session_id, suspension_id, expected_session_version, decision }` |
+| `ask_reply` | `ExternalInputRequired` + `interaction` present (typed schema) | `TurnAskReplyEventV1` | `{ kind, session_id, suspension_id, expected_session_version, input_json }` |
+| `external_input` | `ExternalInputRequired` without `interaction`, or `PartialOutput` | `TurnExternalInputEventV1` | `{ kind, session_id, suspension_id, expected_session_version, text }` |
+
+The `decision` field of `approval` is the frozen `ApprovalDecisionV1`
+enumeration with values `APPROVE` / `DENY`. Runtime canonicalises the
+decision to exact RFC 8785 `true` / `false` bytes before storing it in the
+canonical `interaction.resolved.response` fact; the resulting bytes bind the
+idempotency replay tuple just like any other kind.
+
+The `input_json` field of `ask_reply` carries exact RFC 8785 JSON text
+satisfying the durable `response_schema`. The `text` field of `steer` and
+`external_input` is a raw UTF-8 string and Runtime enforces the byte budget.
 
 Runtime reconstructs the exact response schema/digest from the verified
 suspension continuation, validates the normalized value before commit, and
-stores those canonical JSON bytes in `interaction.resolved.response`. Unknown,
-non-canonical, schema-invalid, dual, or absent interaction input is
-`invalid_request` and commits nothing. Idempotency binds the selected field and
-its exact normalized bytes; a retry cannot change representation.
+stores those canonical JSON bytes in `interaction.resolved.response`. Unknown
+`kind`, path↔body `session_id` mismatch, missing required field, schema-invalid
+typed reply, or absent operator decision is `invalid_request` and commits
+nothing. Idempotency binds `(turn_id, command_id, suspension_id,
+expected_session_version, kind-of-input + canonical bytes)` — a retry cannot
+change representation or decision.
 
-Non-interaction suspension kinds do not gain authority from field 5.
-Operator reconciliation remains outside the ordinary H1 continuation route
+Non-interaction suspension kinds do not gain authority from the typed reply
+path. Operator reconciliation remains outside the ordinary H1 event route
 until a focused public authority contract is accepted.
 
 ## Successful responses

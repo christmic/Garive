@@ -209,6 +209,82 @@ message ContinueTurnRequestV1 {
   optional string input_json = 5;
 }
 
+// Dispatches one user-driven input event to a Turn. V1 supports four kinds:
+// `steer` (Open Turn), `approval`, `ask_reply`, and `external_input`
+// (Suspended Turn). The path carries `session_id` and `turn_id`; the body
+// still echoes `session_id` for owner-equivalence defence in depth.
+message TurnEventRequestV1 {
+  // Discriminated envelope: exactly one variant is present.
+  oneof body {
+    // Trusted-user text injection into an Open Turn.
+    TurnSteerEventV1 steer = 1;
+    // Operator decision against an `ApprovalRequired` suspension.
+    TurnApprovalEventV1 approval = 2;
+    // Typed RFC 8785 JSON reply against an `ExternalInputRequired`
+    // suspension that carries a `response_schema`.
+    TurnAskReplyEventV1 ask_reply = 3;
+    // Plain-text reply against an `ExternalInputRequired` suspension
+    // without a `response_schema`, or a `PartialOutput` suspension.
+    TurnExternalInputEventV1 external_input = 4;
+  }
+}
+
+// Trusted-user text injection into an Open Turn.
+message TurnSteerEventV1 {
+  // Path `session_id` re-echoed for owner-equivalence defence in depth.
+  string session_id = 1;
+  // New trusted-user text injected into the next derive iteration.
+  string text = 2;
+}
+
+// Operator decision against an `ApprovalRequired` suspension.
+message TurnApprovalEventV1 {
+  // Path `session_id` re-echoed for owner-equivalence defence in depth.
+  string session_id = 1;
+  // Exact current suspension identity.
+  string suspension_id = 2;
+  // Optimistic Session version observed with the suspension.
+  uint64 expected_session_version = 3;
+  // Operator decision; Runtime canonicalises to RFC 8785 `true`/`false`.
+  ApprovalDecisionV1 decision = 4;
+}
+
+// Typed RFC 8785 JSON reply against an `ExternalInputRequired` suspension
+// that carries a `response_schema`.
+message TurnAskReplyEventV1 {
+  // Path `session_id` re-echoed for owner-equivalence defence in depth.
+  string session_id = 1;
+  // Exact current suspension identity.
+  string suspension_id = 2;
+  // Optimistic Session version observed with the suspension.
+  uint64 expected_session_version = 3;
+  // Exact RFC 8785 JSON text satisfying the durable response schema.
+  string input_json = 4;
+}
+
+// Plain-text reply against an `ExternalInputRequired` suspension without
+// a `response_schema`, or a `PartialOutput` suspension.
+message TurnExternalInputEventV1 {
+  // Path `session_id` re-echoed for owner-equivalence defence in depth.
+  string session_id = 1;
+  // Exact current suspension identity.
+  string suspension_id = 2;
+  // Optimistic Session version observed with the suspension.
+  uint64 expected_session_version = 3;
+  // Trusted external input satisfying the suspension.
+  string text = 4;
+}
+
+// Frozen operator decision vocabulary for `TurnApprovalEventV1`.
+enum ApprovalDecisionV1 {
+  // Default value; never accepted by Runtime.
+  APPROVAL_DECISION_V1_UNSPECIFIED = 0;
+  // Approve the suspended effect and continue.
+  APPROVAL_DECISION_V1_APPROVE = 1;
+  // Deny the suspended effect and stop.
+  APPROVAL_DECISION_V1_DENY = 2;
+}
+
 // Durable result of a Turn mutation or exact idempotent replay.
 message TurnCommandResponseV1 {
   // Owning Session identity.

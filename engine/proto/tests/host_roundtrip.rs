@@ -1,7 +1,9 @@
 use garive_proto::com::garive::host::v1::{
-    AgentDefinitionPageV1, AgentDefinitionSummaryV1, ContinueTurnRequestV1, CreateSessionRequestV1,
-    HostActivityV1, HostEventV1, SessionPageV1, SessionSummaryV1, SessionViewV1, SuspensionViewV1,
-    TurnCommandResponseV1, TurnTimelineItemV1, TurnTimelinePageV1,
+    turn_event_request_v1, AgentDefinitionPageV1, AgentDefinitionSummaryV1, ApprovalDecisionV1,
+    ContinueTurnRequestV1, CreateSessionRequestV1, HostActivityV1, HostEventV1, SessionPageV1,
+    SessionSummaryV1, SessionViewV1, SuspensionViewV1, TurnApprovalEventV1, TurnAskReplyEventV1,
+    TurnCommandResponseV1, TurnEventRequestV1, TurnExternalInputEventV1, TurnSteerEventV1,
+    TurnTimelineItemV1, TurnTimelinePageV1,
 };
 use prost::Message;
 
@@ -278,5 +280,162 @@ fn generated_host_v1_round_trips_read_model_presence_and_max_positions() {
     assert_eq!(
         TurnTimelinePageV1::decode(timeline.encode_to_vec().as_slice()).unwrap(),
         timeline
+    );
+}
+
+#[test]
+fn turn_event_request_v1_envelope_round_trips_for_every_kind() {
+    let steer = TurnEventRequestV1 {
+        body: Some(turn_event_request_v1::Body::Steer(TurnSteerEventV1 {
+            session_id: "session-1".into(),
+            text: "trust me".into(),
+        })),
+    };
+    assert_eq!(
+        TurnEventRequestV1::decode(steer.encode_to_vec().as_slice()).unwrap(),
+        steer
+    );
+
+    let approval = TurnEventRequestV1 {
+        body: Some(turn_event_request_v1::Body::Approval(TurnApprovalEventV1 {
+            session_id: "session-1".into(),
+            suspension_id: "suspension-1".into(),
+            expected_session_version: 5,
+            decision: ApprovalDecisionV1::Approve as i32,
+        })),
+    };
+    assert_eq!(
+        TurnEventRequestV1::decode(approval.encode_to_vec().as_slice()).unwrap(),
+        approval
+    );
+
+    let deny = TurnEventRequestV1 {
+        body: Some(turn_event_request_v1::Body::Approval(TurnApprovalEventV1 {
+            session_id: "session-1".into(),
+            suspension_id: "suspension-2".into(),
+            expected_session_version: 6,
+            decision: ApprovalDecisionV1::Deny as i32,
+        })),
+    };
+    assert_ne!(
+        deny.encode_to_vec(),
+        approval.encode_to_vec(),
+        "approve and deny must encode to distinct bytes (decision is part of the replay tuple)"
+    );
+    assert_eq!(
+        TurnEventRequestV1::decode(deny.encode_to_vec().as_slice()).unwrap(),
+        deny
+    );
+
+    let ask_reply = TurnEventRequestV1 {
+        body: Some(turn_event_request_v1::Body::AskReply(TurnAskReplyEventV1 {
+            session_id: "session-1".into(),
+            suspension_id: "suspension-3".into(),
+            expected_session_version: 7,
+            input_json: r#"{"answer":"yes"}"#.to_string(),
+        })),
+    };
+    assert_eq!(
+        TurnEventRequestV1::decode(ask_reply.encode_to_vec().as_slice()).unwrap(),
+        ask_reply
+    );
+
+    let external_input = TurnEventRequestV1 {
+        body: Some(turn_event_request_v1::Body::ExternalInput(
+            TurnExternalInputEventV1 {
+                session_id: "session-1".into(),
+                suspension_id: "suspension-4".into(),
+                expected_session_version: 8,
+                text: "plain-text continuation".into(),
+            },
+        )),
+    };
+    assert_eq!(
+        TurnEventRequestV1::decode(external_input.encode_to_vec().as_slice()).unwrap(),
+        external_input
+    );
+
+    let empty = TurnEventRequestV1 { body: None };
+    assert_eq!(
+        TurnEventRequestV1::decode(empty.encode_to_vec().as_slice()).unwrap(),
+        empty
+    );
+}
+
+#[test]
+fn turn_event_request_v1_tag_allocation_is_exact() {
+    // Each top-level field-tag on TurnEventRequestV1 is one of {1,2,3,4}
+    // (the `oneof` body discriminator). Rust-generated `body` uses a stable
+    // tag per kind; assert each kind emits exactly its assigned tag.
+    fn single_top_tag(req: &TurnEventRequestV1) -> Vec<u32> {
+        top_level_tags(req)
+    }
+    assert_eq!(
+        single_top_tag(&TurnEventRequestV1 {
+            body: Some(turn_event_request_v1::Body::Steer(TurnSteerEventV1::default())),
+        }),
+        vec![1]
+    );
+    assert_eq!(
+        single_top_tag(&TurnEventRequestV1 {
+            body: Some(turn_event_request_v1::Body::Approval(TurnApprovalEventV1::default())),
+        }),
+        vec![2]
+    );
+    assert_eq!(
+        single_top_tag(&TurnEventRequestV1 {
+            body: Some(turn_event_request_v1::Body::AskReply(TurnAskReplyEventV1::default())),
+        }),
+        vec![3]
+    );
+    assert_eq!(
+        single_top_tag(&TurnEventRequestV1 {
+            body: Some(turn_event_request_v1::Body::ExternalInput(
+                TurnExternalInputEventV1::default()
+            )),
+        }),
+        vec![4]
+    );
+
+    // Inner shapes: TurnSteerEventV1 = {1,2}; TurnApprovalEventV1 = {1,2,3,4};
+    // TurnAskReplyEventV1 = {1,2,3,4}; TurnExternalInputEventV1 = {1,2,3,4}.
+    // Default values are NOT emitted; populate each field so the tag map is
+    // exact and the proto3 wire contract is locked in.
+    fn inner_tags<M: Message>(value: &M) -> Vec<u32> {
+        top_level_tags(value)
+    }
+    assert_eq!(
+        inner_tags(&TurnSteerEventV1 {
+            session_id: "s".into(),
+            text: "t".into(),
+        }),
+        vec![1, 2]
+    );
+    assert_eq!(
+        inner_tags(&TurnApprovalEventV1 {
+            session_id: "s".into(),
+            suspension_id: "u".into(),
+            expected_session_version: 1,
+            decision: ApprovalDecisionV1::Approve as i32,
+        }),
+        vec![1, 2, 3, 4]
+    );
+    assert_eq!(
+        inner_tags(&TurnAskReplyEventV1 {
+            session_id: "s".into(),
+            suspension_id: "u".into(),
+            expected_session_version: 1,
+            input_json: "{}".into(),
+        }),
+        vec![1, 2, 3, 4]
+    );
+    assert_eq!(
+        inner_tags(&TurnExternalInputEventV1 {
+            session_id: "s".into(),
+            suspension_id: "u".into(),
+            expected_session_version: 1,
+            text: "t".into(),
+        }),
+        vec![1, 2, 3, 4]
     );
 }
