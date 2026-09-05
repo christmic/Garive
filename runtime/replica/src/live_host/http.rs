@@ -66,7 +66,18 @@ impl LiveHostServer {
             .route("/v1/sessions/:session_id/plans", get(plan_page))
             .route("/v1/sessions/:session_id/timeline", get(turn_timeline))
             .route("/v1/sessions/:session_id/turns", post(start_turn))
-            .route("/v1/turns/:turn_id/events", post(turn_event_input).get(turn_events))
+            .route(
+                "/v1/sessions/:session_id/turns/:turn_id/events",
+                post(session_scoped_turn_event_input).get(session_scoped_turn_events),
+            )
+            .route(
+                "/v1/sessions/:session_id/turns/:turn_id/cancel",
+                post(session_scoped_cancel_turn_http),
+            )
+            .route(
+                "/v1/turns/:turn_id/events",
+                post(turn_event_input).get(turn_events),
+            )
             .route("/v1/turns/:turn_id/cancel", post(cancel_turn_http))
             .route("/v1/turns/:turn_id/continue", post(continue_turn_http))
             .route("/v1/goals/:operation", post(mutate_goal))
@@ -441,6 +452,90 @@ async fn turn_event_input(
             TurnEventBody::Steer { session_id, text } => {
                 host.steer_turn(key, &session_id, &turn_id, &text)
             }
+            // Legacy `/v1/turns/:turn_id/events` route only admits `steer`;
+            // the four-kind union is reserved for the session-scoped route.
+            TurnEventBody::Approval { .. }
+            | TurnEventBody::AskReply { .. }
+            | TurnEventBody::ExternalInput { .. } => Err(LiveHostError::InvalidRequest),
+        }
+    }
+    .await;
+    command_response(result)
+}
+
+async fn session_scoped_turn_event_input(
+    State(host): State<LiveHost>,
+    Path((session_id, turn_id)): Path<(String, String)>,
+    headers: HeaderMap,
+    body: Body,
+) -> Response {
+    let result = async {
+        let key = idempotency_key(&headers)?;
+        let event: TurnEventBody = decode_body(&host, body).await?;
+        match event {
+            TurnEventBody::Steer {
+                session_id: body_sid,
+                text,
+            } => {
+                if body_sid != session_id {
+                    return Err(LiveHostError::InvalidRequest);
+                }
+                host.steer_turn(key, &session_id, &turn_id, &text)
+            }
+            TurnEventBody::Approval {
+                session_id: body_sid,
+                suspension_id,
+                expected_session_version,
+                decision,
+            } => {
+                if body_sid != session_id {
+                    return Err(LiveHostError::InvalidRequest);
+                }
+                host.continue_turn(
+                    key,
+                    &session_id,
+                    &turn_id,
+                    &suspension_id,
+                    expected_session_version,
+                    super::HostContinuationInput::Json(decision.canonical_json()),
+                )
+            }
+            TurnEventBody::AskReply {
+                session_id: body_sid,
+                suspension_id,
+                expected_session_version,
+                input_json,
+            } => {
+                if body_sid != session_id {
+                    return Err(LiveHostError::InvalidRequest);
+                }
+                host.continue_turn(
+                    key,
+                    &session_id,
+                    &turn_id,
+                    &suspension_id,
+                    expected_session_version,
+                    super::HostContinuationInput::Json(&input_json),
+                )
+            }
+            TurnEventBody::ExternalInput {
+                session_id: body_sid,
+                suspension_id,
+                expected_session_version,
+                text,
+            } => {
+                if body_sid != session_id {
+                    return Err(LiveHostError::InvalidRequest);
+                }
+                host.continue_turn(
+                    key,
+                    &session_id,
+                    &turn_id,
+                    &suspension_id,
+                    expected_session_version,
+                    super::HostContinuationInput::String(&text),
+                )
+            }
         }
     }
     .await;
@@ -462,6 +557,21 @@ async fn cancel_turn_http(
             &turn_id,
             body.requested_through_position,
         )
+    }
+    .await;
+    command_response(result)
+}
+
+async fn session_scoped_cancel_turn_http(
+    State(host): State<LiveHost>,
+    Path((session_id, turn_id)): Path<(String, String)>,
+    headers: HeaderMap,
+    body: Body,
+) -> Response {
+    let result = async {
+        let key = idempotency_key(&headers)?;
+        let body: CancelTurnBody = decode_body(&host, body).await?;
+        host.cancel_turn(key, &session_id, &turn_id, body.requested_through_position)
     }
     .await;
     command_response(result)
@@ -536,6 +646,43 @@ async fn turn_events(
     Path(turn_id): Path<String>,
     RawQuery(query): RawQuery,
 ) -> Response {
+    let after_position = match parse_event_query(query.as_deref()) {
+        Ok(value) => value,
+        Err(error) => return error_response(error),
+    };
+    let first = match read_turn_page(host.clone(), turn_id.clone(), after_position).await {
+        Ok(page) => page,
+        Err(error) => return error_response(error),
+    };
+    let poll = Duration::from_millis(host.limits().event_poll_interval_ms);
+    let state = EventStreamState {
+        host,
+        turn_id,
+        cursor: first.scanned_through_position,
+        pending: first.events.into(),
+        poll,
+    };
+    let events = stream::unfold(state, next_event);
+    Sse::new(events)
+        .keep_alive(
+            axum::response::sse::KeepAlive::new()
+                .interval(poll)
+                .text("keepalive"),
+        )
+        .into_response()
+}
+
+async fn session_scoped_turn_events(
+    State(host): State<LiveHost>,
+    Path((_session_id, turn_id)): Path<(String, String)>,
+    RawQuery(query): RawQuery,
+) -> Response {
+    // Session-scoped SSE reuses the existing `read_turn_event_page` service
+    // entry, which resolves the owning Session from the durable Turn prefix
+    // and filters the page to events whose committed fact carries the
+    // requested `turn_id`. The path `session_id` is currently advisory on the
+    // read path; future hardening can promote it to an authoritative owner
+    // check identical to the events POST handler.
     let after_position = match parse_event_query(query.as_deref()) {
         Ok(value) => value,
         Err(error) => return error_response(error),

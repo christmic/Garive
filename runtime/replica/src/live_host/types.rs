@@ -1006,16 +1006,71 @@ pub(crate) enum TurnDeliveryBody {
     Broadcast,
 }
 
-/// One mid-Turn user input event admitted by `POST /v1/turns/:turn_id/events`.
+/// One mid-Turn user input event admitted by
+/// `POST /v1/sessions/:session_id/turns/:turn_id/events`.
 ///
-/// V1 only admits the `steer` variant; future approval, ask-reply, and
-/// supplemental inputs will extend this enum without breaking existing clients
-/// because serde rejects unknown fields and the field is tagged.
+/// V1 admits four kinds:
+/// - `steer`: trusted-user text injection against an Open Turn
+/// - `approval`: operator decision against an `ApprovalRequired` suspension
+/// - `ask_reply`: typed RFC 8785 JSON reply against an `ExternalInputRequired`
+///   suspension that carries a `response_schema`
+/// - `external_input`: plain-text reply against an `ExternalInputRequired`
+///   suspension without a `response_schema`, or a `PartialOutput` suspension
+///
+/// Every variant carries `session_id` so the handler can verify it matches
+/// the path `session_id` (defence-in-depth owner check) before dispatching to
+/// the typed service entry. Unknown `kind` strings or unknown fields fail
+/// deserialization and surface as `invalid_request`.
 #[derive(Clone, Debug, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub(crate) enum TurnEventBody {
     /// Inject new trusted-user input into the next derive iteration.
     Steer { session_id: String, text: String },
+    /// Operator decision against an `ApprovalRequired` suspension.
+    Approval {
+        session_id: String,
+        suspension_id: String,
+        expected_session_version: u64,
+        decision: ApprovalDecision,
+    },
+    /// Typed RFC 8785 JSON reply against a typed-interaction suspension.
+    AskReply {
+        session_id: String,
+        suspension_id: String,
+        expected_session_version: u64,
+        input_json: String,
+    },
+    /// Plain-text continuation for untyped external-input or partial-output
+    /// suspensions.
+    ExternalInput {
+        session_id: String,
+        suspension_id: String,
+        expected_session_version: u64,
+        text: String,
+    },
+}
+
+/// Frozen operator decision vocabulary for `TurnEventBody::Approval`.
+///
+/// Runtime canonicalises `Approve` to RFC 8785 `true` and `Deny` to RFC 8785
+/// `false` before forwarding to the typed-interaction continuation pipeline.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum ApprovalDecision {
+    Approve,
+    Deny,
+}
+
+impl ApprovalDecision {
+    /// Canonical RFC 8785 bytes for this decision — exactly `true` or `false`,
+    /// no whitespace, suitable for `HostContinuationInput::Json(_)` and the
+    /// durable `interaction.resolved.response` fact.
+    pub(crate) fn canonical_json(self) -> &'static str {
+        match self {
+            Self::Approve => "true",
+            Self::Deny => "false",
+        }
+    }
 }
 
 #[derive(Clone, Debug, Deserialize)]
