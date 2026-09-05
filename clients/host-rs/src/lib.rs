@@ -7,7 +7,7 @@ mod client;
 mod reducer;
 mod values;
 
-pub use client::LiveHostClient;
+pub use client::{ApprovalDecision, LiveHostClient};
 pub use reducer::reduce_host_events;
 pub use values::{
     AgentDefinitionPage, AgentDefinitionSummary, ClientLimits, CreateSessionResponse,

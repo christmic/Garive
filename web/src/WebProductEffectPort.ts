@@ -86,10 +86,26 @@ export class WebProductEffectPort implements ProductEffectPort {
         }
         case "continue_turn": {
           const pending = await this.#persist(effect, snapshot);
-          const input = effect.continuationValueKind === "json_boolean"
-            ? booleanText(effect.text) : required(effect.text);
-          const receipt = await this.host.continueTurnInput(required(effect.commandId), required(effect.sessionId),
-            required(effect.turnId), required(effect.suspensionId), positive(effect.sessionVersion), input);
+          const commandId = required(effect.commandId);
+          const sessionId = required(effect.sessionId);
+          const turnId = required(effect.turnId);
+          const suspensionId = required(effect.suspensionId);
+          const sessionVersion = positive(effect.sessionVersion);
+          let receipt;
+          if (effect.continuationValueKind === "json_boolean") {
+            const decision = booleanText(effect.text) ? "approve" : "deny";
+            receipt = await this.host.approvalEvent(
+              commandId, sessionId, turnId, suspensionId, sessionVersion, decision,
+            );
+          } else if (effect.responseSchemaDigest !== undefined) {
+            receipt = await this.host.askReplyEvent(
+              commandId, sessionId, turnId, suspensionId, sessionVersion, required(effect.text),
+            );
+          } else {
+            receipt = await this.host.externalInputEvent(
+              commandId, sessionId, turnId, suspensionId, sessionVersion, required(effect.text),
+            );
+          }
           await this.#clear(pending); yield commandResult(receipt); return;
         }
       }

@@ -128,25 +128,49 @@ describe("A1 fetch transport", () => {
     });
   });
 
-  it("maps cancel and continuation to the exact H1 mutations", async () => {
+  it("maps cancel and the four event kinds to the exact session-scoped H1 mutations", async () => {
     const calls: Array<{ url: string; init?: RequestInit }> = [];
     const turn = { session_id: fixture.session_id, turn_id: "turn-client",
       execution_id: "execution-client", committed_position: 12 };
     const client = new FetchHostClient("http://127.0.0.1:1234/", limits(), async (input, init) => {
       calls.push({ url: String(input), init }); return jsonResponse(turn);
     });
-    await client.cancelTurn("cancel-stable", fixture.session_id, "turn-client", 9);
-    await client.continueTurn(
-      "continue-stable", fixture.session_id, "turn-client", "suspension-client", 4, "approved input",
+    await client.steerTurn(
+      "steer-stable", fixture.session_id, "turn-client", "follow-up input",
     );
-    expect(calls[0]?.url).toContain("/v1/turns/turn-client:cancel");
+    await client.cancelTurn("cancel-stable", fixture.session_id, "turn-client", 9);
+    await client.approvalEvent(
+      "approval-stable", fixture.session_id, "turn-client", "suspension-client", 4, "approve",
+    );
+    await client.externalInputEvent(
+      "external-input-stable", fixture.session_id, "turn-client", "suspension-client", 4, "approved input",
+    );
+    await client.askReplyEvent(
+      "ask-reply-stable", fixture.session_id, "turn-client", "suspension-client", 4, '{"approved":true}',
+    );
+    const base = `http://127.0.0.1:1234/v1/sessions/${fixture.session_id}/turns/turn-client`;
+    expect(calls[0]?.url).toBe(`${base}/events`);
     expect(calls[0]?.init?.body).toBe(JSON.stringify({
-      session_id: fixture.session_id, requested_through_position: 9,
+      kind: "steer", session_id: fixture.session_id, text: "follow-up input",
     }));
-    expect(calls[1]?.url).toContain("/v1/turns/turn-client:continue");
+    expect(calls[1]?.url).toBe(`${base}/cancel`);
     expect(calls[1]?.init?.body).toBe(JSON.stringify({
-      session_id: fixture.session_id, suspension_id: "suspension-client",
-      expected_session_version: 4, input: "approved input",
+      requested_through_position: 9,
+    }));
+    expect(calls[2]?.url).toBe(`${base}/events`);
+    expect(calls[2]?.init?.body).toBe(JSON.stringify({
+      kind: "approval", session_id: fixture.session_id, suspension_id: "suspension-client",
+      expected_session_version: 4, decision: "approve",
+    }));
+    expect(calls[3]?.url).toBe(`${base}/events`);
+    expect(calls[3]?.init?.body).toBe(JSON.stringify({
+      kind: "external_input", session_id: fixture.session_id, suspension_id: "suspension-client",
+      expected_session_version: 4, text: "approved input",
+    }));
+    expect(calls[4]?.url).toBe(`${base}/events`);
+    expect(calls[4]?.init?.body).toBe(JSON.stringify({
+      kind: "ask_reply", session_id: fixture.session_id, suspension_id: "suspension-client",
+      expected_session_version: 4, input_json: '{"approved":true}',
     }));
   });
 });

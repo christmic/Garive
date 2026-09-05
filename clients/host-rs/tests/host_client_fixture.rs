@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
 use garive_host_client::{
-    reduce_host_events, ClientLimits, HostClientErrorCode, HostEvent, HostTerminal, HostView,
-    LiveHostClient, LiveOutputEventKind, HOST_CLIENT_FAILURES,
+    reduce_host_events, ApprovalDecision, ClientLimits, HostClientErrorCode, HostEvent,
+    HostTerminal, HostView, LiveHostClient, LiveOutputEventKind, HOST_CLIENT_FAILURES,
 };
 use serde::Deserialize;
 use tokio::{
@@ -671,13 +671,14 @@ async fn mutation_methods_use_exact_h1_paths_and_bodies() {
             http_json(200, response),
             http_json(200, response),
             http_json(200, response),
+            http_json(200, response),
         ],
         Arc::clone(&requests),
     )
     .await;
     let client = LiveHostClient::new(&base_url, limits(&fixture)).expect("client");
     let invalid = client
-        .continue_turn_json(
+        .ask_reply_event(
             "invalid-json",
             "session-client",
             "turn-client",
@@ -697,8 +698,19 @@ async fn mutation_methods_use_exact_h1_paths_and_bodies() {
         .await
         .expect("cancel");
     client
-        .continue_turn(
-            "continue-stable",
+        .approval_event(
+            "approval-stable",
+            "session-client",
+            "turn-client",
+            "suspension-client",
+            4,
+            ApprovalDecision::Approve,
+        )
+        .await
+        .expect("approval");
+    client
+        .external_input_event(
+            "external-input-stable",
             "session-client",
             "turn-client",
             "suspension-client",
@@ -706,10 +718,10 @@ async fn mutation_methods_use_exact_h1_paths_and_bodies() {
             "approved input",
         )
         .await
-        .expect("continue");
+        .expect("external input");
     client
-        .continue_turn_json(
-            "continue-json-stable",
+        .ask_reply_event(
+            "ask-reply-stable",
             "session-client",
             "turn-client",
             "suspension-client",
@@ -717,16 +729,33 @@ async fn mutation_methods_use_exact_h1_paths_and_bodies() {
             &fixture.typed_continuation.canonical_json,
         )
         .await
-        .expect("continue JSON");
+        .expect("ask reply");
     server.await.expect("server task");
     let requests = requests.lock().await;
-    assert!(requests[0].starts_with("POST /v1/turns/turn-client/cancel HTTP/1.1\r\n"));
+    assert!(
+        requests[0].starts_with(
+            "POST /v1/sessions/session-client/turns/turn-client/cancel HTTP/1.1\r\n"
+        ),
+        "cancel path must be session-scoped, got: {}",
+        requests[0]
+    );
     assert!(requests[0].contains("\"requested_through_position\":9"));
-    assert!(requests[1].starts_with("POST /v1/turns/turn-client/continue HTTP/1.1\r\n"));
+    assert!(requests[1].starts_with(
+        "POST /v1/sessions/session-client/turns/turn-client/events HTTP/1.1\r\n"
+    ));
+    assert!(requests[1].contains("\"kind\":\"approval\""));
     assert!(requests[1].contains("\"expected_session_version\":4"));
     assert!(requests[1].contains("\"suspension_id\":\"suspension-client\""));
-    assert!(requests[1].contains("\"input\":\"approved input\""));
-    assert!(requests[2].contains("\"input_json\":\"{\\\"approved\\\":true}\""));
+    assert!(requests[1].contains("\"decision\":\"approve\""));
+    assert!(requests[2].contains("\"kind\":\"external_input\""));
+    assert!(requests[2].contains("\"text\":\"approved input\""));
+    assert!(requests[3].contains("\"kind\":\"ask_reply\""));
+    assert!(
+        requests[3].contains("\"input_json\":\"{\\\"approved\\\":true}\""),
+        "ask_reply body must carry the exact RFC 8785 JSON bytes, got: {}",
+        requests[3]
+    );
+    assert!(!requests[3].contains("\"text\""));
 }
 
 #[tokio::test]

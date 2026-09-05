@@ -571,12 +571,12 @@ impl LiveHostClient {
         if session_id.is_empty() || turn_id.is_empty() || text.is_empty() {
             return Err(HostClientError::new(HostClientErrorCode::InvalidCommand));
         }
-        let path = format!("v1/turns/{}/events", encode_segment(turn_id));
+        let path = session_scoped_turns_events_path(session_id, turn_id);
         let value = self
             .post(
                 &path,
                 command_id,
-                &SteerCommand { session_id, text },
+                &TurnEventCommand::Steer { session_id, text },
             )
             .await?;
         validate_owned_turn_response(value, session_id, turn_id)
@@ -593,7 +593,7 @@ impl LiveHostClient {
         if session_id.is_empty() || turn_id.is_empty() || requested_through_position == 0 {
             return Err(HostClientError::new(HostClientErrorCode::InvalidCommand));
         }
-        let path = format!("v1/turns/{}/cancel", encode_segment(turn_id));
+        let path = session_scoped_turns_cancel_path(session_id, turn_id);
         let value = self
             .post(
                 &path,
@@ -607,42 +607,45 @@ impl LiveHostClient {
         validate_owned_turn_response(value, session_id, turn_id)
     }
 
-    /// Continues one exact durable suspension with caller-supplied input.
-    pub async fn continue_turn(
+    /// Submits an operator decision against an `ApprovalRequired` suspension.
+    /// The Host canonicalises the decision to exact RFC 8785 `true` / `false`
+    /// bytes before committing the typed interaction.
+    pub async fn approval_event(
         &self,
         command_id: &str,
         session_id: &str,
         turn_id: &str,
         suspension_id: &str,
         expected_session_version: u64,
-        input: &str,
+        decision: ApprovalDecision,
     ) -> Result<TurnCommandResponse, HostClientError> {
         if session_id.is_empty()
             || turn_id.is_empty()
             || suspension_id.is_empty()
             || expected_session_version == 0
-            || input.is_empty()
         {
             return Err(HostClientError::new(HostClientErrorCode::InvalidCommand));
         }
-        let path = format!("v1/turns/{}/continue", encode_segment(turn_id));
+        let path = session_scoped_turns_events_path(session_id, turn_id);
         let value = self
             .post(
                 &path,
                 command_id,
-                &ContinueCommand {
+                &TurnEventCommand::Approval {
                     session_id,
                     suspension_id,
                     expected_session_version,
-                    input,
+                    decision,
                 },
             )
             .await?;
         validate_owned_turn_response(value, session_id, turn_id)
     }
 
-    /// Continues one typed interaction with exact RFC 8785 JSON text.
-    pub async fn continue_turn_json(
+    /// Submits an RFC 8785 typed JSON reply against an `ExternalInputRequired`
+    /// suspension that carries a `response_schema`. Caller supplies the exact
+    /// canonical bytes — the Host does not re-canonicalise the value.
+    pub async fn ask_reply_event(
         &self,
         command_id: &str,
         session_id: &str,
@@ -665,16 +668,52 @@ impl LiveHostClient {
         if canonical != input_json {
             return Err(HostClientError::new(HostClientErrorCode::InvalidCommand));
         }
-        let path = format!("v1/turns/{}/continue", encode_segment(turn_id));
+        let path = session_scoped_turns_events_path(session_id, turn_id);
         let value = self
             .post(
                 &path,
                 command_id,
-                &ContinueJsonCommand {
+                &TurnEventCommand::AskReply {
                     session_id,
                     suspension_id,
                     expected_session_version,
                     input_json,
+                },
+            )
+            .await?;
+        validate_owned_turn_response(value, session_id, turn_id)
+    }
+
+    /// Submits a plain-text reply against an `ExternalInputRequired`
+    /// suspension without a `response_schema`, or against a `PartialOutput`
+    /// suspension.
+    pub async fn external_input_event(
+        &self,
+        command_id: &str,
+        session_id: &str,
+        turn_id: &str,
+        suspension_id: &str,
+        expected_session_version: u64,
+        text: &str,
+    ) -> Result<TurnCommandResponse, HostClientError> {
+        if session_id.is_empty()
+            || turn_id.is_empty()
+            || suspension_id.is_empty()
+            || expected_session_version == 0
+            || text.is_empty()
+        {
+            return Err(HostClientError::new(HostClientErrorCode::InvalidCommand));
+        }
+        let path = session_scoped_turns_events_path(session_id, turn_id);
+        let value = self
+            .post(
+                &path,
+                command_id,
+                &TurnEventCommand::ExternalInput {
+                    session_id,
+                    suspension_id,
+                    expected_session_version,
+                    text,
                 },
             )
             .await?;
@@ -1158,9 +1197,30 @@ struct RoutedTurnCommand<'a> {
 }
 
 #[derive(Serialize)]
-struct SteerCommand<'a> {
-    session_id: &'a str,
-    text: &'a str,
+#[serde(tag = "kind", rename_all = "snake_case")]
+enum TurnEventCommand<'a> {
+    Steer {
+        session_id: &'a str,
+        text: &'a str,
+    },
+    Approval {
+        session_id: &'a str,
+        suspension_id: &'a str,
+        expected_session_version: u64,
+        decision: ApprovalDecision,
+    },
+    AskReply {
+        session_id: &'a str,
+        suspension_id: &'a str,
+        expected_session_version: u64,
+        input_json: &'a str,
+    },
+    ExternalInput {
+        session_id: &'a str,
+        suspension_id: &'a str,
+        expected_session_version: u64,
+        text: &'a str,
+    },
 }
 
 #[derive(Serialize)]
@@ -1169,20 +1229,32 @@ struct CancelCommand<'a> {
     requested_through_position: u64,
 }
 
-#[derive(Serialize)]
-struct ContinueCommand<'a> {
-    session_id: &'a str,
-    suspension_id: &'a str,
-    expected_session_version: u64,
-    input: &'a str,
+/// Operator decision vocabulary for `TurnEventCommand::Approval`. Serialised
+/// to the frozen `approve` / `deny` strings; the Host canonicalises to RFC
+/// 8785 `true` / `false` bytes before committing the typed interaction.
+#[derive(Clone, Copy, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ApprovalDecision {
+    /// Operator authorises the suspended action — Host commits `true`.
+    Approve,
+    /// Operator refuses the suspended action — Host commits `false`.
+    Deny,
 }
 
-#[derive(Serialize)]
-struct ContinueJsonCommand<'a> {
-    session_id: &'a str,
-    suspension_id: &'a str,
-    expected_session_version: u64,
-    input_json: &'a str,
+fn session_scoped_turns_events_path(session_id: &str, turn_id: &str) -> String {
+    format!(
+        "v1/sessions/{}/turns/{}/events",
+        encode_segment(session_id),
+        encode_segment(turn_id)
+    )
+}
+
+fn session_scoped_turns_cancel_path(session_id: &str, turn_id: &str) -> String {
+    format!(
+        "v1/sessions/{}/turns/{}/cancel",
+        encode_segment(session_id),
+        encode_segment(turn_id)
+    )
 }
 
 fn validate_base_url(value: &str) -> Result<Url, HostClientError> {

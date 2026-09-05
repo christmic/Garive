@@ -33,6 +33,8 @@ export interface TurnCommandResponse {
   readonly session_id: string; readonly turn_id: string;
   readonly execution_id: string; readonly committed_position: number;
 }
+/** Operator decision vocabulary for the approval event; Host canonicalises to `true`/`false`. */
+export type ApprovalDecision = "approve" | "deny";
 export type HostReadDocument = Record<string, unknown>;
 
 const KNOWN_EVENTS = new Set([
@@ -101,42 +103,61 @@ export class FetchHostClient {
     if (result.session_id !== sessionId) throw new HostClientError("invalid_event");
     return result;
   }
+  public async steerTurn(
+    commandId: string, sessionId: string, turnId: string, text: string,
+  ): Promise<TurnCommandResponse> {
+    if (!sessionId || !turnId || !text) throw new HostClientError("invalid_command");
+    return validateOwnedTurnResponse(await this.post(
+      this.eventsPath(sessionId, turnId), commandId,
+      { kind: "steer", session_id: sessionId, text },
+    ), sessionId, turnId);
+  }
   public async cancelTurn(
     commandId: string, sessionId: string, turnId: string, requestedThroughPosition: number,
   ): Promise<TurnCommandResponse> {
     if (!sessionId || !turnId || !position(requestedThroughPosition)) throw new HostClientError("invalid_command");
     return validateOwnedTurnResponse(await this.post(
-      `/v1/turns/${encodeURIComponent(turnId)}:cancel`, commandId,
-      { session_id: sessionId, requested_through_position: requestedThroughPosition },
+      this.cancelPath(sessionId, turnId), commandId,
+      { requested_through_position: requestedThroughPosition },
     ), sessionId, turnId);
   }
-  public async continueTurn(
+  public async approvalEvent(
     commandId: string, sessionId: string, turnId: string, suspensionId: string,
-    expectedSessionVersion: number, input: string,
+    expectedSessionVersion: number, decision: ApprovalDecision,
   ): Promise<TurnCommandResponse> {
-    if (!sessionId || !turnId || !suspensionId || !position(expectedSessionVersion) || !input) {
+    if (!sessionId || !turnId || !suspensionId || !position(expectedSessionVersion)) {
       throw new HostClientError("invalid_command");
     }
     return validateOwnedTurnResponse(await this.post(
-      `/v1/turns/${encodeURIComponent(turnId)}:continue`, commandId,
-      { session_id: sessionId, suspension_id: suspensionId,
-        expected_session_version: expectedSessionVersion, input },
+      this.eventsPath(sessionId, turnId), commandId,
+      { kind: "approval", session_id: sessionId, suspension_id: suspensionId,
+        expected_session_version: expectedSessionVersion, decision },
     ), sessionId, turnId);
   }
-  public async continueTurnInput(
+  public async askReplyEvent(
     commandId: string, sessionId: string, turnId: string, suspensionId: string,
-    expectedSessionVersion: number, input: string | boolean,
+    expectedSessionVersion: number, inputJson: string,
   ): Promise<TurnCommandResponse> {
-    if (!sessionId || !turnId || !suspensionId || !position(expectedSessionVersion) || input === "") {
+    if (!sessionId || !turnId || !suspensionId || !position(expectedSessionVersion) || !inputJson) {
       throw new HostClientError("invalid_command");
     }
-    const body: Record<string, string | number | boolean> = {
-      session_id: sessionId, suspension_id: suspensionId,
-      expected_session_version: expectedSessionVersion,
-    };
-    if (typeof input === "boolean") body.input_json = input; else body.input = input;
     return validateOwnedTurnResponse(await this.post(
-      `/v1/turns/${encodeURIComponent(turnId)}:continue`, commandId, body,
+      this.eventsPath(sessionId, turnId), commandId,
+      { kind: "ask_reply", session_id: sessionId, suspension_id: suspensionId,
+        expected_session_version: expectedSessionVersion, input_json: inputJson },
+    ), sessionId, turnId);
+  }
+  public async externalInputEvent(
+    commandId: string, sessionId: string, turnId: string, suspensionId: string,
+    expectedSessionVersion: number, text: string,
+  ): Promise<TurnCommandResponse> {
+    if (!sessionId || !turnId || !suspensionId || !position(expectedSessionVersion) || !text) {
+      throw new HostClientError("invalid_command");
+    }
+    return validateOwnedTurnResponse(await this.post(
+      this.eventsPath(sessionId, turnId), commandId,
+      { kind: "external_input", session_id: sessionId, suspension_id: suspensionId,
+        expected_session_version: expectedSessionVersion, text },
     ), sessionId, turnId);
   }
   public readDefinitions(): Promise<HostReadDocument> {
@@ -241,6 +262,12 @@ export class FetchHostClient {
       if (controller.signal.aborted) throw new HostClientError("follow_deadline");
       throw new HostClientError("transport_failure");
     } finally { globalThis.clearTimeout(timeout); }
+  }
+  private eventsPath(sessionId: string, turnId: string): string {
+    return `/v1/sessions/${encodeURIComponent(sessionId)}/turns/${encodeURIComponent(turnId)}/events`;
+  }
+  private cancelPath(sessionId: string, turnId: string): string {
+    return `/v1/sessions/${encodeURIComponent(sessionId)}/turns/${encodeURIComponent(turnId)}/cancel`;
   }
   private async post(path: string, commandId: string, body: Record<string, string | number | boolean>): Promise<unknown> {
     if (!validCommandId(commandId) || Object.values(body).some((value) => !value)) throw new HostClientError("invalid_command");
